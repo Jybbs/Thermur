@@ -52,7 +52,7 @@ The central aim of Thermur is to develop and validate a swarm control framework 
 
 4.  **Validate in High-Fidelity Simulation**:
 
-    -   Build a simulation environment that couples a robotics physics engine (PyBullet) [^19] with realistic wildfire data from models like the Weather Research and Forecasting (WRF) Model's fire module (WRF-Fire) [^20].
+    -   Build a simulation environment that couples a robotics physics engine (MuJoCo) [^19] with realistic wildfire data from models like the Weather Research and Forecasting (WRF) Model's fire module (WRF-Fire) [^20].
 
     -   Rigorously test the swarm's performance against key metrics: thermal safety violations, legibility (compared to ground-truth wind fields), and mission endurance.
 
@@ -234,7 +234,7 @@ Rigorous validation will be conducted in a high-fidelity simulation environment 
 
 ### Simulation Environment
 
--   **Platform**: We will use **PyBullet** [^19] for rigid-body dynamics, coupled with interpolated data from **WRF-Fire** [^20] to simulate the thermal-fluid environment. The coupling will be achieved via a custom Python wrapper that loads the netCDF output from WRF-Fire and provides a queryable interface, `env.get_state(x,y,z)`, which returns the interpolated wind and temperature vectors at any given point in the simulation space. This allows for rapid prototyping and testing of control algorithms on hundreds of agents simultaneously.
+-   **Platform**: We will use **MuJoCo** [^19] for rigid-body dynamics, coupled with interpolated data from **WRF-Fire** [^20] to simulate the thermal-fluid environment. The coupling will be achieved via a custom Python wrapper that loads the netCDF output from WRF-Fire and provides a queryable interface, `env.get_state(x,y,z)`, which returns the interpolated wind and temperature vectors at any given point in the simulation space. This allows for rapid prototyping and testing of control algorithms on hundreds of agents simultaneously.
 
 -   **Execution Loop**: The simulation proceeds in discrete time steps (~20-50ms). In each step:
 
@@ -244,7 +244,7 @@ Rigorous validation will be conducted in a high-fidelity simulation environment 
 
     3.  **Safety Filtering**: The CBF-based QP [^14] solves for a safe control action $`\mathbf{u}_{\text{safe}}`$ using a fast solver like OSQP [^25]. This step acts as a high-priority safety shield, overriding the nominal policy if necessary to prevent thermal boundary violations.
 
-    4.  **Actuation**: The safe velocity commands are sent to the PyBullet drone models, which simulate the low-level flight dynamics.
+    4.  **Actuation**: The safe velocity commands are sent to the MuJoCo drone models, which simulate the low-level flight dynamics.
 
     5.  **Visualization**: The state of the swarm and environment is rendered for analysis. This includes visualizing the drone models, plotting the ground-truth wind field using vector glyphs, and rendering the thermal field as a volumetric slice, using Python libraries like `matplotlib` and `VTK` for advanced 3D visualization.
 
@@ -308,7 +308,7 @@ Deploying an autonomous swarm in a safety-critical environment requires careful 
 [^16]: Fey, Matthias, and Jan E. Lenssen. 2019. “Fast Graph Representation Learning with PyTorch Geometric.” *arXiv* 1903.02428. https://doi.org/10.48550/arXiv.1903.02428  
 [^17]: Gama, Fernando, Ekaterina Tolstaya, and Alejandro Ribeiro. 2021. “Graph Neural Networks for Decentralized Controllers.” *ICASSP 2021 — 2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)*: 5260–5264. https://doi.org/10.1109/ICASSP39728.2021.9414563  
 [^18]: Olfati-Saber, Reza. 2007. “Consensus and Cooperation in Networked Multi-Agent Systems.” *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293  
-[^19]: Coumans, Erwin, and Yunfei Bai. 2016–2021. “PyBullet, a Python Module for Physics Simulation for Games, Robotics and Machine Learning.” http://pybullet.org  
+[^19]: Todorov, Emanuel, Tom Erez, and Yuval Tassa. 2012. “MuJoCo: A Physics Engine for Model-Based Control.” IROS 2012. https://github.com/deepmind/mujoco
 [^20]: Coen, Janice L., et al. 2013. “WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model.” *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1  
 [^21]: Rothermel, Richard C. 1972. “A Mathematical Model for Predicting Fire Spread in Wildland Fuels.” *USDA Forest Service Research Paper INT-115*.  
 [^22]: Moisseeva, Nadejda. 2020. *A Numerical Perspective on Wildfire Plume-Rise Dynamics*. (T). University of British Columbia. https://doi.org/10.14288/1.0395299  
