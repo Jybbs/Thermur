@@ -24,6 +24,7 @@ dependencies    = [
     "torch",
     "torch-geometric",
     "torchrl",
+    "wandb",
     "xarray[netcdf4]",
 ]
 
