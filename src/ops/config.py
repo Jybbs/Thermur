@@ -54,7 +54,6 @@ class AgentConfig(BaseModel, extra="forbid"):
         )
     )
 
-
 class CBFConfig(BaseModel, extra="forbid"):
     """
     Parameters for the Control Barrier Function (CBF) safety filter.
@@ -71,7 +70,6 @@ class CBFConfig(BaseModel, extra="forbid"):
             "controlling convergence to the safe set."
         )
     )
-
 
 class EnvironmentConfig(BaseModel, extra="forbid"):
     """
@@ -99,7 +97,6 @@ class EnvironmentConfig(BaseModel, extra="forbid"):
             "The duration of a single simulation physics step (Δt) in seconds."
         )
     )
-
 
 class ExpertPolicyConfig(BaseModel, extra="forbid"):
     """
@@ -143,7 +140,6 @@ class ExpertPolicyConfig(BaseModel, extra="forbid"):
         )
     )
 
-
 class GNNConfig(BaseModel, extra="forbid"):
     """
     Defines the architecture of the Graph Neural Network (GNN) policy, π_θ.
@@ -172,6 +168,41 @@ class GNNConfig(BaseModel, extra="forbid"):
         )
     )
 
+class LoggingConfig(BaseModel, extra="forbid"):
+    """
+    Configuration for the Loguru logging setup.
+
+    This class controls the verbosity, format, and destinations of log
+    messages generated throughout the application.
+    """
+    colorize: bool = Field(
+        default     = True,
+        description = "Whether to use colorized log output for the console."
+    )
+    diagnose: bool = Field(
+        default     = False,
+        description = "Whether to add exception tracebacks to the log for debugging."
+    )
+    enqueue: bool = Field(
+        default     = True,
+        description = "Whether to make file logging non-blocking and thread-safe."
+    )
+    file_path: str | None = Field(
+        default     = "logs/thermur.log",
+        description = "Path to the log file. If None, file logging is disabled."
+    )
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
+        default     = "INFO",
+        description = "The minimum log level to be processed and displayed."
+    )
+    retention: str = Field(
+        default     = "7 days",
+        description = "Log file retention policy (e.g., '10 days', '1 month')."
+    )
+    rotation: str = Field(
+        default     = "10 MB",
+        description = "Log file rotation policy (e.g., '500 MB', '12:00')."
+    )
 
 class PolicyConfig(BaseModel, extra="forbid"):
     """
@@ -221,7 +252,6 @@ class SwarmConfig(BaseModel, extra="forbid"):
         )
     )
 
-
 class TrainConfig(BaseModel, extra="forbid"):
     """
     Parameters for the training and optimization loop.
@@ -255,7 +285,6 @@ class TrainConfig(BaseModel, extra="forbid"):
         default     = 200_000,
         description = "The total number of environment steps for the training run."
     )
-
 
 class WandbConfig(BaseModel, extra="forbid"):
     """
@@ -313,6 +342,10 @@ AppConfig = store.make_config(
     ),
 
     # Infrastructure & Training Components
+    logging = ZenField(
+        default_factory = LoggingConfig,
+        doc             = "Application-wide logging setup"
+    ),
     train = ZenField(
         default_factory = TrainConfig,
         doc             = "Training loop and optimizer settings"
