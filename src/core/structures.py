@@ -9,10 +9,43 @@ intended to house the primary data structure definitions for the project.
 from __future__           import annotations
 from functools            import partial
 from ops.config           import SwarmConfig
-from tensordict           import TensorDictBase
+from tensordict           import TensorDict, TensorDictBase
 from torch                import cat, float32, int64, Tensor
 from torch_geometric.data import Data
 from torchrl.data         import Composite, TensorSpec
+
+
+class SwarmData(TensorDict):
+    """
+    A custom TensorDict subclass for swarm data.
+
+    This class provides a type-safe, property-based interface for accessing
+    the canonical keys defined in SwarmDataSpec. It eliminates the need for
+    "magic strings" when consuming observation data.
+    """
+    @property
+    def position(self) -> Tensor:
+        return self.get("position")
+
+    @property
+    def velocity(self) -> Tensor:
+        return self.get("velocity")
+
+    @property
+    def temperature(self) -> Tensor:
+        return self.get("temperature")
+
+    @property
+    def temperature_grad(self) -> Tensor:
+        return self.get("temperature_grad")
+
+    @property
+    def battery(self) -> Tensor:
+        return self.get("battery")
+
+    @property
+    def edge_index(self) -> Tensor:
+        return self.get("edge_index")
 
 
 class SwarmDataSpec:

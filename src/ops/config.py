@@ -54,6 +54,7 @@ class AgentConfig(BaseModel, extra="forbid"):
         )
     )
 
+
 class CBFConfig(BaseModel, extra="forbid"):
     """
     Parameters for the Control Barrier Function (CBF) safety filter.
@@ -70,6 +71,7 @@ class CBFConfig(BaseModel, extra="forbid"):
             "controlling convergence to the safe set."
         )
     )
+
 
 class EnvironmentConfig(BaseModel, extra="forbid"):
     """
@@ -97,6 +99,7 @@ class EnvironmentConfig(BaseModel, extra="forbid"):
             "The duration of a single simulation physics step (Δt) in seconds."
         )
     )
+
 
 class ExpertPolicyConfig(BaseModel, extra="forbid"):
     """
@@ -140,6 +143,7 @@ class ExpertPolicyConfig(BaseModel, extra="forbid"):
         )
     )
 
+
 class GNNConfig(BaseModel, extra="forbid"):
     """
     Defines the architecture of the Graph Neural Network (GNN) policy, π_θ.
@@ -167,6 +171,7 @@ class GNNConfig(BaseModel, extra="forbid"):
             "agent's receptive field but also computational cost."
         )
     )
+
 
 class LoggingConfig(BaseModel, extra="forbid"):
     """
@@ -203,6 +208,7 @@ class LoggingConfig(BaseModel, extra="forbid"):
         default     = "10 MB",
         description = "Log file rotation policy (e.g., '500 MB', '12:00')."
     )
+
 
 class PolicyConfig(BaseModel, extra="forbid"):
     """
@@ -260,6 +266,7 @@ class SwarmConfig(BaseModel, extra="forbid"):
         )
     )
 
+
 class TrainConfig(BaseModel, extra="forbid"):
     """
     Parameters for the training and optimization loop.
@@ -293,6 +300,7 @@ class TrainConfig(BaseModel, extra="forbid"):
         default     = 200_000,
         description = "The total number of environment steps for the training run."
     )
+
 
 class WandbConfig(BaseModel, extra="forbid"):
     """
