@@ -18,7 +18,6 @@ Usage:
     setup_logging(cfg.logging)
     logger.info("Logging is configured.")
 """
-
 from config import LoggingConfig
 from loguru import logger
 from sys    import stderr
@@ -38,7 +37,6 @@ def setup_logging(config: LoggingConfig):
         config: A `LoggingConfig` instance containing all necessary settings
             for levels, colors, file paths, rotation, and retention.
     """
-
     logger.add(
         sink     = stderr,
         level    = config.level,

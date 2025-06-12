@@ -5,7 +5,6 @@ Entry-point shim so that:
 
 works even if the console script isn't installed (e.g. in editable mode).
 """
-
 from core.cli import cli
 
 if __name__ == "__main__":
