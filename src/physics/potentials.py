@@ -32,7 +32,7 @@ class ExpertFlockingController:
         Args:
             expert_config : Contains the weights for each potential field.
             agent_config  : Contains agent-specific properties like the maximum
-                survivable temperature required for the thermal potential.
+                            survivable temperature required for the thermal potential.
         """
         self.expert_config = expert_config
         self.agent_config  = agent_config
@@ -90,7 +90,6 @@ class ExpertFlockingController:
 
         Returns:
             A tensor of nominal velocity commands `𝐮_nom` for all agents.
-            Shape: [agent_count, spatial_dims].
         """
         u_coh   = self._compute_cohesion(sd.position, sd.edge_index)
         u_sep   = self._compute_separation(sd.position, sd.edge_index)

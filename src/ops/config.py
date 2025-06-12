@@ -210,22 +210,30 @@ class LoggingConfig(BaseModel, extra="forbid"):
     )
 
 
-class PolicyConfig(BaseModel, extra="forbid"):
+class QPSolverConfig(BaseModel, extra="forbid"):
     """
-    Groups all configurations related to an agent's decision-making process.
+    Parameters for the qpth Quadratic Program (QP) solver.
 
-    This class orchestrates the complete control pipeline, from high-level
-    policy to low-level safety guarantees. The pipeline operates as follows:
-    1. The GNN policy (`gnn`) produces a desired nominal action, 𝐮_nom.
-    2. The Safety Filter, parameterized by `cbf`, solves a QP to transform
-       𝐮_nom into a final, safe action 𝐮*.
-
-    The `expert` configuration is used during the pre-training phase to
-    generate the behavioral cloning dataset.
+    These settings control the behavior and numerical precision of the
+    differentiable QP solver used in the safety filter.
     """
-    cbf    : CBFConfig          = CBFConfig()
-    expert : ExpertPolicyConfig = ExpertPolicyConfig()
-    gnn    : GNNConfig          = GNNConfig()
+    eps: float = Field(
+        default     = 1e-7,
+        gt          = 0,
+        description = "Tolerance for constraint satisfaction in the QP solver."
+    )
+    max_iter: int = Field(
+        default     = 20,
+        gt          = 0,
+        description = "Maximum number of iterations for the QP solver."
+    )
+    on_failure: Literal["error", "use_nominal"] = Field(
+        default     = "error",
+        description = (
+            "Action to take if the QP solver fails. 'error' raises an "
+            "exception, 'use_nominal' falls back to the original unsafe action."
+        )
+    )
 
 
 class SwarmConfig(BaseModel, extra="forbid"):
@@ -323,6 +331,44 @@ class WandbConfig(BaseModel, extra="forbid"):
     )
 
 
+# --------------------------------------------------------------------------
+# Composite Sub-Configurations
+# --------------------------------------------------------------------------
+
+class PolicyConfig(BaseModel, extra="forbid"):
+    """
+    Groups all configurations related to an agent's decision-making process.
+
+    This class orchestrates the complete control pipeline, from high-level
+    policy to low-level safety guarantees. The pipeline operates as follows:
+    1. The GNN policy (`gnn`) produces a desired nominal action, 𝐮_nom.
+    2. The Safety Filter, parameterized by `cbf` and `qp`, solves a QP to 
+       transform 𝐮_nom into a final, safe action 𝐮*.
+
+    The `expert` configuration is used during the pre-training phase to
+    generate the behavioral cloning dataset.
+    """
+    cbf    : CBFConfig          = CBFConfig()
+    expert : ExpertPolicyConfig = ExpertPolicyConfig()
+    gnn    : GNNConfig          = GNNConfig()
+    qp     : QPSolverConfig     = QPSolverConfig()
+
+class SafetyConfig(BaseModel, extra="forbid"):
+    """
+    Groups all parameters required by the `SafetyFilter`.
+
+    This configuration defines the safety boundary, the behavior of the
+    Control Barrier Function (CBF), and the underlying Quadratic Program (QP)
+    solver. It consolidates parameters from multiple domains: agent properties
+    (`agent`), swarm properties (`swarm`), control theory (`cbf`), and
+    numerical optimization (`qp`).
+    """
+    agent : AgentConfig    = AgentConfig()
+    cbf   : CBFConfig      = CBFConfig()
+    qp    : QPSolverConfig = QPSolverConfig()
+    swarm : SwarmConfig    = SwarmConfig()
+
+    
 # --------------------------------------------------------------------------
 # Main Application Configuration
 # --------------------------------------------------------------------------

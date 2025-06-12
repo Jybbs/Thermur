@@ -68,7 +68,7 @@ class SwarmDataSpec:
 
         Args:
             config: A `SwarmConfig` instance containing the agent count and
-                number of spatial dimensions.
+                    number of spatial dimensions.
 
         Returns:
             A `Composite` object defining the action structure.
@@ -92,7 +92,7 @@ class SwarmDataSpec:
 
         Args:
             config: A `SwarmConfig` instance containing the agent count and
-                number of spatial dimensions.
+                    number of spatial dimensions.
 
         Returns:
             A `Composite` object defining the observation structure.

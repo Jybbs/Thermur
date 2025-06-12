@@ -35,7 +35,7 @@ def setup_logging(config: LoggingConfig):
 
     Args:
         config: A `LoggingConfig` instance containing all necessary settings
-            for levels, colors, file paths, rotation, and retention.
+                for levels, colors, file paths, rotation, and retention.
     """
     logger.add(
         sink     = stderr,
