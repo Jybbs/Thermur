@@ -251,6 +251,14 @@ class SwarmConfig(BaseModel, extra="forbid"):
             "The geometric formation of the swarm at the start of the simulation."
         )
     )
+    spatial_dims: int = Field(
+        default     = 3,
+        gt          = 1,
+        description = (
+            "The number of spatial dimensions in the simulation (e.g., 2 for 2D, 3 "
+            "for 3D)."
+        )
+    )
 
 class TrainConfig(BaseModel, extra="forbid"):
     """
