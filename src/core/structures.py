@@ -6,7 +6,6 @@ This module is the definitive source for the shape, dtype, and semantics of
 all data passed between the environment, policy, and replay buffer. It is
 intended to house the primary data structure definitions for the project.
 """
-
 from __future__           import annotations
 from functools            import partial
 from ops.config           import SwarmConfig
@@ -41,7 +40,6 @@ class SwarmDataSpec:
         Returns:
             A `Composite` object defining the action structure.
         """
-        # Directly instantiating the modern Composite class
         return Composite(
             shape  = (config.agent_count,),
             action = TensorSpec(
