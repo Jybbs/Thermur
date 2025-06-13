@@ -1,0 +1,36 @@
+[build-system]
+requires      = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name            = "thermur"
+version         = "0.1.0"
+description     = "Thermally-constrained flocking and color-mapping for wildfire swarms."
+authors         = [{ name = "James Parkington", email = "pongs.acreage.0o@icloud.com" }]
+readme          = "README.md"
+requires-python = "~3.13"
+license         = { text = "MIT" }
+dependencies    = [
+    "gymnasium",
+    "hydra-zen",
+    "loguru",
+    "mujoco",
+    "pydantic",
+    "pydantic-settings",
+    "pyarrow",
+    "pyvista",
+    "qpth",
+    "rich",
+    "torch",
+    "torch-geometric",
+    "torchrl",
+    "typer",
+    "wandb",
+    "xarray[netcdf4]",
+]
+
+[project.scripts]
+thermur = "src.__main__:cli"
+
+[tool.poetry]
+packages = [{ include = "src" }]
