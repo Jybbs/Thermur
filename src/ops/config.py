@@ -73,6 +73,39 @@ class CBFConfig(BaseModel, extra="forbid"):
     )
 
 
+class CheckpointConfig(BaseModel, extra="forbid"):
+    """
+    Parameters for saving model checkpoints during training.
+    """
+    interval: int = Field(
+        default     = 25_000,
+        gt          = 0,
+        description = "The frequency (in frames) at which to save a model checkpoint."
+    )
+    path: str = Field(
+        default     = "checkpoints/",
+        description = "Directory where model checkpoints will be saved."
+    )
+
+
+class CollectorConfig(BaseModel, extra="forbid"):
+    """
+    Parameters for the torchrl SyncDataCollector.
+
+    This configures the data collection loop, which interacts with the
+    environment to gather agent experiences.
+    """
+    frames_per_batch: int = Field(
+        default     = 1024,
+        gt          = 0,
+        description = "Number of frames (agent steps) to collect per batch."
+    )
+    total_frames: int = Field(
+        default     = 200_000,
+        description = "The total number of environment frames to collect for the training run."
+    )
+
+
 class EnvironmentConfig(BaseModel, extra="forbid"):
     """
     Configuration for the simulation environment.
@@ -236,6 +269,30 @@ class QPSolverConfig(BaseModel, extra="forbid"):
     )
 
 
+class ReplayBufferConfig(BaseModel, extra="forbid"):
+    """
+    Parameters for the torchrl TensorDictReplayBuffer.
+
+    This configures the experience replay buffer, which stores transitions
+    collected from the environment for training.
+    """
+    batch_size: int = Field(
+        default     = 256,
+        gt          = 0,
+        description = "The number of agent experiences per training batch."
+    )
+    buffer_size: int = Field(
+        default     = 50_000,
+        gt          = 0,
+        description = "The maximum number of agent experiences to store in the buffer."
+    )
+    prefetch: int = Field(
+        default     = 8,
+        ge          = 0,
+        description = "Number of batches to prefetch for training to hide data loading latency."
+    )
+
+
 class SwarmConfig(BaseModel, extra="forbid"):
     """
     Configures the collective properties and initial state of the agent swarm.
@@ -282,12 +339,16 @@ class TrainConfig(BaseModel, extra="forbid"):
     These settings govern the imitation learning process (behavioral cloning),
     including the optimizer, batching, and total training duration. The loss
     function will minimize the Mean Squared Error (MSE) between the GNN's
-    output and the expert's actions: L_imitation = ||π_θ(s) - 𝐮_nom||².
+    output and the expert's actions: 
+    
+        L_imitation = ||π_θ(s) - 𝐮_nom||².
     """
-    batch_size: int = Field(
-        default     = 256,
-        description = "The number of agent experiences per training batch."
-    )
+    # Child Configs
+    checkpoint : CheckpointConfig   = CheckpointConfig()
+    collector  : CollectorConfig    = CollectorConfig()
+    replay     : ReplayBufferConfig = ReplayBufferConfig()
+
+    # Top-Level Parameters (alphabetical)
     device: str = Field(
         default     = "cpu",
         description = "The compute device ('cpu', 'cuda', 'mps') for training."
@@ -298,15 +359,16 @@ class TrainConfig(BaseModel, extra="forbid"):
     )
     log_interval: int = Field(
         default     = 1000,
-        description = "The frequency (in timesteps) at which to log training metrics."
+        description = "The frequency (in frames) at which to log training metrics."
     )
     seed: int = Field(
         default     = 42,
         description = "The global random seed for ensuring reproducibility."
     )
-    total_timesteps: int = Field(
-        default     = 200_000,
-        description = "The total number of environment steps for the training run."
+    weight_decay: float = Field(
+        default     = 1e-5,
+        ge          = 0,
+        description = "Weight decay (L2 penalty) for the AdamW optimizer."
     )
 
 
@@ -334,24 +396,6 @@ class WandbConfig(BaseModel, extra="forbid"):
 # --------------------------------------------------------------------------
 # Composite Sub-Configurations
 # --------------------------------------------------------------------------
-
-class PolicyConfig(BaseModel, extra="forbid"):
-    """
-    Groups all configurations related to an agent's decision-making process.
-
-    This class orchestrates the complete control pipeline, from high-level
-    policy to low-level safety guarantees. The pipeline operates as follows:
-    1. The GNN policy (`gnn`) produces a desired nominal action, 𝐮_nom.
-    2. The Safety Filter, parameterized by `cbf` and `qp`, solves a QP to 
-       transform 𝐮_nom into a final, safe action 𝐮*.
-
-    The `expert` configuration is used during the pre-training phase to
-    generate the behavioral cloning dataset.
-    """
-    cbf    : CBFConfig          = CBFConfig()
-    expert : ExpertPolicyConfig = ExpertPolicyConfig()
-    gnn    : GNNConfig          = GNNConfig()
-    qp     : QPSolverConfig     = QPSolverConfig()
 
 class SafetyConfig(BaseModel, extra="forbid"):
     """
