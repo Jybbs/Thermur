@@ -11,11 +11,13 @@ Execution Flow:
 4. `typer` parses the command-line arguments (e.g., `train`, `--version`).
 5. `typer` invokes the appropriate function (e.g., `train()` or `version_callback`).
 """
-from ..         import __version__
 from __future__ import annotations
-from rich       import print
-from typer      import Context, Exit, Option, Typer
-from typing     import Optional
+
+from typing  import Optional
+
+from rich    import print
+from thermur import __version__
+from typer   import Context, Exit, Option, Typer
 
 
 # The docstring of this object will be used as the main `--help` text
@@ -55,7 +57,8 @@ def train():
     print("[yellow]CLI forwarding to training script...[/]")
     print("[grey70]Hydra will now take over to manage configuration.[/]")
 
-    raise NotImplementedError("Data interpolation logic to be implemented.")
+    from thermur.scripts import train_main
+    train_main()
 
 @app.callback()
 def main_callback(
