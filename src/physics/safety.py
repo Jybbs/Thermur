@@ -6,12 +6,11 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from __future__      import annotations
-from src.core.structures import SwarmData
-from src.configs       import SafetyConfig
-from qpth.qp         import QPFunction
-from torch           import Tensor
-
+from __future__           import annotations
+from qpth.qp              import QPFunction
+from src.configs.pydantic import SafetyConfig
+from src.core.structures  import SwarmData
+from torch                import Tensor
 import torch
 
 

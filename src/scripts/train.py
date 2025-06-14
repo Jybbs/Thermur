@@ -23,28 +23,29 @@ paradigm built on a `torchrl` foundation:
 5.  Training progress, including loss and environment metrics, is logged to
     the console and to Weights & Biases, with periodic model checkpointing.
 """
-from __future__                  import annotations
-from src.configs.pydantic            import TrainConfig, WandbConfig
-from src.core.structures             import SwarmDataSpec
-from src.envs.thermur                import ThermurEnv
-from hydra_zen                     import zen
-from hydra_zen.third_party.pydantic import pydantic_parser
-from src.models.gnn_policy           import GNNPolicy
-from src.ops.loguru                  import logger
-from tensordict.tensordict       import TensorDictBase
-from torch.optim                 import Optimizer
-from torchrl.collectors          import SyncDataCollector
-from torchrl.data                import TensorDictReplayBuffer
-from torchrl.envs                import EnvBase
-from torchrl.modules             import SafeModule
-from torchrl.objectives          import LossModule
-from tqdm                        import tqdm
-
 import hydra
 import os
 import torch
 import torch.nn as nn
 import wandb
+
+from __future__                     import annotations
+from hydra_zen                      import zen
+from hydra_zen.third_party.pydantic import pydantic_parser
+from src.configs.pydantic           import TrainConfig, WandbConfig
+from src.configs                    import register_configs
+from src.core.structures            import SwarmDataSpec
+from src.envs.thermur               import ThermurEnv
+from src.models.gnn_policy          import GNNPolicy
+from src.ops.loguru                 import logger
+from tensordict.tensordict          import TensorDictBase
+from torch.optim                    import Optimizer
+from torchrl.collectors             import SyncDataCollector
+from torchrl.data                   import TensorDictReplayBuffer
+from torchrl.envs                   import EnvBase
+from torchrl.modules                import SafeModule
+from torchrl.objectives             import LossModule
+from tqdm                           import tqdm
 
 
 class ImitationLoss(LossModule):
@@ -163,8 +164,8 @@ class TrainingOrchestrator:
                 entity  = self.wandb_config.entity,
                 mode    = self.wandb_config.mode,
                 config  = {
-                    "train": self.train_config.model_dump(),
-                    "wandb": self.wandb_config.model_dump(),
+                    "train" : self.train_config.model_dump(),
+                    "wandb" : self.wandb_config.model_dump(),
                 }
             )
             logger.info("Weights & Biases initialized for experiment tracking.")
@@ -247,11 +248,12 @@ class TrainingOrchestrator:
 # --------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # Register configurations
-    from src.configs import register_configs
-    register_configs()
-    
-    @hydra.main(config_path=None, config_name="train", version_base=None)
+
+    @hydra.main(
+        config_path  = None, 
+        config_name  = "train", 
+        version_base = None
+    )
     def main(cfg):
         """
         Main entry point for the training script.
@@ -263,6 +265,9 @@ if __name__ == "__main__":
         Args:
             cfg: The Hydra configuration object.
         """
+        # Register configurations
+        register_configs()
+        
         # Hydra will instantiate the entire object graph
         orchestrator: TrainingOrchestrator = hydra.utils.instantiate(
             cfg.orchestrator,
