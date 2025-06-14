@@ -10,14 +10,14 @@ The architecture is explicitly designed to be configurable via the `GNNConfig`
 Pydantic model and to consume `torch_geometric.data.Data` objects, which are
 generated from the environment's `TensorDict` observations.
 """
+import torch
+
 from __future__           import annotations
-from ..configs            import GNNConfig
+from src.configs.pydantic import GNNConfig
 from torch                import Tensor
+from torch.nn             import GRUCell, Linear, Module, ReLU, SiLU, Tanh
 from torch_geometric.data import Data
 from torch_geometric.nn   import GCNConv
-from torch.nn             import GRUCell, Linear, Module, ReLU, SiLU, Tanh
-
-import torch
 
 
 class GNNPolicy(Module):
