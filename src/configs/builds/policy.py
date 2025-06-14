@@ -5,9 +5,9 @@ This module defines configuration builders for both the expert flocking
 controller and the GNN policy that learns from it. These builders leverage
 Pydantic validation through the zen() wrapper.
 """
-from configs.pydantic import AgentConfig, ExpertPolicyConfig, GNNConfig
-from hydra_zen        import builds, zen
-from thermur          import ExpertFlockingController, GNNPolicy
+from configs    import AgentConfig, ExpertPolicyConfig, GNNConfig
+from hydra_zen  import builds, zen
+from thermur    import ExpertFlockingController, GNNPolicy
 
 
 # Expert controller that generates demonstration data

@@ -12,7 +12,6 @@ __all__ = [
     
     # From pydantic (using *)
     "AgentConfig",
-    "AppConfig",
     "CBFConfig",
     "CheckpointConfig",
     "CollectorConfig",

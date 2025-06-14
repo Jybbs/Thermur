@@ -5,9 +5,9 @@ This module defines the configuration builder for the SafetyFilter, which
 ensures all control actions respect thermal safety constraints through
 real-time quadratic programming.
 """
-from configs.pydantic import SafetyConfig
-from hydra_zen        import builds, zen
-from thermur          import SafetyFilter
+from configs    import SafetyConfig
+from hydra_zen  import builds, zen
+from thermur    import SafetyFilter
 
 
 build_safety_filter = builds(
