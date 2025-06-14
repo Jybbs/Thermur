@@ -12,16 +12,14 @@ rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
 from __future__            import annotations
-from ..core.geometry       import compute_edge_index
-from ..core.structures     import SwarmData, SwarmDataSpec
-from ..ops.data            import EnvironmentDataSource
-from ..ops.seed            import set_seed
+from src.configs.pydantic  import AppConfig
+from src.core.geometry     import compute_edge_index
+from src.core.structures   import SwarmData, SwarmDataSpec
+from src.ops.data          import EnvironmentDataSource
+from src.ops.seed          import set_seed
 from tensordict.tensordict import TensorDictBase
 from torchrl.envs          import EnvBase
 from typing                import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ..configs import AppConfig
 
 
 class ThermurEnv(EnvBase):
