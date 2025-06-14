@@ -3,7 +3,6 @@ Utilities for ensuring reproducible results via random seeding.
 """
 from loguru import logger
 from numpy  import random
-from random import seed
 from torch  import backends, cuda, manual_seed
 
 
@@ -17,7 +16,6 @@ def set_seed(seed: int):
     Args:
         seed: The integer seed to use.
     """
-    seed(seed)
     random.seed(seed)
     manual_seed(seed)
     

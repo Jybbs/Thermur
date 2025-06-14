@@ -11,8 +11,6 @@ Execution Flow:
 4. `typer` parses the command-line arguments (e.g., `train`, `--version`).
 5. `typer` invokes the appropriate function (e.g., `train()` or `version_callback`).
 """
-from __future__ import annotations
-
 from rich    import print
 from thermur import __version__
 from typer   import Context, Exit, Option, Typer

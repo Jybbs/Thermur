@@ -5,8 +5,7 @@ This script demonstrates the clean entry point pattern with Hydra-zen,
 directly instantiating only the components needed for training without
 an orchestrator intermediary.
 """
-from configs                        import register_imitation_training_config
-from configs.entry_points           import imitation_train_config
+from configs.entry_points           import imitation_train_config, register_imitation_training_config
 from hydra_zen                      import instantiate, zen
 from hydra_zen.third_party.pydantic import pydantic_parser
 from thermur                        import configure_loguru, set_seed, train_imitation_learning
