@@ -13,11 +13,10 @@ Execution Flow:
 """
 from __future__ import annotations
 
-from typing  import Optional
-
 from rich    import print
 from thermur import __version__
 from typer   import Context, Exit, Option, Typer
+from typing  import Optional
 
 
 # The docstring of this object will be used as the main `--help` text

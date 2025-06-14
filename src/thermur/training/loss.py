@@ -4,8 +4,7 @@ Loss functions for imitation learning.
 This module provides loss functions used in training policies
 via behavioral cloning.
 """
-import torch
-from torch        import nn
+from torch.nn           import functional, Module
 from torchrl.objectives import LossModule
 
 
@@ -17,7 +16,7 @@ class ImitationLoss(LossModule):
     and the expert's demonstrated actions.
     """
     
-    def __init__(self, policy_network: nn.Module):
+    def __init__(self, policy_network: Module):
         """
         Initialize the imitation loss module.
         
@@ -45,9 +44,9 @@ class ImitationLoss(LossModule):
         expert_actions = tensordict["action"]
         
         # Compute MSE loss
-        loss = torch.nn.functional.mse_loss(predicted_actions, expert_actions)
+        loss = functional.mse_loss(predicted_actions, expert_actions)
         
         return {
             "loss": loss,
-            "loss_imitation": loss,  # For logging
+            "loss_imitation": loss,
         }
