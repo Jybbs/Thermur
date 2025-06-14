@@ -5,7 +5,7 @@ This module uses hydra-zen's `builds` function to create instantiable
 configurations for all major components. These configurations serve as
 "recipes" that Hydra will use to automatically instantiate objects at runtime.
 """
-from hydra_zen                             import builds, make_config, store
+from hydra_zen                             import builds, make_config, store, ZenField
 from hydra_zen.third_party.pydantic        import pydantic_parser
 from omegaconf                             import SI
 from torch.optim                           import AdamW
@@ -13,6 +13,7 @@ from torchrl.collectors                    import SyncDataCollector
 from torchrl.data                          import TensorDictReplayBuffer
 from torchrl.envs                          import EnvBase
 from torchrl.modules                       import SafeModule
+from typing                                import Type
 
 # Import our Pydantic models
 from .pydantic import (
@@ -65,12 +66,12 @@ def calculate_gnn_input_dim(env: EnvBase) -> int:
 # --------------------------------------------------------------------------
 
 def create_collector(
-    env,              # EnvBase
-    policy,           # SafeModule
-    total_frames,     # int
-    frames_per_batch, # int
-    device,           # str
-):  # -> SyncDataCollector
+    env: EnvBase,
+    policy: SafeModule,
+    total_frames: int,
+    frames_per_batch: int,
+    device: str,
+) -> SyncDataCollector:
     """
     Factory function to create the data collector.
 
@@ -96,10 +97,10 @@ def create_collector(
 
 
 def create_expert_policy(
-    controller,  # ExpertFlockingController
-    env,         # EnvBase
-    device,      # str
-):  # -> SafeModule
+    controller: Type,  # ExpertFlockingController
+    env: EnvBase,
+    device: str,
+) -> SafeModule:
     """
     Factory function to create the expert policy SafeModule.
 
@@ -122,11 +123,11 @@ def create_expert_policy(
 
 
 def create_gnn_policy(
-    gnn_config,    # GNNConfig
-    swarm_config,  # SwarmConfig
-    env,           # EnvBase
-    device,        # str
-):  # -> GNNPolicy
+    gnn_config: GNNConfig,
+    swarm_config: SwarmConfig,
+    env: EnvBase,
+    device: str,
+) -> "GNNPolicy":
     """
     Factory function to create the GNN policy.
 
@@ -152,10 +153,10 @@ def create_gnn_policy(
 
 
 def create_optimizer(
-    loss_module,    # ImitationLoss
-    learning_rate,  # float
-    weight_decay,   # float
-):  # -> AdamW
+    loss_module: "ImitationLoss",
+    learning_rate: float,
+    weight_decay: float,
+) -> AdamW:
     """
     Factory function to create the AdamW optimizer.
 
@@ -175,10 +176,10 @@ def create_optimizer(
 
 
 def create_replay_buffer(
-    batch_size,   # int
-    buffer_size,  # int
-    prefetch,     # int
-):  # -> TensorDictReplayBuffer
+    batch_size: int,
+    buffer_size: int,
+    prefetch: int,
+) -> TensorDictReplayBuffer:
     """
     Factory function to create the replay buffer.
 
