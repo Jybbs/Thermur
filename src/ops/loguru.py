@@ -18,9 +18,9 @@ Usage:
     setup_logging(cfg.config.logging)
     logger.info("Logging is configured.")
 """
-from ..configs import LoggingConfig
-from loguru import logger
-from sys    import stderr
+from loguru               import logger
+from src.configs.pydantic import LoggingConfig
+from sys                  import stderr
 
 logger.remove()
 logger = logger
