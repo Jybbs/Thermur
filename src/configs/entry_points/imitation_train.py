@@ -7,17 +7,17 @@ configuration for the training script.
 """
 from configs.builds import *
 from configs.models import *
-from hydra_zen      import make_config, store, zen
+from hydra_zen      import builds, make_config, store
 
 
 imitation_train_config = make_config(
 
-    # Training hyperparameters wrapped with zen
-    hyperparameters = zen(HyperparameterModel),
-    collector       = zen(CollectorModel),
-    replay_buffer   = zen(ReplayBufferModel),
-    logging         = zen(LoggingModel),
-    wandb           = zen(WandbModel),
+    # Training hyperparameters as builds
+    hyperparameters = builds(HyperparameterModel),
+    collector       = builds(CollectorModel),
+    replay_buffer   = builds(ReplayBufferModel),
+    logging         = builds(LoggingModel),
+    wandb           = builds(WandbModel),
     
     # Component builders
     environment       = build_environment,
@@ -36,11 +36,14 @@ def register_imitation_training_config():
     """
     Register the imitation training configuration with Hydra's ConfigStore.
     """
-    store(
+    # Use a store that allows overwriting
+    from hydra_zen import ZenStore
+    
+    zen_store = ZenStore(overwrite_ok=True)
+    zen_store(
         imitation_train_config,
         name    = "imitation_train",
         group   = "config",
         package = "_global_"
     )
-    
-    store.add_to_hydra_store(overwrite_ok=True)
+    zen_store.add_to_hydra_store()

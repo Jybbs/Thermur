@@ -10,7 +10,6 @@ from hydra_zen      import builds, zen
 from thermur        import ExpertFlockingController, GNNPolicy
 
 
-# Expert controller that generates demonstration data
 build_expert_controller = builds(
     ExpertFlockingController,
     expert_config           = zen(ExpertPolicyModel),
@@ -23,7 +22,6 @@ build_expert_controller = builds(
 )
 
 
-# GNN policy that learns from expert demonstrations
 build_policy = builds(
     GNNPolicy,
     config                  = zen(GNNModel),

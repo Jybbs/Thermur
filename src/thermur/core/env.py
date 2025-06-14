@@ -12,9 +12,11 @@ rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
 from tensordict   import TensorDictBase
-from thermur.ops  import EnvironmentDataSource, set_seed
-from thermur.core import SwarmDataSpec, compute_edge_index
 from torchrl.envs import EnvBase
+
+from ..ops        import EnvironmentDataSource, set_seed
+from .structures  import SwarmDataSpec
+from .geometry    import compute_edge_index
 
 
 class ThermurEnv(EnvBase):
