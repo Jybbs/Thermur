@@ -2,7 +2,7 @@
 Utilities for ensuring reproducible results via random seeding.
 """
 from __future__ import annotations
-from ops.loguru import logger
+from .loguru import logger
 
 import numpy as np
 import random

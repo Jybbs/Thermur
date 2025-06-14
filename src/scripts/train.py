@@ -1,12 +1,9 @@
-# File: src/training/orchestrator.py
-
 """
 Orchestrates the imitation learning training process for the Thermur project.
 
 This module provides the `TrainingOrchestrator` class, which encapsulates the
 entire training pipeline using the `torchrl` library. It is responsible for
-initializing all necessary components—environment, policies, data collectors,
-and replay buffers—and executing the main training loop.
+executing the main training loop with pre-instantiated components.
 
 The orchestration follows a standard imitation learning (Behavioral Cloning)
 paradigm built on a `torchrl` foundation:
@@ -26,21 +23,24 @@ paradigm built on a `torchrl` foundation:
 5.  Training progress, including loss and environment metrics, is logged to
     the console and to Weights & Biases, with periodic model checkpointing.
 """
-from __future__            import annotations
-from core.structures       import SwarmDataSpec
-from envs.thermur          import ThermurEnv
-from models.gnn_policy     import GNNPolicy
-from ops.config            import AppConfig
-from ops.loguru            import logger
-from physics.potentials    import ExpertFlockingController
-from tensordict.tensordict import TensorDictBase
-from torch.optim           import AdamW
-from torchrl.collectors    import SyncDataCollector
-from torchrl.data          import TensorDictReplayBuffer
-from torchrl.modules       import SafeModule
-from torchrl.objectives    import LossModule
-from tqdm                  import tqdm
+from __future__                  import annotations
+from ..configs.pydantic            import TrainConfig, WandbConfig
+from ..core.structures             import SwarmDataSpec
+from ..envs.thermur                import ThermurEnv
+from hydra_zen                     import zen
+from hydra_zen.third_party.pydantic import pydantic_parser
+from ..models.gnn_policy           import GNNPolicy
+from ..ops.loguru                  import logger
+from tensordict.tensordict       import TensorDictBase
+from torch.optim                 import Optimizer
+from torchrl.collectors          import SyncDataCollector
+from torchrl.data                import TensorDictReplayBuffer
+from torchrl.envs                import EnvBase
+from torchrl.modules             import SafeModule
+from torchrl.objectives          import LossModule
+from tqdm                        import tqdm
 
+import hydra
 import os
 import torch
 import torch.nn as nn
@@ -100,31 +100,53 @@ class ImitationLoss(LossModule):
 
 class TrainingOrchestrator:
     """
-    Manages the setup and execution of the imitation learning pipeline.
+    Manages the execution of the imitation learning pipeline.
 
-    This class serves as the main driver for a training run. It handles the
-    initialization of all components based on a single configuration object,
-    and then executes the main training loop, orchestrating data collection,
-    model optimization, progress logging, and checkpointing.
+    This class serves as the main driver for a training run. It receives
+    pre-instantiated components from Hydra and executes the main training loop,
+    orchestrating data collection, model optimization, progress logging, and
+    checkpointing.
     """
 
-    def __init__(self, config: AppConfig):
+    def __init__(
+        self,
+        env           : EnvBase,
+        expert_policy : SafeModule,
+        policy        : GNNPolicy,
+        collector     : SyncDataCollector,
+        replay_buffer : TensorDictReplayBuffer,
+        loss_module   : ImitationLoss,
+        optimizer     : Optimizer,
+        train_config  : TrainConfig,
+        wandb_config  : WandbConfig,
+    ):
         """
-        Initializes the orchestrator and all its components.
+        Initializes the orchestrator with pre-instantiated components.
 
         Args:
-            config: The root `AppConfig` object, serving as the single source
-                    of truth for all hyperparameters.
+            env           : The instantiated environment.
+            expert_policy : The expert policy SafeModule.
+            policy        : The GNN policy to be trained.
+            collector     : The data collector.
+            replay_buffer : The replay buffer for storing experiences.
+            loss_module   : The imitation loss module.
+            optimizer     : The optimizer for training.
+            train_config  : Training configuration parameters.
+            wandb_config  : Weights & Biases configuration.
         """
-        self.config = config
-        self.device = torch.device(config.train.device)
+        self.env           = env
+        self.expert_policy = expert_policy
+        self.policy        = policy
+        self.collector     = collector
+        self.replay_buffer = replay_buffer
+        self.loss_module   = loss_module
+        self.optimizer     = optimizer
+        self.train_config  = train_config
+        self.wandb_config  = wandb_config
+        
+        self.device = torch.device(train_config.device)
 
         self._setup_logging()
-        self._setup_environment()
-        self._setup_policies()
-        self._setup_data_pipeline()
-        self._setup_optimizer()
-
         logger.info("Training orchestrator initialized successfully.")
 
     def _setup_logging(self):
@@ -135,82 +157,17 @@ class TrainingOrchestrator:
         settings. If the mode is not 'disabled', it will start a new run,
         logging the entire application configuration for reproducibility.
         """
-        if self.config.wandb.mode != "disabled":
+        if self.wandb_config.mode != "disabled":
             wandb.init(
-                project = self.config.wandb.project,
-                entity  = self.config.wandb.entity,
-                mode    = self.config.wandb.mode,
-                config  = self.config.model_dump()
+                project = self.wandb_config.project,
+                entity  = self.wandb_config.entity,
+                mode    = self.wandb_config.mode,
+                config  = {
+                    "train": self.train_config.model_dump(),
+                    "wandb": self.wandb_config.model_dump(),
+                }
             )
             logger.info("Weights & Biases initialized for experiment tracking.")
-
-    def _setup_environment(self):
-        """
-        Initializes the simulation environment.
-        """
-        self.env = ThermurEnv(self.config)
-
-    def _setup_policies(self):
-        """
-        Initializes the expert and learner (GNN) policies.
-
-        The expert policy is a handcrafted controller used to generate optimal
-        trajectory data. The learner policy is a Graph Neural Network that will
-        be trained to imitate this expert.
-        """
-        # --- Expert Policy ---
-        expert_controller = ExpertFlockingController(
-            expert_config = self.config.policy.expert,
-            agent_config  = self.config.agent
-        )
-
-        self.expert_policy = SafeModule(
-            module   = expert_controller.compute_nominal_action,
-            in_keys  = ["observation"],
-            out_keys = ["action_expert"],
-            spec     = self.env.action_spec,
-        ).to(self.device)
-
-        # --- Learner GNN Policy ---
-        self.policy = GNNPolicy(
-            in_dim  = self._calculate_gnn_input_dim(),
-            out_dim = self.config.swarm.spatial_dims,
-            config  = self.config.policy.gnn
-        ).to(self.device)
-
-    def _setup_data_pipeline(self):
-        """
-        Initializes the `torchrl` data collector and replay buffer.
-
-        The collector is responsible for interacting with the environment using
-        the expert policy to gather experience. The replay buffer stores this
-        experience efficiently for sampling during training updates.
-        """
-        self.collector = SyncDataCollector(
-            create_env_fn    = self.env,
-            policy           = self.expert_policy,
-            total_frames     = self.config.train.collector.total_frames,
-            frames_per_batch = self.config.train.collector.frames_per_batch,
-            device           = self.device,
-        )
-
-        self.replay_buffer = TensorDictReplayBuffer(
-            storage     = "memory",
-            batch_size  = self.config.train.replay.batch_size,
-            buffer_size = self.config.train.replay.buffer_size,
-            prefetch    = self.config.train.replay.prefetch,
-        )
-
-    def _setup_optimizer(self):
-        """
-        Initializes the loss module and the AdamW optimizer.
-        """
-        self.loss_module = ImitationLoss(self.policy)
-        self.optimizer = AdamW(
-            self.loss_module.parameters(),
-            lr           = self.config.train.learning_rate,
-            weight_decay = self.config.train.weight_decay,
-        )
 
     def run(self):
         """
@@ -223,8 +180,8 @@ class TrainingOrchestrator:
         periodically to the console and `wandb`, and checkpoints are saved at
         regular intervals.
         """
-        logger.info(f"Starting training for {self.config.train.collector.total_frames} frames.")
-        pbar = tqdm(total=self.config.train.collector.total_frames)
+        logger.info(f"Starting training for {self.train_config.collector.total_frames} frames.")
+        pbar = tqdm(total=self.train_config.collector.total_frames)
 
         total_frames = 0
         for i, data in enumerate(self.collector):
@@ -235,7 +192,7 @@ class TrainingOrchestrator:
 
             pbar.update(current_frames)
 
-            if total_frames > self.config.train.replay.batch_size:
+            if total_frames > self.train_config.replay.batch_size:
                 batch     = self.replay_buffer.sample().to(self.device)
                 loss_dict = self.loss_module(batch)
                 loss      = loss_dict["loss"]
@@ -243,12 +200,12 @@ class TrainingOrchestrator:
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-                if i % self.config.train.log_interval == 0:
-                    if self.config.wandb.mode != "disabled":
+                if i % self.train_config.log_interval == 0:
+                    if self.wandb_config.mode != "disabled":
                         wandb.log({"train/loss": loss.item()}, step=total_frames)
                     pbar.set_description(f"Loss: {loss.item():.4f}")
 
-                if i % self.config.train.checkpoint.interval == 0 and i > 0:
+                if i % self.train_config.checkpoint.interval == 0 and i > 0:
                     self._save_checkpoint(total_frames)
 
         self.collector.shutdown()
@@ -268,7 +225,7 @@ class TrainingOrchestrator:
             frame_count : The current number of training frames, used for naming.
             is_final    : If True, saves the checkpoint with a 'final' suffix.
         """
-        path = self.config.train.checkpoint.path
+        path = self.train_config.checkpoint.path
         os.makedirs(path, exist_ok=True)
         
         name      = f"final.pt" if is_final else f"checkpoint_{frame_count}.pt"
@@ -284,27 +241,37 @@ class TrainingOrchestrator:
             save_path)
         logger.info(f"Checkpoint saved to {save_path}")
 
-    def _calculate_gnn_input_dim(self) -> int:
+
+# --------------------------------------------------------------------------
+# Hydra Entry Point
+# --------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    # Register configurations
+    from ..configs.app import register_configs
+    register_configs()
+    
+    @hydra.main(config_path=None, config_name="train", version_base=None)
+    @zen(instantiation_wrapper=pydantic_parser)
+    def main(cfg):
         """
-        Calculates the GNN's input feature dimension dynamically.
+        Main entry point for the training script.
 
-        This method introspects the environment's observation specification to
-        determine the total number of features for a single agent. This ensures
-        the GNN architecture adapts automatically if the observation space
-        changes, making the pipeline more robust.
+        This function is decorated with @hydra.main, which enables Hydra to manage
+        the configuration and instantiation of all components. The orchestrator
+        and all its dependencies are built automatically based on the configuration.
 
-        Returns:
-            The integer size of the concatenated node feature vector.
+        Args:
+            cfg: The Hydra configuration object.
         """
-        spec = self.env.observation_spec
-
-        # These are the keys that will be concatenated into the 'x' feature matrix
-        feature_keys = [
-            "position", "velocity", "temperature", "temperature_grad", "battery"
-        ]
-        
-        total_dims = sum(
-            spec[key].shape[-1] for key in feature_keys if key in spec.keys()
+        # Hydra will instantiate the entire object graph
+        orchestrator: TrainingOrchestrator = hydra.utils.instantiate(
+            cfg.orchestrator,
+            _target_wrapper_ = pydantic_parser,
         )
         
-        return total_dims
+        # Run the training
+        orchestrator.run()
+    
+    # Run main
+    main()

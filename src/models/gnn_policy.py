@@ -11,7 +11,7 @@ Pydantic model and to consume `torch_geometric.data.Data` objects, which are
 generated from the environment's `TensorDict` observations.
 """
 from __future__           import annotations
-from ops.config           import GNNConfig
+from ..configs            import GNNConfig
 from torch                import Tensor
 from torch_geometric.data import Data
 from torch_geometric.nn   import GCNConv

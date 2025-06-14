@@ -7,8 +7,8 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
 from __future__      import annotations
-from core.structures import SwarmData
-from ops.config      import SafetyConfig
+from ..core.structures import SwarmData
+from ..configs       import SafetyConfig
 from qpth.qp         import QPFunction
 from torch           import Tensor
 

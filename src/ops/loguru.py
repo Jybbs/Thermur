@@ -10,15 +10,15 @@ At import time, Loguru's default handler is removed to prevent any logging
 before the application is properly configured.
 
 Usage:
-    from thermur.ops.config import AppConfig
+    from thermur.configs import AppConfig
     from thermur.ops.loguru import setup_logging, logger
 
     # At the start of your application (e.g., in __main__):
     cfg = load_config_with_hydra()
-    setup_logging(cfg.logging)
+    setup_logging(cfg.config.logging)
     logger.info("Logging is configured.")
 """
-from config import LoggingConfig
+from ..configs import LoggingConfig
 from loguru import logger
 from sys    import stderr
 
