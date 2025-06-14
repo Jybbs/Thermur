@@ -11,19 +11,16 @@ The execution flow is as follows:
 4. `typer` parses the command-line arguments (e.g., `train`, `--version`).
 5. `typer` invokes the appropriate function (e.g., `train()` or `version_callback`).
 """
-from rich    import print
-from typer   import Context, Exit, Option, Typer
-from typing  import Optional
-
-# Import version from parent package
-from .. import __version__
+from ..     import __version__
+from rich   import print
+from typer  import Context, Exit, Option, Typer
+from typing import Optional
 
 
-# The docstring of this object will be used as the main `--help` text
 app = Typer(
     name           = "thermur",
     help           = "A toolkit for simulating thermally-constrained drone swarms.",
-    add_completion = False
+    add_completion = False,
 )
 
 def version_callback(value: bool):
@@ -41,66 +38,79 @@ def version_callback(value: bool):
         print(f"[bold green]Thermur[/] version: {__version__}")
         raise Exit()
 
+
 @app.command()
 def train():
     """
     Train the GNN policy using imitation learning.
 
-    This command initializes the training configuration and runs the imitation
-    learning training loop. Configuration is managed by Hydra, allowing for
-    easy overrides via command line arguments.
-    
+    This command initializes and runs the main training loop. It uses Hydra for
+    configuration management, allowing for easy overrides of any parameter via
+    the command line.
+
+    The necessary libraries for training (Hydra, PyTorch, etc.) are imported
+    within this function ('lazily') to keep the main CLI startup time fast
+    for simple commands like `--version`.
+
     Example:
         thermur train
         thermur train hyperparameters.learning_rate=0.001
         thermur train +experiment=large_swarm
     """
-    # Lazy imports to keep CLI fast
-    from configs import register_configs
-    from configs.train import train_config
-    from hydra_zen import zen
-    
-    # Register all configurations with Hydra
+    from configs                        import register_configs, train_config
+    from hydra_zen                      import instantiate, zen
+    from hydra_zen.third_party.pydantic import pydantic_parser
+    from thermur                        import (
+        configure_loguru, 
+        set_seed, 
+        train_imitation_learning
+    )
+
     register_configs()
-    
-    # Use hydra-zen to run the training with proper config management
+
     @zen(train_config).hydra_main(
         config_name  = "train",
         config_path  = None,
         version_base = None,
     )
     def hydra_train(cfg):
-        """Inner function that receives the Hydra config."""
-        from hydra_zen import instantiate
-        from hydra_zen.third_party.pydantic import pydantic_parser
-        from thermur import configure_loguru, set_seed, train_imitation_learning
-        
+        """
+        The core training function, wrapped by Hydra.
+
+        This function is the main entry point for the training process after
+        Hydra has parsed and composed the configuration. It receives the final
+        configuration object (`cfg`) and proceeds to instantiate all necessary
+        components—from the environment and policies to the optimizer and data
+        collectors—before launching the training loop.
+
+        Args:
+            cfg: The fully-resolved Hydra configuration object, built from
+                 the structures defined in the `configs` modules.
+        """
         print("[bold green]Starting Thermur imitation learning training[/]")
         
-        # Setup logging and seed
         configure_loguru(instantiate(cfg.logging, _parser=pydantic_parser))
         set_seed(instantiate(cfg.hyperparameters, _parser=pydantic_parser).seed)
-        
-        # Instantiate all components
+
         print("[yellow]Instantiating components...[/]")
         components = {
-            'environment': instantiate(cfg.environment, _parser=pydantic_parser),
-            'expert_policy': instantiate(cfg.expert_policy, _parser=pydantic_parser),
-            'policy': instantiate(cfg.policy, _parser=pydantic_parser),
-            'data_collector': instantiate(cfg.data_collector, _parser=pydantic_parser),
-            'experience_buffer': instantiate(cfg.experience_buffer, _parser=pydantic_parser),
-            'loss_function': instantiate(cfg.loss_function, _parser=pydantic_parser),
-            'optimizer': instantiate(cfg.optimizer, _parser=pydantic_parser),
-            'hyperparameters': instantiate(cfg.hyperparameters, _parser=pydantic_parser),
-            'wandb_config': instantiate(cfg.wandb, _parser=pydantic_parser),
+            "environment"       : instantiate(cfg.environment,       _parser=pydantic_parser),
+            "expert_policy"     : instantiate(cfg.expert_policy,     _parser=pydantic_parser),
+            "policy"            : instantiate(cfg.policy,            _parser=pydantic_parser),
+            "data_collector"    : instantiate(cfg.data_collector,    _parser=pydantic_parser),
+            "experience_buffer" : instantiate(cfg.experience_buffer, _parser=pydantic_parser),
+            "loss_function"     : instantiate(cfg.loss_function,     _parser=pydantic_parser),
+            "optimizer"         : instantiate(cfg.optimizer,         _parser=pydantic_parser),
+            "hyperparameters"   : instantiate(cfg.hyperparameters,   _parser=pydantic_parser),
+            "wandb_config"      : instantiate(cfg.wandb,             _parser=pydantic_parser),
         }
         
-        # Run training
+        # Launch the main imitation learning training loop with all components.
         print("[green]Starting training loop...[/]")
         train_imitation_learning(**components)
-    
-    # Execute the hydra-wrapped training
+
     hydra_train()
+
 
 @app.callback()
 def main_callback(
@@ -122,12 +132,3 @@ def main_callback(
     `--version` that should apply to the application as a whole.
     """
     pass
-
-
-def cli_main():
-    """
-    Main CLI entry point function.
-    
-    This function is called from __main__.py and exported for convenience.
-    """
-    app()
