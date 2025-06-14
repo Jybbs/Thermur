@@ -11,9 +11,9 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from configs      import EnvironmentConfig
 from tensordict   import TensorDictBase
-from thermur      import EnvironmentDataSource, SwarmDataSpec, compute_edge_index, set_seed
+from thermur.ops  import EnvironmentDataSource, set_seed
+from thermur.core import SwarmDataSpec, compute_edge_index
 from torchrl.envs import EnvBase
 
 
@@ -31,18 +31,18 @@ class ThermurEnv(EnvBase):
     data, and the communication graph topology.
 
     Attributes:
-        config      : The root `AppConfig` object for the current run.
+        config       : The environment configuration containing simulation params.
         data_source  : An `EnvironmentDataSource` instance for querying thermal data.
         physics_model: A handle to the underlying MuJoCo physics simulation.
     """
 
-    def __init__(self, config: EnvironmentConfig):
+    def __init__(self, config):
         """
         Initializes the Thermur environment.
 
         Args:
-            config: An `EnvironmentConfig` instance containing environment-specific
-                    configuration parameters.
+            config: An environment configuration instance (from hydra instantiation)
+                    containing simulation parameters.
         """
         super().__init__(device="cpu")  # Device will be set by torchrl
         self.config        = config

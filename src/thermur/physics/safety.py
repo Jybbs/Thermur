@@ -8,10 +8,9 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 """
 import torch
 
-from configs import SafetyConfig
-from qpth.qp import QPFunction
-from thermur import SwarmData
-from torch   import Tensor
+from qpth.qp      import QPFunction
+from thermur.core import SwarmData
+from torch        import Tensor
 
 
 class SafetyFilter:
@@ -26,7 +25,7 @@ class SafetyFilter:
     pre-defined safe set `C = {x | h(x) >= 0}`.
     """
 
-    def __init__(self, config: SafetyConfig):
+    def __init__(self, config):
         """
         Initializes the safety filter with its required configurations.
 
@@ -34,12 +33,12 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            config: A composite config containing all necessary sub-configs
-                    for the agent, swarm, CBF, and QP solver.
+            config: A safety configuration instance (from hydra instantiation)
+                   containing agent, swarm, CBF, and QP solver parameters.
         """
         self.config = config
         self.Q = torch.eye(
-            out    = self.config.swarm.spatial_dims,
+            n      = self.config.swarm.spatial_dims,
             dtype  = torch.float32,
             device = "cpu",
         )

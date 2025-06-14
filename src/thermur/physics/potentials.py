@@ -6,9 +6,8 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from configs import AgentConfig, ExpertPolicyConfig
-from thermur import SwarmData
-from torch   import Tensor
+from thermur.core import SwarmData
+from torch        import Tensor
 
 
 class ExpertFlockingController:
@@ -17,21 +16,22 @@ class ExpertFlockingController:
 
     This controller computes a desired velocity for each agent by summing forces
     derived from the negative gradient of several potential functions.
-    Its behavior is parameterized by a configuration object.
+    Its behavior is parameterized by configuration objects.
     """
 
     def __init__(
         self, 
-        expert_config : ExpertPolicyConfig, 
-        agent_config  : AgentConfig
+        expert_config,
+        agent_config
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            expert_config : Contains the weights for each potential field.
-            agent_config  : Contains agent-specific properties like the maximum
-                            survivable temperature required for the thermal potential.
+            expert_config: Contains the weights for each potential field
+                          (instantiated from ExpertPolicyModel).
+            agent_config : Contains agent-specific properties like the maximum
+                          survivable temperature (instantiated from AgentModel).
         """
         self.expert_config = expert_config
         self.agent_config  = agent_config

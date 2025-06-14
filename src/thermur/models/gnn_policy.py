@@ -6,11 +6,10 @@ the agent's brain. The policy, denoted π_θ, is a GNN designed to process the
 swarm's state, which is naturally represented as a dynamic graph. It learns to
 output a nominal velocity command, 𝐮_nom, for each agent.
 
-The architecture is explicitly designed to be configurable via the `GNNConfig`
-Pydantic model and to consume `torch_geometric.data.Data` objects, which are
-generated from the environment's `TensorDict` observations.
+The architecture is explicitly designed to be configurable and to consume
+`torch_geometric.data.Data` objects, which are generated from the environment's
+`TensorDict` observations.
 """
-from configs              import GNNConfig
 from torch                import Tensor
 from torch.nn             import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
 from torch_geometric.data import Data
@@ -39,23 +38,22 @@ class GNNPolicy(Module):
     """
     def __init__(
         self, 
-        in_dim  : int, 
-        out_dim : int, 
-        config  : GNNConfig
+        config
     ):
         """
         Initializes the GNN policy network.
 
         Args:
-            in_dim  : The dimensionality of the input node features (`x` in the
-                      `Data` object), derived from the concatenated state vector.
-            out_dim : The dimensionality of the output action, corresponding to
-                      the number of spatial dimensions.
-            config  : A `GNNConfig` instance containing architectural hyperparameters
-                      like hidden dimension, number of layers, and activation function.
+            config: A GNN configuration instance (from hydra instantiation)
+                   containing architectural hyperparameters like hidden dimension,
+                   number of layers, activation function, and I/O dimensions.
         """
         super().__init__()
         self.config = config
+        
+        # Extract dimensions from config
+        in_dim  = config.input_dim
+        out_dim = config.output_dim
 
         # Maps raw node features [𝐩, 𝐯, T, ∇T, E] to the hidden dimension.
         self.encoder = Linear(in_dim, config.hidden_dim)

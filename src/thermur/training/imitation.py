@@ -57,8 +57,8 @@ def train_imitation_learning(
             entity  = wandb_config.entity,
             mode    = wandb_config.mode,
             config  = {
-                "hyperparameters": hyperparameters.model_dump(),
-                "wandb"          : wandb_config.model_dump(),
+                "hyperparameters": hyperparameters.__dict__,
+                "wandb"          : wandb_config.__dict__,
             }
         )
         logger.info("Weights & Biases initialized for experiment tracking.")
