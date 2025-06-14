@@ -4,7 +4,7 @@ Console-script target wired in pyproject.toml, built with Typer.
 The main entry point is the `app` object. Commands are registered to it using
 the `@app.command()` decorator.
 
-Execution Flow:
+The execution flow is as follows:
 1. User runs `thermur` or `python -m src` in the terminal.
 2. The `[project.scripts]` entry in `pyproject.toml` points to `src.__main__:cli`.
 3. `src.__main__.py` calls the `app` object from this file.
@@ -12,9 +12,11 @@ Execution Flow:
 5. `typer` invokes the appropriate function (e.g., `train()` or `version_callback`).
 """
 from rich    import print
-from thermur import __version__
 from typer   import Context, Exit, Option, Typer
 from typing  import Optional
+
+# Import version from parent package
+from .. import __version__
 
 
 # The docstring of this object will be used as the main `--help` text
@@ -80,3 +82,12 @@ def main_callback(
     `--version` that should apply to the application as a whole.
     """
     pass
+
+
+def cli_main():
+    """
+    Main CLI entry point function.
+    
+    This function is called from __main__.py and exported for convenience.
+    """
+    app()
