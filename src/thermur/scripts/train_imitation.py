@@ -5,19 +5,13 @@ This script demonstrates the clean entry point pattern with Hydra-zen,
 directly instantiating only the components needed for training without
 an orchestrator intermediary.
 """
-import hydra
-
 from configs                        import register_imitation_training_config
-from hydra_zen                      import instantiate
+from configs.entry_points           import imitation_train_config
+from hydra_zen                      import instantiate, zen
 from hydra_zen.third_party.pydantic import pydantic_parser
 from thermur                        import configure_loguru, set_seed, train_imitation_learning
 
 
-@hydra.main(
-    config_path  = None,
-    config_name  = "imitation_train", 
-    version_base = None
-)
 def main(cfg):
     """
     Main entry point for imitation learning training.
@@ -28,25 +22,20 @@ def main(cfg):
     Args:
         cfg: The Hydra configuration object containing all builders.
     """
-    # Register configurations with Hydra
-    register_imitation_training_config()
-    
     # Setup logging and seed
     configure_loguru(instantiate(cfg.logging, _parser=pydantic_parser))
     set_seed(instantiate(cfg.hyperparameters, _parser=pydantic_parser).seed)
     
     # Instantiate components directly
-    environment       = instantiate(cfg.environment, _parser=pydantic_parser)
-    expert_policy     = instantiate(cfg.expert_policy, _parser=pydantic_parser)
-    policy            = instantiate(cfg.policy, _parser=pydantic_parser)
-    data_collector    = instantiate(cfg.data_collector, _parser=pydantic_parser)
+    environment       = instantiate(cfg.environment,       _parser=pydantic_parser)
+    expert_policy     = instantiate(cfg.expert_policy,     _parser=pydantic_parser)
+    policy            = instantiate(cfg.policy,            _parser=pydantic_parser)
+    data_collector    = instantiate(cfg.data_collector,    _parser=pydantic_parser)
     experience_buffer = instantiate(cfg.experience_buffer, _parser=pydantic_parser)
-    loss_function     = instantiate(cfg.loss_function, _parser=pydantic_parser)
-    optimizer         = instantiate(cfg.optimizer, _parser=pydantic_parser)
-    
-    # Get config objects
-    hyperparameters = instantiate(cfg.hyperparameters, _parser=pydantic_parser)
-    wandb_config    = instantiate(cfg.wandb, _parser=pydantic_parser)
+    loss_function     = instantiate(cfg.loss_function,     _parser=pydantic_parser)
+    optimizer         = instantiate(cfg.optimizer,         _parser=pydantic_parser)
+    hyperparameters   = instantiate(cfg.hyperparameters,   _parser=pydantic_parser)
+    wandb_config      = instantiate(cfg.wandb,             _parser=pydantic_parser)
     
     # Run the training
     train_imitation_learning(
@@ -63,4 +52,12 @@ def main(cfg):
 
 
 if __name__ == "__main__":
-    main()
+    # Register configurations with Hydra
+    register_imitation_training_config()
+    
+    # Use hydra-zen's pattern to run with the config
+    zen(imitation_train_config).hydra_main(
+        config_name  = "imitation_train",
+        config_path  = None,
+        version_base = None,
+    )(main)
