@@ -8,7 +8,7 @@ intended to house the primary data structure definitions for the project.
 """
 from __future__           import annotations
 from functools            import partial
-from ..configs            import SwarmConfig
+from src.configs.pydantic import SwarmConfig
 from tensordict           import TensorDict, TensorDictBase
 from torch                import cat, float32, int64, Tensor
 from torch_geometric.data import Data
