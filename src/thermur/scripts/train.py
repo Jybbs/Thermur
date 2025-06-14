@@ -6,12 +6,12 @@ All components are instantiated by Hydra based on the configuration, and the
 TrainingOrchestrator receives fully instantiated objects rather than configs.
 """
 from __future__ import annotations
-import hydra
 
+import hydra
+from configs                        import register_configs
 from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
-from src.configs.app                import register_configs
-from src.thermur                    import TrainingOrchestrator
+from thermur                        import TrainingOrchestrator
 
 
 @hydra.main(

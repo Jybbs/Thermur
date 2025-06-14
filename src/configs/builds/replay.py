@@ -5,11 +5,11 @@ This module defines the configuration builder for TensorDictReplayBuffer,
 which stores and samples experiences for training.
 """
 from hydra_zen   import builds, zen
-from src.configs import ReplayBufferConfig
+from configs.pydantic import ReplayBufferConfig
 from torchrl.data import TensorDictReplayBuffer
 
 
-replay_buffer_config = builds(
+build_replay_buffer = builds(
     TensorDictReplayBuffer,
     storage                 = "memory",
     batch_size              = zen(ReplayBufferConfig).batch_size,

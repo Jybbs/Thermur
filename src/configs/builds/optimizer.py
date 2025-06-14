@@ -6,11 +6,11 @@ training the GNN policy through imitation learning.
 """
 from hydra_zen   import builds, zen
 from omegaconf   import SI
-from src.configs import TrainConfig
+from configs.pydantic import TrainConfig
 from torch.optim import AdamW
 
 
-optimizer_config = builds(
+build_optimizer = builds(
     AdamW,
     params                  = SI("${loss_module.parameters()}"),  # Get parameters from loss module
     lr                      = SI("${train_config.learning_rate}"),
