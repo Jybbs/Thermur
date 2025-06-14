@@ -24,13 +24,13 @@ paradigm built on a `torchrl` foundation:
     the console and to Weights & Biases, with periodic model checkpointing.
 """
 from __future__                  import annotations
-from ..configs.pydantic            import TrainConfig, WandbConfig
-from ..core.structures             import SwarmDataSpec
-from ..envs.thermur                import ThermurEnv
+from src.configs.pydantic            import TrainConfig, WandbConfig
+from src.core.structures             import SwarmDataSpec
+from src.envs.thermur                import ThermurEnv
 from hydra_zen                     import zen
 from hydra_zen.third_party.pydantic import pydantic_parser
-from ..models.gnn_policy           import GNNPolicy
-from ..ops.loguru                  import logger
+from src.models.gnn_policy           import GNNPolicy
+from src.ops.loguru                  import logger
 from tensordict.tensordict       import TensorDictBase
 from torch.optim                 import Optimizer
 from torchrl.collectors          import SyncDataCollector
@@ -248,11 +248,10 @@ class TrainingOrchestrator:
 
 if __name__ == "__main__":
     # Register configurations
-    from ..configs.app import register_configs
+    from src.configs import register_configs
     register_configs()
     
     @hydra.main(config_path=None, config_name="train", version_base=None)
-    @zen(instantiation_wrapper=pydantic_parser)
     def main(cfg):
         """
         Main entry point for the training script.

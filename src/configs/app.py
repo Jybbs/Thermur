@@ -109,7 +109,7 @@ def create_gnn_policy(
         An instantiated GNN policy.
     """
     import torch
-    from ..models.gnn_policy import GNNPolicy
+    from src.models.gnn_policy import GNNPolicy
     
     in_dim = calculate_gnn_input_dim(env)
     
@@ -209,10 +209,10 @@ def build_app_config():
     This function is called lazily to avoid circular imports at module load time.
     """
     # Import components here to avoid circular imports
-    from ..envs.thermur       import ThermurEnv
-    from ..physics.potentials import ExpertFlockingController
-    from ..physics.safety     import SafetyFilter
-    from ..scripts.train      import ImitationLoss, TrainingOrchestrator
+    from src.envs.thermur       import ThermurEnv
+    from src.physics.potentials import ExpertFlockingController
+    from src.physics.safety     import SafetyFilter
+    from src.scripts.train      import ImitationLoss, TrainingOrchestrator
     
     # Environment Configuration
     ThermurEnvConf = builds(
@@ -393,10 +393,7 @@ def get_app_config():
 
 
 # For backward compatibility
-@property
-def AppConfig():
-    """Property that returns the app config when accessed."""
-    return get_app_config()
+AppConfig = get_app_config()
 
 
 # --------------------------------------------------------------------------
