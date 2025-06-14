@@ -11,15 +11,14 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from __future__            import annotations
-from src.configs.pydantic  import AppConfig
-from src.core.geometry     import compute_edge_index
-from src.core.structures   import SwarmData, SwarmDataSpec
-from src.ops.data          import EnvironmentDataSource
-from src.ops.seed          import set_seed
-from tensordict.tensordict import TensorDictBase
-from torchrl.envs          import EnvBase
-from typing                import TYPE_CHECKING
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from configs    import EnvironmentConfig
+from tensordict import TensorDictBase
+from thermur    import EnvironmentDataSource, SwarmData, SwarmDataSpec, compute_edge_index, set_seed
+from torchrl.envs import EnvBase
 
 
 class ThermurEnv(EnvBase):
@@ -41,17 +40,17 @@ class ThermurEnv(EnvBase):
         physics_model: A handle to the underlying MuJoCo physics simulation.
     """
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: EnvironmentConfig):
         """
         Initializes the Thermur environment.
 
         Args:
-            config: An `AppConfig` instance containing all sub-configurations
-                    (environment, swarm, agent, etc.) needed for setup.
+            config: An `EnvironmentConfig` instance containing environment-specific
+                    configuration parameters.
         """
-        super().__init__(device=config.train.device)
+        super().__init__(device="cpu")  # Device will be set by torchrl
         self.config        = config
-        self.data_source   = EnvironmentDataSource(config.environment.data_source)
+        self.data_source   = EnvironmentDataSource(config.data_source)
         self.physics_model = self._initialize_physics()
 
     def _initialize_physics(self):

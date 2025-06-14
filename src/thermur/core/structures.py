@@ -6,11 +6,13 @@ This module is the definitive source for the shape, dtype, and semantics of
 all data passed between the environment, policy, and replay buffer. It is
 intended to house the primary data structure definitions for the project.
 """
-from __future__           import annotations
-from functools            import partial
-from src.configs.pydantic import SwarmConfig
+from __future__ import annotations
+
+from functools import partial
+
+from configs              import SwarmConfig
 from tensordict           import TensorDict, TensorDictBase
-from torch                import cat, float32, int64, Tensor
+from torch                import Tensor, cat, float32, int64
 from torch_geometric.data import Data
 from torchrl.data         import Composite, TensorSpec
 
