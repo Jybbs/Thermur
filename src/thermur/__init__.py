@@ -20,7 +20,7 @@ __all__ = [
     "SwarmData", 
     "SwarmDataSpec",
     "SimulationEnv",
-    "cli_main",
+    "app",
     "compute_edge_index",
 
     # Models

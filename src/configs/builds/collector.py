@@ -11,7 +11,7 @@ from torchrl.collectors import SyncDataCollector
 
 build_collector = builds(
     SyncDataCollector,
-    create_env_fn           = SI("${lambda: environment}"),
+    create_env_fn           = SI("${lambda: simulation}"),
     policy                  = SI("${expert_policy}"),
     total_frames            = SI("${collector.total_frames}"),
     frames_per_batch        = SI("${collector.frames_per_batch}"),
