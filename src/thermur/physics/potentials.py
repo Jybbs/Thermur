@@ -6,8 +6,7 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from thermur.core import SwarmData
-from torch        import Tensor
+from torch import Tensor
 
 
 class ExpertFlockingController:
@@ -77,7 +76,7 @@ class ExpertFlockingController:
         # This will use self.agent_config.max_temperature in its calculation.
         raise NotImplementedError("Vectorized thermal logic to be implemented.")
 
-    def compute_nominal_action(self, sd: SwarmData) -> Tensor:
+    def compute_nominal_action(self, sd) -> Tensor:
         """
         Computes the collective nominal control action for the entire swarm.
 
@@ -85,7 +84,8 @@ class ExpertFlockingController:
         combines them in a weighted sum to produce the final velocity command.
 
         Args:
-            sd: A SwarmData instance containing the swarm's current state.
+            sd: The swarm data containing the swarm's current state including
+                position, velocity, temperature, and edge_index tensors.
 
         Returns:
             A tensor of nominal velocity commands `𝐮_nom` for all agents.

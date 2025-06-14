@@ -9,17 +9,19 @@ from .models import *
 from hydra_zen import builds, make_config, ZenStore
 
 
-# Main training configuration
 train_config = make_config(
-    # Parameter models (instantiated as Pydantic)
+    # Parameter models
     hyperparameters = builds(HyperparameterModel),
     collector       = builds(CollectorModel),
     replay_buffer   = builds(ReplayBufferModel),
     logging         = builds(LoggingModel),
     wandb           = builds(WandbModel),
+    environment     = builds(EnvironmentModel),
+    swarm           = builds(SwarmModel),
+    agent           = builds(AgentModel),
     
-    # Component builders (instantiated as actual classes)
-    environment       = build_environment,
+    # Component builders
+    simulation        = build_environment,
     expert_policy     = build_expert_controller,
     policy            = build_policy,
     data_collector    = build_collector,
@@ -30,7 +32,6 @@ train_config = make_config(
     # Hydra defaults
     defaults = ["_self_"],
 )
-
 
 def register_configs():
     """

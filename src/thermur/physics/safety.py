@@ -8,9 +8,8 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 """
 import torch
 
-from qpth.qp      import QPFunction
-from thermur.core import SwarmData
-from torch        import Tensor
+from qpth.qp import QPFunction
+from torch   import Tensor
 
 
 class SafetyFilter:
@@ -43,14 +42,15 @@ class SafetyFilter:
             device = "cpu",
         )
 
-    def _compute_barrier(self, sd: SwarmData) -> tuple[Tensor, Tensor]:
+    def _compute_barrier(self, sd) -> tuple[Tensor, Tensor]:
         """
         Computes the barrier function h(x) and its gradient ∇h(x).
 
         The barrier function is defined as h(x) = T_max - T(x).
 
         Args:
-            sd: The current observation data for the swarm.
+            sd: The current observation data for the swarm containing
+                temperature and temperature_grad tensors.
 
         Returns:
             A tuple containing (h_values, h_grads).
@@ -61,7 +61,7 @@ class SafetyFilter:
 
     def filter(
         self, 
-        sd        : SwarmData, 
+        sd, 
         u_nominal : Tensor
     ) -> Tensor:
         """
@@ -76,7 +76,8 @@ class SafetyFilter:
         into the QP matrices `Q`, `p`, `G`, and `h` for the `qpth` solver.
 
         Args:
-            sd        : The current observation data for the swarm.
+            sd        : The current observation data for the swarm containing
+                        temperature and temperature_grad tensors.
             u_nominal : The desired control action from the policy network.
 
         Returns:
