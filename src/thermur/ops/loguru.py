@@ -18,15 +18,15 @@ Usage:
     setup_logging(cfg.config.logging)
     logger.info("Logging is configured.")
 """
-from loguru               import logger
-from src.configs.pydantic import LoggingConfig
-from sys                  import stderr
+from configs import LoggingConfig
+from loguru  import logger
+from sys     import stderr
 
 logger.remove()
 logger = logger
 
 
-def setup_logging(config: LoggingConfig):
+def configure_loguru(config: LoggingConfig):
     """
     Configures the global logger based on the provided settings.
 

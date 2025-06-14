@@ -1,12 +1,13 @@
 """
 Utilities for ensuring reproducible results via random seeding.
 """
-import numpy as np
-import random
-import torch
+from __future__ import annotations
 
-from __future__     import annotations
-from src.ops.loguru import logger
+import random
+
+import numpy as np
+import torch
+from loguru import logger
 
 
 def set_seed(seed: int):

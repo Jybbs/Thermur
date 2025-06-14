@@ -6,10 +6,11 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from __future__           import annotations
-from src.configs.pydantic import AgentConfig, ExpertPolicyConfig
-from src.core.structures  import SwarmData
-from torch                import Tensor
+from __future__ import annotations
+
+from configs import AgentConfig, ExpertPolicyConfig
+from thermur import SwarmData
+from torch   import Tensor
 
 
 class ExpertFlockingController:
