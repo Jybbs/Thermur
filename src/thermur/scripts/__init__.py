@@ -1,8 +1,8 @@
 """
 Executable scripts for the Thermur project.
 
-This package contains the main training script and other command-line utilities.
+This package contains the imitation learning training script.
 """
-from thermur.scripts.train import main as train_main
+from .train_imitation import main
 
-__all__ = ["train_main"]
+__all__ = ["main"]

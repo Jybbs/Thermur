@@ -4,22 +4,22 @@ Hydra-zen builder for the TorchRL data collector.
 This module defines the configuration builder for SyncDataCollector, which
 gathers experience from the environment using the expert policy.
 """
-from configs            import CollectorConfig
-from hydra_zen          import builds, zen
+from configs.models     import CollectorModel
+from hydra_zen          import builds
 from omegaconf          import SI
 from torchrl.collectors import SyncDataCollector
 
 
 build_collector = builds(
     SyncDataCollector,
-    create_env_fn           = SI("${lambda: env}"),  # Wrap the instantiated env
+    create_env_fn           = SI("${lambda: environment}"),
     policy                  = SI("${expert_policy}"),
-    total_frames            = SI("${collector_config.total_frames}"),
-    frames_per_batch        = SI("${collector_config.frames_per_batch}"),
-    device                  = SI("${train_config.device}"),
-    populate_full_signature = False,  # SyncDataCollector has many optional params
+    total_frames            = SI("${collector.total_frames}"),
+    frames_per_batch        = SI("${collector.frames_per_batch}"),
+    device                  = SI("${hyperparameters.device}"),
+    populate_full_signature = False,
     zen_dataclass           = {
         "module"   : "src.configs.builds.collector",
-        "cls_name" : "CollectorConfig"
+        "cls_name" : "CollectorBuild"
     }
 )

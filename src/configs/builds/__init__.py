@@ -1,28 +1,22 @@
 """
-Hydra-zen configuration builders for all Thermur components.
+Hydra-zen configuration builders for imitation learning components.
 
 This package provides builders that create Hydra-compatible configurations
-for instantiating the various components of the Thermur system. Each builder
-leverages hydra-zen's `builds` function to create declarative configs.
+for instantiating components needed for imitation learning training.
 """
-from configs.builds.collector    import build_collector
-from configs.builds.environment  import build_environment
-from configs.builds.loss         import build_loss
-from configs.builds.optimizer    import build_optimizer
-from configs.builds.orchestrator import build_orchestrator
-from configs.builds.policy       import build_expert_controller, build_expert_policy, build_gnn_policy
-from configs.builds.replay       import build_replay_buffer
-from configs.builds.safety       import build_safety_filter
+from .collector   import build_collector
+from .environment import build_environment
+from .loss        import build_loss
+from .optimizer   import build_optimizer
+from .policy      import build_expert_controller, build_policy
+from .replay      import build_replay_buffer
 
 __all__ = [
     "build_collector",
     "build_environment",
     "build_expert_controller",
-    "build_expert_policy",
-    "build_gnn_policy",
     "build_loss",
     "build_optimizer",
-    "build_orchestrator",
+    "build_policy",
     "build_replay_buffer",
-    "build_safety_filter",
 ]

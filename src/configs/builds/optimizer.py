@@ -4,20 +4,19 @@ Hydra-zen builder for the AdamW optimizer.
 This module defines the configuration builder for the optimizer used in
 training the GNN policy through imitation learning.
 """
-from configs      import TrainConfig
-from hydra_zen    import builds, zen
+from hydra_zen    import builds
 from omegaconf    import SI
 from torch.optim  import AdamW
 
 
 build_optimizer = builds(
     AdamW,
-    params                  = SI("${loss_module.parameters()}"),  # Get parameters from loss module
-    lr                      = SI("${train_config.learning_rate}"),
-    weight_decay            = SI("${train_config.weight_decay}"),
-    populate_full_signature = False,  # AdamW has many optional params we don't need
+    params                  = SI("${policy.parameters()}"),
+    lr                      = SI("${hyperparameters.learning_rate}"),
+    weight_decay            = SI("${hyperparameters.weight_decay}"),
+    populate_full_signature = False,
     zen_dataclass           = {
         "module"   : "src.configs.builds.optimizer",
-        "cls_name" : "OptimizerConfig"
+        "cls_name" : "OptimizerBuild"
     }
 )

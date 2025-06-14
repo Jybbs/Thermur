@@ -2,33 +2,37 @@
 The Thermur package: Core business logic and functionality.
 
 This package provides a clean API for accessing all major components of the
-Thermur system, including the environment, policies, safety filters, and
-training orchestration.
+Thermur system for imitation learning training.
 """
-from thermur.core    import *
-from thermur.models  import GNNPolicy
-from thermur.ops     import EnvironmentDataSource, configure_loguru, set_seed
-from thermur.physics import ExpertFlockingController, SafetyFilter
+from .core     import *
+from .models   import GNNPolicy
+from .ops      import EnvironmentDataSource, configure_loguru, set_seed
+from .physics  import ExpertFlockingController
+from .training import train_imitation_learning, save_checkpoint, ImitationLoss
 
 __all__ = [
-    # From core (using *)
-    "ImitationLoss",
+
+    # Core components
     "SwarmData", 
     "SwarmDataSpec",
     "ThermurEnv",
-    "TrainingOrchestrator",
     "cli_main",
     "compute_edge_index",
-    
-    # From models
+
+    # Models
     "GNNPolicy",
-    
-    # From ops
+
+    # Operations
     "EnvironmentDataSource",
     "configure_loguru",
     "set_seed",
-    
-    # From physics
+
+    # Physics
     "ExpertFlockingController",
-    "SafetyFilter",
+
+    # Training
+    "train_imitation_learning",
+    "save_checkpoint",
+    "ImitationLoss",
+
 ]
