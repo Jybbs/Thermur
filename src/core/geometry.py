@@ -6,10 +6,10 @@ Provides stateless utility functions for geometric computations.
 These functions are designed to be pure, vectorized operations on torch
 Tensors, suitable for use in environments, policies, and analysis scripts.
 """
+import torch
+
 from __future__ import annotations
 from torch      import Tensor
-
-import torch
 
 
 def compute_edge_index(pos: Tensor, r: float) -> Tensor:
