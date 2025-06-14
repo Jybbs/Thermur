@@ -241,6 +241,17 @@ class LoggingConfig(BaseModel, extra="forbid"):
     )
 
 
+class PolicyConfig(BaseModel, extra="forbid"):
+    """
+    Groups all parameters required for agent decision-making.
+
+    This configuration encompasses both the expert policy used for data
+    collection and the GNN policy that learns from it.
+    """
+    expert : ExpertPolicyConfig = ExpertPolicyConfig()
+    gnn    : GNNConfig          = GNNConfig()
+
+
 class QPSolverConfig(BaseModel, extra="forbid"):
     """
     Parameters for the qpth Quadratic Program (QP) solver.
@@ -289,6 +300,22 @@ class ReplayBufferConfig(BaseModel, extra="forbid"):
         ge          = 0,
         description = "Number of batches to prefetch for training to hide data loading latency."
     )
+
+
+class SafetyConfig(BaseModel, extra="forbid"):
+    """
+    Groups all parameters required by the `SafetyFilter`.
+
+    This configuration defines the safety boundary, the behavior of the
+    Control Barrier Function (CBF), and the underlying Quadratic Program (QP)
+    solver. It consolidates parameters from multiple domains: agent properties
+    (`agent`), swarm properties (`swarm`), control theory (`cbf`), and
+    numerical optimization (`qp`).
+    """
+    agent : AgentConfig    = AgentConfig()
+    cbf   : CBFConfig      = CBFConfig()
+    qp    : QPSolverConfig = QPSolverConfig()
+    swarm : SwarmConfig    = SwarmConfig()
 
 
 class SwarmConfig(BaseModel, extra="forbid"):
@@ -389,34 +416,3 @@ class WandbConfig(BaseModel, extra="forbid"):
         default     = "thermur",
         description = "The W&B project name to log runs into."
     )
-
-
-# --------------------------------------------------------------------------
-# Composite Sub-Configurations
-# --------------------------------------------------------------------------
-
-class PolicyConfig(BaseModel, extra="forbid"):
-    """
-    Groups all parameters required for agent decision-making.
-
-    This configuration encompasses both the expert policy used for data
-    collection and the GNN policy that learns from it.
-    """
-    expert : ExpertPolicyConfig = ExpertPolicyConfig()
-    gnn    : GNNConfig          = GNNConfig()
-
-
-class SafetyConfig(BaseModel, extra="forbid"):
-    """
-    Groups all parameters required by the `SafetyFilter`.
-
-    This configuration defines the safety boundary, the behavior of the
-    Control Barrier Function (CBF), and the underlying Quadratic Program (QP)
-    solver. It consolidates parameters from multiple domains: agent properties
-    (`agent`), swarm properties (`swarm`), control theory (`cbf`), and
-    numerical optimization (`qp`).
-    """
-    agent : AgentConfig    = AgentConfig()
-    cbf   : CBFConfig      = CBFConfig()
-    qp    : QPSolverConfig = QPSolverConfig()
-    swarm : SwarmConfig    = SwarmConfig()

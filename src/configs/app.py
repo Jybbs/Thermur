@@ -64,6 +64,37 @@ def calculate_gnn_input_dim(env: EnvBase) -> int:
 # Factory Functions
 # --------------------------------------------------------------------------
 
+def create_collector(
+    env,              # EnvBase
+    policy,           # SafeModule
+    total_frames,     # int
+    frames_per_batch, # int
+    device,           # str
+):  # -> SyncDataCollector
+    """
+    Factory function to create the data collector.
+
+    Args:
+        env              : The environment instance.
+        policy           : The expert policy.
+        total_frames     : Total frames to collect.
+        frames_per_batch : Frames per batch.
+        device           : The device.
+
+    Returns:
+        A configured SyncDataCollector.
+    """
+    import torch
+    
+    return SyncDataCollector(
+        create_env_fn    = lambda: env,  # Wrap existing env
+        policy           = policy,
+        total_frames     = total_frames,
+        frames_per_batch = frames_per_batch,
+        device           = torch.device(device),
+    )
+
+
 def create_expert_policy(
     controller,  # ExpertFlockingController
     env,         # EnvBase
@@ -120,34 +151,26 @@ def create_gnn_policy(
     ).to(torch.device(device))
 
 
-def create_collector(
-    env,              # EnvBase
-    policy,           # SafeModule
-    total_frames,     # int
-    frames_per_batch, # int
-    device,           # str
-):  # -> SyncDataCollector
+def create_optimizer(
+    loss_module,    # ImitationLoss
+    learning_rate,  # float
+    weight_decay,   # float
+):  # -> AdamW
     """
-    Factory function to create the data collector.
+    Factory function to create the AdamW optimizer.
 
     Args:
-        env              : The environment instance.
-        policy           : The expert policy.
-        total_frames     : Total frames to collect.
-        frames_per_batch : Frames per batch.
-        device           : The device.
+        loss_module   : The loss module containing parameters to optimize.
+        learning_rate : The learning rate.
+        weight_decay  : The weight decay (L2 penalty).
 
     Returns:
-        A configured SyncDataCollector.
+        A configured AdamW optimizer.
     """
-    import torch
-    
-    return SyncDataCollector(
-        create_env_fn    = lambda: env,  # Wrap existing env
-        policy           = policy,
-        total_frames     = total_frames,
-        frames_per_batch = frames_per_batch,
-        device           = torch.device(device),
+    return AdamW(
+        loss_module.parameters(),
+        lr           = learning_rate,
+        weight_decay = weight_decay,
     )
 
 
@@ -175,29 +198,6 @@ def create_replay_buffer(
     )
 
 
-def create_optimizer(
-    loss_module,    # ImitationLoss
-    learning_rate,  # float
-    weight_decay,   # float
-):  # -> AdamW
-    """
-    Factory function to create the AdamW optimizer.
-
-    Args:
-        loss_module   : The loss module containing parameters to optimize.
-        learning_rate : The learning rate.
-        weight_decay  : The weight decay (L2 penalty).
-
-    Returns:
-        A configured AdamW optimizer.
-    """
-    return AdamW(
-        loss_module.parameters(),
-        lr           = learning_rate,
-        weight_decay = weight_decay,
-    )
-
-
 # --------------------------------------------------------------------------
 # Configuration Building Function
 # --------------------------------------------------------------------------
@@ -217,9 +217,9 @@ def build_app_config():
     # Environment Configuration
     ThermurEnvConf = builds(
         ThermurEnv,
-        config = SI("${config}"),  # Will receive the full AppConfig
+        config                  = SI("${config}"),  # Will receive the full AppConfig
         populate_full_signature = True,
-        zen_dataclass = {
+        zen_dataclass           = {
             "module": "configs.app",
             "cls_name": "ThermurEnvConf"
         }
@@ -357,15 +357,15 @@ def build_app_config():
         ),
         
         # Component builds
+        collector          = CollectorConf,
         env                = ThermurEnvConf,
         expert_controller  = ExpertFlockingControllerConf,
         expert_policy      = ExpertPolicyConf,
         gnn_policy         = GNNPolicyConf,
-        safety_filter      = SafetyFilterConf,
-        collector          = CollectorConf,
-        replay_buffer      = ReplayBufferConf,
         loss_module        = ImitationLossConf,
         optimizer          = OptimizerConf,
+        replay_buffer      = ReplayBufferConf,
+        safety_filter      = SafetyFilterConf,
         
         # The main orchestrator that will be instantiated
         orchestrator       = TrainingOrchestratorConf,
