@@ -7,11 +7,11 @@ components.
 """
 from hydra_zen   import builds, zen
 from omegaconf   import SI
-from src.configs import TrainConfig, WandbConfig
-from src.thermur import TrainingOrchestrator
+from configs.pydantic import TrainConfig, WandbConfig
+from thermur          import TrainingOrchestrator
 
 
-orchestrator_config = builds(
+build_orchestrator = builds(
     TrainingOrchestrator,
     env                     = SI("${env}"),
     expert_policy           = SI("${expert_policy}"),

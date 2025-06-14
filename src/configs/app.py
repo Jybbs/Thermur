@@ -9,28 +9,8 @@ from hydra_zen                      import make_config, store, zen
 from hydra_zen.third_party.pydantic import pydantic_parser
 from omegaconf                      import SI
 
-from src.configs import (
-    AgentConfig,
-    CollectorConfig,
-    EnvironmentConfig,
-    LoggingConfig,
-    PolicyConfig,
-    SafetyConfig,
-    SwarmConfig,
-    TrainConfig,
-    WandbConfig,
-)
-from src.configs.builds import (
-    collector_config,
-    env_config,
-    expert_policy_config,
-    gnn_policy_config,
-    loss_config,
-    optimizer_config,
-    orchestrator_config,
-    replay_buffer_config,
-    safety_filter_config,
-)
+from configs         import *
+from configs.builds  import *
 
 
 # Create the main application config that assembles all components
@@ -47,18 +27,18 @@ app_config = make_config(
     wandb_config       = zen(WandbConfig),
     
     # Component builders (will be instantiated by Hydra)
-    env               = env_config,
-    expert_controller = expert_policy_config,
+    env               = build_environment,
+    expert_controller = build_expert_policy,
     expert_policy     = SI("${expert_controller}"),  # For now, same as controller
-    gnn_policy        = gnn_policy_config,
-    collector         = collector_config,
-    replay_buffer     = replay_buffer_config,
-    loss_module       = loss_config,
-    optimizer         = optimizer_config,
-    safety_filter     = safety_filter_config,
+    gnn_policy        = build_gnn_policy,
+    collector         = build_collector,
+    replay_buffer     = build_replay_buffer,
+    loss_module       = build_loss,
+    optimizer         = build_optimizer,
+    safety_filter     = build_safety_filter,
     
     # The main orchestrator that will be instantiated
-    orchestrator = orchestrator_config,
+    orchestrator = build_orchestrator,
     
     # Hydra defaults
     defaults = ["_self_"],

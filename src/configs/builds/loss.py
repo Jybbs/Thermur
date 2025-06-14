@@ -6,10 +6,10 @@ computes the MSE between predicted and expert actions for behavioral cloning.
 """
 from hydra_zen   import builds
 from omegaconf   import SI
-from src.thermur import ImitationLoss
+from thermur import ImitationLoss
 
 
-loss_config = builds(
+build_loss = builds(
     ImitationLoss,
     policy_network          = SI("${gnn_policy}"),  # Reference to instantiated GNN policy
     populate_full_signature = True,

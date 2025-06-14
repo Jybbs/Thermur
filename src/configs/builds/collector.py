@@ -6,11 +6,11 @@ gathers experience from the environment using the expert policy.
 """
 from hydra_zen          import builds, zen
 from omegaconf          import SI
-from src.configs        import CollectorConfig
+from configs.pydantic   import CollectorConfig
 from torchrl.collectors import SyncDataCollector
 
 
-collector_config = builds(
+build_collector = builds(
     SyncDataCollector,
     create_env_fn           = SI("${lambda: env}"),  # Wrap the instantiated env
     policy                  = SI("${expert_policy}"),

@@ -6,11 +6,11 @@ ensures all control actions respect thermal safety constraints through
 real-time quadratic programming.
 """
 from hydra_zen   import builds, zen
-from src.configs import SafetyConfig
-from src.thermur import SafetyFilter
+from configs.pydantic import SafetyConfig
+from thermur          import SafetyFilter
 
 
-safety_filter_config = builds(
+build_safety_filter = builds(
     SafetyFilter,
     config                  = zen(SafetyConfig),
     populate_full_signature = True,

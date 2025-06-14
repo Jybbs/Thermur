@@ -5,17 +5,30 @@ This package provides a clean API for accessing all major components of the
 Thermur system, including the environment, policies, safety filters, and
 training orchestration.
 """
-from src.core.env           import ThermurEnv
-from src.core.orchestrator  import ImitationLoss, TrainingOrchestrator
-from src.models.gnn_policy  import GNNPolicy
-from src.physics.potentials import ExpertFlockingController
-from src.physics.safety     import SafetyFilter
+from thermur.core    import *
+from thermur.models  import GNNPolicy
+from thermur.ops     import EnvironmentDataSource, configure_loguru, set_seed
+from thermur.physics import ExpertFlockingController, SafetyFilter
 
 __all__ = [
-    "ExpertFlockingController",
-    "GNNPolicy",
+    # From core (using *)
     "ImitationLoss",
-    "SafetyFilter",
+    "SwarmData", 
+    "SwarmDataSpec",
     "ThermurEnv",
     "TrainingOrchestrator",
+    "cli_main",
+    "compute_edge_index",
+    
+    # From models
+    "GNNPolicy",
+    
+    # From ops
+    "EnvironmentDataSource",
+    "configure_loguru",
+    "set_seed",
+    
+    # From physics
+    "ExpertFlockingController",
+    "SafetyFilter",
 ]
