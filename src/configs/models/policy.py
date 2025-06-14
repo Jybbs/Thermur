@@ -35,3 +35,13 @@ class GNNModel(BaseModel, extra="forbid"):
             "agent's receptive field but also computational cost."
         )
     )
+    input_dim: int = Field(
+        default     = 11,  # position(3) + velocity(3) + temperature(1) + temp_grad(3) + energy(1)
+        gt          = 0,
+        description = "Dimensionality of the input node features (concatenated state vector).",
+    )
+    output_dim: int = Field(
+        default     = 3,
+        gt          = 0,
+        description = "Dimensionality of the output action (spatial dimensions).",
+    )

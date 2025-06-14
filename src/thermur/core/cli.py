@@ -45,7 +45,7 @@ def train():
     Launches a new training run.
 
     This command serves as the entry point to the training script. It performs a
-    lazy, local import of the `train_main` function. 
+    lazy, local import and execution of the training script. 
     
     This keeps the CLI itself lightweight and fast, as heavyweight libraries like 
     `torch` and `hydra` are only imported when this specific command is actually 
@@ -54,8 +54,11 @@ def train():
     print("[yellow]CLI forwarding to training script...[/]")
     print("[grey70]Hydra will now take over to manage configuration.[/]")
 
-    from thermur.scripts import train_main
-    train_main()
+    import subprocess
+    import sys
+    
+    # Execute the training script directly as a module
+    subprocess.run([sys.executable, "-m", "src.thermur.scripts.train_imitation"])
 
 @app.callback()
 def main_callback(

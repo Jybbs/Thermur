@@ -6,7 +6,6 @@ This module is the definitive source for the shape, dtype, and semantics of
 all data passed between the environment, policy, and replay buffer. It is
 intended to house the primary data structure definitions for the project.
 """
-from configs              import SwarmConfig
 from functools            import partial
 from tensordict           import TensorDict, TensorDictBase
 from torch                import Tensor, cat, float32, int64
@@ -57,7 +56,7 @@ class SwarmDataSpec:
     """
 
     @classmethod
-    def get_action_spec(cls, config: SwarmConfig) -> Composite:
+    def get_action_spec(cls, config) -> Composite:
         """
         Returns the torchrl spec for an action TensorDict.
 
@@ -66,8 +65,8 @@ class SwarmDataSpec:
         directly from the provided swarm configuration.
 
         Args:
-            config: A `SwarmConfig` instance containing the agent count and
-                    number of spatial dimensions.
+            config: A swarm configuration instance (from environment config)
+                   containing the agent count and number of spatial dimensions.
 
         Returns:
             A `Composite` object defining the action structure.
@@ -81,7 +80,7 @@ class SwarmDataSpec:
         )
 
     @classmethod
-    def get_observation_spec(cls, config: SwarmConfig) -> Composite:
+    def get_observation_spec(cls, config) -> Composite:
         """
         Returns the torchrl spec for an observation TensorDict.
 
@@ -90,14 +89,14 @@ class SwarmDataSpec:
         agent state vector s, where s = [𝐩, 𝐯, T, ∇T, E].
 
         Args:
-            config: A `SwarmConfig` instance containing the agent count and
-                    number of spatial dimensions.
+            config: A swarm configuration instance (from environment config)
+                   containing the agent count and number of spatial dimensions.
 
         Returns:
             A `Composite` object defining the observation structure.
         """
-        agent_count = config.agent_count
-        dims        = config.spatial_dims
+        agent_count = config.swarm.agent_count
+        dims        = config.swarm.spatial_dims
         AgentSpec   = partial(TensorSpec, dtype=float32)
 
         return Composite(
