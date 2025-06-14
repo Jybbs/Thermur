@@ -1,15 +1,13 @@
 """
-Typed configuration objects for the Thermur project, managed by Pydantic and
-registered with hydra-zen for command-line accessibility.
+Typed configuration objects for the Thermur project, managed by Pydantic.
 
 This module defines a hierarchical structure for all parameters, from the
 environment and swarm dynamics to the GNN policy and training loop. This
 ensures that all components are configured from a single, validated source of
 truth.
 """
-from hydra_zen import store, ZenField
-from pydantic  import BaseModel, Field
-from typing    import Literal
+from pydantic import BaseModel, Field
+from typing   import Literal
 
 
 # --------------------------------------------------------------------------
@@ -397,6 +395,17 @@ class WandbConfig(BaseModel, extra="forbid"):
 # Composite Sub-Configurations
 # --------------------------------------------------------------------------
 
+class PolicyConfig(BaseModel, extra="forbid"):
+    """
+    Groups all parameters required for agent decision-making.
+
+    This configuration encompasses both the expert policy used for data
+    collection and the GNN policy that learns from it.
+    """
+    expert : ExpertPolicyConfig = ExpertPolicyConfig()
+    gnn    : GNNConfig          = GNNConfig()
+
+
 class SafetyConfig(BaseModel, extra="forbid"):
     """
     Groups all parameters required by the `SafetyFilter`.
@@ -411,79 +420,3 @@ class SafetyConfig(BaseModel, extra="forbid"):
     cbf   : CBFConfig      = CBFConfig()
     qp    : QPSolverConfig = QPSolverConfig()
     swarm : SwarmConfig    = SwarmConfig()
-
-    
-# --------------------------------------------------------------------------
-# Main Application Configuration
-# --------------------------------------------------------------------------
-# We use hydra-zen's `make_config` to assemble our Pydantic models into a
-# single, cohesive configuration tree that Hydra can manage. This AppConfig
-# serves as the single source of truth for an entire application run.
-
-AppConfig = store.make_config(
-    "AppConfig",
-    zen_meta = {
-        "doc": (
-            "Root configuration for the Thermur application, assembling all "
-            "components."
-        )
-    },
-
-    # Core Domain Components
-    agent = ZenField(
-        default_factory = AgentConfig,
-        doc             = "Physical properties of a single agent"
-    ),
-    environment = ZenField(
-        default_factory = EnvironmentConfig,
-        doc             = "Simulation environment parameters"
-    ),
-    policy = ZenField(
-        default_factory = PolicyConfig,
-        doc             = "Agent decision-making and safety pipeline"
-    ),
-    swarm = ZenField(
-        default_factory = SwarmConfig,
-        doc             = "Collective properties of the agent swarm"
-    ),
-
-    # Infrastructure & Training Components
-    logging = ZenField(
-        default_factory = LoggingConfig,
-        doc             = "Application-wide logging setup"
-    ),
-    train = ZenField(
-        default_factory = TrainConfig,
-        doc             = "Training loop and optimizer settings"
-    ),
-    wandb = ZenField(
-        default_factory = WandbConfig,
-        doc             = "Weights & Biases experiment tracking"
-    ),
-
-    # Hydra Boilerplate
-    defaults = ["_self_"]
-)
-
-
-# --------------------------------------------------------------------------
-# Register Configs with the Hydra Store
-# --------------------------------------------------------------------------
-# These calls make our AppConfig discoverable by Hydra's command-line
-# interface and @hydra.main decorator, enabling easy configuration management.
-
-# Register a base config for general use.
-store(
-    AppConfig,
-    name    = "base_config",
-    group   = "thermur_config",
-    package = "_global_"
-)
-
-# Register a config specifically for the `train` script's config group.
-store(
-    AppConfig,
-    name    = "train_app",
-    group   = "train",
-    package = "train"
-)

@@ -7,8 +7,8 @@ an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
 from __future__      import annotations
-from core.structures import SwarmData
-from ops.config      import AgentConfig, ExpertPolicyConfig
+from ..core.structures import SwarmData
+from ..configs       import AgentConfig, ExpertPolicyConfig
 from torch           import Tensor
 
 
