@@ -29,12 +29,12 @@ import os
 import torch
 import wandb
 
-from configs.pydantic      import TrainConfig, WandbConfig
-from loguru                import logger
-from thermur.core          import SwarmDataSpec
-from thermur.models        import GNNPolicy
-from thermur.ops           import configure_loguru, set_seed
+from configs.pydantic   import TrainConfig, WandbConfig
+from loguru             import logger
 from tensordict         import TensorDictBase
+from thermur.core       import SwarmDataSpec
+from thermur.models     import GNNPolicy
+from thermur.ops        import configure_loguru, set_seed
 from torch.nn           import Module
 from torch.optim        import Optimizer
 from torchrl.collectors import SyncDataCollector

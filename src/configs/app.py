@@ -5,12 +5,10 @@ This module assembles all the configuration builders into a complete
 application config that can be instantiated by Hydra. It demonstrates
 the full power of hydra-zen's declarative configuration approach.
 """
-from hydra_zen                      import make_config, store, zen
-from hydra_zen.third_party.pydantic import pydantic_parser
-from omegaconf                      import SI
-
-from configs         import *
-from configs.builds  import *
+from configs        import *
+from configs.builds import *
+from hydra_zen      import make_config, store, zen
+from omegaconf      import SI
 
 
 # Create the main application config that assembles all components

@@ -4,9 +4,9 @@ Hydra-zen builder for the TorchRL data collector.
 This module defines the configuration builder for SyncDataCollector, which
 gathers experience from the environment using the expert policy.
 """
+from configs.pydantic   import CollectorConfig
 from hydra_zen          import builds, zen
 from omegaconf          import SI
-from configs.pydantic   import CollectorConfig
 from torchrl.collectors import SyncDataCollector
 
 
