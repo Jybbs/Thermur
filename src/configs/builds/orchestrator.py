@@ -5,10 +5,10 @@ This module defines the configuration builder for TrainingOrchestrator,
 which manages the entire imitation learning pipeline with fully instantiated
 components.
 """
-from configs.pydantic import TrainConfig, WandbConfig
-from hydra_zen        import builds, zen
-from omegaconf        import SI
-from thermur          import TrainingOrchestrator
+from configs    import TrainConfig, WandbConfig
+from hydra_zen  import builds, zen
+from omegaconf  import SI
+from thermur    import TrainingOrchestrator
 
 
 build_orchestrator = builds(

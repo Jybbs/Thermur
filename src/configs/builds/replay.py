@@ -4,9 +4,9 @@ Hydra-zen builder for the TorchRL replay buffer.
 This module defines the configuration builder for TensorDictReplayBuffer,
 which stores and samples experiences for training.
 """
-from configs.pydantic import ReplayBufferConfig
-from hydra_zen        import builds, zen
-from torchrl.data     import TensorDictReplayBuffer
+from configs       import ReplayBufferConfig
+from hydra_zen     import builds, zen
+from torchrl.data  import TensorDictReplayBuffer
 
 
 build_replay_buffer = builds(

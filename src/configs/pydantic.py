@@ -416,25 +416,3 @@ class WandbConfig(BaseModel, extra="forbid"):
         default     = "thermur",
         description = "The W&B project name to log runs into."
     )
-
-
-# --------------------------------------------------------------------------
-# Main Application Configuration
-# --------------------------------------------------------------------------
-
-class AppConfig(BaseModel, extra="forbid"):
-    """
-    Top-level application configuration.
-
-    This class aggregates all sub-configurations into a single, validated
-    configuration object that serves as the source of truth for the entire
-    application.
-    """
-    agent       : AgentConfig       = AgentConfig()
-    environment : EnvironmentConfig = EnvironmentConfig()
-    logging     : LoggingConfig     = LoggingConfig()
-    policy      : PolicyConfig      = PolicyConfig()
-    safety      : SafetyConfig      = SafetyConfig()
-    swarm       : SwarmConfig       = SwarmConfig()
-    train       : TrainConfig       = TrainConfig()
-    wandb       : WandbConfig       = WandbConfig()
