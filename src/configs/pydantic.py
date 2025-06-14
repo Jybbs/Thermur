@@ -23,8 +23,8 @@ class AgentConfig(BaseModel, extra="forbid"):
     thermal properties are critical for modeling the agent's internal state
     and enforcing safety guarantees.
 
-    The `max_temperature` provides Tₘₐₓ for the Control Barrier Function's
-    safety boundary: h(𝐱) = Tₘₐₓ - T(𝐱). The `thermal_time_constant` (τ) is
+    The `max_temperature` provides T_{max} for the Control Barrier Function's
+    safety boundary: h(𝐱) = T_{max} - T(𝐱). The `thermal_time_constant` (τ) is
     used in the agent's internal RC thermal model to estimate core temperature
     from skin temperature: T_core ≈ T_skin - τ ⋅ dT_skin/dt.
     """
@@ -143,7 +143,7 @@ class ExpertPolicyConfig(BaseModel, extra="forbid"):
     - Cohesion   : U_coh   ∝ Σ||xᵢ - xⱼ||²
     - Separation : U_sep   ∝ Σ 1/||xᵢ - xⱼ||
     - Alignment  : U_align ∝ Σ||vᵢ - vⱼ||²
-    - Thermal    : U_therm ∝ 1/(Tₘₐₓ - Tᵢ)
+    - Thermal    : U_therm ∝ 1/(T_{max} - Tᵢ)
     """
     w_alignment: float = Field(
         default     = 0.8,
