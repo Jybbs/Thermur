@@ -44,23 +44,63 @@ def version_callback(value: bool):
 @app.command()
 def train():
     """
-    Launches a new training run.
+    Train the GNN policy using imitation learning.
 
-    This command serves as the entry point to the training script. It performs a
-    lazy, local import and execution of the training script. 
+    This command initializes the training configuration and runs the imitation
+    learning training loop. Configuration is managed by Hydra, allowing for
+    easy overrides via command line arguments.
     
-    This keeps the CLI itself lightweight and fast, as heavyweight libraries like 
-    `torch` and `hydra` are only imported when this specific command is actually 
-    executed, not when just asking for `--help` or `--version`.
+    Example:
+        thermur train
+        thermur train hyperparameters.learning_rate=0.001
+        thermur train +experiment=large_swarm
     """
-    print("[yellow]CLI forwarding to training script...[/]")
-    print("[grey70]Hydra will now take over to manage configuration.[/]")
-
-    import subprocess
-    import sys
+    # Lazy imports to keep CLI fast
+    from configs import register_configs
+    from configs.train import train_config
+    from hydra_zen import zen
     
-    # Execute the training script directly as a module
-    subprocess.run([sys.executable, "-m", "src.thermur.scripts.train_imitation"])
+    # Register all configurations with Hydra
+    register_configs()
+    
+    # Use hydra-zen to run the training with proper config management
+    @zen(train_config).hydra_main(
+        config_name  = "train",
+        config_path  = None,
+        version_base = None,
+    )
+    def hydra_train(cfg):
+        """Inner function that receives the Hydra config."""
+        from hydra_zen import instantiate
+        from hydra_zen.third_party.pydantic import pydantic_parser
+        from thermur import configure_loguru, set_seed, train_imitation_learning
+        
+        print("[bold green]Starting Thermur imitation learning training[/]")
+        
+        # Setup logging and seed
+        configure_loguru(instantiate(cfg.logging, _parser=pydantic_parser))
+        set_seed(instantiate(cfg.hyperparameters, _parser=pydantic_parser).seed)
+        
+        # Instantiate all components
+        print("[yellow]Instantiating components...[/]")
+        components = {
+            'environment': instantiate(cfg.environment, _parser=pydantic_parser),
+            'expert_policy': instantiate(cfg.expert_policy, _parser=pydantic_parser),
+            'policy': instantiate(cfg.policy, _parser=pydantic_parser),
+            'data_collector': instantiate(cfg.data_collector, _parser=pydantic_parser),
+            'experience_buffer': instantiate(cfg.experience_buffer, _parser=pydantic_parser),
+            'loss_function': instantiate(cfg.loss_function, _parser=pydantic_parser),
+            'optimizer': instantiate(cfg.optimizer, _parser=pydantic_parser),
+            'hyperparameters': instantiate(cfg.hyperparameters, _parser=pydantic_parser),
+            'wandb_config': instantiate(cfg.wandb, _parser=pydantic_parser),
+        }
+        
+        # Run training
+        print("[green]Starting training loop...[/]")
+        train_imitation_learning(**components)
+    
+    # Execute the hydra-wrapped training
+    hydra_train()
 
 @app.callback()
 def main_callback(
