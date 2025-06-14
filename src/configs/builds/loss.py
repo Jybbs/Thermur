@@ -4,9 +4,9 @@ Hydra-zen builder for the imitation learning loss module.
 This module defines the configuration builder for ImitationLoss, which
 computes the MSE between predicted and expert actions for behavioral cloning.
 """
-from hydra_zen   import builds
-from omegaconf   import SI
-from thermur import ImitationLoss
+from hydra_zen import builds
+from omegaconf import SI
+from thermur   import ImitationLoss
 
 
 build_loss = builds(
