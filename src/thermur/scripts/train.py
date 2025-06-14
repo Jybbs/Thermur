@@ -8,7 +8,6 @@ TrainingOrchestrator receives fully instantiated objects rather than configs.
 from __future__ import annotations
 
 import hydra
-
 from configs                        import register_configs
 from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
