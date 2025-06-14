@@ -4,6 +4,12 @@ Configuration module for the Thermur application.
 This module provides Pydantic models for validation and hydra-zen builders
 for component instantiation.
 """
+from .app import (
+    AppConfig,
+    build_app_config,
+    get_app_config,
+    register_configs
+)
 from .pydantic import (
     AgentConfig,
     CBFConfig,
@@ -22,14 +28,13 @@ from .pydantic import (
     WandbConfig,
 )
 
-# Lazy import for AppConfig to avoid circular dependencies
-def __getattr__(name):
-    if name == "AppConfig":
-        from .app import get_app_config
-        return get_app_config()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
 __all__ = [
+    # App config
+    "AppConfig",
+    "build_app_config",
+    "get_app_config",
+    "register_configs",
+
     # Pydantic models
     "AgentConfig",
     "CBFConfig",
@@ -46,6 +51,4 @@ __all__ = [
     "SwarmConfig",
     "TrainConfig",
     "WandbConfig",
-    # Main config
-    "AppConfig",
 ]
