@@ -5,7 +5,7 @@ This package provides the fundamental building blocks including the environment,
 data structures, and geometric utilities.
 """
 from .cli        import cli_main
-from .env        import ThermurEnv
+from .simulation import SimulationEnv
 from .geometry   import compute_edge_index
 from .structures import SwarmData, SwarmDataSpec
 
@@ -14,5 +14,5 @@ __all__ = [
     "compute_edge_index",
     "SwarmData",
     "SwarmDataSpec",
-    "ThermurEnv",
+    "SimulationEnv",
 ]

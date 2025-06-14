@@ -11,7 +11,7 @@ from torch.optim    import AdamW
 
 build_optimizer = builds(
     AdamW,
-    params                  = SI("${policy}"),  # Will need .parameters() called at instantiation
+    params                  = SI("${policy}"),
     lr                      = SI("${hyperparameters.learning_rate}"),
     weight_decay            = SI("${hyperparameters.weight_decay}"),
     populate_full_signature = False,

@@ -19,7 +19,7 @@ __all__ = [
     # Core components
     "SwarmData", 
     "SwarmDataSpec",
-    "ThermurEnv",
+    "SimulationEnv",
     "cli_main",
     "compute_edge_index",
 
