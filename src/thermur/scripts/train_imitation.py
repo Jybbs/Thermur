@@ -7,11 +7,10 @@ an orchestrator intermediary.
 """
 import hydra
 
-from configs.entry_points   import register_imitation_training_config
-from hydra_zen              import instantiate
+from configs                        import register_imitation_training_config
+from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
-from thermur.ops            import configure_loguru, set_seed
-from thermur.training       import train_imitation_learning
+from thermur                        import configure_loguru, set_seed, train_imitation_learning
 
 
 @hydra.main(

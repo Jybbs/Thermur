@@ -9,7 +9,6 @@ import torch
 import wandb
 
 from loguru             import logger
-from tensordict         import TensorDictBase
 from torch.nn           import Module
 from torch.optim        import Optimizer
 from torchrl.collectors import SyncDataCollector

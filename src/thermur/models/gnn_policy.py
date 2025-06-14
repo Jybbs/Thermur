@@ -10,12 +10,9 @@ The architecture is explicitly designed to be configurable via the `GNNConfig`
 Pydantic model and to consume `torch_geometric.data.Data` objects, which are
 generated from the environment's `TensorDict` observations.
 """
-from __future__ import annotations
-
-import torch
 from configs              import GNNConfig
 from torch                import Tensor
-from torch.nn             import GRUCell, Linear, Module, ReLU, SiLU, Tanh
+from torch.nn             import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
 from torch_geometric.data import Data
 from torch_geometric.nn   import GCNConv
 
@@ -64,8 +61,8 @@ class GNNPolicy(Module):
         self.encoder = Linear(in_dim, config.hidden_dim)
 
         # A stack of GNN layers and recurrent cells for state updates.
-        self.convs = torch.nn.ModuleList()
-        self.grus  = torch.nn.ModuleList()
+        self.convs = ModuleList()
+        self.grus  = ModuleList()
         for _ in range(config.num_layers):
             self.convs.append(GCNConv(config.hidden_dim, config.hidden_dim))
             self.grus.append(GRUCell(config.hidden_dim, config.hidden_dim))

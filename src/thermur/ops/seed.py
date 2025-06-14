@@ -1,13 +1,10 @@
 """
 Utilities for ensuring reproducible results via random seeding.
 """
-from __future__ import annotations
-
-import random
-
-import numpy as np
-import torch
 from loguru import logger
+from numpy  import random
+from random import seed
+from torch  import backends, cuda, manual_seed
 
 
 def set_seed(seed: int):
@@ -20,16 +17,16 @@ def set_seed(seed: int):
     Args:
         seed: The integer seed to use.
     """
+    seed(seed)
     random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    manual_seed(seed)
     
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+    if cuda.is_available():
+        cuda.manual_seed(seed)
+        cuda.manual_seed_all(seed)
 
         # The following are needed for full determinism with CUDA
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark     = False
+        backends.cudnn.deterministic = True
+        backends.cudnn.benchmark     = False
 
     logger.info(f"Global random seed set to {seed}.")
