@@ -5,29 +5,23 @@ This module uses hydra-zen's `builds` function to create instantiable
 configurations for all major components. These configurations serve as
 "recipes" that Hydra will use to automatically instantiate objects at runtime.
 """
-from hydra_zen                             import builds, make_config, store, ZenField
-from hydra_zen.third_party.pydantic        import pydantic_parser
-from omegaconf                             import SI
-from torch.optim                           import AdamW
-from torchrl.collectors                    import SyncDataCollector
-from torchrl.data                          import TensorDictReplayBuffer
-from torchrl.envs                          import EnvBase
-from torchrl.modules                       import SafeModule
-from typing                                import Type
+import torch
 
-# Import our Pydantic models
-from .pydantic import (
-    AgentConfig,
-    EnvironmentConfig,
-    ExpertPolicyConfig,
-    GNNConfig,
-    LoggingConfig,
-    PolicyConfig,
-    SafetyConfig,
-    SwarmConfig,
-    TrainConfig,
-    WandbConfig,
-)
+from hydra_zen                      import builds, make_config, store, ZenField
+from hydra_zen.third_party.pydantic import pydantic_parser
+from omegaconf                      import SI
+from src.configs.pydantic           import *
+from src.envs.thermur               import ThermurEnv
+from src.models.gnn_policy          import GNNPolicy
+from src.physics.potentials         import ExpertFlockingController
+from src.physics.safety             import SafetyFilter
+from src.scripts.train              import ImitationLoss, TrainingOrchestrator
+from torch.optim                    import AdamW
+from torchrl.collectors             import SyncDataCollector
+from torchrl.data                   import TensorDictReplayBuffer
+from torchrl.envs                   import EnvBase
+from torchrl.modules                import SafeModule
+from typing                         import Type
 
 
 # --------------------------------------------------------------------------
@@ -66,11 +60,11 @@ def calculate_gnn_input_dim(env: EnvBase) -> int:
 # --------------------------------------------------------------------------
 
 def create_collector(
-    env: EnvBase,
-    policy: SafeModule,
-    total_frames: int,
-    frames_per_batch: int,
-    device: str,
+    env              : EnvBase,
+    policy           : SafeModule,
+    total_frames     : int,
+    frames_per_batch : int,
+    device           : str,
 ) -> SyncDataCollector:
     """
     Factory function to create the data collector.
@@ -85,8 +79,6 @@ def create_collector(
     Returns:
         A configured SyncDataCollector.
     """
-    import torch
-    
     return SyncDataCollector(
         create_env_fn    = lambda: env,  # Wrap existing env
         policy           = policy,
@@ -97,9 +89,9 @@ def create_collector(
 
 
 def create_expert_policy(
-    controller: Type,  # ExpertFlockingController
-    env: EnvBase,
-    device: str,
+    controller : Type,  # ExpertFlockingController
+    env        : EnvBase,
+    device     : str,
 ) -> SafeModule:
     """
     Factory function to create the expert policy SafeModule.
@@ -112,8 +104,6 @@ def create_expert_policy(
     Returns:
         A SafeModule wrapping the expert controller.
     """
-    import torch
-    
     return SafeModule(
         module   = controller.compute_nominal_action,
         in_keys  = ["observation"],
@@ -123,11 +113,11 @@ def create_expert_policy(
 
 
 def create_gnn_policy(
-    gnn_config: GNNConfig,
-    swarm_config: SwarmConfig,
-    env: EnvBase,
-    device: str,
-) -> "GNNPolicy":
+    gnn_config   : GNNConfig,
+    swarm_config : SwarmConfig,
+    env          : EnvBase,
+    device       : str,
+) -> GNNPolicy:
     """
     Factory function to create the GNN policy.
 
@@ -140,9 +130,6 @@ def create_gnn_policy(
     Returns:
         An instantiated GNN policy.
     """
-    import torch
-    from src.models.gnn_policy import GNNPolicy
-    
     in_dim = calculate_gnn_input_dim(env)
     
     return GNNPolicy(
@@ -153,9 +140,9 @@ def create_gnn_policy(
 
 
 def create_optimizer(
-    loss_module: "ImitationLoss",
-    learning_rate: float,
-    weight_decay: float,
+    loss_module   : ImitationLoss,
+    learning_rate : float,
+    weight_decay  : float,
 ) -> AdamW:
     """
     Factory function to create the AdamW optimizer.
@@ -176,9 +163,9 @@ def create_optimizer(
 
 
 def create_replay_buffer(
-    batch_size: int,
-    buffer_size: int,
-    prefetch: int,
+    batch_size  : int,
+    buffer_size : int,
+    prefetch    : int,
 ) -> TensorDictReplayBuffer:
     """
     Factory function to create the replay buffer.
@@ -209,11 +196,6 @@ def build_app_config():
     
     This function is called lazily to avoid circular imports at module load time.
     """
-    # Import components here to avoid circular imports
-    from src.envs.thermur       import ThermurEnv
-    from src.physics.potentials import ExpertFlockingController
-    from src.physics.safety     import SafetyFilter
-    from src.scripts.train      import ImitationLoss, TrainingOrchestrator
     
     # Environment Configuration
     ThermurEnvConf = builds(
@@ -221,8 +203,8 @@ def build_app_config():
         config                  = SI("${config}"),  # Will receive the full AppConfig
         populate_full_signature = True,
         zen_dataclass           = {
-            "module": "configs.app",
-            "cls_name": "ThermurEnvConf"
+            "module"   : "configs.app",
+            "cls_name" : "ThermurEnvConf"
         }
     )
     
@@ -233,8 +215,8 @@ def build_app_config():
         agent_config  = SI("${config.agent}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "ExpertFlockingControllerConf"
+            "module"  : "configs.app",
+            "cls_name" : "ExpertFlockingControllerConf"
         }
     )
     
@@ -245,8 +227,8 @@ def build_app_config():
         device     = SI("${config.train.device}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "ExpertPolicyConf"
+            "module"   : "configs.app",
+            "cls_name" : "ExpertPolicyConf"
         }
     )
     
@@ -258,8 +240,8 @@ def build_app_config():
         device       = SI("${config.train.device}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "GNNPolicyConf"
+            "module"   : "configs.app",
+            "cls_name" : "GNNPolicyConf"
         }
     )
     
@@ -269,8 +251,8 @@ def build_app_config():
         config = SI("${config.safety}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "SafetyFilterConf"
+            "module"   : "configs.app",
+            "cls_name" : "SafetyFilterConf"
         }
     )
     
@@ -284,8 +266,8 @@ def build_app_config():
         device           = SI("${config.train.device}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "CollectorConf"
+            "module"   : "configs.app",
+            "cls_name" : "CollectorConf"
         }
     )
     
@@ -296,8 +278,8 @@ def build_app_config():
         prefetch    = SI("${config.train.replay.prefetch}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "ReplayBufferConf"
+            "module"   : "configs.app",
+            "cls_name" : "ReplayBufferConf"
         }
     )
     
@@ -307,8 +289,8 @@ def build_app_config():
         policy_network = SI("${gnn_policy}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "ImitationLossConf"
+            "module"   : "configs.app",
+            "cls_name" : "ImitationLossConf"
         }
     )
     
@@ -319,8 +301,8 @@ def build_app_config():
         weight_decay  = SI("${config.train.weight_decay}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "OptimizerConf"
+            "module"   : "configs.app",
+            "cls_name" : "OptimizerConf"
         }
     )
     
@@ -338,8 +320,8 @@ def build_app_config():
         wandb_config  = SI("${config.wandb}"),
         populate_full_signature = True,
         zen_dataclass = {
-            "module": "configs.app",
-            "cls_name": "TrainingOrchestratorConf"
+            "module"   : "configs.app",
+            "cls_name" : "TrainingOrchestratorConf"
         }
     )
     
@@ -358,21 +340,21 @@ def build_app_config():
         ),
         
         # Component builds
-        collector          = CollectorConf,
-        env                = ThermurEnvConf,
-        expert_controller  = ExpertFlockingControllerConf,
-        expert_policy      = ExpertPolicyConf,
-        gnn_policy         = GNNPolicyConf,
-        loss_module        = ImitationLossConf,
-        optimizer          = OptimizerConf,
-        replay_buffer      = ReplayBufferConf,
-        safety_filter      = SafetyFilterConf,
+        collector         = CollectorConf,
+        env               = ThermurEnvConf,
+        expert_controller = ExpertFlockingControllerConf,
+        expert_policy     = ExpertPolicyConf,
+        gnn_policy        = GNNPolicyConf,
+        loss_module       = ImitationLossConf,
+        optimizer         = OptimizerConf,
+        replay_buffer     = ReplayBufferConf,
+        safety_filter     = SafetyFilterConf,
         
         # The main orchestrator that will be instantiated
-        orchestrator       = TrainingOrchestratorConf,
+        orchestrator = TrainingOrchestratorConf,
         
         # Hydra defaults
-        defaults           = ["_self_"],
+        defaults = ["_self_"],
     )
 
 
@@ -402,7 +384,9 @@ AppConfig = get_app_config()
 # --------------------------------------------------------------------------
 
 def register_configs():
-    """Register configs with Hydra store when needed."""
+    """
+    Register configs with Hydra store when needed.
+    """
     config = get_app_config()
     
     # Register the main application config
