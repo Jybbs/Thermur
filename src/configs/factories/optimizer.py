@@ -17,7 +17,7 @@ build_optimizer = builds(
     populate_full_signature = False,
     zen_partial             = True,
     zen_dataclass           = {
-        "module"   : "src.configs.builds.optimizer",
+        "module"   : "src.configs.factories.optimizer",
         "cls_name" : "OptimizerBuild"
     }
 )

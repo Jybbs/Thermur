@@ -17,7 +17,7 @@ build_replay_buffer = builds(
     prefetch                = SI("${replay_buffer.prefetch}"),
     populate_full_signature = False,
     zen_dataclass           = {
-        "module"   : "src.configs.builds.replay",
+        "module"   : "src.configs.factories.replay",
         "cls_name" : "ReplayBufferBuild"
     }
 )

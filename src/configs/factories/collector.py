@@ -18,7 +18,7 @@ build_collector = builds(
     device                  = SI("${hyperparameters.device}"),
     populate_full_signature = False,
     zen_dataclass           = {
-        "module"   : "src.configs.builds.collector",
+        "module"   : "src.configs.factories.collector",
         "cls_name" : "CollectorBuild"
     }
 )
