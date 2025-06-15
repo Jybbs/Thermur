@@ -1,5 +1,3 @@
-# File: src/core/geometry.py
-
 """
 Provides stateless utility functions for geometric computations.
 

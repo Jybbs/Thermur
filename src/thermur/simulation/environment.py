@@ -11,10 +11,9 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from typing import Callable, Optional
-
 from tensordict   import TensorDictBase
 from torchrl.envs import EnvBase
+from typing       import Callable, Optional
 
 
 class SimulationEnv(EnvBase):

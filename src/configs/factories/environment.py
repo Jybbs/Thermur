@@ -51,7 +51,7 @@ build_environment = builds(
     populate_full_signature = True,
     seed_fn                 = set_seed,
     zen_dataclass           = {
-        "module"   : "src.configs.builds.environment",
+        "module"   : "src.configs.factories.environment",
         "cls_name" : "EnvironmentBuild"
     }
 )

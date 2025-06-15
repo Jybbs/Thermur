@@ -1,15 +1,15 @@
 """
-Training configuration for Thermur imitation learning.
+Imitation learning configuration for Thermur.
 
 This module defines the configuration for training the GNN policy via 
 behavioral cloning from the expert flocking controller.
 """
-from .builds import *
-from .models import *
-from hydra_zen import builds, make_config, ZenStore
+from ..factories import *
+from ..schemas   import *
+from hydra_zen   import builds, make_config, ZenStore
 
 
-train_config = make_config(
+imitation_config = make_config(
     # Parameter models
     hyperparameters = builds(HyperparameterModel),
     collector       = builds(CollectorModel),
@@ -41,7 +41,7 @@ def register_configs():
     
     # Register the main training config
     store(
-        train_config, 
+        imitation_config, 
         name    = "train", 
         group   = "config", 
         package = "_global_"

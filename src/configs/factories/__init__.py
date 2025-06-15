@@ -1,5 +1,5 @@
 """
-Hydra-zen configuration builders for imitation learning components.
+Hydra-zen configuration factories for imitation learning components.
 
 This package provides builders that create Hydra-compatible configurations
 for instantiating components needed for imitation learning training.
