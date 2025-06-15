@@ -11,11 +11,10 @@ The execution flow is as follows:
 4. `typer` parses the command-line arguments (e.g., `train`, `--version`).
 5. `typer` invokes the appropriate function (e.g., `train()` or `version_callback`).
 """
-from ..     import __version__
-from rich   import print
-from typer  import Context, Exit, Option, Typer
-from typing import Optional
-
+from importlib import metadata
+from rich      import print
+from typer     import Context, Exit, Option, Typer
+from typing    import Optional
 
 app = Typer(
     name           = "thermur",
@@ -35,7 +34,7 @@ def version_callback(value: bool):
         value: The boolean value of the flag (True if present).
     """
     if value:
-        print(f"[bold green]Thermur[/] version: {__version__}")
+        print(f"[bold green]Thermur[/] version: {metadata.version("thermur")}")
         raise Exit()
 
 
@@ -57,7 +56,7 @@ def train():
         thermur train hyperparameters.learning_rate=0.001
         thermur train +experiment=large_swarm
     """
-    from configs                        import register_configs, train_config
+    from configs                        import register_configs, imitation_config
     from hydra_zen                      import instantiate, zen
     from hydra_zen.third_party.pydantic import pydantic_parser
     from thermur                        import (
@@ -68,7 +67,7 @@ def train():
 
     register_configs()
 
-    @zen(train_config).hydra_main(
+    @zen(imitation_config).hydra_main(
         config_name  = "train",
         config_path  = None,
         version_base = None,

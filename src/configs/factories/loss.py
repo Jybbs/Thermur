@@ -14,7 +14,7 @@ build_loss = builds(
     policy_network          = SI("${policy}"),
     populate_full_signature = True,
     zen_dataclass           = {
-        "module"   : "src.configs.builds.loss",
+        "module"   : "src.configs.factories.loss",
         "cls_name" : "LossBuild"
     }
 )
