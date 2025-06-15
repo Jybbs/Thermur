@@ -6,10 +6,7 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from __future__      import annotations
-from core.structures import SwarmData
-from ops.config      import AgentConfig, ExpertPolicyConfig
-from torch           import Tensor
+from torch import Tensor
 
 
 class ExpertFlockingController:
@@ -18,21 +15,22 @@ class ExpertFlockingController:
 
     This controller computes a desired velocity for each agent by summing forces
     derived from the negative gradient of several potential functions.
-    Its behavior is parameterized by a configuration object.
+    Its behavior is parameterized by configuration objects.
     """
 
     def __init__(
         self, 
-        expert_config : ExpertPolicyConfig, 
-        agent_config  : AgentConfig
+        expert_config,
+        agent_config
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            expert_config : Contains the weights for each potential field.
-            agent_config  : Contains agent-specific properties like the maximum
-                            survivable temperature required for the thermal potential.
+            expert_config: Contains the weights for each potential field
+                          (instantiated from ExpertPolicyModel).
+            agent_config : Contains agent-specific properties like the maximum
+                          survivable temperature (instantiated from AgentModel).
         """
         self.expert_config = expert_config
         self.agent_config  = agent_config
@@ -78,7 +76,7 @@ class ExpertFlockingController:
         # This will use self.agent_config.max_temperature in its calculation.
         raise NotImplementedError("Vectorized thermal logic to be implemented.")
 
-    def compute_nominal_action(self, sd: SwarmData) -> Tensor:
+    def compute_nominal_action(self, sd) -> Tensor:
         """
         Computes the collective nominal control action for the entire swarm.
 
@@ -86,7 +84,8 @@ class ExpertFlockingController:
         combines them in a weighted sum to produce the final velocity command.
 
         Args:
-            sd: A SwarmData instance containing the swarm's current state.
+            sd: The swarm data containing the swarm's current state including
+                position, velocity, temperature, and edge_index tensors.
 
         Returns:
             A tensor of nominal velocity commands `𝐮_nom` for all agents.

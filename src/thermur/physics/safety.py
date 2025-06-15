@@ -6,13 +6,10 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from __future__      import annotations
-from core.structures import SwarmData
-from ops.config      import SafetyConfig
-from qpth.qp         import QPFunction
-from torch           import Tensor
-
 import torch
+
+from qpth.qp import QPFunction
+from torch   import Tensor
 
 
 class SafetyFilter:
@@ -27,7 +24,7 @@ class SafetyFilter:
     pre-defined safe set `C = {x | h(x) >= 0}`.
     """
 
-    def __init__(self, config: SafetyConfig):
+    def __init__(self, config):
         """
         Initializes the safety filter with its required configurations.
 
@@ -35,24 +32,25 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            config: A composite config containing all necessary sub-configs
-                    for the agent, swarm, CBF, and QP solver.
+            config: A safety configuration instance (from hydra instantiation)
+                   containing agent, swarm, CBF, and QP solver parameters.
         """
         self.config = config
         self.Q = torch.eye(
-            out    = self.config.swarm.spatial_dims,
+            n      = self.config.swarm.spatial_dims,
             dtype  = torch.float32,
             device = "cpu",
         )
 
-    def _compute_barrier(self, sd: SwarmData) -> tuple[Tensor, Tensor]:
+    def _compute_barrier(self, sd) -> tuple[Tensor, Tensor]:
         """
         Computes the barrier function h(x) and its gradient ∇h(x).
 
         The barrier function is defined as h(x) = T_max - T(x).
 
         Args:
-            sd: The current observation data for the swarm.
+            sd: The current observation data for the swarm containing
+                temperature and temperature_grad tensors.
 
         Returns:
             A tuple containing (h_values, h_grads).
@@ -63,7 +61,7 @@ class SafetyFilter:
 
     def filter(
         self, 
-        sd        : SwarmData, 
+        sd, 
         u_nominal : Tensor
     ) -> Tensor:
         """
@@ -78,7 +76,8 @@ class SafetyFilter:
         into the QP matrices `Q`, `p`, `G`, and `h` for the `qpth` solver.
 
         Args:
-            sd        : The current observation data for the swarm.
+            sd        : The current observation data for the swarm containing
+                        temperature and temperature_grad tensors.
             u_nominal : The desired control action from the policy network.
 
         Returns:

@@ -1,12 +1,7 @@
 """
-Entry-point shim so that:
-
-    python -m thermur --version
-
-works even if the console script isn't installed (e.g. in editable mode).
+Entry point for the Thermur package when run as a module.
 """
-from core.cli import cli
+from thermur import app
 
 if __name__ == "__main__":
-
-    cli()
+    app()
