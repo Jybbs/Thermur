@@ -1,7 +1,7 @@
 """
 Defines the core `torchrl` simulation environment for the Thermur project.
 
-This module provides the `ThermurEnv` class, which serves as the primary
+This module provides the `SimulationEnv` class, which serves as the primary
 interface for training and evaluating swarm policies. It implements the
 `torchrl.EnvBase` API, making it compatible with the broader `torchrl`
 ecosystem of collectors, replay buffers, and trainers.
@@ -11,17 +11,13 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from __future__            import annotations
-from core.geometry         import compute_edge_index
-from core.structures       import SwarmData, SwarmDataSpec
-from ops.config            import AppConfig
-from ops.data              import EnvironmentDataSource
-from ops.seed              import set_seed
-from tensordict.tensordict import TensorDictBase
-from torchrl.envs          import EnvBase
+from typing import Callable, Optional
+
+from tensordict   import TensorDictBase
+from torchrl.envs import EnvBase
 
 
-class ThermurEnv(EnvBase):
+class SimulationEnv(EnvBase):
     """
     A thermally-aware multi-agent flocking environment for `torchrl`.
 
@@ -31,27 +27,50 @@ class ThermurEnv(EnvBase):
     strict thermal safety constraints.
 
     The state is represented by a `TensorDict` matching the specification
-    defined in `SwarmDataSpec`, which includes agent kinematics, local thermal
+    defined externally, which includes agent kinematics, local thermal
     data, and the communication graph topology.
 
+    This class follows dependency injection principles - all dependencies
+    are provided through the constructor rather than imported directly.
+
     Attributes:
-        config      : The root `AppConfig` object for the current run.
-        data_source  : An `EnvironmentDataSource` instance for querying thermal data.
-        physics_model: A handle to the underlying MuJoCo physics simulation.
+        config              : The environment configuration containing simulation params.
+        data_source         : A callable for querying thermal data.
+        compute_edge_index  : A callable for computing communication graphs.
+        observation_spec    : The observation space specification.
+        action_spec         : The action space specification.
+        seed_fn             : Optional callable for setting random seeds.
+        physics_model       : A handle to the underlying MuJoCo physics simulation.
     """
 
-    def __init__(self, config: AppConfig):
+    def __init__(
+        self,
+        config,
+        data_source        : Callable,
+        compute_edge_index : Callable,
+        observation_spec   : TensorDictBase,
+        action_spec        : TensorDictBase,
+        seed_fn            : Optional[Callable] = None,
+    ):
         """
-        Initializes the Thermur environment.
+        Initializes the Thermur environment with dependency injection.
 
         Args:
-            config: An `AppConfig` instance containing all sub-configurations
-                    (environment, swarm, agent, etc.) needed for setup.
+            config             : An instance containing simulation parameters.
+            data_source        : A callable that provides environmental data queries.
+            compute_edge_index : A callable that computes communication graph edges.
+            observation_spec   : The observation space specification.
+            action_spec        : The action space specification.
+            seed_fn            : Optional callable for setting random seeds.
         """
-        super().__init__(device=config.train.device)
-        self.config        = config
-        self.data_source   = EnvironmentDataSource(config.environment.data_source)
-        self.physics_model = self._initialize_physics()
+        super().__init__(device="cpu")
+        self.config             = config
+        self.data_source        = data_source
+        self.compute_edge_index = compute_edge_index
+        self.observation_spec   = observation_spec
+        self.action_spec        = action_spec
+        self.seed_fn            = seed_fn
+        self.physics_model      = self._initialize_physics()
 
     def _initialize_physics(self):
         """
@@ -113,7 +132,6 @@ class ThermurEnv(EnvBase):
             The input `TensorDict`, updated in-place with new thermal data and
             the communication graph's `edge_index`.
         """
-        # Could be using SwarmData directly
         positions = td.get("position")
 
         # Query environmental data source for thermal properties at agent locations.
@@ -124,7 +142,7 @@ class ThermurEnv(EnvBase):
         # Re-compute the communication graph based on new positions.
         td.set(
             "edge_index",
-            compute_edge_index(
+            self.compute_edge_index(
                 pos = positions,
                 r   = self.config.swarm.communication_range
             )
@@ -133,17 +151,17 @@ class ThermurEnv(EnvBase):
 
     def _make_spec(self, td_params: TensorDictBase):
         """
-        Creates the environment's observation and action specs from SwarmDataSpec.
+        Creates the environment's observation and action specs.
+        
+        Since specs are passed in via dependency injection, this method
+        is effectively a no-op but is required by the torchrl API.
         """
-        self.observation_spec = SwarmDataSpec.get_observation_spec(self.config.swarm)
-        self.action_spec      = SwarmDataSpec.get_action_spec(self.config.swarm)
-
-        # `get_reward_spec` and `get_done_spec` would need to be added to SwarmDataSpec
-        # self.reward_spec = SwarmDataSpec.get_reward_spec()
-        # self.done_spec   = SwarmDataSpec.get_done_spec()
+        # Specs are already set via constructor
+        pass
 
     def _set_seed(self, seed: int):
         """
-        Sets the random seed for the environment via the global utility.
+        Sets the random seed for the environment.
         """
-        set_seed(seed)
+        if self.seed_fn is not None:
+            self.seed_fn(seed)
