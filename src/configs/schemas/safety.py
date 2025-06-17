@@ -16,12 +16,28 @@ class CBFModel(BaseModel, extra="forbid"):
     do not exceed `max_temperature` via the constraint: ḣ(𝐱) ≥ -αh(𝐱). This
     is solved in real-time via a Quadratic Program (QP).
     """
+    activation_tolerance: float = Field(
+        default     = 1e-5,
+        gt          = 0,
+        description = (
+            "Numerical tolerance for detecting CBF activations. If the norm of "
+            "the difference between safe and nominal actions exceeds this value, "
+            "the CBF is considered active for that agent."
+        )
+    )
     alpha: float = Field(
         default     = 0.5,
         gt          = 0,
         description = (
             "Class-K function gain (α) for the CBF safety constraint, "
             "controlling convergence to the safe set."
+        )
+    )
+    debug_mode: bool = Field(
+        default     = False,
+        description = (
+            "Enable visualization of the T_max isotherm and detailed logging "
+            "of CBF activations during simulation."
         )
     )
 

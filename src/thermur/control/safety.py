@@ -10,6 +10,86 @@ import torch
 
 from qpth.qp import QPFunction
 from torch   import Tensor
+from typing  import Any, Tuple
+
+
+class ThermalBarrierFunction:
+    """
+    Implements the temperature-based Control Barrier Function (CBF).
+    
+    The barrier function is defined as h(𝐬) = T_max - T(𝐬), which creates a
+    safety boundary at T = T_max. This barrier ensures that agents remain within
+    the safe set C = {𝐬 | h(𝐬) ≥ 0}, which corresponds to temperatures below
+    the maximum survivable threshold.
+    
+    To enforce the invariance of this safe set, the Lie derivative condition 
+    must be satisfied: 
+    
+        ∇h(𝐬) · u ≥ -α·h(𝐬), where α is a class-K function.
+    """
+    
+    def __init__(self, config: Any):
+        """
+        Initializes the thermal barrier function.
+        
+        Args:
+            config: A configuration instance containing CBF parameters like alpha
+                   and debug_mode.
+        """
+        self.config           = config
+        self.activation_count = 0
+        self.total_queries    = 0
+    
+    def evaluate(self, sd: Any) -> Tuple[Tensor, Tensor]:
+        """
+        Computes the barrier function h(𝐬) and its gradient ∇h(𝐬).
+        
+        The barrier function is h(𝐬) = T_max - T(𝐬), creating a boundary at
+        T = T_max. The gradient ∇h(𝐬) = -∇T(𝐬) points away from high temperature
+        regions, creating a "force" that pushes agents toward safety.
+        
+        Args:
+            sd: The current observation data for the swarm containing
+                temperature and temperature_grad tensors.
+                
+        Returns:
+            A tuple containing (h_values, h_grads).
+        """
+        temperature = sd.temperature
+        if hasattr(sd, 'temperature_grad'):
+            temp_grad = sd.temperature_grad
+
+        else:
+            # Fall back to gradient from agent position if not provided
+            temp_grad = None
+            
+        h_values = self.config.agent.max_temperature - temperature
+        h_grads  = -temp_grad if temp_grad is not None else None
+        
+        return h_values, h_grads
+        
+    def log_activation(self, is_active: Tensor):
+        """
+        Records barrier function activations for debugging and monitoring.
+        
+        Args:
+            is_active: Boolean tensor indicating which agents had the CBF
+                      actively modify their control input.
+        """
+        self.total_queries    += is_active.shape[0]
+        self.activation_count += is_active.sum().item()
+            
+    def get_activation_rate(self) -> float:
+        """
+        Returns the percentage of queries where the CBF was active.
+        
+        Returns:
+            The activation rate as a percentage.
+        """
+        if self.total_queries == 0:
+            return 0.0
+        
+        return (self.activation_count / self.total_queries) * 100.0
 
 
 class SafetyFilter:
@@ -24,7 +104,11 @@ class SafetyFilter:
     pre-defined safe set `C = {x | h(x) >= 0}`.
     """
 
-    def __init__(self, config):
+    def __init__(
+        self, 
+        barrier : ThermalBarrierFunction, 
+        config  : Any
+    ):
         """
         Initializes the safety filter with its required configurations.
 
@@ -32,36 +116,22 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            config: A safety configuration instance (from hydra instantiation)
-                   containing agent, swarm, CBF, and QP solver parameters.
+            barrier : The ThermalBarrierFunction instance that defines
+                      the safety boundary.
+            config. : A safety configuration instance (from hydra instantiation)
+                      containing swarm and QP solver parameters.
         """
-        self.config = config
-        self.Q = torch.eye(
+        self.barrier = barrier
+        self.config  = config
+        self.Q       = torch.eye(
             n      = self.config.swarm.spatial_dims,
             dtype  = torch.float32,
             device = "cpu",
         )
 
-    def _compute_barrier(self, sd) -> tuple[Tensor, Tensor]:
-        """
-        Computes the barrier function h(x) and its gradient ∇h(x).
-
-        The barrier function is defined as h(x) = T_max - T(x).
-
-        Args:
-            sd: The current observation data for the swarm containing
-                temperature and temperature_grad tensors.
-
-        Returns:
-            A tuple containing (h_values, h_grads).
-        """
-        h_values = self.config.agent.max_temperature - sd.temperature
-        h_grads  = -sd.temperature_grad
-        return h_values, h_grads
-
     def filter(
         self, 
-        sd, 
+        sd        : Any, 
         u_nominal : Tensor
     ) -> Tensor:
         """
@@ -83,7 +153,7 @@ class SafetyFilter:
         Returns:
             The batch of safe control actions `u*`.
         """
-        h_values, h_grads = self._compute_barrier(sd)
+        h_values, h_grads = self.barrier.evaluate(sd)
         agent_count       = self.config.swarm.agent_count
         device            = u_nominal.device
 
@@ -102,6 +172,13 @@ class SafetyFilter:
                 A = torch.empty(0, device=device),
                 b = torch.empty(0, device=device),
             )
+            
+            # Check which agents had CBF active (u_safe != u_nominal)
+            is_active = torch.norm(
+                input = u_safe - u_nominal, 
+                dim   = 1
+            ) > self.barrier.config.activation_tolerance
+            self.barrier.log_activation(is_active)
 
         except Exception as e:
             if self.config.qp.on_failure == "use_nominal":
