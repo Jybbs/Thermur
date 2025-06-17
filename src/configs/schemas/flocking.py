@@ -82,3 +82,11 @@ class FlockingModel(BaseModel, extra="forbid"):
             "adjustment relative to other forces."
         )
     )
+    min_distance: float = Field(
+        default     = 0.1,
+        gt          = 0,
+        description = (
+            "Minimum distance threshold used in separation force calculations "
+            "to prevent numerical instability."
+        )
+    )

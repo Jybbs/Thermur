@@ -7,6 +7,7 @@ an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
 import torch
+import torch.nn.functional as F
 
 from torch import Tensor
 
@@ -16,237 +17,44 @@ class ExpertFlockingController:
     Calculates the nominal control action `𝐮_nom` using potential fields.
 
     This controller computes a desired velocity for each agent by summing forces
-    derived from the negative gradient of several potential functions.
-    Its behavior is parameterized by configuration objects.
+    derived from the negative gradient of several potential functions, where the 
+    individual potential components follow classical Reynolds rules:
+        - U_coh^(i)     = (1/2) · Σⱼ∈N(i) ||𝐱ᵢ - 𝐱ⱼ||²
+        - U_sep^(i)     = Σⱼ∈N(i) 1/||𝐱ᵢ - 𝐱ⱼ||
+        - U_align^(i,j) = (1/2) · ||𝐯ᵢ - 𝐯ⱼ||²
+        - U_therm^(i)   = 1/(T_max - T_i)
+    
+    The nominal control action is then 𝐮_nom^(i) = -∇ₓᵢU(𝐒ₜ)
     """
 
     def __init__(
-        self, 
-        expert_config,
-        agent_config
+        self,
+        agent_properties,
+        flocking_params,
+        reynolds_weights
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            expert_config : Contains the weights for each potential field.
-            agent_config  : Contains agent-specific properties like the maximum
-                            survivable temperature.
+            agent_properties : Contains agent-specific properties like the maximum
+                               survivable temperature T_max.
+            flocking_params  : Contains numerical parameters for stable force calculations.
+            reynolds_weights : Contains the weights for each potential field component.
         """
-        self.expert_config = expert_config
-        self.agent_config  = agent_config
-
-    def _compute_cohesion(
-        self, 
-        position   : Tensor, 
-        edge_index : Tensor
-    ) -> Tensor:
-        """
-        Calculates the cohesion force vector: U_coh ∝ Σ||xᵢ - xⱼ||².
-        
-        This implements the cohesion component of Reynolds' flocking rules,
-        creating a force that pulls each agent toward the center of mass
-        of its neighbors.
-        
-        For each agent i, we calculate:
-            x̄ᵢ = (1/|N(i)|) · Σⱼ∈N(i) xⱼ
-            F_coh = x̄ᵢ - xᵢ
-        
-        where N(i) is the set of neighbors defined by edge_index, and
-        x̄ᵢ is the center of mass of these neighbors.
-        
-        Args:
-            position   : Tensor of shape [num_agents, dim] containing positions
-            edge_index : Tensor of shape [2, num_edges] defining the communication graph
-        
-        Returns:
-            Tensor of shape [num_agents, dim] containing cohesion force vectors
-        """
-        num_agents     = position.size(0)
-        dim            = position.size(1)
-        device         = position.device
-        center_of_mass = torch.zeros_like(position)
-        neighbor_count = torch.zeros(
-            num_agents,
-            dtype  = torch.int64, 
-            device = device
-        )
-        
-        # Extract source (`s`) and target (`t`) indices from edge_index
-        s, t = edge_index
-        
-        # Aggregate and count neighbor positions for center of mass calculation
-        for d in range(dim):
-            center_of_mass[:, d].scatter_add_(0, s, position[t, d])
-        
-        neighbor_count.scatter_add_(0, s, torch.ones_like(s))
-    
-        safe_count     = torch.max(neighbor_count, torch.ones_like(neighbor_count))
-        center_of_mass = center_of_mass / safe_count.unsqueeze(1)
-        
-        # Zero out forces for agents with no neighbors
-        has_neighbors = neighbor_count > 0
-        return (center_of_mass - position) * has_neighbors.unsqueeze(1).float()
-
-    def _compute_separation(
-        self, 
-        position   : Tensor, 
-        edge_index : Tensor
-    ) -> Tensor:
-        """
-        Calculates the separation force vector: U_sep ∝ Σ 1/||xᵢ - xⱼ||.
-        
-        This implements the separation component of Reynolds' flocking rules,
-        creating a repulsive force that prevents collisions between agents.
-        The force magnitude is inversely proportional to distance.
-        
-        For each agent i and its neighbor j, we calculate:
-            F_sepᵢⱼ = (xᵢ - xⱼ) / ||xᵢ - xⱼ||²
-            F_sep = Σⱼ∈N(i) F_sepᵢⱼ
-        
-        Args:
-            position   : Tensor of shape [num_agents, dim] containing positions
-            edge_index : Tensor of shape [2, num_edges] defining the communication graph
-        
-        Returns:
-            Tensor of shape [num_agents, dim] containing separation force vectors
-        """
-        dim        = position.size(1)
-        separation = torch.zeros_like(position)
-        
-        # Extract source (`s`) and target (`t`) indices from edge_index
-        s, t = edge_index
-        
-        # Calculate displacement vectors (xᵢ - xⱼ) and squared distances
-        epsilon      = 1e-8
-        displacement = position[s] - position[t]
-        squared_dist = torch.sum(displacement * displacement, dim=1) + epsilon
-        
-        # Scale displacement by repulsion magnitude (1/r²)
-        repulsion_mag  = 1.0 / squared_dist
-        repulsion_vec  = displacement * repulsion_mag.unsqueeze(1)
-        
-        # Aggregate repulsion vectors for each agent
-        for d in range(dim):
-            separation[:, d].scatter_add_(0, s, repulsion_vec[:, d])
-        
-        return separation
-
-    def _compute_alignment(
-        self, 
-        velocity   : Tensor, 
-        edge_index : Tensor
-    ) -> Tensor:
-        """
-        Calculates the alignment force vector: U_align ∝ Σ||vᵢ - vⱼ||².
-        
-        This implements the alignment component of Reynolds' flocking rules,
-        creating a force that causes agents to match velocities with their
-        neighbors.
-        
-        For each agent i, we calculate:
-            v̄ᵢ = (1/|N(i)|) · Σⱼ∈N(i) vⱼ
-            F_align = v̄ᵢ - vᵢ
-        
-        where v̄ᵢ is the average velocity of the neighbors of agent i.
-        
-        Args:
-            velocity   : Tensor of shape [num_agents, dim] containing velocities
-            edge_index : Tensor of shape [2, num_edges] defining the communication graph
-        
-        Returns:
-            Tensor of shape [num_agents, dim] containing alignment force vectors
-        """
-        dim            = velocity.size(1)
-        device         = velocity.device
-        num_agents     = velocity.size(0)
-        avg_velocity   = torch.zeros_like(velocity)
-        neighbor_count = torch.zeros(
-            num_agents,
-            dtype  = torch.int64, 
-            device = device
-        )
-        
-        # Extract source (`s`) and target (`t`) indices from edge_index
-        s, t = edge_index
-        
-        # Aggregate neighbor velocities and count neighbors
-        for d in range(dim):
-            avg_velocity[:, d].scatter_add_(0, s, velocity[t, d])
-        
-        neighbor_count.scatter_add_(0, s, torch.ones_like(s))
-        
-        safe_count   = torch.max(neighbor_count, torch.ones_like(neighbor_count))
-        avg_velocity = avg_velocity / safe_count.unsqueeze(1)
-        
-        # Zero out forces for agents with no neighbors
-        has_neighbors = neighbor_count > 0
-        return (avg_velocity - velocity) * has_neighbors.unsqueeze(1).float()
-
-    def _compute_thermal(
-        self, 
-        position    : Tensor, 
-        temperature : Tensor
-    ) -> Tensor:
-        """
-        Calculates the thermal repulsion force: U_therm ∝ 1/(T_max - Tᵢ).
-        
-        This implements a thermal-aware repulsion that prevents agents from
-        entering high-temperature regions. The force magnitude increases
-        sharply as the agent's temperature approaches the maximum survivable
-        temperature.
-        
-        For each agent i, we calculate:
-            F_thermᵢ = -∇T_i · 1/(T_max - T_i)
-        
-        where ∇T_i is the temperature gradient at the agent's position, and
-        T_max is the maximum survivable temperature from agent_config.
-        
-        Args:
-            position    : Tensor of shape [num_agents, dim] containing positions
-            temperature : Tensor of shape [num_agents] containing temperature at each agent's position
-        
-        Returns:
-            Tensor of shape [num_agents, dim] containing thermal repulsion force vectors
-        """
-        dim        = position.size(1)
-        device     = position.device
-        num_agents = position.size(0)
-        max_temp   = self.agent_config.max_temperature
-        
-        # Calculate repulsion magnitude (increases as T approaches T_max)
-        epsilon   = 1e-8
-        t_margin  = torch.clamp(max_temp - temperature, min=epsilon)
-        magnitude = 1.0 / t_margin
-        
-        # Initialize thermal force with an approximate temperature gradient
-        # In a real implementation, we would compute actual gradient from environment data
-        thermal_force = torch.zeros_like(position)
-        
-        # For demonstration, create a simple gradient approximation
-        # Agents with higher temperatures create steeper gradients
-        normalized_temp = temperature / max_temp
-        
-        # Scale the repulsion based on temperature
-        for i in range(num_agents):
-            # Direction: use unit vector in upward direction (assuming heat rises)
-            if dim >= 3:
-                direction = torch.tensor([0.0, 0.0, 1.0], device=device)
-                
-            else:
-                direction = torch.tensor([0.0, 1.0], device=device)
-                
-            # Scale by normalized temperature and margin-based magnitude
-            thermal_force[i] = direction * normalized_temp[i] * magnitude[i]
-        
-        return thermal_force
+        self.agent_properties = agent_properties
+        self.flocking_params  = flocking_params
+        self.reynolds_weights = reynolds_weights
+        self._reset_shared_state()
 
     def compute_nominal_action(self, sd) -> Tensor:
         """
         Computes the collective nominal control action for the entire swarm.
 
-        This method orchestrates the calculation of all potential fields and
-        combines them in a weighted sum to produce the final velocity command.
+        This method calculates the weighted sum of forces from all potential
+        fields to produce the final velocity command 𝐮_nom. The weights come
+        from the reynolds_weights configuration, balancing the influence of
+        each behavioral component.
 
         Args:
             sd: The swarm data containing the swarm's current state including
@@ -255,14 +63,328 @@ class ExpertFlockingController:
         Returns:
             A tensor of nominal velocity commands `𝐮_nom` for all agents.
         """
-        u_coh   = self._compute_cohesion(sd.position, sd.edge_index)
-        u_sep   = self._compute_separation(sd.position, sd.edge_index)
-        u_align = self._compute_alignment(sd.velocity, sd.edge_index)
-        u_therm = self._compute_thermal(sd.position, sd.temperature)
+        self._reset_shared_state()
+        self._update_graph_state(sd.edge_index, sd.position.size(0))
 
+        w = self.reynolds_weights
         return (
-            self.expert_config.w_cohesion     * u_coh
-            + self.expert_config.w_separation * u_sep
-            + self.expert_config.w_alignment  * u_align
-            + self.expert_config.w_thermal    * u_therm
+            w.w_cohesion   * self._compute_cohesion(sd.position)   +
+            w.w_separation * self._compute_separation(sd.position) +
+            w.w_alignment  * self._compute_alignment(sd.velocity)  +
+            w.w_thermal    * self._compute_thermal(
+                sd.position,
+                sd.temperature,
+                grad_temp = getattr(sd, 'grad_temperature', None)
+            )
         )
+
+    def _compute_alignment(self, velocity: Tensor) -> Tensor:
+        """
+        Calculates the alignment force vector for each agent.
+        
+        The alignment term implements the third of Reynolds' flocking rules,
+        creating a force that causes agents to match velocities with their
+        neighbors. For each agent i, the average velocity of its neighborhood is:
+        
+            𝐯̄ᵢ = (1/|N(i)|) · Σⱼ∈N(i) 𝐯ⱼ
+            
+        The resulting alignment force is the difference between this average
+        and the agent's current velocity:
+            
+            𝐅_align = 𝐯̄ᵢ - 𝐯ᵢ
+            
+        This creates a tendency for agents to synchronize their motion,
+        leading to the coherent movement patterns observed in natural flocks.
+        
+        Args:
+            velocity   : Tensor [N, dim] containing agent velocities 𝐯
+        
+        Returns:
+            Tensor [N, dim] of alignment force vectors for all agents
+        """
+        avg_velocity = torch.zeros_like(velocity)
+        avg_velocity.index_add_(
+            dim    = 0, 
+            index  = self._edge_source, 
+            source = velocity[self._edge_target]
+        )
+        avg_velocity = torch.divide(avg_velocity, self._safe_count.unsqueeze(1))
+
+        # Apply force only to agents with neighbors
+        has_neighbors = (self._neighbor_count > 0).float().unsqueeze(1)
+        return (avg_velocity - velocity) * has_neighbors
+
+    def _compute_cohesion(self, position: Tensor) -> Tensor:
+        """
+        Calculates the cohesion force vector for each agent.
+        
+        The cohesion term implements the first of Reynolds' flocking rules,
+        creating an attractive force toward the center of mass of an agent's
+        neighbors. For each agent i, the center of mass of its neighborhood is:
+        
+            𝐱̄ᵢ = (1/|N(i)|) · Σⱼ∈N(i) 𝐱ⱼ
+            
+        The resulting cohesion force is the vector pointing from the agent's
+        position toward this center of mass:
+            
+            𝐅_coh = 𝐱̄ᵢ - 𝐱ᵢ
+            
+        The force magnitude increases with distance from the center of mass,
+        creating a tendency for the swarm to maintain cohesion.
+        
+        Args:
+            position   : Tensor [N, dim] containing agent positions 𝐱
+        
+        Returns:
+            Tensor [N, dim] of cohesion force vectors for all agents
+        """
+        center_of_mass = torch.zeros_like(position)
+        center_of_mass.index_add_(
+            dim    = 0, 
+            index  = self._edge_source, 
+            source = position[self._edge_target]
+        )
+
+        center_of_mass = torch.divide(
+            center_of_mass, 
+            self._safe_count.unsqueeze(1)
+        )
+
+        # Apply force only to agents with neighbors
+        has_neighbors = (self._neighbor_count > 0).float().unsqueeze(1)
+        return (center_of_mass - position) * has_neighbors
+
+    def _compute_separation(self, position: Tensor) -> Tensor:
+        """
+        Calculates the separation force vector for each agent.
+        
+        The separation term implements the second of Reynolds' flocking rules,
+        creating a repulsive force that prevents collisions between agents.
+        For each agent i and its neighbor j, we calculate a repulsion vector:
+        
+            𝐅_sepᵢⱼ = (𝐱ᵢ - 𝐱ⱼ) / ||𝐱ᵢ - 𝐱ⱼ||²
+            
+        The total separation force is the sum of these repulsions:
+        
+            𝐅_sep = Σⱼ∈N(i) 𝐅_sepᵢⱼ
+            
+        The force magnitude is inversely proportional to the squared distance,
+        creating a stronger repulsion between agents that are close to each other.
+        
+        Args:
+            position   : Tensor [N, dim] containing agent positions 𝐱
+        
+        Returns:
+            Tensor [N, dim] of separation force vectors for all agents
+        """
+        # Calculate displacement vectors and distances
+        rel_pos  = position[self._edge_source] - position[self._edge_target]
+        distance = torch.norm(
+            input   = rel_pos, 
+            dim     = 1, 
+            keepdim = True
+        )
+
+        # Apply minimum distance and calculate repulsion
+        distance  = torch.clamp(distance, min=self.flocking_params.min_distance)
+        repulsion = torch.divide(
+            rel_pos, 
+            distance.pow(2) + self.flocking_params.epsilon
+        )
+
+        # Sum repulsion vectors for each agent
+        separation = torch.zeros_like(position)
+        separation.index_add_(
+            dim    = 0, 
+            index  = self._edge_source, 
+            source = repulsion
+        )
+
+        return separation
+
+    def _compute_thermal(
+        self,
+        position    : Tensor,
+        temperature : Tensor,
+        grad_temp   : Tensor = None
+    ) -> Tensor:
+        """
+        Calculates the thermal repulsion force for each agent.
+        
+        This implements a thermal-aware repulsion that prevents agents from
+        entering high-temperature regions. The force magnitude increases
+        sharply as the agent's temperature approaches T_max, creating a
+        strong barrier against thermal damage.
+        
+        For each agent i, the thermal repulsion is calculated as:
+        
+            𝐅_thermᵢ = -∇T_i · scale / (T_max - T_i)
+            
+        where ∇T_i is the temperature gradient at the agent's position,
+        T_max is the maximum survivable temperature, and scale is a
+        configurable parameter controlling the overall repulsion strength.
+        
+        Args:
+            position    : Tensor [N, dim] containing agent positions 𝐱
+            temperature : Tensor [N] containing temperatures T at each position
+            grad_temp   : Optional tensor [N, dim] of pre-computed temperature
+                          gradients ∇T. If None, gradients are estimated.
+        
+        Returns:
+            Tensor [N, dim] of thermal repulsion force vectors for all agents
+        """
+        t_margin = torch.clamp(
+            input = self.agent_properties.max_temperature - temperature,
+            min   = self.flocking_params.epsilon
+        )
+
+        magnitude = torch.divide(
+            self.flocking_params.temperature_scaling, 
+            t_margin
+        )
+
+        gradient = grad_temp or self._estimate_temperature_gradient(
+            position    = position, 
+            temperature = temperature
+        )
+
+        # Force points away from high temperatures
+        return -gradient * magnitude.unsqueeze(1)
+
+    def _estimate_temperature_gradient(
+        self,
+        position    : Tensor,
+        temperature : Tensor
+    ) -> Tensor:
+        """
+        Estimates the temperature gradient ∇T at each agent position.
+        
+        This method uses a vectorized approach to approximate gradients using
+        neighboring agent data. The gradient at each point represents the
+        direction of steepest temperature increase.
+        
+        For agents with neighbors, the gradient is estimated by calculating
+        finite differences in position weighted by temperature differentials.
+        For isolated agents or those in uniform temperature fields, a fallback
+        model assumes heat rises vertically, scaled by normalized temperature.
+        
+        Args:
+            position    : Tensor [N, dim] containing agent positions 𝐱
+            temperature : Tensor [N] containing temperatures T
+            
+        Returns:
+            Tensor [N, dim] of estimated temperature gradients ∇T
+        """
+        # Handle the edge case of a completely disconnected graph
+        if self._edge_source is None or self._edge_source.numel() == 0:
+            return self._vertical_heat_gradient(
+                position    = position, 
+                temperature = temperature
+            )
+
+        # Calculate the neighbor-based gradient for all agents
+        num_agents, _ = position.shape
+        pos_diff      = position[self._edge_target]    - position[self._edge_source]
+        temp_diff     = temperature[self._edge_target] - temperature[self._edge_source]
+        
+        # Sum weighted positions and count significant neighbors
+        sig_mask   = torch.abs(input=temp_diff) > self.flocking_params.epsilon
+        grad_sum   = torch.zeros_like(position)
+        sig_counts = torch.bincount(
+            input     = self._edge_source[sig_mask],
+            minlength = num_agents
+        ).float()
+
+        grad_sum.index_add_(
+            dim    = 0,
+            index  = self._edge_source[sig_mask],
+            source = pos_diff[sig_mask] * temp_diff[sig_mask].unsqueeze(dim=1)
+        )
+
+        # Compute the primary gradient, avoiding division by zero
+        grad_neighbors = torch.divide(
+            input = grad_sum,
+            other = torch.clamp(sig_counts, min=1).unsqueeze(dim=1)
+        )
+
+        # Apply the fallback gradient where necessary
+        grad_fallback = self._vertical_heat_gradient(position=position, temperature=temperature)
+        use_fallback  = (sig_counts == 0).unsqueeze(dim=1)
+
+        return torch.where(use_fallback, grad_fallback, grad_neighbors)
+
+    def _reset_shared_state(self):
+        """
+        Resets the shared graph state variables to None.
+        """
+        self._edge_source    = None
+        self._edge_target    = None
+        self._neighbor_count = None
+        self._safe_count     = None
+
+    def _update_graph_state(
+        self, 
+        edge_index : Tensor, 
+        num_agents : int
+    ):
+        """
+        Updates shared state for graph calculations across Reynolds rules.
+        
+        Args:
+            edge_index : Tensor defining the communication graph topology Gₜ = (V, Eₜ)
+            num_agents : The total number of agents N in the swarm
+        """
+        if edge_index.numel() > 0:
+            self._edge_source, self._edge_target = edge_index
+
+        else:
+            # Handle empty graph case to prevent errors
+            device            = edge_index.device
+            self._edge_source = torch.tensor([], dtype=torch.long, device=device)
+            self._edge_target = torch.tensor([], dtype=torch.long, device=device)
+
+        self._neighbor_count = torch.bincount(
+            self._edge_source,
+            minlength = num_agents
+        ).to(edge_index.device)
+
+        self._safe_count = torch.clamp(self._neighbor_count, min=1)
+
+    def _vertical_heat_gradient(
+        self,
+        position    : Tensor,
+        temperature : Tensor
+    ) -> Tensor:
+        """
+        Creates a default vertical temperature gradient.
+        
+        When neighborhood-based gradient estimation is unavailable, this creates
+        a gradient that points upward (assuming heat rises), scaled by the
+        normalized temperature of each agent.
+        
+        Args:
+            position    : Tensor [N, dim] containing agent positions
+            temperature : Tensor [N] containing temperatures
+            
+        Returns:
+            Tensor [N, dim] containing vertical gradient vectors
+        """
+        num_agents, dim = position.shape
+
+        # Create unit vectors pointing up in the last dimension
+        vertical = F.one_hot(
+            num_classes = dim,
+            tensor      = torch.full(
+                size       = (num_agents,),
+                fill_value = dim - 1,
+                device     = position.device,
+                dtype      = torch.long
+            )
+        ).float()
+
+        # Scale by normalized temperature
+        norm_temp = torch.divide(
+            temperature,
+            self.agent_properties.max_temperature
+        )
+        return vertical * norm_temp.unsqueeze(1)
