@@ -5,6 +5,10 @@ This package contains the expert flocking controller and Control Barrier
 Function safety filter.
 """
 from .flocking import ExpertFlockingController
-from .safety   import SafetyFilter
+from .safety   import SafetyFilter, ThermalBarrierFunction
 
-__all__ = ["ExpertFlockingController", "SafetyFilter"]
+__all__ = [
+    "ExpertFlockingController", 
+    "SafetyFilter", 
+    "ThermalBarrierFunction"
+]
