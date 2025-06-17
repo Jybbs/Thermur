@@ -202,6 +202,21 @@ class ExpertFlockingController:
 
         return separation
 
+    def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
+        """
+        Ensures temperature tensor is 1D by squeezing if it's [N, 1].
+        
+        Args:
+            temperature: Tensor [N] or [N, 1] containing temperatures
+            
+        Returns:
+            Tensor [N] with any singleton dimensions removed
+        """
+        if temperature.dim() > 1 and temperature.size(1) == 1:
+            return temperature.squeeze(1)
+        
+        return temperature
+
     def _compute_thermal(
         self,
         position    : Tensor,
@@ -226,14 +241,15 @@ class ExpertFlockingController:
         
         Args:
             position    : Tensor [N, dim] containing agent positions 𝐱
-            temperature : Tensor [N] containing temperatures T at each position
+            temperature : Tensor [N] or [N, 1] containing temperatures T
             grad_temp   : Optional tensor [N, dim] of pre-computed temperature
                           gradients ∇T. If None, gradients are estimated.
         
         Returns:
             Tensor [N, dim] of thermal repulsion force vectors for all agents
         """
-        t_margin = torch.clamp(
+        temperature = self._ensure_1d_temperature(temperature)
+        t_margin    = torch.clamp(
             input = self.agent_properties.max_temperature - temperature,
             min   = self.flocking_params.epsilon
         )
@@ -243,10 +259,11 @@ class ExpertFlockingController:
             t_margin
         )
 
-        gradient = grad_temp or self._estimate_temperature_gradient(
-            position    = position, 
-            temperature = temperature
-        )
+        gradient = grad_temp if grad_temp is not None \
+            else self._estimate_temperature_gradient(
+                position    = position, 
+                temperature = temperature
+            )
 
         # Force points away from high temperatures
         return -gradient * magnitude.unsqueeze(1)
@@ -275,6 +292,8 @@ class ExpertFlockingController:
         Returns:
             Tensor [N, dim] of estimated temperature gradients ∇T
         """
+        temperature = self._ensure_1d_temperature(temperature)
+
         # Handle the edge case of a completely disconnected graph
         if self._edge_source is None or self._edge_source.numel() == 0:
             return self._vertical_heat_gradient(
@@ -364,7 +383,7 @@ class ExpertFlockingController:
         
         Args:
             position    : Tensor [N, dim] containing agent positions
-            temperature : Tensor [N] containing temperatures
+            temperature : Tensor [N] or [N, 1] containing temperatures
             
         Returns:
             Tensor [N, dim] containing vertical gradient vectors
@@ -384,7 +403,7 @@ class ExpertFlockingController:
 
         # Scale by normalized temperature
         norm_temp = torch.divide(
-            temperature,
+            self._ensure_1d_temperature(temperature),
             self.agent_properties.max_temperature
         )
         return vertical * norm_temp.unsqueeze(1)

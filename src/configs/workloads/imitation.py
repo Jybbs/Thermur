@@ -22,7 +22,7 @@ imitation_config = make_config(
     
     # Component builders
     simulation        = build_environment,
-    expert_policy     = build_expert_controller,
+    expert_policy     = build_flocking_controller,
     policy            = build_policy,
     data_collector    = build_collector,
     experience_buffer = build_replay_buffer,
