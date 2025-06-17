@@ -6,15 +6,16 @@ for instantiating components needed for imitation learning training.
 """
 from .collector   import build_collector
 from .environment import build_environment
+from .flocking    import build_flocking_controller
 from .loss        import build_loss
 from .optimizer   import build_optimizer
-from .policy      import build_expert_controller, build_policy
+from .policy      import build_policy
 from .replay      import build_replay_buffer
 
 __all__ = [
     "build_collector",
     "build_environment",
-    "build_expert_controller",
+    "build_flocking_controller",
     "build_loss",
     "build_optimizer",
     "build_policy",
