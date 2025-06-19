@@ -11,8 +11,6 @@ This document outlines the coding style and conventions used in the Thermur proj
 - **Be mathematical**: Use proper mathematical notation in documentation
 - **Maximum line length**: Keep lines under 88 characters
 
-The primary audience is developers who need to understand, modify, and extend a codebase involving complex numerical algorithms, swarm dynamics, and reinforcement learning concepts.
-
 ## Project Organization
 
 ### Module Structure
@@ -354,7 +352,38 @@ model = mujoco.MjModel.from_xml_path(model_path.as_posix())
 - Include return type hints
 - Use `Optional` for parameters that may be None
 - Use specific types over generic types when possible (e.g., `TensorDictBase` over `dict`)
-- If a signature has more than 2 parameters, house those parameters on newlines with colon spacing.
+- For signatures with a total of 2 parameters (like `self` and 1 parameter), keep them on a single line
+- For signatures with 3+, place parameters on individual lines with aligned type hints
+- Remember that `self` counts as a parameter when determining format
+
+```python
+# ✅ Correct single-line signature (standalone function with 2 parameters)
+def compute_distance(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """
+    Calculate Euclidean distance between two points.
+    """
+    return torch.sqrt(torch.sum((x - y) ** 2))
+
+# ✅ Correct single-line signature (method with self + 1 parameter)
+def compute_gradient(self, temperature: torch.Tensor) -> torch.Tensor:
+    """
+    Compute temperature gradient at the given point.
+    """
+    return self._calculate_thermal_gradient(temperature)
+
+# ✅ Correct multi-line signature (method with self + 2 parameters)
+def initialize_agent(
+    self,
+    position : torch.Tensor,
+    velocity : torch.Tensor, 
+    temp     : float,
+    state    : Optional[dict] = None
+) -> Agent:
+    """
+    Initialize agent with the given parameters.
+    """
+    # Implementation follows...
+```
 
 ```python
 # ✅ Correct type hint usage
