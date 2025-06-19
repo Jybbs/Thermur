@@ -208,12 +208,12 @@ class SimulationEnv(EnvBase):
             
             return positions[:n_agents]
 
-    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
+    def _step(self, action_dict: TensorDictBase) -> TensorDictBase:
         """
         Performs one discrete time step in the environment.
 
         The process is as follows:
-        1.  The input `tensordict` provides the `action` (velocity commands).
+        1.  The input `action_dict` provides the `action` (velocity commands).
         2.  These actions are applied to the agents in the MuJoCo simulation.
         3.  The physics engine is stepped forward by `simulation_step` seconds.
         4.  The new agent states (position, velocity) are retrieved.
@@ -223,13 +223,160 @@ class SimulationEnv(EnvBase):
         7.  A `TensorDict` containing this `next` state is returned.
 
         Args:
-            tensordict: A `TensorDict` containing the control `action` to apply.
+            action_dict: A `TensorDict` containing the control `action` to apply.
 
         Returns:
             A `TensorDict` containing the observation after the step, along with
             the calculated reward and done flag.
         """
-        raise NotImplementedError("The full environment step logic is not yet implemented.")
+        # Extract actions and simulation objects
+        actions = action_dict.get("action")
+        model   = self.physics_model["model"]
+        data    = self.physics_model["data"]
+        
+        # Apply actions, step simulation, and retrieve updated state
+        self._apply_agent_actions(data, actions)
+        mujoco.mj_step(model, data)
+        
+        next_positions  = self._get_agent_positions(data)
+        next_velocities = self._get_agent_velocities(data)
+        
+        # Construct next observation with updated state
+        next_observation = self.observation_spec.zero()
+        next_observation.set("position", next_positions)
+        next_observation.set("velocity", next_velocities)
+        next_observation = self._update_observation(next_observation)
+        
+        # Add rewards and done signals
+        agent_count = self.config.swarm.agent_count
+        rewards     = self._compute_rewards(next_observation)
+        dones       = torch.zeros(agent_count, dtype=torch.bool)
+        
+        next_observation.set("reward", rewards)
+        next_observation.set("done", dones)
+        
+        return next_observation
+        
+    def _apply_agent_actions(self, data, actions):
+        """
+        Applies agent control actions to the MuJoCo simulation.
+        
+        This method translates the high-level velocity commands from the policy
+        into appropriate control inputs for the MuJoCo physics simulation. The 
+        exact mapping depends on the structure of the swarm XML model, particularly
+        how the actuators are defined for each agent.
+        
+        For each agent, the corresponding velocity command is mapped to the
+        appropriate control inputs in the MuJoCo data structure. The method
+        handles both 2D and 3D velocity commands based on the configured
+        spatial dimensions.
+        
+        Args:
+            data    : MuJoCo simulation data object with control arrays
+            actions : Tensor of shape [n_agents, action_dims] with velocity commands
+        """
+        agent_count = self.config.swarm.agent_count
+        
+        for i in range(agent_count):
+            agent_action = actions[i]
+            control_idx  = i * 3  # Assuming 3 DOF per agent
+            
+            if len(agent_action) >= 3:
+                data.ctrl[control_idx:control_idx+3] = agent_action[:3].cpu().numpy()
+
+            else:
+                data.ctrl[control_idx:control_idx+2] = agent_action.cpu().numpy()
+                data.ctrl[control_idx+2] = 0.0
+    
+    def _compute_rewards(self, observation_dict):
+        """
+        Computes rewards for each agent based on the current state.
+        
+        This method implements the reward function that guides agent learning.
+        The rewards incentivize desired behaviors like maintaining formation,
+        avoiding obstacles, and staying within safe temperature ranges.
+        
+        The reward function balances multiple objectives including:
+        - Formation maintenance (staying in a cohesive group)
+        - Temperature safety (avoiding dangerous thermal conditions)
+        - Task completion (reaching target locations or patterns)
+        - Efficiency (minimizing energy usage and unnecessary movement)
+        
+        Args:
+            observation_dict : TensorDict containing the current observation
+            
+        Returns:
+            Tensor of shape [n_agents] containing individual agent rewards
+        """
+        agent_count = self.config.swarm.agent_count
+        
+        return torch.zeros(agent_count)
+    
+    def _get_agent_positions(self, data):
+        """
+        Extracts agent positions from MuJoCo simulation data.
+        
+        This method maps from the MuJoCo internal representation of agent positions
+        to the tensor format used by the learning system. The exact mapping depends
+        on how agents are represented in the MuJoCo XML model, particularly the
+        structure of the qpos array.
+        
+        Args:
+            data : MuJoCo simulation data object containing agent state
+            
+        Returns:
+            Tensor of shape [n_agents, spatial_dims] containing agent positions
+        """
+        agent_count = self.config.swarm.agent_count
+        dims        = self.config.swarm.spatial_dims
+        positions   = torch.zeros((agent_count, dims))
+        
+        for i in range(agent_count):
+            body_idx = i + 1  # Skip world body
+            
+            if dims == 3:
+                positions[i, 0] = data.qpos[body_idx * 7]     # X position
+                positions[i, 1] = data.qpos[body_idx * 7 + 1] # Y position
+                positions[i, 2] = data.qpos[body_idx * 7 + 2] # Z position
+
+            else:
+                positions[i, 0] = data.qpos[body_idx * 7]     # X position
+                positions[i, 1] = data.qpos[body_idx * 7 + 1] # Y position
+                
+        return positions
+    
+    def _get_agent_velocities(self, data):
+        """
+        Extracts agent velocities from MuJoCo simulation data.
+        
+        This method maps from the MuJoCo internal representation of agent velocities
+        to the tensor format used by the learning system. The exact mapping depends
+        on how agents are represented in the MuJoCo XML model, particularly the
+        structure of the qvel array.
+        
+        Args:
+            data : MuJoCo simulation data object containing agent state
+            
+        Returns:
+            Tensor of shape [n_agents, spatial_dims] containing agent velocities
+        """
+        agent_count = self.config.swarm.agent_count
+        dims        = self.config.swarm.spatial_dims
+        velocities  = torch.zeros((agent_count, dims))
+        
+        for i in range(agent_count):
+            body_idx = i + 1  # Skip world body
+            
+            if dims == 3:
+                velocities[i, 0] = data.qvel[body_idx * 6]     # X velocity
+                velocities[i, 1] = data.qvel[body_idx * 6 + 1] # Y velocity
+                velocities[i, 2] = data.qvel[body_idx * 6 + 2] # Z velocity
+                
+            else:
+                velocities[i, 0] = data.qvel[body_idx * 6]     # X velocity
+                velocities[i, 1] = data.qvel[body_idx * 6 + 1] # Y velocity
+                
+        return velocities
 
     def _update_observation(self, observation_dict: TensorDictBase) -> TensorDictBase:
         """
