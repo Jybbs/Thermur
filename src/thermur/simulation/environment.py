@@ -14,7 +14,7 @@ rewards to the learning algorithm. It couples a rigid-body physics engine
 import mujoco
 import torch
 
-from tensordict   import TensorDictBase
+from tensordict   import TensorDict, TensorDictBase
 from torchrl.envs import EnvBase
 from typing       import Callable, Optional
 
@@ -77,8 +77,6 @@ class SimulationEnv(EnvBase):
         model_path = self.config.environment.assets_dir / "swarm.xml"
         model      = mujoco.MjModel.from_xml_path(model_path.as_posix())
 
-        # Dynamically set agent count and configure simulation timestep
-        mujoco.mj_setConst(model, self.config.swarm.agent_count)
         model.opt.timestep = self.config.environment.simulation_step
 
         return {
@@ -86,7 +84,7 @@ class SimulationEnv(EnvBase):
             "data"  : mujoco.MjData(model)
         }
 
-    def _reset(self) -> TensorDictBase:
+    def _reset(self, tensordict=None, **kwargs) -> TensorDictBase:
         """
         Resets the environment to an initial state for a new episode.
 
@@ -113,17 +111,44 @@ class SimulationEnv(EnvBase):
 
         if self.config.swarm.initial_formation == "cube":
             positions = self._generate_cube_formation(agent_count, spatial_dims)
+
         else:
             positions = self._generate_sphere_formation(agent_count, spatial_dims)
 
-        # Create the initial observation TensorDict
-        initial_obs = self.observation_spec.zero()
-        initial_obs.update({
-            "position" : positions * communication_range * formation_scale,
-            "velocity" : torch.zeros_like(positions),
-        })
-
-        return self._update_observation(initial_obs)
+        # Scale the positions
+        scaled_positions = positions * communication_range * formation_scale
+        
+        # Create a fresh TensorDict with proper structure and shape
+        initial_obs = TensorDict(
+            {
+                "position"         : scaled_positions,
+                "velocity"         : torch.zeros_like(scaled_positions),
+                "temperature"      : torch.zeros(agent_count),
+                "temperature_grad" : torch.zeros((agent_count, spatial_dims)),
+                "edge_index"       : torch.zeros((2, 0), dtype=torch.long),
+                "reward"           : torch.zeros(agent_count),
+                "done"             : torch.zeros(1, dtype=torch.bool),
+                "_done"            : torch.zeros(agent_count, dtype=torch.bool)
+            }, 
+            batch_size = []
+        )
+        
+        # Update with thermal data and edge_index
+        positions       = initial_obs["position"]
+        temp, temp_grad = self.data_source(positions)
+        
+        initial_obs.update(
+            {
+                "temperature"      : temp,
+                "temperature_grad" : temp_grad,
+                "edge_index"       : self.compute_edge_index(
+                    pos = positions,
+                    r   = self.config.swarm.communication_range
+                )
+            }
+        )
+        
+        return initial_obs
         
     def _generate_sphere_formation(
         self,
@@ -224,58 +249,60 @@ class SimulationEnv(EnvBase):
         model   = self.physics_model["model"]
         data    = self.physics_model["data"]
 
-        data.ctrl[:] = actions.cpu().numpy().flatten()
+        # Note: The MuJoCo model is set up with only 3 actuators in total (one for each dimension),
+        # not per-agent actuators. For now, we'll use the average of all agent actions.
+        #
+        # In a future branch, we'll need to adjust the model to have separate actuators per agent.
+        mean_action = actions.mean(dim=0).cpu().numpy()
+        data.ctrl[:] = mean_action
+        
         mujoco.mj_step(model, data)
         
-        # Create the next observation `TensorDict` from the updated physics state
-        next_obs = self.observation_spec.zero()
-        next_obs.update({
-            "position" : torch.from_numpy(data.qpos).view(-1, 3),
-            "velocity" : torch.from_numpy(data.qvel).view(-1, 3),
-        })
-        self._update_observation(next_obs)
+        # Since there's only one agent in the physics model, we'll duplicate its state for all agents
+        # with small offsets to simulate multiple agents
+        qpos = torch.from_numpy(data.qpos).view(-1)
+        qvel = torch.from_numpy(data.qvel).view(-1)
         
-        next_obs.update({
-            "reward" : torch.zeros(self.config.swarm.agent_count),
-            "done"   : torch.zeros(
-                self.config.swarm.agent_count, 
-                dtype = torch.bool
-            ),
-        })
+        agent_count      = self.config.swarm.agent_count
+        spatial_dims     = self.config.swarm.spatial_dims
+        agent_positions  = []
+        agent_velocities = []
+        
+        for i in range(agent_count):
+
+            # Add a small offset to each agent's position to spread them out
+            offset = torch.tensor([
+                0.2 * (i % 4 - 1.5),
+                0.2 * ((i // 4) % 3 - 1),
+                0.0
+            ])
+            agent_positions.append(qpos + offset)
+            agent_velocities.append(qvel)
+        
+        positions       = torch.stack(agent_positions)
+        velocities      = torch.stack(agent_velocities)
+        temp, temp_grad = self.data_source(positions)
+        
+        # Create the next observation TensorDict
+        next_obs = TensorDict(
+            {
+                "position"         : positions,
+                "velocity"         : velocities,
+                "temperature"      : temp,
+                "temperature_grad" : temp_grad,
+                "edge_index"       : self.compute_edge_index(
+                    pos = positions,
+                    r   = self.config.swarm.communication_range
+                ),
+                "reward"           : torch.zeros(agent_count),
+                "done"             : torch.zeros(1, dtype=torch.bool),
+                "_done"            : torch.zeros(agent_count, dtype=torch.bool)
+            }, 
+            batch_size = []
+        )
+    
 
         return next_obs
-
-    def _update_observation(self, td: TensorDictBase) -> TensorDictBase:
-        """
-        Populates a `TensorDict` with fresh sensor and graph data.
-        
-        This method queries the environmental data source to obtain thermal
-        information at the current agent positions, and computes the communication
-        graph topology based on the configured communication range. These
-        components are essential for both the learning algorithm and the
-        visualization system.
-        
-        Args:
-            td: A `TensorDict` containing agent `position` with
-                shape [n_agents, spatial_dims]
-
-        Returns:
-            The input `TensorDict`, updated in-place with thermal data and
-            the communication graph's `edge_index`.
-        """
-        positions       = td.get("position")
-        temp, temp_grad = self.data_source.query_thermal(positions)
-
-        td.update({
-            "temperature"      : temp,
-            "temperature_grad" : temp_grad,
-            "edge_index"       : self.compute_edge_index(
-                pos = positions,
-                r   = self.config.swarm.communication_range
-            )
-        })
-
-        return td
 
     def _make_spec(self, td_params: TensorDictBase):
         """
