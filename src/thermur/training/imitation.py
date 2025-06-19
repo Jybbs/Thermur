@@ -50,7 +50,6 @@ def train_imitation_learning(
     """
     device = torch.device(hyperparameters.device)
     
-    # Initialize Weights & Biases if enabled
     if wandb_config.mode != "disabled":
         wandb.init(
             project = wandb_config.project,
@@ -63,31 +62,27 @@ def train_imitation_learning(
         )
         logger.info("Weights & Biases initialized for experiment tracking.")
     
-    # Main training loop
     logger.info(f"Starting training for {data_collector.total_frames} frames.")
     pbar = tqdm(total=data_collector.total_frames)
     
     total_frames = 0
     for i, data in enumerate(data_collector):
-        # Add collected data to replay buffer
+
         experience_buffer.extend(data.to("cpu"))
         current_frames = data.numel()
         total_frames  += current_frames
         
         pbar.update(current_frames)
         
-        # Train when we have enough data
         if total_frames > experience_buffer.batch_size:
             batch     = experience_buffer.sample().to(device)
             loss_dict = loss_function(batch)
             loss      = loss_dict["loss"]
             
-            # Optimization step
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
             
-            # Logging
             if i % hyperparameters.log_interval == 0:
                 if wandb_config.mode != "disabled":
                     wandb.log({"train/loss": loss.item()}, step=total_frames)
@@ -96,7 +91,6 @@ def train_imitation_learning(
     data_collector.shutdown()
     pbar.close()
     
-    # Save final model
     save_checkpoint(policy, optimizer, total_frames, "checkpoints", is_final=True)
     logger.info("Training finished successfully.")
 
