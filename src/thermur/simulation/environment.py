@@ -11,6 +11,10 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
+import mujoco
+import torch
+
+from pathlib      import Path
 from tensordict   import TensorDictBase
 from torchrl.envs import EnvBase
 from typing       import Callable, Optional
@@ -74,28 +78,135 @@ class SimulationEnv(EnvBase):
     def _initialize_physics(self):
         """
         Loads and configures the MuJoCo physics model.
+        
+        This method initializes the MuJoCo simulation by loading the swarm XML model
+        from the configured assets directory. The model is configured with the 
+        simulation timestep specified in the environment configuration. The returned
+        physics model contains both the MjModel and MjData components needed for
+        simulation.
+        
+        Returns:
+            A dictionary containing the MuJoCo model and data instances needed
+            for physics simulation.
         """
+        model_path = self.config.environment.assets_dir / "swarm.xml"
+        model = mujoco.MjModel.from_xml_path(model_path.as_posix())
 
-        raise NotImplementedError("MuJoCo physics model initialization is not yet implemented.")
+        model.opt.timestep = self.config.environment.simulation_step
+        
+        return {
+            "model" : model, 
+            "data"  : mujoco.MjData(model)
+        }
 
-    def _reset(self, tensordict: TensorDictBase | None = None) -> TensorDictBase:
+    def _reset(self) -> TensorDictBase:
         """
         Resets the environment to an initial state for a new episode.
 
         This method creates an initial `TensorDict` observation by placing agents
         according to the `initial_formation` specified in the swarm config and
         querying the environmental data at these starting positions.
+        
+        The supported formation types include:
+        - 'sphere'      : Agents are distributed evenly on the surface of a sphere
+        - 'cube'        : Agents are arranged in a uniform 3D grid within a cube
+        - 'murmuration' : (Future) A more complex formation mimicking starling flocks
+        
+        The formation is scaled based on the communication range to ensure
+        appropriate initial connectivity between agents.
 
         Returns:
             A `TensorDict` containing the initial observation of the swarm.
         """
-        raise NotImplementedError("Initial swarm formation logic (sphere/cube) is not yet implemented.")
+        observation_dict    = self.observation_spec.zero()
+        formation           = self.config.swarm.initial_formation
+        agent_count         = self.config.swarm.agent_count
+        spatial_dims        = self.config.swarm.spatial_dims
+        communication_range = self.config.swarm.communication_range
+        formation_scale     = self.config.swarm.formation_scale_factor
+        
+        # Generate positions based on formation type, defaulting to sphere
+        if formation == "cube":
+            positions = self._generate_cube_formation(agent_count, spatial_dims)
+
+        else:
+            positions = self._generate_sphere_formation(agent_count, spatial_dims)
+        
+        # Set initial state in observation
+        observation_dict.set(
+            key  = "position", 
+            item = positions * communication_range * formation_scale
+        )
+        observation_dict.set(
+            key  = "velocity", 
+            item = torch.zeros_like(positions)
+        )
+        
+        return self._update_observation(observation_dict)
+        
+    def _generate_sphere_formation(self, n_agents: int, dims: int) -> torch.Tensor:
+        """
+        Generates points distributed evenly on a sphere or circle.
+        
+        For 3D, uses the Fibonacci sphere algorithm to generate points that are
+        approximately equidistant on a sphere. For 2D, places points evenly on
+        a circle using angular spacing.
+        
+        Args:
+            n_agents : Number of agents to place
+            dims     : Spatial dimensions (2 for circle, 3 for sphere)
+            
+        Returns:
+            Tensor of shape [n_agents, dims] containing agent positions
+        """
+        if dims == 2:
+            theta = torch.linspace(0, 2 * torch.pi, n_agents + 1)[:-1]
+            x     = torch.cos(theta)
+            y     = torch.sin(theta)
+            
+            return torch.stack([x, y], dim=1)
+        else:
+            phi     = (1 + 5 ** 0.5) / 2  # Golden ratio
+            indices = torch.arange(0, n_agents, dtype=torch.float32)
+            theta   = 2 * torch.pi * indices / phi
+            z       = 1 - (2 * indices + 1) / n_agents
+            radius  = torch.sqrt(1 - z * z)
+            x       = radius * torch.cos(theta)
+            y       = radius * torch.sin(theta)
+            
+            return torch.stack([x, y, z], dim=1)
     
-        # Implementation sketch:
-        # 1. Create a zeroed TensorDict from self.observation_spec.
-        # 2. Generate initial positions based on self.config.swarm.initial_formation.
-        # 3. Call self._update_observation(td) to populate sensor readings.
-        # 4. Return the populated TensorDict.
+    def _generate_cube_formation(self, n_agents: int, dims: int) -> torch.Tensor:
+        """
+        Generates points distributed in a cube or square grid.
+        
+        Creates a grid-like formation of agents. For 3D, the agents are arranged
+        in a cubic lattice. For 2D, they form a square grid.
+        
+        Args:
+            n_agents : Number of agents to place
+            dims     : Spatial dimensions (2 for square, 3 for cube)
+            
+        Returns:
+            Tensor of shape [n_agents, dims] containing agent positions
+        """
+        if dims == 2:
+            side_length = int(torch.ceil(torch.sqrt(torch.tensor(n_agents, dtype=torch.float32))))
+            x           = torch.linspace(-1, 1, side_length)
+            y           = torch.linspace(-1, 1, side_length)
+            grid_x, grid_y = torch.meshgrid(x, y, indexing='ij')
+            positions   = torch.stack([grid_x.flatten(), grid_y.flatten()], dim=1)
+            
+            return positions[:n_agents]
+        else:
+            side_length = int(torch.ceil(torch.pow(torch.tensor(n_agents, dtype=torch.float32), 1/3)))
+            x           = torch.linspace(-1, 1, side_length)
+            y           = torch.linspace(-1, 1, side_length)
+            z           = torch.linspace(-1, 1, side_length)
+            grid_x, grid_y, grid_z = torch.meshgrid(x, y, z, indexing='ij')
+            positions   = torch.stack([grid_x.flatten(), grid_y.flatten(), grid_z.flatten()], dim=1)
+            
+            return positions[:n_agents]
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """
@@ -120,33 +231,33 @@ class SimulationEnv(EnvBase):
         """
         raise NotImplementedError("The full environment step logic is not yet implemented.")
 
-    def _update_observation(self, td: TensorDictBase) -> TensorDictBase:
+    def _update_observation(self, observation_dict: TensorDictBase) -> TensorDictBase:
         """
         Populates a TensorDict with fresh sensor and graph data.
 
         Args:
-            td: A `TensorDict` containing, at a minimum, the `position` of all agents.
+            observation_dict: A `TensorDict` containing, at a minimum, the `position` of all agents.
 
         Returns:
             The input `TensorDict`, updated in-place with new thermal data and
             the communication graph's `edge_index`.
         """
-        positions = td.get("position")
+        positions = observation_dict.get("position")
 
         # Query environmental data source for thermal properties at agent locations.
         temp, temp_grad = self.data_source.query_thermal(positions)
-        td.set("temperature", temp)
-        td.set("temperature_grad", temp_grad)
+        observation_dict.set("temperature", temp)
+        observation_dict.set("temperature_grad", temp_grad)
 
         # Re-compute the communication graph based on new positions.
-        td.set(
+        observation_dict.set(
             "edge_index",
             self.compute_edge_index(
                 pos = positions,
                 r   = self.config.swarm.communication_range
             )
         )
-        return td
+        return observation_dict
 
     def _make_spec(self, td_params: TensorDictBase):
         """

@@ -70,6 +70,14 @@ class SwarmModel(BaseModel, extra="forbid"):
             "neighborhood graph."
         )
     )
+    formation_scale_factor: float = Field(
+        default     = 0.5,
+        gt          = 0,
+        description = (
+            "Scaling factor applied to initial agent formations, as a fraction "
+            "of the communication range. Controls the density of the swarm."
+        )
+    )
     initial_formation: Literal["sphere", "cube"] = Field(
         default     = "sphere",
         description = (
