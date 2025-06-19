@@ -355,6 +355,8 @@ model = mujoco.MjModel.from_xml_path(model_path.as_posix())
 - For signatures with a total of 2 parameters (like `self` and 1 parameter), keep them on a single line
 - For signatures with 3+, place parameters on individual lines with aligned type hints
 - Remember that `self` counts as a parameter when determining format
+- Use built-in type annotations in Python 3.13 directly rather than importing from the typing module
+    - e.g. Use `list`, `dict`, `any`; not `List`, `Dict`, `Any`
 
 ```python
 # ✅ Correct single-line signature (standalone function with 2 parameters)
