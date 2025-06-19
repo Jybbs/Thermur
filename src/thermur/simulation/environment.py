@@ -11,7 +11,10 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from tensordict   import TensorDictBase
+import mujoco
+import torch
+
+from tensordict   import TensorDict, TensorDictBase
 from torchrl.envs import EnvBase
 from typing       import Callable, Optional
 
@@ -28,27 +31,15 @@ class SimulationEnv(EnvBase):
     The state is represented by a `TensorDict` matching the specification
     defined externally, which includes agent kinematics, local thermal
     data, and the communication graph topology.
-
-    This class follows dependency injection principles - all dependencies
-    are provided through the constructor rather than imported directly.
-
-    Attributes:
-        config              : The environment configuration containing simulation params.
-        data_source         : A callable for querying thermal data.
-        compute_edge_index  : A callable for computing communication graphs.
-        observation_spec    : The observation space specification.
-        action_spec         : The action space specification.
-        seed_fn             : Optional callable for setting random seeds.
-        physics_model       : A handle to the underlying MuJoCo physics simulation.
     """
 
     def __init__(
         self,
         config,
-        data_source        : Callable,
-        compute_edge_index : Callable,
-        observation_spec   : TensorDictBase,
         action_spec        : TensorDictBase,
+        compute_edge_index : Callable,
+        data_source        : Callable,
+        observation_spec   : TensorDictBase,
         seed_fn            : Optional[Callable] = None,
     ):
         """
@@ -56,111 +47,282 @@ class SimulationEnv(EnvBase):
 
         Args:
             config             : An instance containing simulation parameters.
-            data_source        : A callable that provides environmental data queries.
-            compute_edge_index : A callable that computes communication graph edges.
-            observation_spec   : The observation space specification.
             action_spec        : The action space specification.
+            compute_edge_index : A callable that computes communication graph edges.
+            data_source        : A callable that provides environmental data queries.
+            observation_spec   : The observation space specification.
             seed_fn            : Optional callable for setting random seeds.
         """
         super().__init__(device="cpu")
         self.config             = config
-        self.data_source        = data_source
-        self.compute_edge_index = compute_edge_index
-        self.observation_spec   = observation_spec
         self.action_spec        = action_spec
+        self.compute_edge_index = compute_edge_index
+        self.data_source        = data_source
+        self.observation_spec   = observation_spec
         self.seed_fn            = seed_fn
         self.physics_model      = self._initialize_physics()
 
     def _initialize_physics(self):
         """
         Loads and configures the MuJoCo physics model.
+
+        This method initializes the MuJoCo simulation from the swarm XML model.
+        It dynamically sets the number of agents in the model based on the
+        provided configuration, ensuring the physics engine is correctly
+        instantiated for the specified swarm size.
+
+        Returns:
+            A dictionary containing the MuJoCo model and data instances.
         """
+        model_path = self.config.environment.assets_dir / "swarm.xml"
+        model      = mujoco.MjModel.from_xml_path(model_path.as_posix())
 
-        raise NotImplementedError("MuJoCo physics model initialization is not yet implemented.")
+        model.opt.timestep = self.config.environment.simulation_step
 
-    def _reset(self, tensordict: TensorDictBase | None = None) -> TensorDictBase:
+        return {
+            "model" : model,
+            "data"  : mujoco.MjData(model)
+        }
+
+    def _reset(self, tensordict=None, **kwargs) -> TensorDictBase:
         """
         Resets the environment to an initial state for a new episode.
 
         This method creates an initial `TensorDict` observation by placing agents
         according to the `initial_formation` specified in the swarm config and
         querying the environmental data at these starting positions.
+        
+        The supported formation types include:
+        - 'sphere'      : Agents are distributed evenly on a sphere surface using 
+                          the Fibonacci lattice method for uniform distribution
+        - 'cube'        : Agents are arranged in a uniform N-dimensional grid
+        - 'murmuration' : (TBD) Agents mimic the controlled chaos of starlings
+
+        The formation is scaled by the communication range and formation scale
+        factor to ensure appropriate initial connectivity between agents.
 
         Returns:
             A `TensorDict` containing the initial observation of the swarm.
         """
-        raise NotImplementedError("Initial swarm formation logic (sphere/cube) is not yet implemented.")
-    
-        # Implementation sketch:
-        # 1. Create a zeroed TensorDict from self.observation_spec.
-        # 2. Generate initial positions based on self.config.swarm.initial_formation.
-        # 3. Call self._update_observation(td) to populate sensor readings.
-        # 4. Return the populated TensorDict.
+        agent_count         = self.config.swarm.agent_count
+        spatial_dims        = self.config.swarm.spatial_dims
+        communication_range = self.config.swarm.communication_range
+        formation_scale     = self.config.swarm.formation_scale_factor
 
-    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
+        if self.config.swarm.initial_formation == "cube":
+            positions = self._generate_cube_formation(agent_count, spatial_dims)
+
+        else:
+            positions = self._generate_sphere_formation(agent_count, spatial_dims)
+
+        # Scale the positions
+        scaled_positions = positions * communication_range * formation_scale
+        
+        # Create a fresh TensorDict with proper structure and shape
+        initial_obs = TensorDict(
+            {
+                "position"         : scaled_positions,
+                "velocity"         : torch.zeros_like(scaled_positions),
+                "temperature"      : torch.zeros(agent_count),
+                "temperature_grad" : torch.zeros((agent_count, spatial_dims)),
+                "edge_index"       : torch.zeros((2, 0), dtype=torch.long),
+                "reward"           : torch.zeros(agent_count),
+                "done"             : torch.zeros(1, dtype=torch.bool),
+                "_done"            : torch.zeros(agent_count, dtype=torch.bool)
+            }, 
+            batch_size = []
+        )
+        
+        # Update with thermal data and edge_index
+        positions       = initial_obs["position"]
+        temp, temp_grad = self.data_source(positions)
+        
+        initial_obs.update(
+            {
+                "temperature"      : temp,
+                "temperature_grad" : temp_grad,
+                "edge_index"       : self.compute_edge_index(
+                    pos = positions,
+                    r   = self.config.swarm.communication_range
+                )
+            }
+        )
+        
+        return initial_obs
+        
+    def _generate_sphere_formation(
+        self,
+        n_agents : int,
+        dims     : int
+    ) -> torch.Tensor:
+        """
+        Generates points distributed evenly on a sphere (3D) or circle (2D).
+
+        For 2D, places points evenly on a circle. For 3D, uses the Fibonacci
+        lattice method, which provides excellent uniformity for arbitrary N.
+        
+        The Fibonacci lattice method creates a nearly-uniform distribution by:
+            - Using the golden ratio φ = (1 + √5)/2 to create optimal angular spacing
+            - Setting z-coordinates using a linear spacing from -1 to 1
+            - Computing radius at each z value: r = √(1 - z²)
+        
+        Points are then placed at:
+         
+            (r·cos(θ), r·sin(θ), z) where θ = 2π·k/φ
+        
+        Args:
+            n_agents : Number of agents to place [N]
+            dims     : Spatial dimensions (2 or 3)
+
+        Returns:
+            A tensor of shape [n_agents, dims] containing agent positions
+        """
+        if dims == 2:
+            thetas = torch.linspace(0, 2 * torch.pi, n_agents, endpoint=False)
+            return torch.stack((torch.cos(thetas), torch.sin(thetas)), dim=1)
+
+        indices      = torch.arange(n_agents, dtype=torch.float32)
+        z            = 1 - (2 * indices) / (n_agents - 1)
+        radius       = torch.sqrt(1 - z*z)
+        golden_angle = torch.pi * (3. - (5.**0.5))
+        theta        = golden_angle * indices
+
+        return torch.stack((
+            torch.cos(theta) * radius,
+            torch.sin(theta) * radius,
+            z
+        ), dim=1)
+    
+    def _generate_cube_formation(
+        self,
+        n_agents : int,
+        dims     : int
+    ) -> torch.Tensor:
+        """
+        Generates points distributed in a hypercube grid formation.
+        
+        Creates a regular grid in N-dimensional space with points arranged
+        in a hypercube. The algorithm:
+            - Calculates the side length needed to accommodate N agents in a
+              d-dimensional space: ceil(N^(1/d))
+            - Creates a coordinate grid spanning [-1, 1] in each dimension
+            - Returns the first N points from the flattened grid
+        
+        Args:
+            n_agents : Number of agents to place [N]
+            dims     : Spatial dimensions for the hypercube (2 or 3)
+
+        Returns:
+            A tensor of shape [n_agents, dims] containing agent positions
+        """
+        side_length = int(torch.ceil(torch.tensor(n_agents).float().pow(1./dims)))
+        coords      = torch.linspace(-1, 1, side_length)
+        grid        = torch.stack(
+            dim     = -1,
+            tensors = torch.meshgrid(*([coords] * dims), indexing='ij')
+        )
+
+        return grid.reshape(-1, dims)[:n_agents]
+
+    def _step(self, td: TensorDictBase) -> TensorDictBase:
         """
         Performs one discrete time step in the environment.
-
-        The process is as follows:
-        1.  The input `tensordict` provides the `action` (velocity commands).
-        2.  These actions are applied to the agents in the MuJoCo simulation.
-        3.  The physics engine is stepped forward by `simulation_step` seconds.
-        4.  The new agent states (position, velocity) are retrieved.
-        5.  A new observation is constructed by querying the environment at these
-            new positions.
-        6.  A reward is computed, and a 'done' signal is determined.
-        7.  A `TensorDict` containing this `next` state is returned.
-
+        
+        The process follows these steps:
+            1. Extract agent control actions from the input `td`
+            2. Apply these actions to the MuJoCo simulation
+            3. Step the physics engine forward by `simulation_step` seconds
+            4. Extract the updated agent states (positions, velocities)
+            5. Create a new observation with environmental data at these positions
+            6. Compute "reward" and "done" flags for each agent
+            7. Return a `td` with the complete next state
+        
         Args:
-            tensordict: A `TensorDict` containing the control `action` to apply.
+            td: A `TensorDict` containing the control `action` to apply,
+                with shape [n_agents, action_dims]
 
         Returns:
-            A `TensorDict` containing the observation after the step, along with
-            the calculated reward and done flag.
+            A `TensorDict` for the `next` state, including the new
+            observation, reward, and done flag.
         """
-        raise NotImplementedError("The full environment step logic is not yet implemented.")
+        actions = td.get("action")
+        model   = self.physics_model["model"]
+        data    = self.physics_model["data"]
 
-    def _update_observation(self, td: TensorDictBase) -> TensorDictBase:
-        """
-        Populates a TensorDict with fresh sensor and graph data.
+        # Note: The MuJoCo model is set up with only 3 actuators in total (one for each dimension),
+        # not per-agent actuators. For now, we'll use the average of all agent actions.
+        #
+        # In a future branch, we'll need to adjust the model to have separate actuators per agent.
+        mean_action = actions.mean(dim=0).cpu().numpy()
+        data.ctrl[:] = mean_action
+        
+        mujoco.mj_step(model, data)
+        
+        # Since there's only one agent in the physics model, we'll duplicate its state for all agents
+        # with small offsets to simulate multiple agents
+        qpos = torch.from_numpy(data.qpos).view(-1)
+        qvel = torch.from_numpy(data.qvel).view(-1)
+        
+        agent_count      = self.config.swarm.agent_count
+        spatial_dims     = self.config.swarm.spatial_dims
+        agent_positions  = []
+        agent_velocities = []
+        
+        for i in range(agent_count):
 
-        Args:
-            td: A `TensorDict` containing, at a minimum, the `position` of all agents.
-
-        Returns:
-            The input `TensorDict`, updated in-place with new thermal data and
-            the communication graph's `edge_index`.
-        """
-        positions = td.get("position")
-
-        # Query environmental data source for thermal properties at agent locations.
-        temp, temp_grad = self.data_source.query_thermal(positions)
-        td.set("temperature", temp)
-        td.set("temperature_grad", temp_grad)
-
-        # Re-compute the communication graph based on new positions.
-        td.set(
-            "edge_index",
-            self.compute_edge_index(
-                pos = positions,
-                r   = self.config.swarm.communication_range
-            )
+            # Add a small offset to each agent's position to spread them out
+            offset = torch.tensor([
+                0.2 * (i % 4 - 1.5),
+                0.2 * ((i // 4) % 3 - 1),
+                0.0
+            ])
+            agent_positions.append(qpos + offset)
+            agent_velocities.append(qvel)
+        
+        positions       = torch.stack(agent_positions)
+        velocities      = torch.stack(agent_velocities)
+        temp, temp_grad = self.data_source(positions)
+        
+        # Create the next observation TensorDict
+        next_obs = TensorDict(
+            {
+                "position"         : positions,
+                "velocity"         : velocities,
+                "temperature"      : temp,
+                "temperature_grad" : temp_grad,
+                "edge_index"       : self.compute_edge_index(
+                    pos = positions,
+                    r   = self.config.swarm.communication_range
+                ),
+                "reward"           : torch.zeros(agent_count),
+                "done"             : torch.zeros(1, dtype=torch.bool),
+                "_done"            : torch.zeros(agent_count, dtype=torch.bool)
+            }, 
+            batch_size = []
         )
-        return td
+    
+
+        return next_obs
 
     def _make_spec(self, td_params: TensorDictBase):
         """
-        Creates the environment's observation and action specs.
+        Implements the `torchrl.EnvBase` API for spec creation.
         
-        Since specs are passed in via dependency injection, this method
-        is effectively a no-op but is required by the torchrl API.
+        In this project, this method is a no-op because the observation and
+        action specifications are pre-built via hydra-zen and injected into
+        the constructor.
         """
-        # Specs are already set via constructor
         pass
 
     def _set_seed(self, seed: int):
         """
         Sets the random seed for the environment.
+        
+        This method delegates to the provided seed_fn if one was injected
+        during initialization.
+        
+        Args:
+            seed: Integer seed value to use for random number generation
         """
         if self.seed_fn is not None:
             self.seed_fn(seed)
