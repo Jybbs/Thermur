@@ -140,7 +140,7 @@ In order to ensure the performance of these models is validated and understood w
 
 This comprehensive evaluation approach will provide both quantitative performance measures and qualitative insights into the models' capabilities and limitations.
 
-## Data Sets
+## Datasets
 
 ### Training Data Sources
 
@@ -191,7 +191,7 @@ The raw data proposed above requires significant preprocessing to be suitable fo
 
 This preprocessing pipeline will be implemented using PyTorch and NumPy, with dedicated functions for each transformation step to ensure reproducibility.
 
-## Libraries and Tools
+## Libraries & Tools
 
 The MLOps infrastructure for Thermur has been one of my favorite aspects of the work so far. In other classes, I've found myself frustrated when the training code is a mess of hardcoded paths and magic numbers, making it nearly impossible to reproduce results. For Thermur, I'm building the foundation right from the start with proper configuration management, type validation, and dependency tracking. I've already derived a lot of satisfaction from learning more about the MLOps side of preparing Supervised Machine Learning models based on the `Pipeline` exercises we've done in class, and so I'm using this project as an opportunity to extend further into some of the modern ways researching teams orchestrate ML (e.g. `hydra-zen`, `poetry`, `Pydantic`).
 
@@ -200,23 +200,23 @@ The MLOps infrastructure for Thermur has been one of my favorite aspects of the 
 - **PyTorch Geometric** [^16]: For implementing Graph Neural Networks (GNNs)
 - **TorchRL**: For the data collection and replay buffer components of imitation learning
 
-### MLOps and Reproducibility
+### MLOps
 - **Hydra-zen**: For configuration management and experiment tracking
 - **Pydantic**: For type validation and configuration schema definition
 - **Poetry**: For dependency management and packaging
 - **Weights & Biases**: As a stretch goal, I'd like to integrate W&B for experiment tracking and visualization
 
-### Simulation and Visualization
+### Simulation & Visualization
 - **MuJoCo** [^19]: For physics-based simulation of the drone swarm
 - **matplotlib and VTK**: For visualization of the swarm's behavior and the environmental conditions
 
-### Mathematics and Optimization
+### Mathematics & Optimization
 - **OSQP** [^25]: For solving the quadratic programs required by Control Barrier Functions
 - **NumPy and SciPy**: For numerical operations and scientific computing
 
 For this course, I'll need to learn and integrate several additional components:
 
-1. **NetCDF and xarray**: For working with the gridded climate and fire model outputs
+1. **NetCDF & xarray**: For working with the gridded climate and fire model outputs
 2. **Structural Similarity Index (SSIM)** [^28]: For quantitatively evaluating the legibility of the swarm's visual display
 3. **ColorLab**: For working with perceptually uniform color spaces and color transformations
 
@@ -242,21 +242,21 @@ The ideal outcome for this phase of the Thermur project is a trained swarm contr
 
 Rather than repeating expected results that can be inferred from the above, I'll focus on potential challenges and mitigation strategies in the next section.
 
-### Risks and Mitigation Strategies
+### Risks & Mitigation Strategies
 
-Several risks could impact the achievement of these results:
+While there is ample research for me to based the pursuit of this project on, its success is contingent on navigating several key challenges inherent to simulation-based robotics and machine learning. The following section outlines the primary risks and the strategies I will employ to mitigate them.
 
-1. **Data Quality**: Synthetic data may not capture the full complexity of real-world wildfires.
-   *Mitigation*: Use domain randomization and incorporate available real-world data to improve robustness.
+1.  **The Simulation-to-Reality Gap**: A fundamental risk is that the synthetic wildfire and atmospheric data, while based on state-of-the-art models like WRF-Fire, may not fully capture the chaotic and multi-faceted physics of a real fireground. Models can smooth over fine-scale turbulence or fail to represent unpredictable phenomena, potentially leading to a control policy that is brittle and fails in real-world conditions.
+    * ***Mitigation***: I will address this "sim-to-real" gap using a two-pronged approach. First, I will employ **domain randomization** during training, injecting significant noise and variability into the simulated wind fields, temperature gradients, and sensor readings. This forces the learned policy to become robust to a wide range of conditions beyond its core training data. Second, I will attempt to continuously ground the model by validating its thermal predictions against empirical datasets from real-world UAV flights and kiln tests, as mentioned above.
 
-2. **Imitation Learning Limitations**: The learned policy might not generalize beyond the distribution of expert demonstrations.
-   *Mitigation*: Generate a diverse set of demonstrations across varying conditions; prepare for potential future reinforcement learning [^15] fine-tuning.
+2.  **Generalization Limits of Imitation Learning**: Behavioral cloning is effective, but the resulting policy is fundamentally constrained by the quality and breadth of the "expert" demonstrations. If the expert controller is not exposed to a sufficiently diverse set of scenarios, the learned policy may exhibit causal confusion.
+    * ***Mitigation***: The primary mitigation strategy is to generate a rich and comprehensive set of expert demonstrations covering a wide parameter space of fire intensities, wind speeds, and swarm densities. Furthermore, the system is architected with future improvements in mind. The imitation learning policy developed in this course will serve as an ideal initialization for future fine-tuning with **reinforcement learning**, which can discover more robust strategies by exploring the environment on its own.
 
-3. **Computational Constraints**: GNN training can be computationally intensive, especially with large graphs.
-   *Mitigation*: Implement efficient batching strategies; use smaller swarm sizes for initial development.
+3.  **Scalability & Computational Demands**: Training Graph Neural Networks on dynamic graphs is computationally intensive. As the number of agents in the swarm grows, the number of edges in the graph can increase quadratically (*in a naive implementation*), making both training and real-time inference a significant computational bottleneck.
+    * ***Mitigation***: My approach leverages the biological insight that starlings interact with a fixed number of topological neighbors. By implementing a **topological, not metric, neighbor graph**, the computational complexity scales linearly with the number of agents, $`\mathcal{O}(N)`$, rather than quadratically. For training, I will attempt to incorporate efficient mini-batching strategies for GNNs using PyTorch Geometric and will begin development with smaller swarm sizes (*e.g., 50-100 agents*) to iterate quickly before scaling up.
 
-4. **Metric Definition**: Quantifying "legibility" is inherently subjective.
-   *Mitigation*: Combine multiple metrics to triangulate effectiveness.
+4.  **Subjectivity of Visual Legibility**: One of the project's core claims is that it renders thermal data more "legible" or "intuitive." These are inherently subjective qualities that are difficult to quantify with a single, objective metric. A low Mean Squared Error on color mapping does not guarantee that a human observer can intuitively grasp the underlying danger.
+    * ***Mitigation***: I will assess legibility using a composite of quantitative and qualitative metrics. I will use the **Structural Similarity Index (SSIM)** to compare the swarm's motion patterns to the ground-truth wind field, providing an objective measure of pattern fidelity. This will be paired with perceptual color difference metrics ($ΔE$) in CIELAB space.
 
 If I encounter significant obstacles, I will prioritize the core supervised learning components while potentially simplifying the environmental complexity to ensure meaningful progress within the course timeframe.
 
