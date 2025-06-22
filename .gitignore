@@ -10,6 +10,9 @@ dist/
 build/
 *.egg-info/
 
+# Class materials
+requirements.pdf
+
 # macOS
 .DS_Store
 .AppleDouble
