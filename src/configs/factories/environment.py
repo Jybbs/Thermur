@@ -8,9 +8,10 @@ parameters from the EnvironmentModel Pydantic model.
 The environment follows dependency injection principles, so all dependencies
 are provided as arguments rather than imported directly.
 """
-from hydra_zen      import builds
-from omegaconf      import SI
-from thermur        import (
+from ..schemas import ThermalInterpolationModel
+from hydra_zen import builds, zen
+from omegaconf import SI
+from thermur   import (
     compute_edge_index,
     EnvironmentDataSource,
     set_seed,
@@ -33,7 +34,9 @@ build_composite_config = builds(
 
 build_data_source = builds(
     EnvironmentDataSource,
-    data_path = SI("${environment.data_source}"),
+    data_path     = SI("${environment.data_source}"),
+    interpolation = zen(ThermalInterpolationModel),
+    populate_full_signature = True,
 )
 
 build_observation_spec = builds(

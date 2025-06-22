@@ -5,7 +5,7 @@ This package organizes type-checked models by domain,
 ensuring clean separation of concerns and better maintainability.
 """
 from .agent       import AgentModel, SwarmModel
-from .environment import EnvironmentModel
+from .environment import EnvironmentModel, ThermalInterpolationModel
 from .flocking    import ReynoldsWeightsModel, FlockingModel
 from .logging     import LoggingModel, WandbModel
 from .policy      import GNNModel
@@ -16,6 +16,7 @@ __all__ = [
     "AgentModel",
     "SwarmModel",
     "EnvironmentModel",
+    "ThermalInterpolationModel",
     "ReynoldsWeightsModel",
     "FlockingModel",
     "LoggingModel",
