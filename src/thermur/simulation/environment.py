@@ -178,15 +178,12 @@ class SimulationEnv(EnvBase):
         agent_count  = self.config.swarm.agent_count
         spatial_dims = self.config.swarm.spatial_dims
         data         = self.physics_model["data"]
+        end_idx      = agent_count * spatial_dims
         
         mujoco.mj_resetData(self.physics_model["model"], data)
         
-        for i in range(agent_count):
-            for d in range(spatial_dims):
-                qpos_idx = i * spatial_dims + d
-
-                data.qpos[qpos_idx] = positions[i, d].item()
-                data.qvel[qpos_idx] = velocities[i, d].item()
+        data.qpos[:end_idx] = positions.reshape(-1).cpu().numpy()
+        data.qvel[:end_idx] = velocities.reshape(-1).cpu().numpy()
         
         # Forward kinematics to update all derived quantities
         mujoco.mj_forward(self.physics_model["model"], data)
@@ -321,15 +318,11 @@ class SimulationEnv(EnvBase):
         agent_count  = self.config.swarm.agent_count
         spatial_dims = self.config.swarm.spatial_dims
         
-        for i in range(agent_count):
-            agent_action = actions[i].cpu().numpy()
-            
-            # Set control for each dimension of this agent
-            for d in range(min(len(agent_action), spatial_dims)):
-                ctrl_idx = i * spatial_dims + d
-
-                if ctrl_idx < len(data.ctrl):
-                    data.ctrl[ctrl_idx] = agent_action[d]
+        # Reshape actions to match control array layout
+        reshaped_actions = actions[:, :spatial_dims].reshape(-1).cpu().numpy()
+        
+        ctrl_count       = min(len(reshaped_actions), len(data.ctrl))
+        data.ctrl[:ctrl_count] = reshaped_actions[:ctrl_count]
         
         mujoco.mj_step(model, data)
         
