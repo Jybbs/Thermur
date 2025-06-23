@@ -1,11 +1,11 @@
 """
-Utilities for dynamic model generation.
+MuJoCo XML generation utilities for the Thermur project.
 
-This module provides functions for dynamically generating MuJoCo XML models
-for multi-agent physics simulations. It uses component-based templates
-to assemble complete models with varying numbers of agents and properties.
+This module provides functions for dynamically generating and loading MuJoCo
+models with varying numbers of agents, enabling true multi-agent physics
+simulation for swarm environments.
 """
-import mujoco
+import mujoco as mj
 
 from pathlib import Path
 
@@ -17,89 +17,87 @@ def generate_swarm_xml(
     simulation_step : float
 ) -> str:
     """
-    Generates a complete MuJoCo XML model for a swarm of agents.
+    Dynamically generates a MuJoCo XML model with N distinct drone bodies.
     
-    This function assembles a MuJoCo XML model by reading component templates
-    from the assets directory and substituting the appropriate values for
-    agent count, dimensions, and simulation parameters. The resulting model
-    contains N distinct, independently controllable agents.
+    This function creates a complete XML model by:
+    1. Reading the swarm.xml template
+    2. Reading the drone.xml template for each agent
+    3. Replacing template variables with appropriate values for each agent
+    4. Inserting all N drone bodies and their actuators into the swarm model
     
     Args:
-        assets_dir      : Path to directory containing XML component templates
-        agent_count     : Number of agents to include in the model
+        assets_dir      : Path to the directory containing XML templates
+        agent_count     : Number of agent bodies to generate
         spatial_dims    : Number of spatial dimensions (2 or 3)
-        simulation_step : Time step for physics simulation in seconds
-        
+        simulation_step : Physics simulation timestep in seconds
+    
     Returns:
-        Complete MuJoCo XML model as a string
+        A string containing the complete MuJoCo XML model
     """
-    drone_template = (assets_dir / "drone.xml").read_text()
+    # Read template files
     swarm_template = (assets_dir / "swarm.xml").read_text()
+    drone_template = (assets_dir / "drone.xml").read_text()
     
-    dim_names = ["x", "y", "z"][:spatial_dims]
-    axes      = ["1 0 0", "0 1 0", "0 0 1"][:spatial_dims]
+    drone_bodies  = []
+    actuator_defs = []
     
-    drone_bodies = []
     for i in range(agent_count):
-        position = f"{i * 0.5} 0" if spatial_dims == 2 else f"{i * 0.5} 0 0"
-        joints   = [
-            f"""            <joint 
-                axis    = "{axes[d]}" 
-                limited = "false"
-                name    = "drone_{i}_joint_{dim_names[d]}" 
+        # Create a slight offset for each drone to prevent initial collisions
+        offset   = 0.3 * i
+        position = f"0 {offset} 0" if spatial_dims == 3 else f"0 {offset} 0"
+        
+        joints_xml = ""
+        for j in range(spatial_dims):
+            axis = ["1 0 0", "0 1 0", "0 0 1"][j]
+            joints_xml += f"""
+            <joint
+                axis    = "{axis}"
+                limited = "true"
+                name    = "drone_{i}_joint_{j}"
+                pos     = "0 0 0"
+                range   = "-10 10"
                 type    = "slide"
-            />""" 
-            for d in range(spatial_dims)
-        ]
+            />
+            """
         
-        # Create drone body with substituted values
-        drone_xml = drone_template.replace("$AGENT_ID$", str(i))
-        drone_xml = drone_xml.replace("$POSITION$", position)
-        drone_xml = drone_xml.replace("<!-- JOINTS_XML -->", "\n".join(joints))
+        drone_body = drone_template.replace("$AGENT_ID$", str(i))
+        drone_body = drone_body.replace("$POSITION$", position)
+        drone_body = drone_body.replace("<!-- JOINTS_XML -->", joints_xml)
         
-        drone_bodies.append(drone_xml)
+        drone_bodies.append(drone_body)
+        
+        for j in range(spatial_dims):
+            axis_name = ["x", "y", "z"][j]
+            actuator_defs.append(f"""
+        <velocity
+            ctrllimited = "true"
+            ctrlrange   = "-1 1"
+            gear        = "1"
+            joint       = "drone_{i}_joint_{j}"
+            name        = "drone_{i}_vel_{axis_name}"
+        />""")
     
-    actuators = [
-        f"""        <velocity 
-            ctrlrange = "-10 10" 
-            joint     = "drone_{i}_joint_{dim_names[d]}" 
-            kv        = "100"
-            name      = "vel_{i}_{dim_names[d]}"
-        />"""
-        for i in range(agent_count)
-        for d in range(spatial_dims)
-    ]
+    swarm_xml = swarm_template.replace("$TIMESTEP$", str(simulation_step))
+    swarm_xml = swarm_xml.replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
+    swarm_xml = swarm_xml.replace("<!-- ACTUATORS -->", "\n".join(actuator_defs))
     
-    model_xml = (
-        swarm_template
-            .replace("$TIMESTEP$", str(simulation_step))
-            .replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
-            .replace("<!-- ACTUATORS -->", "\n".join(actuators))
-    )
-    
-    return model_xml
+    return swarm_xml
 
 
-def load_swarm_model(
-    xml_string : str,
-    timestep   : float = None
-) -> dict:
+def load_swarm_model(xml_string: str) -> dict:
     """
-    Loads a MuJoCo model from an XML string and configures it.
+    Loads a MuJoCo model from the provided XML string.
+    
+    This function creates MuJoCo model and data objects from the XML string,
+    which can then be used for physics simulation.
     
     Args:
-        xml_string : MuJoCo XML model as a string
-        timestep   : Optional override for the simulation timestep
-        
+        xml_string: A string containing the MuJoCo XML model
+    
     Returns:
-        Dictionary containing the MuJoCo model and data instances
+        A dictionary containing the MuJoCo model and data objects
     """
-    model = mujoco.MjModel.from_xml_string(xml_string)
+    model = mj.MjModel.from_xml_string(xml_string)
+    data  = mj.MjData(model)
     
-    if timestep is not None:
-        model.opt.timestep = timestep
-    
-    return {
-        "model" : model,
-        "data"  : mujoco.MjData(model)
-    }
+    return {"model": model, "data": data}

@@ -9,9 +9,9 @@ from .seed    import set_seed
 from .xml     import generate_swarm_xml, load_swarm_model
 
 __all__ = [
-    "configure_loguru", 
     "EnvironmentDataSource", 
+    "configure_loguru", 
+    "set_seed",
     "generate_swarm_xml", 
     "load_swarm_model", 
-    "set_seed"
 ]
