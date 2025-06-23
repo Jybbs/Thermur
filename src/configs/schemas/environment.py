@@ -37,3 +37,43 @@ class EnvironmentModel(BaseModel, extra="forbid"):
             "The duration of a single simulation physics step (Δt) in seconds."
         )
     )
+
+
+class ThermalInterpolationModel(BaseModel, extra="forbid"):
+    """
+    Parameters for thermal data interpolation and gradient calculation.
+    
+    These parameters control how the continuous temperature field is sampled
+    and how temperature gradients are calculated for arbitrary agent positions.
+    The implementation uses vectorized operations to efficiently process
+    batches of position queries.
+    """
+    epsilon: float = Field(
+        default     = 0.1,
+        gt          = 0,
+        description = "Distance (ε) used for finite difference gradient calculation in meters."
+    )
+    fallback_temperature: float = Field(
+        default     = 300.0,
+        description = "Default temperature value when interpolation fails or produces NaN."
+    )
+    fill_value: float = Field(
+        default     = float('nan'),
+        description = "Value to use for out-of-bounds positions in interpolation."
+    )
+    temperature_variable: str = Field(
+        default     = "T",
+        description = "Name of the temperature variable in the dataset."
+    )
+    x_dimension: str = Field(
+        default     = "x",
+        description = "Name of the x-dimension coordinate in the dataset."
+    )
+    y_dimension: str = Field(
+        default     = "y",
+        description = "Name of the y-dimension coordinate in the dataset."
+    )
+    z_dimension: str = Field(
+        default     = "z",
+        description = "Name of the z-dimension coordinate in the dataset."
+    )
