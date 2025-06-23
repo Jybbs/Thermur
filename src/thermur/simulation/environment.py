@@ -11,9 +11,11 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-import mujoco
+import math
+import mujoco as mj
 import torch
 
+from ..utils      import generate_swarm_xml, load_swarm_model
 from pathlib      import Path
 from tensordict   import TensorDict, TensorDictBase
 from torch        import Tensor
@@ -75,8 +77,6 @@ class SimulationEnv(EnvBase):
         Returns:
             A dictionary containing the MuJoCo model and data instances.
         """
-        from thermur import generate_swarm_xml, load_swarm_model
-        
         agent_count     = self.config.swarm.agent_count
         spatial_dims    = self.config.swarm.spatial_dims
         simulation_step = self.config.environment.simulation_step
@@ -180,13 +180,13 @@ class SimulationEnv(EnvBase):
         data         = self.physics_model["data"]
         end_idx      = agent_count * spatial_dims
         
-        mujoco.mj_resetData(self.physics_model["model"], data)
+        mj.mj_resetData(self.physics_model["model"], data)
         
         data.qpos[:end_idx] = positions.reshape(-1).cpu().numpy()
         data.qvel[:end_idx] = velocities.reshape(-1).cpu().numpy()
         
         # Forward kinematics to update all derived quantities
-        mujoco.mj_forward(self.physics_model["model"], data)
+        mj.mj_forward(self.physics_model["model"], data)
         
     def _generate_sphere_formation(
         self,
@@ -255,7 +255,7 @@ class SimulationEnv(EnvBase):
         Returns:
             A tensor of shape [n_agents, dims] containing agent positions
         """
-        side_length = int(torch.ceil(Tensor(n_agents).float().pow(1./dims)))
+        side_length = math.ceil(n_agents ** (1./dims))
         coords      = torch.linspace(-1, 1, side_length)
         grid        = torch.stack(
             dim     = -1,
@@ -324,7 +324,7 @@ class SimulationEnv(EnvBase):
         ctrl_count       = min(len(reshaped_actions), len(data.ctrl))
         data.ctrl[:ctrl_count] = reshaped_actions[:ctrl_count]
         
-        mujoco.mj_step(model, data)
+        mj.mj_step(model, data)
         
         positions, velocities = self._extract_agent_states(data)
         temp, temp_grad       = self.data_source(positions)

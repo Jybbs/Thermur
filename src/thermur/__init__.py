@@ -9,7 +9,7 @@ from .control    import ExpertFlockingController, SafetyFilter, ThermalBarrierFu
 from .models     import GNNPolicy
 from .simulation import SwarmData, SwarmDataSpec, SimulationEnv, compute_edge_index
 from .training   import train_imitation_learning, save_checkpoint, ImitationLoss
-from .utils      import EnvironmentDataSource, configure_loguru, set_seed
+from .utils      import *
 
 __all__ = [
 
@@ -38,6 +38,8 @@ __all__ = [
     # Utilities
     "EnvironmentDataSource",
     "configure_loguru",
+    "generate_swarm_xml",
+    "load_swarm_model",
     "set_seed",
 
 ]
