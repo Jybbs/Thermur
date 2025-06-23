@@ -14,7 +14,9 @@ rewards to the learning algorithm. It couples a rigid-body physics engine
 import mujoco
 import torch
 
+from pathlib      import Path
 from tensordict   import TensorDict, TensorDictBase
+from torch        import Tensor
 from torchrl.envs import EnvBase
 from typing       import Callable, Optional
 
@@ -64,25 +66,31 @@ class SimulationEnv(EnvBase):
 
     def _initialize_physics(self):
         """
-        Loads and configures the MuJoCo physics model.
+        Dynamically generates and loads the MuJoCo physics model.
 
-        This method initializes the MuJoCo simulation from the swarm XML model.
-        It dynamically sets the number of agents in the model based on the
-        provided configuration, ensuring the physics engine is correctly
-        instantiated for the specified swarm size.
+        This method creates a MuJoCo model with N distinct drone bodies based on
+        the `agent_count` configuration parameter. Each drone has its own set of
+        joints and actuators, enabling true multi-agent physics simulation.
 
         Returns:
             A dictionary containing the MuJoCo model and data instances.
         """
-        model_path = self.config.environment.assets_dir / "swarm.xml"
-        model      = mujoco.MjModel.from_xml_path(model_path.as_posix())
-
-        model.opt.timestep = self.config.environment.simulation_step
-
-        return {
-            "model" : model,
-            "data"  : mujoco.MjData(model)
-        }
+        from thermur import generate_swarm_xml, load_swarm_model
+        
+        agent_count     = self.config.swarm.agent_count
+        spatial_dims    = self.config.swarm.spatial_dims
+        simulation_step = self.config.environment.simulation_step
+        assets_dir      = self.config.environment.assets_dir
+        
+        # Generate XML model with N distinct agent bodies
+        xml_string = generate_swarm_xml(
+            assets_dir      = assets_dir,
+            agent_count     = agent_count,
+            spatial_dims    = spatial_dims,
+            simulation_step = simulation_step
+        )
+        
+        return load_swarm_model(xml_string)
 
     def _reset(self, tensordict=None, **kwargs) -> TensorDictBase:
         """
@@ -115,11 +123,9 @@ class SimulationEnv(EnvBase):
         else:
             positions = self._generate_sphere_formation(agent_count, spatial_dims)
 
-        # Scale the positions
-        scaled_positions = positions * communication_range * formation_scale
-        
         # Create a fresh TensorDict with proper structure and shape
-        initial_obs = TensorDict(
+        scaled_positions    = positions * communication_range * formation_scale
+        initial_observation = TensorDict(
             {
                 "position"         : scaled_positions,
                 "velocity"         : torch.zeros_like(scaled_positions),
@@ -134,10 +140,10 @@ class SimulationEnv(EnvBase):
         )
         
         # Update with thermal data and edge_index
-        positions       = initial_obs["position"]
+        positions       = initial_observation["position"]
         temp, temp_grad = self.data_source(positions)
         
-        initial_obs.update(
+        initial_observation.update(
             {
                 "temperature"      : temp,
                 "temperature_grad" : temp_grad,
@@ -148,13 +154,48 @@ class SimulationEnv(EnvBase):
             }
         )
         
-        return initial_obs
+        # Set the initial positions in the MuJoCo simulation
+        self._set_physics_state(positions, torch.zeros_like(positions))
+        
+        return initial_observation
+
+    def _set_physics_state(
+        self, 
+        positions  : Tensor, 
+        velocities : Tensor
+    ):
+        """
+        Sets the physics state for all agents in the MuJoCo simulation.
+        
+        This method updates the MuJoCo simulation state to match the provided
+        positions and velocities for all agents. This is used both during reset
+        to set the initial state and can be used to manually update agent positions.
+        
+        Args:
+            positions  : Tensor [N, spatial_dims] containing agent positions
+            velocities : Tensor [N, spatial_dims] containing agent velocities
+        """
+        agent_count  = self.config.swarm.agent_count
+        spatial_dims = self.config.swarm.spatial_dims
+        data         = self.physics_model["data"]
+        
+        mujoco.mj_resetData(self.physics_model["model"], data)
+        
+        for i in range(agent_count):
+            for d in range(spatial_dims):
+                qpos_idx = i * spatial_dims + d
+
+                data.qpos[qpos_idx] = positions[i, d].item()
+                data.qvel[qpos_idx] = velocities[i, d].item()
+        
+        # Forward kinematics to update all derived quantities
+        mujoco.mj_forward(self.physics_model["model"], data)
         
     def _generate_sphere_formation(
         self,
         n_agents : int,
         dims     : int
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """
         Generates points distributed evenly on a sphere (3D) or circle (2D).
 
@@ -187,17 +228,19 @@ class SimulationEnv(EnvBase):
         golden_angle = torch.pi * (3. - (5.**0.5))
         theta        = golden_angle * indices
 
-        return torch.stack((
-            torch.cos(theta) * radius,
-            torch.sin(theta) * radius,
-            z
-        ), dim=1)
+        return torch.stack(
+            dim     = 1,
+            tensors = (
+                torch.cos(theta) * radius,
+                torch.sin(theta) * radius,
+                z),
+            )
     
     def _generate_cube_formation(
         self,
         n_agents : int,
         dims     : int
-    ) -> torch.Tensor:
+    ) -> Tensor:
         """
         Generates points distributed in a hypercube grid formation.
         
@@ -215,7 +258,7 @@ class SimulationEnv(EnvBase):
         Returns:
             A tensor of shape [n_agents, dims] containing agent positions
         """
-        side_length = int(torch.ceil(torch.tensor(n_agents).float().pow(1./dims)))
+        side_length = int(torch.ceil(Tensor(n_agents).float().pow(1./dims)))
         coords      = torch.linspace(-1, 1, side_length)
         grid        = torch.stack(
             dim     = -1,
@@ -223,14 +266,41 @@ class SimulationEnv(EnvBase):
         )
 
         return grid.reshape(-1, dims)[:n_agents]
+    
+    def _extract_agent_states(self, data) -> tuple:
+        """
+        Extracts the position and velocity states for all agents from MuJoCo data.
+        
+        This method reads the actual physical state of each agent from the MuJoCo
+        simulation data, enabling true multi-agent physics with individual states.
+        
+        Args:
+            data: MjData object with current simulation state
+            
+        Returns:
+            positions  : Tensor of shape [agent_count, spatial_dims]
+            velocities : Tensor of shape [agent_count, spatial_dims]
+        """
+        agent_count  = self.config.swarm.agent_count
+        spatial_dims = self.config.swarm.spatial_dims
+        end_idx      = agent_count * spatial_dims
+
+        positions = torch.from_numpy(
+            data.qpos[:end_idx].copy().reshape(agent_count, spatial_dims)
+        )
+        velocities = torch.from_numpy(
+            data.qvel[:end_idx].copy().reshape(agent_count, spatial_dims)
+        )
+    
+        return positions, velocities
 
     def _step(self, td: TensorDictBase) -> TensorDictBase:
         """
-        Performs one discrete time step in the environment.
+        Performs one discrete time step in the environment with true multi-agent physics.
         
         The process follows these steps:
-            1. Extract agent control actions from the input `td`
-            2. Apply these actions to the MuJoCo simulation
+            1. Extract individual agent control actions from the input `td`
+            2. Apply each action to its corresponding agent's actuators
             3. Step the physics engine forward by `simulation_step` seconds
             4. Extract the updated agent states (positions, velocities)
             5. Create a new observation with environmental data at these positions
@@ -245,46 +315,27 @@ class SimulationEnv(EnvBase):
             A `TensorDict` for the `next` state, including the new
             observation, reward, and done flag.
         """
-        actions = td.get("action")
-        model   = self.physics_model["model"]
-        data    = self.physics_model["data"]
+        actions      = td.get("action")
+        model        = self.physics_model["model"]
+        data         = self.physics_model["data"]
+        agent_count  = self.config.swarm.agent_count
+        spatial_dims = self.config.swarm.spatial_dims
+        
+        for i in range(agent_count):
+            agent_action = actions[i].cpu().numpy()
+            
+            # Set control for each dimension of this agent
+            for d in range(min(len(agent_action), spatial_dims)):
+                ctrl_idx = i * spatial_dims + d
 
-        # Note: The MuJoCo model is set up with only 3 actuators in total (one for each dimension),
-        # not per-agent actuators. For now, we'll use the average of all agent actions.
-        #
-        # In a future branch, we'll need to adjust the model to have separate actuators per agent.
-        mean_action = actions.mean(dim=0).cpu().numpy()
-        data.ctrl[:] = mean_action
+                if ctrl_idx < len(data.ctrl):
+                    data.ctrl[ctrl_idx] = agent_action[d]
         
         mujoco.mj_step(model, data)
         
-        # Since there's only one agent in the physics model, we'll duplicate its state for all agents
-        # with small offsets to simulate multiple agents
-        qpos = torch.from_numpy(data.qpos).view(-1)
-        qvel = torch.from_numpy(data.qvel).view(-1)
-        
-        agent_count      = self.config.swarm.agent_count
-        spatial_dims     = self.config.swarm.spatial_dims
-        agent_positions  = []
-        agent_velocities = []
-        
-        for i in range(agent_count):
-
-            # Add a small offset to each agent's position to spread them out
-            offset = torch.tensor([
-                0.2 * (i % 4 - 1.5),
-                0.2 * ((i // 4) % 3 - 1),
-                0.0
-            ])
-            agent_positions.append(qpos + offset)
-            agent_velocities.append(qvel)
-        
-        positions       = torch.stack(agent_positions)
-        velocities      = torch.stack(agent_velocities)
-        temp, temp_grad = self.data_source(positions)
-        
-        # Create the next observation TensorDict
-        next_obs = TensorDict(
+        positions, velocities = self._extract_agent_states(data)
+        temp, temp_grad       = self.data_source(positions)
+        next_observation      = TensorDict(
             {
                 "position"         : positions,
                 "velocity"         : velocities,
@@ -301,8 +352,7 @@ class SimulationEnv(EnvBase):
             batch_size = []
         )
     
-
-        return next_obs
+        return next_observation
 
     def _make_spec(self, td_params: TensorDictBase):
         """
