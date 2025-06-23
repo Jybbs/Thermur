@@ -1,20 +1,9 @@
-<!--
-    MuJoCo model for a drone swarm simulation.
-    
-    This model provides a simplified representation of N point-mass drones
-    for use in the Thermur simulation environment. It is designed to be
-    dynamically configured at runtime based on the swarm.agent_count parameter.
-    
-    The model includes:
-    - A world body with appropriate gravity
-    - N identical drone bodies with appropriate inertial properties
-    - Actuators for controlling the drones via velocity commands
--->
+<?xml version="1.0" encoding="UTF-8"?>
 <mujoco model="swarm">
 
     <option 
         integrator = "RK4"
-        timestep   = "0.05"
+        timestep   = "$TIMESTEP$"
     >
         <flag 
             contact = "disable" 
@@ -22,7 +11,6 @@
             gravity = "enable"
         />
     </option>
-    
 
     <default>
         <geom 
@@ -53,65 +41,12 @@
             type  = "plane"
         />
         
-        <body 
-            name = "drone_template" 
-            pos  = "0 0 0"
-        >
-            <geom 
-                mass = "0.5"
-                name = "drone_geom" 
-                rgba = "0.2 0.2 0.8 0.9" 
-                size = "0.1" 
-                type = "sphere"
-            />
-                
-            <joint 
-                axis    = "1 0 0" 
-                limited = "false"
-                name    = "drone_joint_x" 
-                type    = "slide"
-            />
-                
-            <joint 
-                axis    = "0 1 0" 
-                limited = "false"
-                name    = "drone_joint_y" 
-                type    = "slide"
-            />
-                
-            <joint 
-                axis    = "0 0 1" 
-                limited = "false"
-                name    = "drone_joint_z" 
-                type    = "slide"
-            />
-        </body>
-
+        <!-- DRONE_BODIES -->
+        
     </worldbody>
-    
 
     <actuator>
-
-        <velocity 
-            ctrlrange = "-10 10" 
-            joint     = "drone_joint_x" 
-            kv        = "100"
-            name      = "vel_x"
-        />
-            
-        <velocity 
-            ctrlrange = "-10 10" 
-            joint     = "drone_joint_y" 
-            kv        = "100"
-            name      = "vel_y"
-        />
-            
-        <velocity 
-            ctrlrange = "-10 10" 
-            joint     = "drone_joint_z" 
-            kv        = "100"
-            name      = "vel_z"
-        />
+        <!-- ACTUATORS -->
     </actuator>
-    
+
 </mujoco>
