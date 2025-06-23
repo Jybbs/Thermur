@@ -63,7 +63,8 @@ class EnvironmentDataSource:
         out-of-bounds positions with NaN indicators.
         
         Args:
-            positions: Tensor [N, 3] containing N agent positions in simulation coordinates
+            positions: Tensor [N, 3] containing N agent positions in simulation 
+                       coordinates
                 
         Returns:
             A tuple of (temperature, gradient) where:
@@ -71,12 +72,12 @@ class EnvironmentDataSource:
             - gradient    : Tensor [N, 3] of temperature gradients (∇T)
         """
         coords_dict    = self._transform_coordinates(positions)
-        temp_values    = self._interpolate_temperature(coords_dict)
+        temp_values    = self._interpolate_along_dimension(coords_dict)
         temp_gradients = self._calculate_gradient(positions, coords_dict)
         
         return self._handle_out_of_bounds(
             Tensor(
-                temp_values.values.reshape(-1, 1), 
+                temp_values.reshape(-1, 1), 
                 device = positions.device
             ),
             Tensor(
@@ -93,12 +94,13 @@ class EnvironmentDataSource:
         """
         Calculates temperature gradient using finite differences.
         
-        For each agent position, this method computes the 3D temperature gradient ∇T
-        by sampling temperature at offset positions and calculating partial derivatives:
+        For each agent position, this method computes the 3D temperature 
+        gradient ∇T by sampling temperature at offset positions and 
+        calculating partial derivatives:
         
-            ∂T/∂x ≈ (T(x+ε, y, z) - T(x-ε, y, z)) / 2ε
-            ∂T/∂y ≈ (T(x, y+ε, z) - T(x, y-ε, z)) / 2ε
-            ∂T/∂z ≈ (T(x, y, z+ε) - T(x, y, z-ε)) / 2ε
+            ∂T/∂x ≈ (T(𝐱+εî) - T(𝐱-εî)) / 2ε
+            ∂T/∂y ≈ (T(𝐱+εĵ) - T(𝐱-εĵ)) / 2ε
+            ∂T/∂z ≈ (T(𝐱+εk̂) - T(𝐱-εk̂)) / 2ε
         
         Args:
             positions   : Original position tensor [N, 3]
@@ -110,30 +112,49 @@ class EnvironmentDataSource:
         epsilon         = self.config.epsilon
         num_agents, dim = positions.shape
         gradients       = zeros((num_agents, dim))
+        axes            = ['x', 'y', 'z']
         
-        for i, axis in enumerate(['x', 'y', 'z']):
-            if i >= dim:
-                continue
-                
-            dim_name = getattr(self.config, f"{axis}_dimension")
+        for i in range(min(dim, len(axes))):
+            dim_name = getattr(self.config, f"{axes[i]}_dimension")
             if dim_name not in self.coord_vars:
                 continue
-                
-            pos_values = self.dataset[self.temp_var].interp(
-                coords = {**coords_dict, dim_name: coords_dict[dim_name] + epsilon}, 
-                method = "linear", 
-                kwargs = {"fill_value": self.config.fill_value}
-            ).values
             
-            neg_values = self.dataset[self.temp_var].interp(
-                coords = {**coords_dict, dim_name: coords_dict[dim_name] - epsilon}, 
-                method = "linear", 
-                kwargs = {"fill_value": self.config.fill_value}
-            ).values
+            pos_temps = self._interpolate_along_dimension(
+                {**coords_dict, dim_name: coords_dict[dim_name] + epsilon}
+            )
+            neg_temps = self._interpolate_along_dimension(
+                {**coords_dict, dim_name: coords_dict[dim_name] - epsilon}
+            )
             
-            gradients[:, i] = (pos_values - neg_values) / (2 * epsilon)
+            gradients[:, i] = (pos_temps - neg_temps) / (2 * epsilon)
         
         return gradients
+        
+    def _interpolate_along_dimension(self, coords: dict) -> ndarray:
+        """
+        Samples temperature at the specified coordinates.
+        
+        For a batch of agent positions 𝐱₁, 𝐱₂, ..., 𝐱ₙ, this method interpolates
+        the temperature field T at each position. This vectorized operation 
+        returns exactly one temperature value per position.
+        
+        Args:
+            coords : Dictionary mapping dimensions (`d`) to coordinate arrays (`a`)
+            
+        Returns:
+            Array of temperature values T(𝐱₁), T(𝐱₂), ..., T(𝐱ₙ)
+        """
+        n_points = len(next(iter(coords.values())))
+        result   = [
+            float(self.dataset[self.temp_var].interp(
+                coords = {d: a[i:i + 1] for d, a in coords.items()},
+                method = "linear",
+                kwargs = {"fill_value": self.config.fill_value},
+            ).values)
+            for i in range(n_points)
+        ]
+            
+        return zeros(n_points) + result
 
     def _handle_out_of_bounds(
         self, 
@@ -163,8 +184,12 @@ class EnvironmentDataSource:
         if not nan_mask.any():
             return temperatures, gradients
             
-        fallback_temp = Tensor([self.config.fallback_temperature], device=temperatures.device)
-        default_grad  = torch.zeros_like(gradients)
+        fallback_temp = Tensor(
+            [self.config.fallback_temperature], 
+            device = temperatures.device
+        )
+        
+        default_grad        = torch.zeros_like(gradients)
         default_grad[:, -1] = 1.0
         
         return (
