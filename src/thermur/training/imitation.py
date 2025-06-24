@@ -29,6 +29,7 @@ def train_imitation_learning(
     optimizer         : Optimizer,
     hyperparameters,
     wandb_config,
+    visualizer = None,
 ):
     """
     Train a policy via imitation learning (behavioral cloning).
@@ -67,10 +68,16 @@ def train_imitation_learning(
     
     total_frames = 0
     for i, data in enumerate(data_collector):
-
         experience_buffer.extend(data.to("cpu"))
         current_frames = data.numel()
         total_frames  += current_frames
+        
+        # Update visualization if enabled
+        if visualizer is not None:
+            # Get the latest observation from the data
+            latest_observation = data[-1].get("next")
+            visualizer.update(latest_observation)
+            visualizer.render()
         
         pbar.update(current_frames)
         
@@ -90,6 +97,9 @@ def train_imitation_learning(
     
     data_collector.shutdown()
     pbar.close()
+    
+    if visualizer is not None:
+        visualizer.close()
     
     save_checkpoint(policy, optimizer, total_frames, "checkpoints", is_final=True)
     logger.info("Training finished successfully.")

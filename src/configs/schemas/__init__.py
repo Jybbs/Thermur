@@ -4,13 +4,14 @@ Pydantic schemas for the Thermur project.
 This package organizes type-checked models by domain,
 ensuring clean separation of concerns and better maintainability.
 """
-from .agent       import AgentModel, SwarmModel
-from .environment import EnvironmentModel, ThermalInterpolationModel
-from .flocking    import ReynoldsWeightsModel, FlockingModel
-from .logging     import LoggingModel, WandbModel
-from .policy      import GNNModel
-from .safety      import CBFModel, QPSolverModel
-from .training    import CheckpointModel, CollectorModel, HyperparameterModel, ReplayBufferModel
+from .agent         import AgentModel, SwarmModel
+from .environment   import EnvironmentModel, ThermalInterpolationModel
+from .flocking      import ReynoldsWeightsModel, FlockingModel
+from .logging       import LoggingModel, WandbModel
+from .policy        import GNNModel
+from .safety        import CBFModel, QPSolverModel
+from .training      import CheckpointModel, CollectorModel, HyperparameterModel, ReplayBufferModel
+from .visualization import VisualizationModel
 
 __all__ = [
     "AgentModel",
@@ -27,5 +28,6 @@ __all__ = [
     "CheckpointModel",
     "CollectorModel",
     "HyperparameterModel",
-    "ReplayBufferModel"
+    "ReplayBufferModel",
+    "VisualizationModel"
 ]
