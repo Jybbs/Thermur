@@ -3,12 +3,15 @@ Imitation learning training utilities.
 
 This module provides clean, focused functions for training policies
 via behavioral cloning, without the overhead of an orchestrator class.
+It includes functions for managing the training loop, collecting expert 
+demonstrations, and handling model checkpoints.
 """
 import os
 import torch
 import wandb
 
 from loguru             import logger
+from pydantic           import BaseModel
 from torch.nn           import Module
 from torch.optim        import Optimizer
 from torchrl.collectors import SyncDataCollector
@@ -17,40 +20,23 @@ from torchrl.envs       import EnvBase
 from torchrl.modules    import SafeModule
 from torchrl.objectives import LossModule
 from tqdm               import tqdm
+from typing             import Any, Optional
 
 
-def train_imitation_learning(
-    environment       : EnvBase,
-    expert_policy     : SafeModule,
-    policy            : Module,
-    data_collector    : SyncDataCollector,
-    experience_buffer : TensorDictReplayBuffer,
-    loss_function     : LossModule,
-    optimizer         : Optimizer,
-    hyperparameters,
-    wandb_config,
-    visualizer = None,
-):
+def initialize_wandb(
+    hyperparameters : BaseModel,
+    wandb_config    : BaseModel
+) -> None:
     """
-    Train a policy via imitation learning (behavioral cloning).
-
-    This function implements the training loop for imitation learning,
-    collecting expert demonstrations and training the policy to match
-    the expert's actions.
-
-    Args:
-        environment       : The simulation environment.
-        expert_policy     : The expert policy generating demonstrations.
-        policy            : The GNN policy to be trained.
-        data_collector    : Collects experiences from the environment.
-        experience_buffer : Stores collected experiences.
-        loss_function     : Computes the imitation loss.
-        optimizer         : Updates the policy parameters.
-        hyperparameters   : Training hyperparameters.
-        wandb_config      : Weights & Biases configuration.
-    """
-    device = torch.device(hyperparameters.device)
+    Initialize Weights & Biases for experiment tracking.
     
+    Sets up the W&B experiment with the appropriate project, entity, and
+    configuration settings. Only initializes if W&B is enabled in the config.
+    
+    Args:
+        hyperparameters : Training hyperparameters model
+        wandb_config    : W&B configuration model
+    """
     if wandb_config.mode != "disabled":
         wandb.init(
             project = wandb_config.project,
@@ -62,6 +48,87 @@ def train_imitation_learning(
             }
         )
         logger.info("Weights & Biases initialized for experiment tracking.")
+
+
+def update_visualization(
+    visualizer         : Optional[Any],
+    latest_observation : dict[str, Any]
+) -> None:
+    """
+    Update the visualization with the latest observation.
+    
+    Updates the visualizer's state with the current simulation data
+    and renders the updated visualization. Only performs updates if
+    a visualizer is provided.
+    
+    Args:
+        visualizer         : The visualization module instance or None
+        latest_observation : The most recent observation from the environment
+    """
+    if visualizer is not None:
+        visualizer.update(latest_observation)
+        visualizer.render()
+
+
+def cleanup_resources(
+    data_collector : SyncDataCollector,
+    visualizer     : Optional[Any],
+    pbar           : tqdm
+) -> None:
+    """
+    Clean up resources used during training.
+    
+    Properly shuts down the data collector, closes the progress bar,
+    and closes the visualizer if it exists.
+    
+    Args:
+        data_collector : The experience collector to shut down
+        visualizer     : The visualization module instance or None
+        pbar           : The progress bar to close
+    """
+    data_collector.shutdown()
+    pbar.close()
+    
+    if visualizer is not None:
+        visualizer.close()
+
+
+def train_imitation_learning(
+    environment       : EnvBase,
+    expert_policy     : SafeModule,
+    policy            : Module,
+    data_collector    : SyncDataCollector,
+    experience_buffer : TensorDictReplayBuffer,
+    loss_function     : LossModule,
+    optimizer         : Optimizer,
+    hyperparameters   : BaseModel,
+    wandb_config      : BaseModel,
+    visualizer        : Optional[Any] = None,
+) -> None:
+    """
+    Train a policy via imitation learning (behavioral cloning).
+
+    This function implements the training loop for imitation learning,
+    collecting expert demonstrations and training the policy to match
+    the expert's actions. It manages the data collection, optimization,
+    visualization, and logging processes.
+
+    Args:
+        environment       : The simulation environment
+        expert_policy     : The expert policy generating demonstrations
+        policy            : The GNN policy to be trained
+        data_collector    : Collects experiences from the environment
+        experience_buffer : Stores collected experiences
+        loss_function     : Computes the imitation loss
+        optimizer         : Updates the policy parameters
+        hyperparameters   : Training hyperparameters
+        wandb_config      : Weights & Biases configuration
+        visualizer        : Optional visualization module
+    """
+    device = torch.device(hyperparameters.device)
+    
+    # Initialize experiment tracking
+    initialize_wandb(hyperparameters, wandb_config)
     
     logger.info(f"Starting training for {data_collector.total_frames} frames.")
     pbar = tqdm(total=data_collector.total_frames)
@@ -74,10 +141,8 @@ def train_imitation_learning(
         
         # Update visualization if enabled
         if visualizer is not None:
-            # Get the latest observation from the data
             latest_observation = data[-1].get("next")
-            visualizer.update(latest_observation)
-            visualizer.render()
+            update_visualization(visualizer, latest_observation)
         
         pbar.update(current_frames)
         
@@ -95,12 +160,10 @@ def train_imitation_learning(
                     wandb.log({"train/loss": loss.item()}, step=total_frames)
                 pbar.set_description(f"Loss: {loss.item():.4f}")
     
-    data_collector.shutdown()
-    pbar.close()
+    # Clean up resources
+    cleanup_resources(data_collector, visualizer, pbar)
     
-    if visualizer is not None:
-        visualizer.close()
-    
+    # Save final checkpoint
     save_checkpoint(policy, optimizer, total_frames, "checkpoints", is_final=True)
     logger.info("Training finished successfully.")
 
@@ -111,16 +174,21 @@ def save_checkpoint(
     frame_count : int,
     save_path   : str,
     is_final    : bool = False
-):
+) -> None:
     """
     Save a model checkpoint.
 
+    Creates a checkpoint containing the policy model weights, optimizer state,
+    and current frame count. The checkpoint can be used to resume training or
+    for model evaluation. The function creates the save directory if it doesn't
+    exist.
+
     Args:
-        policy      : The policy network to save.
-        optimizer   : The optimizer state to save.
-        frame_count : Current training frame count.
-        save_path   : Directory to save checkpoints.
-        is_final    : Whether this is the final checkpoint.
+        policy      : The policy network to save
+        optimizer   : The optimizer state to save
+        frame_count : Current training frame count
+        save_path   : Directory to save checkpoints
+        is_final    : Whether this is the final checkpoint
     """
     os.makedirs(save_path, exist_ok=True)
     
