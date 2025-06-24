@@ -22,6 +22,7 @@ app = Typer(
     add_completion = False,
 )
 
+
 def version_callback(value: bool):
     """
     A callback function triggered by the `--version` flag.
@@ -64,7 +65,7 @@ def train(
         thermur train +experiment=large_swarm
     """
     from configs                        import register_configs, imitation_config
-    from hydra_zen                      import instantiate, zen
+    from hydra_zen                      import instantiate, zen, make_config
     from hydra_zen.third_party.pydantic import pydantic_parser
     from thermur                        import (
         configure_loguru, 
@@ -73,17 +74,22 @@ def train(
     )
 
     register_configs()
+    
+    # Create a base config and apply visualization override if flag is set
+    config_with_overrides = imitation_config
+    if visualize:
+        config_with_overrides = make_config(
+            bases         = (imitation_config,),
+            visualization = {"enabled": True}
+        )
 
-    @zen(imitation_config).hydra_main(
+    @zen(config_with_overrides).hydra_main(
         config_name  = "train",
         config_path  = None,
         version_base = None,
         with_log_configuration = False,
     )
     def hydra_train(cfg):
-        # Apply CLI visualization flag to override config if specified
-        if visualize:
-            cfg.visualization.enabled = True
         """
         The core training function, wrapped by Hydra.
 

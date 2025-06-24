@@ -6,7 +6,6 @@ colormaps optimized for thermal visualization. The default colormap uses a
 carefully designed gradient from cool blues to hot reds that effectively
 communicates temperature variations in a visually intuitive way.
 """
-import numpy as np
 import pyvista as pv
 
 
@@ -47,23 +46,20 @@ def create_temperature_colormap(
     Returns:
         Dictionary with colormap configuration
     """
-    # Define a thermal-oriented color map
     if custom_colors is None:
-        # Default thermal gradient: dark blue (cold) to bright red/yellow (hot)
         custom_colors = [
-            (0.0, 0.0, 0.4),    # Dark blue for coldest
-            (0.0, 0.2, 0.8),    # Blue
-            (0.0, 0.5, 0.9),    # Light blue
-            (0.0, 0.8, 0.8),    # Cyan
-            (0.0, 0.9, 0.3),    # Green-cyan
-            (0.7, 0.9, 0.0),    # Yellow-green
-            (1.0, 0.8, 0.0),    # Yellow
-            (1.0, 0.5, 0.0),    # Orange
-            (1.0, 0.2, 0.0),    # Red
-            (0.8, 0.0, 0.0),    # Dark red for hottest
+            (0.0, 0.0, 0.4),  # Dark blue
+            (0.0, 0.2, 0.8),  # Blue
+            (0.0, 0.5, 0.9),  # Light blue
+            (0.0, 0.8, 0.8),  # Cyan
+            (0.0, 0.9, 0.3),  # Green-cyan
+            (0.7, 0.9, 0.0),  # Yellow-green
+            (1.0, 0.8, 0.0),  # Yellow
+            (1.0, 0.5, 0.0),  # Orange
+            (1.0, 0.2, 0.0),  # Red
+            (0.8, 0.0, 0.0),  # Dark red
         ]
     
-    # Apply reverse if requested
     if reverse:
         custom_colors = custom_colors[::-1]
     
@@ -106,31 +102,24 @@ def temperature_to_color(
     if colormap is None:
         colormap = create_temperature_colormap()
     
-    # Normalize temperature to [0, 1] range
     if max_temp == min_temp:
-        # Avoid division by zero
         normalized = 0.5
     else:
         normalized = (temperature - min_temp) / (max_temp - min_temp)
     
-    # Clamp to [0, 1]
     normalized = max(0.0, min(1.0, normalized))
     
-    # If using custom colors, interpolate between them
     if "custom_colors" in colormap and colormap["custom_colors"]:
         colors = colormap["custom_colors"]
         if len(colors) == 1:
             return colors[0]
         
-        # Determine which color pair to interpolate between
         idx = int(normalized * (len(colors) - 1))
         if idx >= len(colors) - 1:
             return colors[-1]
         
-        # Calculate fractional position between these two colors
         frac = normalized * (len(colors) - 1) - idx
         
-        # Interpolate between the two colors
         color1 = colors[idx]
         color2 = colors[idx + 1]
         
@@ -139,12 +128,8 @@ def temperature_to_color(
         b = color1[2] * (1 - frac) + color2[2] * frac
         
         return (r, g, b)
-    
-    # Otherwise use named colormap from PyVista
     else:
-        # Create a temporary figure with the colormap
         colormap_name = colormap.get("name", "plasma")
         cmap = pv.plotting.tools.get_cmap_safe(colormap_name)
         
-        # Get the color at the normalized position
-        return cmap(normalized)[:3]  # Exclude alpha channel
+        return cmap(normalized)[:3]

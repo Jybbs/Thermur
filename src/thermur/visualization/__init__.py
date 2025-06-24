@@ -7,9 +7,9 @@ safety constraints, and communication topologies. It serves as a critical tool
 for debugging, qualitative assessment, and insight generation.
 """
 from .colors     import create_temperature_colormap, temperature_to_color
-from .core       import Visualizer
 from .renderers  import *
 from .sampling   import *
+from .visualizer import Visualizer
 
 __all__ = [
     # Main visualization interface

@@ -7,13 +7,10 @@ the rendering of swarm agents, thermal fields, wind vectors, safety boundaries,
 and communication graphs.
 """
 import pyvista as pv
-import torch
 
-from pathlib            import Path
 from pyvista            import Plotter
 from tensordict         import TensorDictBase
-from torch              import Tensor
-from typing             import Optional
+from typing             import Any, Optional
 
 from .colors     import create_temperature_colormap
 from .renderers  import (
@@ -30,33 +27,25 @@ class Visualizer:
     """
     Main visualization class for the Thermur simulation.
     
-    This class manages a PyVista plotter window and provides methods to render
-    and update various aspects of the simulation. It handles the rendering of
-    agents as glyphs, thermal coloring, wind field visualization, safety
-    boundaries, and communication graph visualization.
-    
-    The visualizer maintains internal state for efficient updates, only recreating
-    elements when necessary, and supports toggling different visualization
-    components on and off as needed.
+    Manages a PyVista plotter window and provides methods for rendering
+    and updating various aspects of the simulation state, including agent
+    glyphs, thermal fields, wind vectors, safety boundaries, and the
+    communication graph topology.
     """
     
     def __init__(
         self,
-        config,
-        environment = None,
+        config      : Any,
+        environment : Optional[Any] = None,
     ):
         """
-        Initialize the visualizer with the configuration.
+        Initialize the visualizer with configuration settings.
         
-        Creates a PyVista rendering window and sets up the initial visualization
-        state based on the provided configuration. The environment is accessed
-        through the configuration system rather than passed directly, ensuring
-        proper dependency management.
+        Creates the rendering window and sets up initial visualization state.
         
         Args:
-            config      : Configuration object containing visualization settings
-                          and access to the environment
-            environment : Optional direct environment reference (deprecated)
+            config      : Configuration object with visualization settings
+            environment : Optional environment reference for data access
         """
         self.config      = config
         self.environment = environment
@@ -74,10 +63,10 @@ class Visualizer:
     
     def _initialize_plotter(self):
         """
-        Initialize the PyVista plotter with appropriate settings.
+        Set up the PyVista plotter with appropriate theme and camera settings.
         
-        This sets up the 3D rendering environment with the correct theme,
-        lighting, and camera position for visualizing the swarm.
+        Creates the visualization window with the configured size, theme, and
+        lighting based on user preferences.
         """
         theme = pv.themes.DarkTheme() if self.config.dark_mode else pv.themes.DocumentTheme()
         pv.global_theme.load_theme(theme)
@@ -97,18 +86,16 @@ class Visualizer:
         self._colormap = create_temperature_colormap(
             cmap_name = self.config.colormap
         )
-    
-    def update(self, observation: TensorDictBase) -> None:
+
+    def update(self, observation: TensorDictBase):
         """
         Update the visualization with new simulation data.
         
-        This method is called during the simulation loop to update the
-        visualization with the latest state of the swarm. It updates all
-        active visualization elements, including agent positions, thermal
-        coloring, wind field, safety boundaries, and communication graph.
+        Processes the latest observation data and updates all active
+        visualization elements accordingly.
         
         Args:
-            observation: A TensorDict containing the current simulation state
+            observation: Current simulation state containing agent data
         """
         if self._plotter is None or not self._plotter.window_exists:
             self._initialize_plotter()
@@ -148,8 +135,8 @@ class Visualizer:
                 padding         = self.config.grid_padding,
             )
             self._wind_actors = render_wind_field(
-                plotter     = self._plotter,
-                wind_grid   = wind_grid,
+                plotter   = self._plotter,
+                wind_grid = wind_grid,
             )
         
         # Render thermal safety boundary if enabled
@@ -170,12 +157,12 @@ class Visualizer:
                 edge_index = edge_index,
             )
     
-    def render(self) -> None:
+    def render(self):
         """
         Render the current visualization state.
         
-        This method should be called after `update()` to actually display
-        the visualization. It triggers a render pass in the PyVista plotter.
+        Triggers a render pass in the PyVista plotter to display
+        the updated visualization.
         """
         if self._plotter is not None and self._plotter.window_exists:
             self._plotter.render()
@@ -218,7 +205,7 @@ class Visualizer:
         """
         self.config.show_safety = not self.config.show_safety if show is None else show
         return self.config.show_safety
-        
+    
     def toggle_thermal(self, show: Optional[bool] = None) -> bool:
         """
         Toggle thermal coloring of agents.
@@ -245,12 +232,11 @@ class Visualizer:
         self.config.show_wind = not self.config.show_wind if show is None else show
         return self.config.show_wind
     
-    def close(self) -> None:
+    def close(self):
         """
         Close the visualization window.
         
-        This method should be called when the simulation is complete to
-        properly clean up resources.
+        Properly cleans up resources when visualization is no longer needed.
         """
         if self._plotter is not None and self._plotter.window_exists:
             self._plotter.close()
