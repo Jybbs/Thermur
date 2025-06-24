@@ -39,7 +39,13 @@ def version_callback(value: bool):
 
 
 @app.command()
-def train():
+def train(
+    visualize: bool = Option(
+        False,
+        "--visualize",
+        help="Enable real-time 3D visualization of the simulation."
+    )
+):
     """
     Train the GNN policy using imitation learning.
 
@@ -53,6 +59,7 @@ def train():
 
     Example:
         thermur train
+        thermur train --visualize
         thermur train hyperparameters.learning_rate=0.001
         thermur train +experiment=large_swarm
     """
@@ -71,8 +78,12 @@ def train():
         config_name  = "train",
         config_path  = None,
         version_base = None,
+        with_log_configuration = False,
     )
     def hydra_train(cfg):
+        # Apply CLI visualization flag to override config if specified
+        if visualize:
+            cfg.visualization.enabled = True
         """
         The core training function, wrapped by Hydra.
 
@@ -103,6 +114,14 @@ def train():
             "hyperparameters"   : instantiate(cfg.hyperparameters,   _parser=pydantic_parser),
             "wandb_config"      : instantiate(cfg.wandb,             _parser=pydantic_parser),
         }
+        
+        # Initialize visualizer if enabled in config
+        if cfg.visualization.enabled:
+            print("[yellow]Initializing visualization...[/]")
+            components["visualizer"] = instantiate(
+                cfg.visualizer, 
+                _parser=pydantic_parser,
+            )
         
         # Launch the main imitation learning training loop with all components.
         print("[green]Starting training loop...[/]")
