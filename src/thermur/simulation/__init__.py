@@ -6,11 +6,8 @@ data structures, and geometric utilities.
 """
 from .environment import SimulationEnv
 from .geometry    import compute_edge_index
-from .structures  import SwarmData, SwarmDataSpec
 
 __all__ = [
     "compute_edge_index",
-    "SwarmData",
-    "SwarmDataSpec",
     "SimulationEnv",
 ]

@@ -55,9 +55,9 @@ class ThermalBarrierFunction:
         Returns:
             A tuple containing (h_values, h_grads).
         """
-        temperature = sd.temperature
-        if hasattr(sd, 'temperature_grad'):
-            temp_grad = sd.temperature_grad
+        temperature = sd["temperature"]
+        if "temperature_grad" in sd:
+            temp_grad = sd["temperature_grad"]
 
         else:
             # Fall back to gradient from agent position if not provided
