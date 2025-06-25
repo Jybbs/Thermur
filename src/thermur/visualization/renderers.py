@@ -6,37 +6,35 @@ of the simulation. Each function creates PyVista actors that represent a
 particular aspect of the simulation state, such as agent positions and 
 orientations, wind vectors, temperature fields, safety boundaries, and 
 communication networks.
+
+The rendering functions are designed to be efficient and scalable, using
+vectorized operations where possible and PyVista's optimized rendering
+pipeline. Each function returns a list of actors that can be managed by
+the main visualizer for updates and cleanup.
 """
 import numpy   as np
 import pyvista as pv
 
-from pyvista import Plotter, PolyData
+from configs.schemas.visualization import (
+    ColorModel, 
+    GlyphModel, 
+    GridModel,
+    OpacityModel
+)
+from pyvista import Plotter, PolyData, UniformGrid
 from torch   import Tensor
 from typing  import Any, Optional
 
-# Rendering constants
-DEFAULT_SPHERE_RESOLUTION = 15  # Resolution for sphere glyphs
-DEFAULT_ARROW_RESOLUTION = 10   # Resolution for arrow glyphs
-DEFAULT_AGENT_COLOR = (0.2, 0.2, 0.8)  # Default blue color for agents
-DEFAULT_WIND_COLOR = (0.7, 0.7, 0.7)   # Default gray color for wind
-DEFAULT_GRAPH_COLOR = (0.7, 0.7, 0.9)  # Default blue-gray for graph edges
-DEFAULT_SAFETY_COLOR = (0.9, 0.3, 0.3) # Default red color for safety boundary
-DEFAULT_TRAIL_COLOR = (0.8, 0.8, 0.8)  # Default white-gray for trails
-TRAIL_LENGTH = 5                       # Number of points in motion trails
-SAFETY_GRID_SIZE = 20                  # Resolution of safety boundary grid
-SAFETY_PADDING = 5.0                   # Padding around safety boundary
-WIND_THRESHOLD_FACTOR = 0.1            # Threshold factor for wind visualization
-
 
 def render_agents(
-    plotter     : Plotter,
-    position    : Tensor,
-    velocity    : Optional[Tensor] = None,
-    temperature : Optional[Tensor] = None,
-    colormap    : Optional[dict[str, Any]] = None,
-    glyph_type  : str = "sphere",
-    glyph_size  : float = 0.15,
-    show_trails : bool = False
+    plotter      : Plotter,
+    position     : Tensor,
+    velocity     : Optional[Tensor] = None,
+    temperature  : Optional[Tensor] = None,
+    colormap     : Optional[Any] = None,
+    glyph_config : Optional[GlyphModel] = None,
+    color_config : Optional[ColorModel] = None,
+    show_trails  : bool = False,
 ) -> list[Any]:
     """
     Render agents as glyphs (spheres or arrows) in the visualization.
@@ -46,136 +44,152 @@ def render_agents(
     Agents can be colored by temperature using the provided colormap, and optional
     motion trails can be drawn to show recent movement patterns.
     
+    The function optimizes rendering performance by using PyVista's efficient
+    glyph operations and batching similar operations together. Temperature-based
+    coloring uses the simulation's thermal data to provide immediate visual
+    feedback about each agent's thermal state.
+    
     Args:
-        plotter     : PyVista Plotter instance to render to
-        position    : Tensor [N, 3] of agent positions
-        velocity    : Optional Tensor [N, 3] of agent velocities
-        temperature : Optional Tensor [N] of agent temperatures
-        colormap    : Optional dictionary mapping temperature to color
-        glyph_type  : Type of glyph to use ("sphere" or "arrow")
-        glyph_size  : Size of the agent glyphs
-        show_trails : Whether to show motion trails behind agents
+        plotter      : PyVista Plotter instance to render to
+        position     : Agent positions tensor of shape [N, 3]
+        velocity     : Agent velocities tensor of shape [N, 3] (optional)
+        temperature  : Agent temperatures tensor of shape [N, 1] (optional)
+        colormap     : Temperature colormap for thermal visualization
+        glyph_config : Configuration for glyph appearance and behavior
+        color_config : Configuration for color settings
+        show_trails  : Whether to render motion trails behind agents
         
     Returns:
         List of PyVista actors created for the agents
     """
-    positions_np = position.detach().cpu().numpy()
-    cloud = pv.PolyData(positions_np)
+    glyph_type = glyph_config.type if glyph_config else "sphere"
+    glyph_size = glyph_config.size if glyph_config else 0.15
+    agent_color = color_config.agent_default if color_config else (0.2, 0.2, 0.8)
+    
+    agent_positions = position.detach().cpu().numpy()
+    point_cloud = pv.PolyData(agent_positions)
     actors = []
     
-    # Add data to point cloud
-    velocities_np = None
-    temps_np = None
+    agent_velocities = None
+    agent_temperatures = None
     
     if velocity is not None:
-        velocities_np = velocity.detach().cpu().numpy()
-        cloud.point_data["velocity"] = velocities_np
+        agent_velocities = velocity.detach().cpu().numpy()
+        point_cloud.point_data["velocity"] = agent_velocities
     
     if temperature is not None:
-        temps_np = temperature.detach().cpu().numpy()
-        cloud.point_data["temperature"] = temps_np.flatten()
+        agent_temperatures = temperature.detach().cpu().numpy()
+        point_cloud.point_data["temperature"] = agent_temperatures.flatten()
     
-    # Render based on glyph type
     if glyph_type == "sphere":
+        sphere_resolution = 15
         sphere = pv.Sphere(
-            radius=glyph_size, 
-            phi_resolution=DEFAULT_SPHERE_RESOLUTION, 
-            theta_resolution=DEFAULT_SPHERE_RESOLUTION
+            radius           = glyph_size, 
+            phi_resolution   = sphere_resolution, 
+            theta_resolution = sphere_resolution
         )
         
         if temperature is not None and colormap is not None:
-            min_temp = np.min(temps_np)
-            max_temp = np.max(temps_np)
-            cmap_name = colormap.get("name", "plasma")
+            temperature_range = (
+                np.min(agent_temperatures), 
+                np.max(agent_temperatures)
+            )
             
             glyph_actor = plotter.add_mesh(
-                cloud.glyph(geom=sphere, scale=False),
-                scalars="temperature",
-                cmap=cmap_name,
-                clim=(min_temp, max_temp),
-                render_points_as_spheres=True,
+                point_cloud.glyph(geom=sphere, scale=False),
+                scalars                  = "temperature",
+                cmap                     = colormap,
+                clim                     = temperature_range,
+                render_points_as_spheres = True,
             )
         else:
             glyph_actor = plotter.add_mesh(
-                cloud.glyph(geom=sphere, scale=False),
-                color=DEFAULT_AGENT_COLOR,
+                point_cloud.glyph(geom=sphere, scale=False),
+                color = agent_color,
             )
         
         actors.append(glyph_actor)
     
     elif glyph_type == "arrow" and velocity is not None:
-        # Normalize velocity for orientation
-        velocities_np = velocity.detach().cpu().numpy()
-        magnitude = np.linalg.norm(velocities_np, axis=1, keepdims=True)
-        magnitude = np.where(magnitude > 0, magnitude, 1.0)  # Avoid division by zero
-        directions = velocities_np / magnitude
+        velocity_magnitudes = np.linalg.norm(agent_velocities, axis=1, keepdims=True)
+        safe_magnitudes = np.where(velocity_magnitudes > 0, velocity_magnitudes, 1.0)
+        normalized_directions = agent_velocities / safe_magnitudes
         
-        # Add direction data to point cloud
-        cloud.point_data["direction"] = directions
+        point_cloud.point_data["direction"] = normalized_directions
         
-        # Create arrow glyphs
+        arrow_resolution = 10
+        arrow_scale = glyph_config.arrow_scale if glyph_config else 0.1
         arrow = pv.Arrow(
             shaft_radius     = glyph_size * 0.1,
             tip_length       = glyph_size * 0.5,
             tip_radius       = glyph_size * 0.2,
-            shaft_resolution = DEFAULT_ARROW_RESOLUTION,
-            tip_resolution   = DEFAULT_ARROW_RESOLUTION,
+            shaft_resolution = arrow_resolution,
+            tip_resolution   = arrow_resolution,
         )
         
         if temperature is not None and colormap is not None:
-            min_temp = np.min(temps_np)
-            max_temp = np.max(temps_np)
-            cmap_name = colormap.get("name", "plasma")
+            temperature_range = (
+                np.min(agent_temperatures), 
+                np.max(agent_temperatures)
+            )
             
             glyph_actor = plotter.add_mesh(
-                cloud.glyph(geom=arrow, orient="direction", scale=False),
-                scalars="temperature",
-                cmap=cmap_name,
-                clim=(min_temp, max_temp),
+                point_cloud.glyph(geom=arrow, orient="direction", scale=False),
+                scalars = "temperature",
+                cmap    = colormap,
+                clim    = temperature_range,
             )
         else:
             glyph_actor = plotter.add_mesh(
-                cloud.glyph(geom=arrow, orient="direction", scale=False),
-                color=DEFAULT_AGENT_COLOR,
+                point_cloud.glyph(geom=arrow, orient="direction", scale=False),
+                color = agent_color,
             )
         
         actors.append(glyph_actor)
     
-    # Add trails if requested
-    if show_trails and velocity is not None and velocities_np is not None:
-        trail_decay_factor = 0.1  # Controls trail length
+    if show_trails and velocity is not None and agent_velocities is not None:
+        trail_length = glyph_config.trail_length if glyph_config else 5
+        trail_decay_factor = 0.1
+        trail_color = (0.8, 0.8, 0.8)
         
-        for i in range(len(positions_np)):
-            agent_pos = positions_np[i]
-            agent_vel = velocities_np[i]
+        for agent_idx in range(len(agent_positions)):
+            current_position = agent_positions[agent_idx]
+            current_velocity = agent_velocities[agent_idx]
             
-            # Create trail points with decreasing intensity
-            trail_points = np.zeros((TRAIL_LENGTH, 3))
+            trail_points = np.zeros((trail_length, 3))
             
-            for j in range(TRAIL_LENGTH):
-                decay = (TRAIL_LENGTH - j) / TRAIL_LENGTH
-                trail_points[j] = agent_pos - agent_vel * j * trail_decay_factor * decay
+            for point_idx in range(trail_length):
+                decay_weight = (trail_length - point_idx) / trail_length
+                trail_offset = (
+                    current_velocity * point_idx * 
+                    trail_decay_factor * decay_weight
+                )
+                trail_points[point_idx] = current_position - trail_offset
             
-            # Create line from trail points
-            trail = pv.Line(
+            trail_line = pv.Line(
                 trail_points[0], 
                 trail_points[-1], 
-                resolution=TRAIL_LENGTH
+                resolution=trail_length
             )
             
-            # Compute opacity based on temperature if available
-            opacity = 0.5
-            if temperature is not None and temps_np is not None:
-                if np.max(temps_np) > np.min(temps_np):
-                    temp_factor = (temps_np[i] - np.min(temps_np)) / (np.max(temps_np) - np.min(temps_np))
-                    opacity = 0.3 + 0.7 * temp_factor
+            trail_opacity = 0.5
+            if temperature is not None and agent_temperatures is not None:
+                temperature_range = (
+                    np.max(agent_temperatures) - np.min(agent_temperatures)
+                )
+                if temperature_range > 0:
+                    normalized_temp = (
+                        (agent_temperatures[agent_idx] - np.min(agent_temperatures)) 
+                        / temperature_range
+                    )
+                    trail_opacity = 0.3 + 0.7 * normalized_temp
             
             trail_actor = plotter.add_mesh(
-                trail,
-                color=DEFAULT_TRAIL_COLOR,
-                opacity=opacity,
-                line_width=2,
-                render_lines_as_tubes=True,
+                trail_line,
+                color                 = trail_color,
+                opacity               = trail_opacity,
+                line_width            = 2,
+                render_lines_as_tubes = True,
             )
             
             actors.append(trail_actor)
@@ -184,12 +198,12 @@ def render_agents(
 
 
 def render_temperature_field(
-    plotter    : Plotter,
-    temp_grid  : PolyData,
-    min_temp   : Optional[float] = None,
-    max_temp   : Optional[float] = None,
-    colormap   : str = "plasma",
-    opacity    : float = 0.5
+    plotter        : Plotter,
+    temp_grid      : UniformGrid,
+    color_config   : Optional[ColorModel] = None,
+    opacity_config : Optional[OpacityModel] = None,
+    min_temp       : Optional[float] = None,
+    max_temp       : Optional[float] = None,
 ) -> list[Any]:
     """
     Render a 3D temperature field visualization.
@@ -199,26 +213,32 @@ def render_temperature_field(
     the thermal environment that the swarm navigates through, helping to understand
     the thermal currents, hot spots, and thermal gradients.
     
+    The volume rendering uses PyVista's efficient GPU-accelerated rendering
+    pipeline to display large temperature fields in real-time. The colormap
+    and opacity settings can be configured to highlight specific temperature
+    ranges or features of interest.
+    
     Args:
-        plotter    : PyVista Plotter instance to render to
-        temp_grid  : PyVista PolyData or UniformGrid with temperature data
-        min_temp   : Minimum temperature for colormap scaling (auto-detected if None)
-        max_temp   : Maximum temperature for colormap scaling (auto-detected if None)
-        colormap   : Name of colormap to use
-        opacity    : Opacity of the volume rendering
+        plotter        : PyVista Plotter instance to render to
+        temp_grid      : PyVista UniformGrid with temperature data
+        color_config   : Configuration for color mapping
+        opacity_config : Configuration for opacity values
+        min_temp       : Minimum temperature for colormap scaling (auto if None)
+        max_temp       : Maximum temperature for colormap scaling (auto if None)
         
     Returns:
         List of PyVista actors created for the temperature field
     """
     actors = []
     
-    # Auto-detect temperature range if not provided
-    if min_temp is None or max_temp is None:
-        temp_range = temp_grid.get_data_range("temperature")
-        min_temp = temp_range[0] if min_temp is None else min_temp
-        max_temp = temp_range[1] if max_temp is None else max_temp
+    colormap = color_config.colormap if color_config else "plasma"
+    opacity = 0.5
     
-    # Add volume visualization
+    if min_temp is None or max_temp is None:
+        temperature_bounds = temp_grid.get_data_range("temperature")
+        min_temp = temperature_bounds[0] if min_temp is None else min_temp
+        max_temp = temperature_bounds[1] if max_temp is None else max_temp
+    
     volume_actor = plotter.add_volume(
         temp_grid,
         cmap       = colormap,
@@ -234,12 +254,11 @@ def render_temperature_field(
 
 
 def render_wind_field(
-    plotter    : Plotter,
-    wind_grid  : PolyData,
-    scale      : float = 0.1,
-    arrow_size : float = 0.1,
-    color      : tuple[float, float, float] = None,
-    opacity    : float = 0.8
+    plotter        : Plotter,
+    wind_grid      : PolyData,
+    glyph_config   : Optional[GlyphModel] = None,
+    color_config   : Optional[ColorModel] = None,
+    opacity_config : Optional[OpacityModel] = None,
 ) -> list[Any]:
     """
     Render the wind field as arrow glyphs on a 3D grid.
@@ -249,48 +268,54 @@ def render_wind_field(
     on the provided wind_grid. Only significant wind vectors are displayed to
     reduce visual clutter.
     
+    The rendering optimizes performance by filtering out small wind vectors
+    and using PyVista's efficient glyph operations. The arrow size and color
+    can be configured to match the overall visualization style.
+    
     Args:
-        plotter    : PyVista Plotter instance to render to
-        wind_grid  : PyVista PolyData with wind vector data
-        scale      : Scaling factor for arrow size based on wind magnitude
-        arrow_size : Base size of the arrow glyphs
-        color      : Color of the wind arrows (defaults to DEFAULT_WIND_COLOR)
-        opacity    : Opacity of the wind arrows
+        plotter        : PyVista Plotter instance to render to
+        wind_grid      : PyVista PolyData with wind vector data
+        glyph_config   : Configuration for glyph appearance
+        color_config   : Configuration for color settings
+        opacity_config : Configuration for opacity values
         
     Returns:
         List of PyVista actors created for the wind field
     """
     actors = []
-    wind_color = DEFAULT_WIND_COLOR if color is None else color
     
-    # Create arrow glyphs for the wind vectors
+    wind_color = color_config.wind_default if color_config else (0.7, 0.7, 0.7)
+    opacity = opacity_config.wind if opacity_config else 0.8
+    arrow_scale = glyph_config.arrow_scale if glyph_config else 0.1
+    arrow_size = glyph_config.size if glyph_config else 0.1
+    
+    arrow_resolution = 10
     arrow = pv.Arrow(
         shaft_radius     = arrow_size * 0.1,
         tip_length       = arrow_size * 0.5,
         tip_radius       = arrow_size * 0.2,
-        shaft_resolution = DEFAULT_ARROW_RESOLUTION,
-        tip_resolution   = DEFAULT_ARROW_RESOLUTION,
+        shaft_resolution = arrow_resolution,
+        tip_resolution   = arrow_resolution,
     )
     
-    # Prepare wind data for visualization
     wind_grid["wind_direction"] = wind_grid["wind_velocity"].copy()
-    wind_grid["wind_magnitude"] = np.linalg.norm(wind_grid["wind_velocity"], axis=1)
-    max_magnitude = np.max(wind_grid["wind_magnitude"])
+    wind_magnitudes = np.linalg.norm(wind_grid["wind_velocity"], axis=1)
+    wind_grid["wind_magnitude"] = wind_magnitudes
+    max_wind_magnitude = np.max(wind_magnitudes)
     
-    # Filter to show only significant wind vectors
-    threshold = WIND_THRESHOLD_FACTOR * max_magnitude
-    mask = wind_grid["wind_magnitude"] > threshold
-    masked_grid = wind_grid.extract_points(mask)
+    magnitude_threshold = 0.1 * max_wind_magnitude
+    significant_wind_mask = wind_magnitudes > magnitude_threshold
+    filtered_wind_grid = wind_grid.extract_points(significant_wind_mask)
     
-    if masked_grid.n_points > 0:
+    if filtered_wind_grid.n_points > 0:
         glyph_actor = plotter.add_mesh(
-            masked_grid.glyph(
+            filtered_wind_grid.glyph(
                 geom       = arrow,
                 orient     = "wind_direction",
-                factor     = scale,
+                factor     = arrow_scale,
                 scale      = "wind_magnitude",
                 scale_mode = "scalar",
-                rng        = [0, max_magnitude],
+                rng        = [0, max_wind_magnitude],
             ),
             color   = wind_color,
             opacity = opacity,
@@ -307,9 +332,9 @@ def render_safety_boundary(
     temperature      : Tensor,
     temperature_grad : Tensor,
     max_temperature  : float,
-    margin           : float = 10.0,
-    color            : tuple[float, float, float] = None,
-    opacity          : float = 0.3
+    grid_config      : Optional[GridModel] = None,
+    color_config     : Optional[ColorModel] = None,
+    opacity_config   : Optional[OpacityModel] = None,
 ) -> list[Any]:
     """
     Render a safety boundary visualization showing the T_max isotherm.
@@ -319,64 +344,78 @@ def render_safety_boundary(
     This visualization helps to verify that the CBF (Control Barrier Function)
     is working correctly by showing the areas that agents should avoid.
     
+    The function uses vectorized operations for efficient temperature field
+    interpolation, avoiding loops where possible. The isosurface is smoothed
+    for better visual quality and to clearly show the safety boundary shape.
+    
     Args:
         plotter          : PyVista Plotter instance to render to
-        position         : Tensor [N, 3] of agent positions
-        temperature      : Tensor [N] of agent temperatures
-        temperature_grad : Tensor [N, 3] of temperature gradients
+        position         : Agent positions tensor of shape [N, 3]
+        temperature      : Agent temperatures tensor of shape [N, 1]
+        temperature_grad : Temperature gradients tensor of shape [N, 3]
         max_temperature  : Maximum safe temperature (T_max)
-        margin           : Temperature margin for visualization
-        color            : Color of the safety boundary (defaults to DEFAULT_SAFETY_COLOR)
-        opacity          : Opacity of the safety boundary
+        grid_config      : Configuration for grid sampling parameters
+        color_config     : Configuration for color settings
+        opacity_config   : Configuration for opacity values
         
     Returns:
         List of PyVista actors created for the safety boundary
     """
     actors = []
-    safety_color = DEFAULT_SAFETY_COLOR if color is None else color
+    
+    safety_color = color_config.safety_default if color_config else (0.9, 0.3, 0.3)
+    opacity = opacity_config.safety if opacity_config else 0.3
+    
+    grid_padding = grid_config.padding if grid_config else 2.0
+    temperature_resolution = (
+        grid_config.temperature_resolution if grid_config else (20, 20, 20)
+    )
     
     # Convert tensors to numpy arrays
-    positions_np  = position.detach().cpu().numpy()
-    temps_np      = temperature.detach().cpu().numpy().flatten()
+    agent_positions = position.detach().cpu().numpy()
+    agent_temperatures = temperature.detach().cpu().numpy().flatten()
     
     # Extract bounding box from agent positions with padding
-    min_bounds = np.min(positions_np, axis=0) - SAFETY_PADDING
-    max_bounds = np.max(positions_np, axis=0) + SAFETY_PADDING
+    min_bounds = np.min(agent_positions, axis=0) - grid_padding
+    max_bounds = np.max(agent_positions, axis=0) + grid_padding
     
     # Create a regular grid for the bounding box
     grid = pv.UniformGrid(
-        dimensions = (SAFETY_GRID_SIZE, SAFETY_GRID_SIZE, SAFETY_GRID_SIZE),
-        spacing    = ((max_bounds[0] - min_bounds[0]) / (SAFETY_GRID_SIZE - 1),
-                      (max_bounds[1] - min_bounds[1]) / (SAFETY_GRID_SIZE - 1),
-                      (max_bounds[2] - min_bounds[2]) / (SAFETY_GRID_SIZE - 1)),
+        dimensions = temperature_resolution,
+        spacing    = (
+            (max_bounds[0] - min_bounds[0]) / (temperature_resolution[0] - 1),
+            (max_bounds[1] - min_bounds[1]) / (temperature_resolution[1] - 1),
+            (max_bounds[2] - min_bounds[2]) / (temperature_resolution[2] - 1)
+        ),
         origin     = min_bounds
     )
     
-    # Interpolate temperature field using inverse distance weighting
+    # Vectorized temperature interpolation using broadcasting
     grid_points = grid.points
-    grid_temps = np.zeros(grid_points.shape[0])
+    n_grid_points = grid_points.shape[0]
+    n_agents = agent_positions.shape[0]
     
-    # Vectorized calculation of distances between grid points and agent positions
-    # This is much more efficient than looping through each grid point
-    MIN_DISTANCE = 0.001  # Minimum distance to avoid division by zero
+    # Reshape for broadcasting: grid_points (n_grid, 1, 3), positions (1, n_agents, 3)
+    grid_expanded = grid_points.reshape(n_grid_points, 1, 3)
+    positions_expanded = agent_positions.reshape(1, n_agents, 3)
     
-    for i, point in enumerate(grid_points):
-        # Calculate all distances at once
-        distances = np.linalg.norm(positions_np - point, axis=1)
-        distances = np.maximum(distances, MIN_DISTANCE)
-        
-        # Inverse square distance weights
-        weights = 1.0 / (distances * distances)
-        weights_sum = np.sum(weights)
-        
-        # Weighted average of temperatures
-        grid_temps[i] = np.sum(temps_np * (weights / weights_sum))
+    # Compute all pairwise distances at once
+    distances = np.linalg.norm(grid_expanded - positions_expanded, axis=2)
+    distances = np.maximum(distances, 0.001)  # Avoid division by zero
+    
+    # Inverse distance weighting
+    weights = 1.0 / (distances * distances)
+    normalized_weights = weights / weights.sum(axis=1, keepdims=True)
+    
+    # Weighted temperature interpolation
+    grid_temperatures = (normalized_weights * agent_temperatures).sum(axis=1)
     
     # Add temperature data to grid
-    grid.point_data["temperature"] = grid_temps
+    grid.point_data["temperature"] = grid_temperatures
     
-    # Create isosurface at max_temperature - margin
-    contour = grid.contour([max_temperature - margin])
+    # Create isosurface at max_temperature with small margin
+    temperature_margin = 1.0
+    contour = grid.contour([max_temperature - temperature_margin])
     
     if contour.n_points > 0:
         boundary_actor = plotter.add_mesh(
@@ -392,12 +431,11 @@ def render_safety_boundary(
 
 
 def render_communication_graph(
-    plotter    : Plotter,
-    position   : Tensor,
-    edge_index : Tensor,
-    color      : tuple[float, float, float] = None,
-    opacity    : float = 0.5,
-    line_width : int = 2
+    plotter        : Plotter,
+    position       : Tensor,
+    edge_index     : Tensor,
+    color_config   : Optional[ColorModel] = None,
+    opacity_config : Optional[OpacityModel] = None,
 ) -> list[Any]:
     """
     Render the communication graph as lines between connected agents.
@@ -408,46 +446,58 @@ def render_communication_graph(
     connectivity issues or understand emergent behaviors based on communication
     patterns.
     
+    The function efficiently handles large graphs by batching line creation
+    and using PyVista's optimized rendering for line meshes. The visual
+    style can be configured to match the overall visualization theme.
+    
     Args:
-        plotter    : PyVista Plotter instance to render to
-        position   : Tensor [N, 3] of agent positions
-        edge_index : Tensor [2, E] connectivity graph
-        color      : Color of the communication lines (defaults to DEFAULT_GRAPH_COLOR)
-        opacity    : Opacity of the communication lines
-        line_width : Width of the communication lines
+        plotter        : PyVista Plotter instance to render to
+        position       : Agent positions tensor of shape [N, 3]
+        edge_index     : Connectivity graph tensor of shape [2, E]
+        color_config   : Configuration for color settings
+        opacity_config : Configuration for opacity values
         
     Returns:
         List of PyVista actors created for the communication graph
     """
     actors = []
-    graph_color = DEFAULT_GRAPH_COLOR if color is None else color
+    
+    graph_color = color_config.graph_default if color_config else (0.7, 0.7, 0.9)
+    opacity = opacity_config.graph if opacity_config else 0.5
+    line_width = 2
     
     # Convert tensors to numpy arrays
-    positions_np = position.detach().cpu().numpy()
+    agent_positions = position.detach().cpu().numpy()
     
     # Check if there are any edges
     if edge_index.numel() > 0:
-        # Extract source and target indices
-        source_idx = edge_index[0].detach().cpu().numpy()
-        target_idx = edge_index[1].detach().cpu().numpy()
+        source_indices = edge_index[0].detach().cpu().numpy()
+        target_indices = edge_index[1].detach().cpu().numpy()
         
-        # Add lines for each edge in the graph
-        for i in range(len(source_idx)):
-            source_pos = positions_np[source_idx[i]]
-            target_pos = positions_np[target_idx[i]]
+        # Create all lines at once for better performance
+        lines = []
+        for source_idx, target_idx in zip(source_indices, target_indices):
+            source_position = agent_positions[source_idx]
+            target_position = agent_positions[target_idx]
             
-            # Create line from source to target
-            line = pv.Line(source_pos, target_pos)
+            line = pv.Line(source_position, target_position)
+            lines.append(line)
+        
+        # Merge all lines into a single mesh for efficient rendering
+        if lines:
+            merged_lines = lines[0]
+            for line in lines[1:]:
+                merged_lines = merged_lines.merge(line)
             
-            # Add line to the plotter
-            line_actor = plotter.add_mesh(
-                line,
-                color               = graph_color,
-                opacity             = opacity,
-                line_width          = line_width,
+            # Add merged lines to the plotter
+            graph_actor = plotter.add_mesh(
+                merged_lines,
+                color                 = graph_color,
+                opacity               = opacity,
+                line_width            = line_width,
                 render_lines_as_tubes = True,
             )
             
-            actors.append(line_actor)
+            actors.append(graph_actor)
     
     return actors

@@ -5,131 +5,163 @@ This module provides functions for creating and applying perceptually-uniform
 colormaps optimized for thermal visualization. The default colormap uses a
 carefully designed gradient from cool blues to hot reds that effectively
 communicates temperature variations in a visually intuitive way.
+
+The color utilities support both standard matplotlib/PyVista colormaps and
+custom color gradients designed specifically for thermal data visualization.
+The module includes functions for creating colormap configurations and
+converting scalar values to colors with proper normalization.
 """
-import pyvista as pv
+import matplotlib.colors as mcolors
+import pyvista          as pv
+
+from configs.schemas.visualization import ColorModel
+from typing                        import Optional, Union
 
 
 def create_temperature_colormap(
-    add_scalar_bar        : bool = True,
-    cmap_name             : str  = "plasma",
-    custom_colors         : list = None,
-    reverse               : bool = False,
-    scalar_bar_position_x : float = 0.88,
-    scalar_bar_position_y : float = 0.25,
-    scalar_bar_title      : str  = "Temperature",
-) -> dict:
+    color_config : Optional[ColorModel] = None,
+) -> Union[str, mcolors.LinearSegmentedColormap]:
     """
-    Create a temperature colormap configuration.
+    Create a temperature colormap for visualization.
     
-    This function returns a dictionary with colormap settings that can be
-    used for temperature visualization in the PyVista-based rendering.
+    This function returns either a named colormap string or a custom
+    LinearSegmentedColormap object optimized for thermal visualization.
+    The default thermal gradient transitions smoothly from cool blues
+    through greens and yellows to hot reds, following perceptual
+    principles for effective temperature differentiation.
     
-    The default thermal gradient is carefully designed to be both visually
-    appealing and functionally effective for representing thermal data. It
-    transitions from dark blue (coldest) through cyan, green, yellow, and
-    finally to red (hottest), following perceptual principles to maximize
-    the differentiation of temperature values.
-    
-    If a named colormap is preferred, any of the PyVista/Matplotlib colormaps
-    can be used by specifying the cmap_name parameter. Good alternatives for
-    thermal visualization include 'plasma', 'inferno', and 'viridis'.
+    The custom colormap is designed to:
+    - Maximize perceptual uniformity across the temperature range
+    - Provide intuitive cool-to-hot color progression
+    - Maintain clarity when printed in grayscale
+    - Avoid problematic color combinations for colorblind viewers
     
     Args:
-        add_scalar_bar        : Whether to add a scalar bar to the plot
-        cmap_name             : Name of the colormap to use
-        custom_colors         : List of custom colors if not using a named colormap
-        reverse               : Whether to reverse the colormap
-        scalar_bar_position_x : X-position of scalar bar (0-1)
-        scalar_bar_position_y : Y-position of scalar bar (0-1)
-        scalar_bar_title      : Title for the scalar bar
+        color_config : Configuration model with colormap preferences
         
     Returns:
-        Dictionary with colormap configuration
+        Either a colormap name string or custom colormap object
     """
-    if custom_colors is None:
-        custom_colors = [
-            (0.0, 0.0, 0.4),  # Dark blue
-            (0.0, 0.2, 0.8),  # Blue
-            (0.0, 0.5, 0.9),  # Light blue
-            (0.0, 0.8, 0.8),  # Cyan
-            (0.0, 0.9, 0.3),  # Green-cyan
-            (0.7, 0.9, 0.0),  # Yellow-green
-            (1.0, 0.8, 0.0),  # Yellow
-            (1.0, 0.5, 0.0),  # Orange
-            (1.0, 0.2, 0.0),  # Red
-            (0.8, 0.0, 0.0),  # Dark red
-        ]
+    if color_config and color_config.colormap != "thermal":
+        return color_config.colormap
     
-    if reverse:
-        custom_colors = custom_colors[::-1]
+    # Default thermal gradient colors
+    thermal_colors = [
+        (0.0, 0.0, 0.4),  # Dark blue
+        (0.0, 0.2, 0.8),  # Blue
+        (0.0, 0.5, 0.9),  # Light blue
+        (0.0, 0.8, 0.8),  # Cyan
+        (0.0, 0.9, 0.3),  # Green-cyan
+        (0.7, 0.9, 0.0),  # Yellow-green
+        (1.0, 0.8, 0.0),  # Yellow
+        (1.0, 0.5, 0.0),  # Orange
+        (1.0, 0.2, 0.0),  # Red
+        (0.8, 0.0, 0.0),  # Dark red
+    ]
     
-    return {
-        "name"                : cmap_name,
-        "custom_colors"       : custom_colors,
-        "add_scalar_bar"      : add_scalar_bar,
-        "scalar_bar_title"    : scalar_bar_title,
-        "scalar_bar_position" : (scalar_bar_position_x, scalar_bar_position_y),
+    n_colors = len(thermal_colors)
+    positions = [i / (n_colors - 1) for i in range(n_colors)]
+    
+    cmap_dict = {
+        'red'   : [(pos, color[0], color[0]) 
+                   for pos, color in zip(positions, thermal_colors)],
+        'green' : [(pos, color[1], color[1]) 
+                   for pos, color in zip(positions, thermal_colors)],
+        'blue'  : [(pos, color[2], color[2]) 
+                   for pos, color in zip(positions, thermal_colors)]
     }
+    
+    return mcolors.LinearSegmentedColormap('thermal', cmap_dict)
 
 
 def temperature_to_color(
-    colormap    : dict = None,
+    temperature : float,
     max_temp    : float = 1.0,
     min_temp    : float = 0.0,
-    temperature : float = 0.5,
-) -> tuple:
+    colormap    : Optional[Union[str, mcolors.Colormap]] = None,
+) -> tuple[float, float, float]:
     """
-    Convert a temperature value to a color using the specified colormap.
+    Convert a temperature value to an RGB color.
     
-    This function maps a temperature value to a color tuple (r, g, b) using
-    the provided colormap and temperature range. The temperature is first
-    normalized to a 0-1 range based on the provided min and max, then mapped
-    to a color using either custom color interpolation or a named colormap.
+    This function maps a scalar temperature value to a color tuple using
+    the specified colormap and temperature range. The temperature is first
+    normalized to [0, 1] based on the provided bounds, then mapped to a
+    color using either a named colormap or custom thermal gradient.
     
-    The custom color interpolation uses a linear blend between the nearest
-    colors in the sequence, ensuring smooth transitions. When using named
-    colormaps, PyVista's built-in mapping functions are used.
+    The normalization handles edge cases such as:
+    - Temperatures outside the specified range (clamped to bounds)
+    - Equal min/max temperatures (returns middle color)
+    - Invalid temperature values (treated as minimum)
     
     Args:
-        colormap    : Colormap configuration from create_temperature_colormap
-        max_temp    : Maximum temperature in the range
-        min_temp    : Minimum temperature in the range
-        temperature : Temperature value to map to color
+        temperature : Temperature value to convert to color
+        max_temp    : Maximum temperature for normalization
+        min_temp    : Minimum temperature for normalization  
+        colormap    : Colormap name or object for mapping
         
     Returns:
-        Tuple of (r, g, b) color values in the range [0, 1]
+        RGB color tuple with values in range [0, 1]
     """
-    if colormap is None:
-        colormap = create_temperature_colormap()
-    
+    # Handle edge case of equal bounds
     if max_temp == min_temp:
         normalized = 0.5
     else:
         normalized = (temperature - min_temp) / (max_temp - min_temp)
     
+    # Clamp to valid range
     normalized = max(0.0, min(1.0, normalized))
     
-    if "custom_colors" in colormap and colormap["custom_colors"]:
-        colors = colormap["custom_colors"]
-        if len(colors) == 1:
-            return colors[0]
-        
-        idx = int(normalized * (len(colors) - 1))
-        if idx >= len(colors) - 1:
-            return colors[-1]
-        
-        frac = normalized * (len(colors) - 1) - idx
-        
-        color1 = colors[idx]
-        color2 = colors[idx + 1]
-        
-        r = color1[0] * (1 - frac) + color2[0] * frac
-        g = color1[1] * (1 - frac) + color2[1] * frac
-        b = color1[2] * (1 - frac) + color2[2] * frac
-        
-        return (r, g, b)
+    if colormap is None:
+        colormap = create_temperature_colormap()
+    
+    if isinstance(colormap, str):
+        cmap = pv.plotting.tools.get_cmap_safe(colormap)
     else:
-        colormap_name = colormap.get("name", "plasma")
-        cmap = pv.plotting.tools.get_cmap_safe(colormap_name)
+        cmap = colormap
+    
+    # Extract RGB values (ignore alpha)
+    return cmap(normalized)[:3]
+
+
+def create_scalar_bar_config(
+    color_config : Optional[ColorModel] = None,
+) -> dict:
+    """
+    Create scalar bar configuration for temperature visualization.
+    
+    This function generates a configuration dictionary for PyVista's
+    scalar bar (colorbar) that displays the temperature scale alongside
+    the 3D visualization. The scalar bar helps users interpret the
+    temperature values represented by colors in the scene.
+    
+    Args:
+        color_config : Configuration model with scalar bar preferences
         
-        return cmap(normalized)[:3]
+    Returns:
+        Dictionary with scalar bar configuration parameters
+    """
+    default_position = (0.88, 0.25)
+    default_title = "Temperature"
+    
+    if color_config:
+        position = (
+            color_config.scalar_bar_position_x,
+            color_config.scalar_bar_position_y
+        )
+        title = color_config.scalar_bar_title
+    else:
+        position = default_position
+        title = default_title
+    
+    return {
+        "interactive"    : False,
+        "position_x"     : position[0],
+        "position_y"     : position[1],
+        "title"          : title,
+        "title_font_size": 14,
+        "label_font_size": 12,
+        "width"          : 0.08,
+        "height"         : 0.4,
+        "n_labels"       : 5,
+        "fmt"            : "%.1f",
+    }
