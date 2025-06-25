@@ -4,7 +4,7 @@ Policy network models.
 This module defines the Pydantic models for the Graph Neural Network
 policy architecture parameters.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 from typing   import Literal
 
 
@@ -22,26 +22,22 @@ class GNNModel(BaseModel, extra="forbid"):
             "The nonlinearity used in the GNN's multi-layer perceptrons (MLPs)."
         )
     )
-    hidden_dim: int = Field(
+    hidden_dim: PositiveInt = Field(
         default     = 64,
-        gt          = 0,
         description = "Dimensionality of the hidden node embeddings and messages.",
     )
-    num_layers: int = Field(
+    num_layers: PositiveInt = Field(
         default     = 3,
-        ge          = 1,
         description = (
             "Number of GNN message-passing layers. More layers increase the "
             "agent's receptive field but also computational cost."
         )
     )
-    input_dim: int = Field(
+    input_dim: PositiveInt = Field(
         default     = 11,  # position(3) + velocity(3) + temperature(1) + temp_grad(3) + energy(1)
-        gt          = 0,
         description = "Dimensionality of the input node features (concatenated state vector).",
     )
-    output_dim: int = Field(
+    output_dim: PositiveInt = Field(
         default     = 3,
-        gt          = 0,
         description = "Dimensionality of the output action (spatial dimensions).",
     )

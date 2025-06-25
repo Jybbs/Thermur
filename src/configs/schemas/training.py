@@ -4,16 +4,16 @@ Training and optimization models.
 This module defines the Pydantic models for training parameters,
 data collection, and replay buffer configuration.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt
+from typing   import Literal
 
 
 class CheckpointModel(BaseModel, extra="forbid"):
     """
     Parameters for saving model checkpoints during training.
     """
-    interval: int = Field(
+    interval: PositiveInt = Field(
         default     = 25_000,
-        gt          = 0,
         description = "The frequency (in frames) at which to save a model checkpoint."
     )
     path: str = Field(
@@ -29,12 +29,11 @@ class CollectorModel(BaseModel, extra="forbid"):
     This configures the data collection loop, which interacts with the
     environment to gather agent experiences.
     """
-    frames_per_batch: int = Field(
+    frames_per_batch: PositiveInt = Field(
         default     = 1024,
-        gt          = 0,
         description = "Number of frames (agent steps) to collect per batch."
     )
-    total_frames: int = Field(
+    total_frames: PositiveInt = Field(
         default     = 200_000,
         description = "The total number of environment frames to collect for the training run."
     )
@@ -51,15 +50,15 @@ class HyperparameterModel(BaseModel, extra="forbid"):
     
         L_imitation = ||π_θ(s) - 𝐮_nom||².
     """
-    device: str = Field(
+    device: Literal["cpu", "cuda", "mps"] = Field(
         default     = "cpu",
-        description = "The compute device ('cpu', 'cuda', 'mps') for training."
+        description = "The compute device for training."
     )
-    learning_rate: float = Field(
+    learning_rate: PositiveFloat = Field(
         default     = 3e-4,
         description = "The learning rate for the AdamW optimizer."
     )
-    log_interval: int = Field(
+    log_interval: PositiveInt = Field(
         default     = 1000,
         description = "The frequency (in frames) at which to log training metrics."
     )
@@ -67,10 +66,19 @@ class HyperparameterModel(BaseModel, extra="forbid"):
         default     = 42,
         description = "The global random seed for ensuring reproducibility."
     )
-    weight_decay: float = Field(
+    weight_decay: NonNegativeFloat = Field(
         default     = 1e-5,
-        ge          = 0,
         description = "Weight decay (L2 penalty) for the AdamW optimizer."
+    )
+
+
+class StorageModel(BaseModel, extra="forbid"):
+    """
+    Parameters for the LazyTensorStorage used by the replay buffer.
+    """
+    max_size: PositiveInt = Field(
+        default     = 50_000,
+        description = "The maximum number of agent experiences to store in the buffer."
     )
 
 
@@ -81,18 +89,11 @@ class ReplayBufferModel(BaseModel, extra="forbid"):
     This configures the experience replay buffer, which stores transitions
     collected from the environment for training.
     """
-    batch_size: int = Field(
+    batch_size: PositiveInt = Field(
         default     = 256,
-        gt          = 0,
         description = "The number of agent experiences per training batch."
     )
-    buffer_size: int = Field(
-        default     = 50_000,
-        gt          = 0,
-        description = "The maximum number of agent experiences to store in the buffer."
-    )
-    prefetch: int = Field(
+    prefetch: NonNegativeInt = Field(
         default     = 8,
-        ge          = 0,
         description = "Number of batches to prefetch for training to hide data loading latency."
     )

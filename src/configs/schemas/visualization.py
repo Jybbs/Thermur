@@ -6,7 +6,122 @@ capabilities of the Thermur simulation. These include rendering options,
 display properties, and toggles for various visualization elements like
 agent representations, thermal fields, safety boundaries, and graph topology.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveFloat, PositiveInt
+from typing   import Literal
+
+
+class ColorModel(BaseModel, extra="forbid"):
+    """
+    Configures color settings for visualization elements.
+    
+    These settings control the color mapping and default colors used
+    throughout the visualization system.
+    """
+    agent_default: tuple[float, float, float] = Field(
+        default     = (0.2, 0.2, 0.8),
+        description = "Default RGB color for agents when not using thermal coloring."
+    )
+    colormap: Literal["plasma", "inferno", "viridis", "magma", "cividis", "turbo"] = Field(
+        default     = "plasma",
+        description = "Colormap for thermal visualization."
+    )
+    graph_default: tuple[float, float, float] = Field(
+        default     = (0.7, 0.7, 0.9),
+        description = "Default RGB color for communication graph edges."
+    )
+    safety_default: tuple[float, float, float] = Field(
+        default     = (0.9, 0.3, 0.3),
+        description = "Default RGB color for safety boundary."
+    )
+    wind_default: tuple[float, float, float] = Field(
+        default     = (0.7, 0.7, 0.7),
+        description = "Default RGB color for wind field arrows."
+    )
+
+
+class GlyphModel(BaseModel, extra="forbid"):
+    """
+    Configures glyph rendering parameters for agent visualization.
+    
+    Glyphs are the 3D objects used to represent agents in the visualization.
+    These settings control their appearance and behavior.
+    """
+    arrow_scale: PositiveFloat = Field(
+        default     = 0.1,
+        description = "Scaling factor for arrow glyphs based on velocity magnitude."
+    )
+    size: PositiveFloat = Field(
+        default     = 0.15,
+        description = "Size scaling factor for agent glyphs."
+    )
+    trail_length: NonNegativeInt = Field(
+        default     = 5,
+        description = "Number of points to include in motion trails."
+    )
+    type: Literal["sphere", "arrow"] = Field(
+        default     = "sphere",
+        description = "Type of glyph to represent agents."
+    )
+
+
+class GridModel(BaseModel, extra="forbid"):
+    """
+    Configures sampling grid parameters for visualization data.
+    
+    These settings control how continuous simulation data is discretized
+    for visualization purposes, affecting both visual quality and performance.
+    """
+    padding: PositiveFloat = Field(
+        default     = 2.0,
+        description = "Extra space around the swarm's bounding box for grids."
+    )
+    temperature_resolution: tuple[int, int, int] = Field(
+        default     = (20, 20, 20),
+        description = "Resolution for temperature field sampling grid (nx, ny, nz)."
+    )
+    wind_resolution: PositiveInt = Field(
+        default     = 5,
+        description = "Resolution for wind field sampling grid in each dimension."
+    )
+
+
+class OpacityModel(BaseModel, extra="forbid"):
+    """
+    Configures opacity values for different visualization elements.
+    
+    Opacity values range from 0.0 (fully transparent) to 1.0 (fully opaque).
+    These settings allow fine-tuning the visual layering of simulation elements.
+    """
+    agents: float = Field(
+        default     = 1.0,
+        ge          = 0.0,
+        le          = 1.0,
+        description = "Opacity of agent glyphs."
+    )
+    graph: float = Field(
+        default     = 0.5,
+        ge          = 0.0,
+        le          = 1.0,
+        description = "Opacity of communication graph edges."
+    )
+    safety: float = Field(
+        default     = 0.3,
+        ge          = 0.0,
+        le          = 1.0,
+        description = "Opacity of safety boundary isosurface."
+    )
+    trails: float = Field(
+        default     = 0.5,
+        ge          = 0.0,
+        le          = 1.0,
+        description = "Opacity of agent motion trails."
+    )
+    wind: float = Field(
+        default     = 0.8,
+        ge          = 0.0,
+        le          = 1.0,
+        description = "Opacity of wind field arrows."
+    )
 
 
 class VisualizationModel(BaseModel, extra="forbid"):
@@ -17,29 +132,13 @@ class VisualizationModel(BaseModel, extra="forbid"):
     simulation elements for debugging, assessment, and analysis purposes. Most
     options can be toggled at runtime.
     """
-    colormap: str = Field(
-        default     = "plasma",
-        description = "Colormap for thermal visualization (e.g., 'plasma', 'inferno')."
-    )
     dark_mode: bool = Field(
         default     = True,
         description = "Whether to use a dark theme with black background."
     )
     enabled: bool = Field(
         default     = False,
-        description = "Master switch to enable/disable visualization during execution."
-    )
-    glyph_size: float = Field(
-        default     = 0.15,
-        description = "Size scaling factor for agent glyphs."
-    )
-    glyph_type: str = Field(
-        default     = "sphere",
-        description = "Type of glyph used to represent agents ('sphere' or 'arrow')."
-    )
-    grid_padding: float = Field(
-        default     = 2.0,
-        description = "Extra space around the swarm's bounding box for visualization grids."
+        description = "Main switch to enable/disable visualization during execution."
     )
     show_agents: bool = Field(
         default     = True,
@@ -65,15 +164,7 @@ class VisualizationModel(BaseModel, extra="forbid"):
         default     = False,
         description = "Whether to visualize the wind field with vector glyphs."
     )
-    temp_grid_resolution: tuple = Field(
-        default     = (20, 20, 20),
-        description = "Resolution of the temperature field sampling grid (nx, ny, nz)."
-    )
-    wind_grid_resolution: int = Field(
-        default     = 5,
-        description = "Resolution of the wind field sampling grid in each dimension."
-    )
-    window_size: tuple = Field(
+    window_size: tuple[int, int] = Field(
         default     = (1024, 768),
         description = "Size of the visualization window in pixels (width, height)."
     )

@@ -7,7 +7,7 @@ Thermur system for imitation learning training.
 from .cli        import app
 from .control    import ExpertFlockingController, SafetyFilter, ThermalBarrierFunction
 from .models     import GNNPolicy
-from .simulation import SwarmData, SwarmDataSpec, SimulationEnv, compute_edge_index
+from .simulation import SimulationEnv, compute_edge_index
 from .training   import train_imitation_learning, save_checkpoint, ImitationLoss
 from .utils      import *
 
@@ -25,8 +25,6 @@ __all__ = [
     "GNNPolicy",
 
     # Simulation components
-    "SwarmData", 
-    "SwarmDataSpec",
     "SimulationEnv",
     "compute_edge_index",
 

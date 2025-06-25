@@ -10,24 +10,37 @@ from .flocking      import ReynoldsWeightsModel, FlockingModel
 from .logging       import LoggingModel, WandbModel
 from .policy        import GNNModel
 from .safety        import CBFModel, QPSolverModel
+from .swarm         import SwarmActionModel, SwarmObservationModel
 from .training      import CheckpointModel, CollectorModel, HyperparameterModel, ReplayBufferModel
-from .visualization import VisualizationModel
+from .visualization import (
+    ColorModel,
+    GlyphModel,
+    GridModel,
+    OpacityModel,
+    VisualizationModel
+)
 
 __all__ = [
     "AgentModel",
-    "SwarmModel",
-    "EnvironmentModel",
-    "ThermalInterpolationModel",
-    "ReynoldsWeightsModel",
-    "FlockingModel",
-    "LoggingModel",
-    "WandbModel",
-    "GNNModel",
     "CBFModel",
-    "QPSolverModel",
     "CheckpointModel",
     "CollectorModel",
+    "ColorModel",
+    "EnvironmentModel",
+    "FlockingModel",
+    "GlyphModel", 
+    "GNNModel",
+    "GridModel",
     "HyperparameterModel",
+    "LoggingModel",
+    "OpacityModel",
+    "QPSolverModel",
     "ReplayBufferModel",
-    "VisualizationModel"
+    "ReynoldsWeightsModel",
+    "SwarmActionModel",
+    "SwarmModel",
+    "SwarmObservationModel",
+    "ThermalInterpolationModel",
+    "VisualizationModel",
+    "WandbModel"
 ]
