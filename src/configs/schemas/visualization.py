@@ -136,20 +136,16 @@ class VisualizationModel(BaseModel, extra="forbid"):
         default     = True,
         description = "Whether to use a dark theme with black background."
     )
-    enabled: bool = Field(
-        default     = False,
-        description = "Main switch to enable/disable visualization during execution."
-    )
     show_agents: bool = Field(
         default     = True,
         description = "Whether to render the swarm agents as 3D glyphs."
     )
     show_graph: bool = Field(
-        default     = False,
+        default     = True,
         description = "Whether to visualize the swarm's communication graph connectivity."
     )
     show_safety: bool = Field(
-        default     = False,
+        default     = True,
         description = "Whether to visualize the thermal safety boundary (T_max isosurface)."
     )
     show_thermal: bool = Field(
@@ -157,11 +153,11 @@ class VisualizationModel(BaseModel, extra="forbid"):
         description = "Whether to color agents based on their sensed temperature."
     )
     show_trails: bool = Field(
-        default     = False,
+        default     = True,
         description = "Whether to show motion trails behind agents."
     )
     show_wind: bool = Field(
-        default     = False,
+        default     = True,
         description = "Whether to visualize the wind field with vector glyphs."
     )
     window_size: tuple[int, int] = Field(

@@ -13,12 +13,8 @@ from thermur   import Visualizer
 
 build_visualizer = builds(
     Visualizer,
-    colors                  = zen(ColorModel),
     config                  = zen(VisualizationModel),
-    environment             = SI("${environment}"),
-    glyphs                  = zen(GlyphModel),
-    grids                   = zen(GridModel),
-    opacity                 = zen(OpacityModel),
+    environment             = SI("${simulation}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.factories.visualization",

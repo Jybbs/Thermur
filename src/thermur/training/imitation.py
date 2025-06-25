@@ -23,53 +23,6 @@ from tqdm               import tqdm
 from typing             import Any, Optional
 
 
-def initialize_wandb(
-    hyperparameters : BaseModel,
-    wandb_config    : BaseModel
-) -> None:
-    """
-    Initialize Weights & Biases for experiment tracking.
-    
-    Sets up the W&B experiment with the appropriate project, entity, and
-    configuration settings. Only initializes if W&B is enabled in the config.
-    
-    Args:
-        hyperparameters : Training hyperparameters model
-        wandb_config    : W&B configuration model
-    """
-    if wandb_config.mode != "disabled":
-        wandb.init(
-            project = wandb_config.project,
-            entity  = wandb_config.entity,
-            mode    = wandb_config.mode,
-            config  = {
-                "hyperparameters": hyperparameters.__dict__,
-                "wandb"          : wandb_config.__dict__,
-            }
-        )
-        logger.info("Weights & Biases initialized for experiment tracking.")
-
-
-def update_visualization(
-    visualizer         : Optional[Any],
-    latest_observation : dict[str, Any]
-) -> None:
-    """
-    Update the visualization with the latest observation.
-    
-    Updates the visualizer's state with the current simulation data
-    and renders the updated visualization. Only performs updates if
-    a visualizer is provided.
-    
-    Args:
-        visualizer         : The visualization module instance or None
-        latest_observation : The most recent observation from the environment
-    """
-    if visualizer is not None:
-        visualizer.update(latest_observation)
-        visualizer.render()
-
-
 def cleanup_resources(
     data_collector : SyncDataCollector,
     visualizer     : Optional[Any],
@@ -91,6 +44,71 @@ def cleanup_resources(
     
     if visualizer is not None:
         visualizer.close()
+
+
+def initialize_wandb(
+    hyperparameters : BaseModel,
+    wandb_config    : BaseModel
+) -> None:
+    """
+    Initialize Weights & Biases for experiment tracking.
+    
+    Sets up the W&B experiment with the appropriate project, entity, and
+    configuration settings. Only initializes if W&B is enabled in the config.
+    
+    Args:
+        hyperparameters : Training hyperparameters model
+        wandb_config    : W&B configuration model
+    """
+    if wandb_config.mode != "disabled":
+        wandb.init(
+            config  = {
+                "hyperparameters": hyperparameters.__dict__,
+                "wandb"          : wandb_config.__dict__,
+            },
+            entity  = wandb_config.entity,
+            mode    = wandb_config.mode,
+            project = wandb_config.project,
+        )
+        logger.info("Weights & Biases initialized for experiment tracking.")
+
+
+def save_checkpoint(
+    policy      : Module,
+    optimizer   : Optimizer, 
+    frame_count : int,
+    save_path   : str,
+    is_final    : bool = False
+) -> None:
+    """
+    Save a model checkpoint.
+
+    Creates a checkpoint containing the policy model weights, optimizer state,
+    and current frame count. The checkpoint can be used to resume training or
+    for model evaluation. The function creates the save directory if it doesn't
+    exist.
+
+    Args:
+        policy      : The policy network to save
+        optimizer   : The optimizer state to save
+        frame_count : Current training frame count
+        save_path   : Directory to save checkpoints
+        is_final    : Whether this is the final checkpoint
+    """
+    os.makedirs(save_path, exist_ok=True)
+    
+    filename  = "final.pt" if is_final else f"checkpoint_{frame_count}.pt"
+    full_path = os.path.join(save_path, filename)
+    
+    torch.save(
+        {
+            'frame'                : frame_count,
+            'model_state_dict'     : policy.state_dict(),
+            'optimizer_state_dict' : optimizer.state_dict(),
+        }, 
+        full_path
+    )
+    logger.info(f"Checkpoint saved to {full_path}")
 
 
 def train_imitation_learning(
@@ -123,7 +141,7 @@ def train_imitation_learning(
         optimizer         : Updates the policy parameters
         hyperparameters   : Training hyperparameters
         wandb_config      : Weights & Biases configuration
-        visualizer        : Optional visualization module
+        visualizer        : Optional visualization module (None to disable)
     """
     device = torch.device(hyperparameters.device)
     
@@ -168,39 +186,21 @@ def train_imitation_learning(
     logger.info("Training finished successfully.")
 
 
-def save_checkpoint(
-    policy      : Module,
-    optimizer   : Optimizer, 
-    frame_count : int,
-    save_path   : str,
-    is_final    : bool = False
+def update_visualization(
+    visualizer         : Optional[Any],
+    latest_observation : dict[str, Any]
 ) -> None:
     """
-    Save a model checkpoint.
-
-    Creates a checkpoint containing the policy model weights, optimizer state,
-    and current frame count. The checkpoint can be used to resume training or
-    for model evaluation. The function creates the save directory if it doesn't
-    exist.
-
+    Update the visualization with the latest observation.
+    
+    Updates the visualizer's state with the current simulation data
+    and renders the updated visualization. Only performs updates if
+    a visualizer is provided.
+    
     Args:
-        policy      : The policy network to save
-        optimizer   : The optimizer state to save
-        frame_count : Current training frame count
-        save_path   : Directory to save checkpoints
-        is_final    : Whether this is the final checkpoint
+        visualizer         : The visualization module instance or None
+        latest_observation : The most recent observation from the environment
     """
-    os.makedirs(save_path, exist_ok=True)
-    
-    filename  = "final.pt" if is_final else f"checkpoint_{frame_count}.pt"
-    full_path = os.path.join(save_path, filename)
-    
-    torch.save(
-        {
-            'frame'                : frame_count,
-            'model_state_dict'     : policy.state_dict(),
-            'optimizer_state_dict' : optimizer.state_dict(),
-        }, 
-        full_path
-    )
-    logger.info(f"Checkpoint saved to {full_path}")
+    if visualizer is not None:
+        visualizer.update(latest_observation)
+        visualizer.render()
