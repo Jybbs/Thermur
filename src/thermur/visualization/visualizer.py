@@ -22,10 +22,9 @@ from .renderers  import (
     render_agents,
     render_communication_graph,
     render_safety_boundary, 
-    render_temperature_field,
     render_wind_field
 )
-from .sampling   import create_temperature_grid, create_wind_grid
+from .sampling import create_wind_grid
 
 
 class Visualizer:
@@ -153,7 +152,7 @@ class Visualizer:
                         - temperature_grad: Temperature gradients (N, 3)
                         - edge_index: Communication graph edges (2, E)
         """
-        if self._plotter is None or not self._plotter.window_exists:
+        if self._plotter is None:
             self._initialize_plotter()
         
         # Extract tensor data from observation
@@ -164,7 +163,7 @@ class Visualizer:
         edge_index       = observation.get("edge_index")
         
         # Skip if window was closed
-        if not self._plotter.window_exists:
+        if self._plotter.ren_win is None:
             return
             
         self._plotter.clear_actors()
@@ -232,7 +231,7 @@ class Visualizer:
         checks to ensure the plotter is initialized and the window is still
         open before attempting to render.
         """
-        if self._plotter is not None and self._plotter.window_exists:
+        if self._plotter is not None:
             self._plotter.render()
     
     def toggle(
@@ -287,5 +286,5 @@ class Visualizer:
         the user requests to close the window. The method includes safety
         checks to avoid errors if the plotter is already closed.
         """
-        if self._plotter is not None and self._plotter.window_exists:
+        if self._plotter is not None:
             self._plotter.close()

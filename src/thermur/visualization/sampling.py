@@ -13,10 +13,10 @@ import numpy   as np
 import pyvista as pv
 import torch
 
-from pydantic           import BaseModel
-from pyvista            import Axes, ImageData, PolyData
-from thermur.simulation import ThermalEnvironment
-from torch              import Tensor
+from pydantic import BaseModel
+from pyvista  import Axes, ImageData, PolyData
+from torch    import Tensor
+from typing   import Any
 
 
 def compute_grid_bounds(
@@ -74,7 +74,7 @@ def create_coordinate_axes(
 
 
 def create_temperature_grid(
-    environment : ThermalEnvironment,
+    environment : Any,
     position    : Tensor,
     grid_config : BaseModel,
 ) -> ImageData:
@@ -110,7 +110,7 @@ def create_temperature_grid(
 
 
 def create_wind_grid(
-    simulation  : ThermalEnvironment,
+    simulation  : Any,
     position    : Tensor,
     grid_config : BaseModel,
 ) -> PolyData:
@@ -134,7 +134,8 @@ def create_wind_grid(
     
     spacing_grid = pv.ImageData(
         dimensions = (resolution, resolution, resolution),
-        bounds     = (*min_bounds, *max_bounds),
+        spacing    = (max_bounds - min_bounds) / (resolution - 1),
+        origin     = min_bounds,
     )
     
     wind_grid                  = pv.PolyData(spacing_grid.points)

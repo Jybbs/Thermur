@@ -82,12 +82,19 @@ def render_agents(
         norms = np.linalg.norm(velocities, axis=1, keepdims=True)
         safe_norms = np.maximum(norms, 1e-6)
         point_cloud["direction"] = velocities / safe_norms
-    
-    agent_glyphs = point_cloud.glyph(
-        geom   = glyph_geom, 
-        orient = "direction" if glyphs.type == "arrow" else None,
-        scale  = False
-    )
+        
+        agent_glyphs = point_cloud.glyph(
+            geom   = glyph_geom, 
+            orient = "direction",
+            scale  = False
+        )
+        
+    else:
+        agent_glyphs = point_cloud.glyph(
+            geom   = glyph_geom, 
+            orient = False,
+            scale  = False
+        )
     
     mesh_params = {
         "render_points_as_spheres": glyphs.type == "sphere",
@@ -325,20 +332,18 @@ def render_safety_boundary(
     point_cloud = pv.PolyData(positions)
     point_cloud["temperature"] = temperature.cpu().numpy().ravel()
     
-    bounds = [
-        positions[:, i].min() - grids.padding for i in range(3)
-    ] + [
-        positions[:, i].max() + grids.padding for i in range(3)
-    ]
+    min_bounds = np.array([positions[:, i].min() - grids.padding for i in range(3)])
+    max_bounds = np.array([positions[:, i].max() + grids.padding for i in range(3)])
+    resolution = np.array(grids.temperature_resolution)
     
-    grid = point_cloud.interpolate(
-        target_points = pv.ImageData(
-            dimensions = grids.temperature_resolution,
-            bounds     = bounds,
-        ),
-        sharpness = 2.0,
-        radius    = grids.padding * 2,
+    target_grid = pv.ImageData(
+        dimensions = grids.temperature_resolution,
+        spacing    = (max_bounds - min_bounds) / (resolution - 1),
+        origin     = min_bounds,
     )
+    
+    # Use sample method to interpolate temperature values
+    grid = target_grid.sample(point_cloud)
     
     try:
         contour = grid.contour([max_temperature])
