@@ -13,13 +13,11 @@ both light and dark themes.
 """
 import pyvista as pv
 
-from configs.schemas    import VisualizationModel
-from pyvista            import Plotter
-from tensordict         import TensorDictBase
-from thermur.simulation import ThermalEnvironment
-from typing             import Optional
+from pydantic   import BaseModel
+from pyvista    import Actor, Plotter
+from tensordict import TensorDictBase
+from typing     import Optional
 
-from .colors     import create_temperature_colormap
 from .renderers  import (
     render_agents,
     render_communication_graph,
@@ -54,8 +52,13 @@ class Visualizer:
     
     def __init__(
         self,
-        config      : VisualizationModel,
-        environment : Optional[ThermalEnvironment] = None,
+        colors          : BaseModel,
+        glyphs          : BaseModel,
+        grids           : BaseModel,
+        opacity         : BaseModel,
+        visualization   : BaseModel,
+        max_temperature : float,
+        simulation      : Optional[object] = None,
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -66,21 +69,30 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            config      : Visualization configuration with display settings,
-                         color preferences, and feature toggles
-            environment : Optional environment reference for accessing simulation
-                         data like wind fields and safety parameters
+            colors          : Color configuration model for visualization elements
+            glyphs          : Glyph configuration model for agent representation
+            grids           : Grid configuration model for sampling parameters
+            opacity         : Opacity configuration model for transparency settings
+            visualization   : Main visualization configuration with feature toggles
+            max_temperature : Maximum safe temperature (T_max) for safety visualization
+            simulation      : Optional simulation reference for accessing environment data
         """
-        self.config      = config
-        self.environment = environment
+        # Store configuration models
+        self.colors          = colors
+        self.glyphs          = glyphs
+        self.grids           = grids
+        self.opacity         = opacity
+        self.visualization   = visualization
+        self.max_temperature = max_temperature
+        self.simulation      = simulation
         
         # Initialize rendering state
-        self._plotter       = None
-        self._agent_actors  = None
-        self._wind_actors   = None
-        self._safety_actors = None
-        self._graph_actors  = None
-        self._colormap      = None
+        self._plotter       : Optional[Plotter]      = None
+        self._agent_actors  : Optional[list[Actor]]  = None
+        self._wind_actors   : Optional[list[Actor]]  = None
+        self._safety_actors : Optional[list[Actor]]  = None
+        self._graph_actors  : Optional[list[Actor]]  = None
+        self._colormap      : Optional[str]          = None
         
         # Initialize the plotter
         self._initialize_plotter()
@@ -99,14 +111,14 @@ class Visualizer:
         used for thermal visualization of agents throughout the simulation.
         """
         theme = (
-            pv.themes.DarkTheme() if self.config.dark_mode 
+            pv.themes.DarkTheme() if self.visualization.dark_mode 
             else pv.themes.DocumentTheme()
         )
         pv.global_theme.load_theme(theme)
         
         self._plotter = Plotter(
-            window_size = self.config.window_size,
-            title       = self.config.window_title,
+            window_size = self.visualization.window_size,
+            title       = self.visualization.window_title,
             lighting    = "three lights",
             off_screen  = False,
         )
@@ -115,12 +127,10 @@ class Visualizer:
         self._plotter.camera_position = 'xy'
         self._plotter.camera.zoom(1.5)
         
-        # Create colormap based on configuration
-        self._colormap = create_temperature_colormap(
-            color_config = self.config.colors
-        )
+        # Use colormap from configuration
+        self._colormap = self.colors.colormap
 
-    def update(self, observation: TensorDictBase):
+    def update(self, observation: TensorDictBase) -> None:
         """
         Update the visualization with new simulation data.
         
@@ -160,55 +170,56 @@ class Visualizer:
         self._plotter.clear_actors()
         
         # Render agent glyphs if enabled
-        if self.config.show_agents:
-            colormap = self._colormap if self.config.show_thermal else None
+        if self.visualization.show_agents:
+            colormap = self._colormap if self.visualization.show_thermal else None
             self._agent_actors = render_agents(
-                plotter      = self._plotter,
-                position     = position,
-                velocity     = velocity,
-                temperature  = temperature,
-                colormap     = colormap,
-                glyph_config = self.config.glyphs,
-                color_config = self.config.colors,
-                show_trails  = self.config.show_trails,
+                plotter     = self._plotter,
+                position    = position,
+                velocity    = velocity,
+                temperature = temperature,
+                colormap    = colormap,
+                glyphs      = self.glyphs,
+                colors      = self.colors,
+                opacities   = self.opacity,
+                show_trails = self.visualization.show_trails,
             )
         
         # Render wind field vectors if enabled
-        if self.config.show_wind:
+        if self.visualization.show_wind:
             wind_grid = create_wind_grid(
-                environment = self.environment,
+                simulation  = self.simulation,
                 position    = position,
-                grid_config = self.config.grids,
+                grid_config = self.grids,
             )
             self._wind_actors = render_wind_field(
-                plotter        = self._plotter,
-                wind_grid      = wind_grid,
-                glyph_config   = self.config.glyphs,
-                color_config   = self.config.colors,
-                opacity_config = self.config.opacity,
+                plotter   = self._plotter,
+                wind_grid = wind_grid,
+                glyphs    = self.glyphs,
+                colors    = self.colors,
+                opacities = self.opacity,
             )
         
         # Render thermal safety boundary if enabled
-        if self.config.show_safety and self.environment is not None:
+        if self.visualization.show_safety and self.simulation is not None:
             self._safety_actors = render_safety_boundary(
                 plotter          = self._plotter,
                 position         = position,
                 temperature      = temperature,
                 temperature_grad = temperature_grad,
-                max_temperature  = self.environment.config.safety.max_temperature,
-                grid_config      = self.config.grids,
-                color_config     = self.config.colors,
-                opacity_config   = self.config.opacity,
+                max_temperature  = self.max_temperature,
+                grids            = self.grids,
+                colors           = self.colors,
+                opacities        = self.opacity,
             )
         
         # Render communication graph edges if enabled
-        if self.config.show_graph:
+        if self.visualization.show_graph:
             self._graph_actors = render_communication_graph(
-                plotter        = self._plotter,
-                position       = position,
-                edge_index     = edge_index,
-                color_config   = self.config.colors,
-                opacity_config = self.config.opacity,
+                plotter    = self._plotter,
+                position   = position,
+                edge_index = edge_index,
+                colors     = self.colors,
+                opacities  = self.opacity,
             )
     
     def render(self):
@@ -254,15 +265,15 @@ class Visualizer:
             ValueError: If feature name is not recognized
         """
         attr_name = f"show_{feature}"
-        if not hasattr(self.config, attr_name):
+        if not hasattr(self.visualization, attr_name):
             raise ValueError(
                 f"Unknown visualization feature: '{feature}'. "
                 f"Valid options: agents, graph, safety, thermal, wind, trails"
             )
         
-        current   = getattr(self.config, attr_name)
+        current   = getattr(self.visualization, attr_name)
         new_state = not current if show is None else show
-        setattr(self.config, attr_name, new_state)
+        setattr(self.visualization, attr_name, new_state)
         
         return new_state
     

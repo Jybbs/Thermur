@@ -21,7 +21,7 @@ class ColorModel(BaseModel, extra="forbid"):
         default     = (0.2, 0.2, 0.8),
         description = "Default RGB color for agents when not using thermal coloring."
     )
-    colormap: Literal["plasma", "inferno", "viridis", "magma", "cividis", "turbo"] = Field(
+    colormap: Literal["plasma", "inferno", "viridis", "magma", "cividis", "turbo", "thermal"] = Field(
         default     = "plasma",
         description = "Colormap for thermal visualization."
     )
@@ -32,6 +32,26 @@ class ColorModel(BaseModel, extra="forbid"):
     safety_default: tuple[float, float, float] = Field(
         default     = (0.9, 0.3, 0.3),
         description = "Default RGB color for safety boundary."
+    )
+    scalar_bar_position_x: float = Field(
+        default     = 0.88,
+        ge          = 0.0,
+        le          = 1.0,
+        description = "Horizontal position of the scalar bar (0=left, 1=right)."
+    )
+    scalar_bar_position_y: float = Field(
+        default     = 0.25,
+        ge          = 0.0,
+        le          = 1.0,
+        description = "Vertical position of the scalar bar (0=bottom, 1=top)."
+    )
+    scalar_bar_title: str = Field(
+        default     = "Temperature",
+        description = "Title displayed on the temperature scalar bar."
+    )
+    trail_default: tuple[float, float, float] = Field(
+        default     = (0.8, 0.8, 0.8),
+        description = "Default RGB color for agent motion trails."
     )
     wind_default: tuple[float, float, float] = Field(
         default     = (0.7, 0.7, 0.7),
