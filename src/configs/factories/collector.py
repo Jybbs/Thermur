@@ -15,10 +15,12 @@ build_collector = builds(
     create_env_fn           = SI("${environment}"),
     device                  = SI("${hyperparameters.device}"),
     policy                  = SI("${expert_policy}"),
+    frames_per_batch        = SI("${hyperparameters.frames_per_batch}"),
+    max_frames_per_traj     = SI("${hyperparameters.max_frames_per_traj}"),
+    total_frames            = SI("${hyperparameters.total_frames}"),
     populate_full_signature = False,
     zen_dataclass           = {
         "module"   : "src.configs.factories.collector",
         "cls_name" : "CollectorBuild"
-    },
-    **zen(CollectorModel)
+    }
 )
