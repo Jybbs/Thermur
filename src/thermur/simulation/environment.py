@@ -39,32 +39,55 @@ class SimulationEnv(EnvBase):
 
     def __init__(
         self,
-        config,
-        action_spec        : TensorDictBase,
-        compute_edge_index : Callable,
-        data_source        : Callable,
-        observation_spec   : TensorDictBase,
-        seed_fn            : Optional[Callable] = None,
+        action_spec            : TensorDictBase,
+        compute_edge_index     : Callable,
+        data_source            : Callable,
+        observation_spec       : TensorDictBase,
+        seed_fn                : Optional[Callable] = None,
+        assets_dir             : str   = None,
+        simulation_step        : float = None,
+        agent_count            : int   = None,
+        communication_range    : float = None,
+        formation_scale_factor : float = None,
+        initial_formation      : str   = None,
+        spatial_dims           : int   = None,
     ):
         """
         Initializes the Thermur environment with dependency injection.
 
         Args:
-            config             : An instance containing simulation parameters.
-            action_spec        : The action space specification.
-            compute_edge_index : A callable that computes communication graph edges.
-            data_source        : A callable that provides environmental data queries.
-            observation_spec   : The observation space specification.
-            seed_fn            : Optional callable for setting random seeds.
+            action_spec            : The action space specification.
+            compute_edge_index     : A callable that computes communication graph edges.
+            data_source            : A callable that provides environmental data queries.
+            observation_spec       : The observation space specification.
+            seed_fn                : Optional callable for setting random seeds.
+            assets_dir             : Directory containing MJCF assets for the MuJoCo simulation.
+            simulation_step        : Time step (in seconds) for the physics simulation.
+            agent_count            : Number of agents in the swarm.
+            communication_range    : Maximum distance for inter-agent communication.
+            formation_scale_factor : Scaling factor for initial agent formation.
+            initial_formation      : Initial swarm formation type ('sphere' or 'cube').
+            spatial_dims           : Number of spatial dimensions (2 or 3).
         """
         super().__init__(device="cpu")
-        self.config             = config
-        self.action_spec        = action_spec
-        self.compute_edge_index = compute_edge_index
-        self.data_source        = data_source
-        self.observation_spec   = observation_spec
-        self.seed_fn            = seed_fn
-        self.physics_model      = self._initialize_physics()
+        self.action_spec            = action_spec
+        self.compute_edge_index     = compute_edge_index
+        self.data_source            = data_source
+        self.observation_spec       = observation_spec
+        self.seed_fn                = seed_fn
+        
+        # Store environment parameters
+        self.assets_dir             = assets_dir
+        self.simulation_step        = simulation_step
+        
+        # Store swarm parameters
+        self.agent_count            = agent_count
+        self.communication_range    = communication_range
+        self.formation_scale_factor = formation_scale_factor
+        self.initial_formation      = initial_formation
+        self.spatial_dims           = spatial_dims
+        
+        self.physics_model          = self._initialize_physics()
 
     def _initialize_physics(self):
         """
@@ -77,17 +100,12 @@ class SimulationEnv(EnvBase):
         Returns:
             A dictionary containing the MuJoCo model and data instances.
         """
-        agent_count     = self.config.swarm.agent_count
-        spatial_dims    = self.config.swarm.spatial_dims
-        simulation_step = self.config.environment.simulation_step
-        assets_dir      = self.config.environment.assets_dir
-        
         # Generate XML model with N distinct agent bodies
         xml_string = generate_swarm_xml(
-            assets_dir      = assets_dir,
-            agent_count     = agent_count,
-            spatial_dims    = spatial_dims,
-            simulation_step = simulation_step
+            assets_dir      = self.assets_dir,
+            agent_count     = self.agent_count,
+            spatial_dims    = self.spatial_dims,
+            simulation_step = self.simulation_step
         )
         
         return load_swarm_model(xml_string)
@@ -112,29 +130,23 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` containing the initial observation of the swarm.
         """
-        agent_count         = self.config.swarm.agent_count
-        spatial_dims        = self.config.swarm.spatial_dims
-        communication_range = self.config.swarm.communication_range
-        formation_scale     = self.config.swarm.formation_scale_factor
-
-        if self.config.swarm.initial_formation == "cube":
-            positions = self._generate_cube_formation(agent_count, spatial_dims)
-
+        if self.initial_formation == "cube":
+            positions = self._generate_cube_formation(self.agent_count, self.spatial_dims)
         else:
-            positions = self._generate_sphere_formation(agent_count, spatial_dims)
+            positions = self._generate_sphere_formation(self.agent_count, self.spatial_dims)
 
         # Create a fresh TensorDict with proper structure and shape
-        scaled_positions    = positions * communication_range * formation_scale
+        scaled_positions    = positions * self.communication_range * self.formation_scale_factor
         initial_observation = TensorDict(
             {
                 "position"         : scaled_positions,
                 "velocity"         : torch.zeros_like(scaled_positions),
-                "temperature"      : torch.zeros(agent_count),
-                "temperature_grad" : torch.zeros((agent_count, spatial_dims)),
+                "temperature"      : torch.zeros(self.agent_count),
+                "temperature_grad" : torch.zeros((self.agent_count, self.spatial_dims)),
                 "edge_index"       : torch.zeros((2, 0), dtype=torch.long),
-                "reward"           : torch.zeros(agent_count),
+                "reward"           : torch.zeros(self.agent_count),
                 "done"             : torch.zeros(1, dtype=torch.bool),
-                "_done"            : torch.zeros(agent_count, dtype=torch.bool)
+                "_done"            : torch.zeros(self.agent_count, dtype=torch.bool)
             }, 
             batch_size = []
         )
@@ -149,7 +161,7 @@ class SimulationEnv(EnvBase):
                 "temperature_grad" : temp_grad,
                 "edge_index"       : self.compute_edge_index(
                     pos = positions,
-                    r   = self.config.swarm.communication_range
+                    r   = self.communication_range
                 )
             }
         )
@@ -175,10 +187,8 @@ class SimulationEnv(EnvBase):
             positions  : Tensor [N, spatial_dims] containing agent positions
             velocities : Tensor [N, spatial_dims] containing agent velocities
         """
-        agent_count  = self.config.swarm.agent_count
-        spatial_dims = self.config.swarm.spatial_dims
         data         = self.physics_model["data"]
-        end_idx      = agent_count * spatial_dims
+        end_idx      = self.agent_count * self.spatial_dims
         
         mj.mj_resetData(self.physics_model["model"], data)
         
@@ -278,15 +288,13 @@ class SimulationEnv(EnvBase):
             positions  : Tensor of shape [agent_count, spatial_dims]
             velocities : Tensor of shape [agent_count, spatial_dims]
         """
-        agent_count  = self.config.swarm.agent_count
-        spatial_dims = self.config.swarm.spatial_dims
-        end_idx      = agent_count * spatial_dims
+        end_idx      = self.agent_count * self.spatial_dims
 
         positions = torch.from_numpy(
-            data.qpos[:end_idx].copy().reshape(agent_count, spatial_dims)
+            data.qpos[:end_idx].copy().reshape(self.agent_count, self.spatial_dims)
         )
         velocities = torch.from_numpy(
-            data.qvel[:end_idx].copy().reshape(agent_count, spatial_dims)
+            data.qvel[:end_idx].copy().reshape(self.agent_count, self.spatial_dims)
         )
     
         return positions, velocities
@@ -315,11 +323,9 @@ class SimulationEnv(EnvBase):
         actions      = td.get("action")
         model        = self.physics_model["model"]
         data         = self.physics_model["data"]
-        agent_count  = self.config.swarm.agent_count
-        spatial_dims = self.config.swarm.spatial_dims
         
         # Reshape actions to match control array layout
-        reshaped_actions = actions[:, :spatial_dims].reshape(-1).cpu().numpy()
+        reshaped_actions = actions[:, :self.spatial_dims].reshape(-1).cpu().numpy()
         
         ctrl_count       = min(len(reshaped_actions), len(data.ctrl))
         data.ctrl[:ctrl_count] = reshaped_actions[:ctrl_count]
@@ -336,11 +342,11 @@ class SimulationEnv(EnvBase):
                 "temperature_grad" : temp_grad,
                 "edge_index"       : self.compute_edge_index(
                     pos = positions,
-                    r   = self.config.swarm.communication_range
+                    r   = self.communication_range
                 ),
-                "reward"           : torch.zeros(agent_count),
+                "reward"           : torch.zeros(self.agent_count),
                 "done"             : torch.zeros(1, dtype=torch.bool),
-                "_done"            : torch.zeros(agent_count, dtype=torch.bool)
+                "_done"            : torch.zeros(self.agent_count, dtype=torch.bool)
             }, 
             batch_size = []
         )

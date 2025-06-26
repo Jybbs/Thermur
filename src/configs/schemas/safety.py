@@ -4,7 +4,7 @@ Safety mechanism models.
 This module defines the Pydantic models for Control Barrier Function
 and Quadratic Program solver parameters.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
@@ -16,18 +16,16 @@ class CBFModel(BaseModel, extra="forbid"):
     do not exceed `max_temperature` via the constraint: ḣ(𝐱) ≥ -αh(𝐱). This
     is solved in real-time via a Quadratic Program (QP).
     """
-    activation_tolerance: float = Field(
+    activation_tolerance: PositiveFloat = Field(
         default     = 1e-5,
-        gt          = 0,
         description = (
             "Numerical tolerance for detecting CBF activations. If the norm of "
             "the difference between safe and nominal actions exceeds this value, "
             "the CBF is considered active for that agent."
         )
     )
-    alpha: float = Field(
+    alpha: PositiveFloat = Field(
         default     = 0.5,
-        gt          = 0,
         description = (
             "Class-K function gain (α) for the CBF safety constraint, "
             "controlling convergence to the safe set."
@@ -49,14 +47,12 @@ class QPSolverModel(BaseModel, extra="forbid"):
     These settings control the behavior and numerical precision of the
     differentiable QP solver used in the safety filter.
     """
-    eps: float = Field(
+    eps: PositiveFloat = Field(
         default     = 1e-7,
-        gt          = 0,
         description = "Tolerance for constraint satisfaction in the QP solver."
     )
-    max_iter: int = Field(
+    max_iter: PositiveInt = Field(
         default     = 20,
-        gt          = 0,
         description = "Maximum number of iterations for the QP solver."
     )
     on_failure: Literal["error", "use_nominal"] = Field(

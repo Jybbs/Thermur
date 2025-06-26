@@ -1,79 +1,60 @@
 """
-Environment and physics models.
+Environment models.
 
-This module defines the Pydantic models for the simulation environment.
+This module defines the Pydantic models for the simulation environment,
+including physical parameters, data sources, and interpolation strategies.
 """
-from pathlib  import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, DirectoryPath, Field, FilePath, PositiveFloat
+from typing   import Literal
 
 
 class EnvironmentModel(BaseModel, extra="forbid"):
     """
-    Configuration for the simulation environment.
-
-    This class specifies the environment to be instantiated, including its
-    dynamics and the source of the physical data (wind and temperature fields)
-    that it will provide to the agents.
+    Configuration for the simulation environment parameters.
+    
+    These settings control the physical simulation properties, including
+    the spatial bounds, time stepping, and data sources for wind and
+    temperature fields.
     """
-    assets_dir: Path = Field(
-        default     = Path("src/thermur/simulation/assets"),
-        description = "Directory containing simulation asset files like MuJoCo XML models."
+    assets_dir: DirectoryPath = Field(
+        default     = "src/thermur/simulation/assets",
+        description = "Directory containing MJCF assets for the MuJoCo simulation."
     )
-    data_source: str = Field(
-        default     = "data/wrfout_d01.nc",
-        description = (
-            "Path to the environmental data source (e.g., NetCDF from "
-            "WRF-Fire)."
-        )
+    bounds_max: list[float] = Field(
+        default     = [50.0, 50.0, 20.0],
+        description = "Maximum coordinates [x, y, z] of the simulation bounds."
     )
-    name: str = Field(
-        default     = "WRF-Fire-Env-v0",
-        description = "The registered name of the Gymnasium environment to use."
+    bounds_min: list[float] = Field(
+        default     = [0.0, 0.0, 0.0],
+        description = "Minimum coordinates [x, y, z] of the simulation bounds."
     )
-    simulation_step: float = Field(
+    data_source: FilePath = Field(
+        default     = "data/environment/sample_field.nc",
+        description = "Path to the NetCDF file containing wind and temperature data."
+    )
+    simulation_step: PositiveFloat = Field(
         default     = 0.05,
-        gt          = 0,
-        description = (
-            "The duration of a single simulation physics step (Δt) in seconds."
-        )
+        description = "Time step (in seconds) for the physics simulation."
     )
-
+    
 
 class ThermalInterpolationModel(BaseModel, extra="forbid"):
     """
-    Parameters for thermal data interpolation and gradient calculation.
+    Configuration for thermal field interpolation.
     
-    These parameters control how the continuous temperature field is sampled
-    and how temperature gradients are calculated for arbitrary agent positions.
-    The implementation uses vectorized operations to efficiently process
-    batches of position queries.
+    These parameters control how continuous thermal values are computed from
+    discrete grid data, affecting the accuracy and smoothness of temperature
+    queries throughout the simulation space.
     """
-    epsilon: float = Field(
+    bounds_padding: PositiveFloat = Field(
         default     = 0.1,
-        gt          = 0,
-        description = "Distance (ε) used for finite difference gradient calculation in meters."
-    )
-    fallback_temperature: float = Field(
-        default     = 300.0,
-        description = "Default temperature value when interpolation fails or produces NaN."
+        description = "Relative padding to add to bounds for interpolation stability."
     )
     fill_value: float = Field(
-        default     = float('nan'),
-        description = "Value to use for out-of-bounds positions in interpolation."
+        default     = float("nan"),
+        description = "Value to return for queries outside the data bounds."
     )
-    temperature_variable: str = Field(
-        default     = "T",
-        description = "Name of the temperature variable in the dataset."
-    )
-    x_dimension: str = Field(
-        default     = "x",
-        description = "Name of the x-dimension coordinate in the dataset."
-    )
-    y_dimension: str = Field(
-        default     = "y",
-        description = "Name of the y-dimension coordinate in the dataset."
-    )
-    z_dimension: str = Field(
-        default     = "z",
-        description = "Name of the z-dimension coordinate in the dataset."
+    method: Literal["linear", "nearest", "cubic"] = Field(
+        default     = "linear",
+        description = "Interpolation method for thermal field queries."
     )

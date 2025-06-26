@@ -1,23 +1,23 @@
 """
-Hydra-zen builder for the TorchRL replay buffer.
+Hydra-zen builder for TorchRL replay buffer components.
 
-This module defines the configuration builder for TensorDictReplayBuffer,
-which stores and samples experiences for training.
+This module defines the configuration builder for TensorDictReplayBuffer, which
+stores transitions for experience replay during training.
 """
-from hydra_zen      import builds
-from omegaconf      import SI
-from torchrl.data   import TensorDictReplayBuffer
+from ..schemas                    import ReplayBufferModel, StorageModel
+from hydra_zen                    import builds, zen
+from torchrl.data                 import TensorDictReplayBuffer
+from torchrl.data.replay_buffers  import LazyTensorStorage, SamplerWithoutReplacement
 
 
 build_replay_buffer = builds(
     TensorDictReplayBuffer,
-    storage                 = "memory",
-    batch_size              = SI("${replay_buffer.batch_size}"),
-    buffer_size             = SI("${replay_buffer.buffer_size}"),
-    prefetch                = SI("${replay_buffer.prefetch}"),
+    sampler                 = builds(SamplerWithoutReplacement),
+    storage                 = builds(LazyTensorStorage, **zen(StorageModel)),
     populate_full_signature = False,
     zen_dataclass           = {
         "module"   : "src.configs.factories.replay",
         "cls_name" : "ReplayBufferBuild"
-    }
+    },
+    **zen(ReplayBufferModel)
 )

@@ -4,8 +4,8 @@ Logging and monitoring models.
 This module defines the Pydantic models for application logging
 and experiment tracking parameters.
 """
-from pydantic import BaseModel, Field
-from typing   import Literal
+from pydantic import BaseModel, Field, FilePath
+from typing   import Literal, Optional
 
 
 class LoggingModel(BaseModel, extra="forbid"):
@@ -27,7 +27,7 @@ class LoggingModel(BaseModel, extra="forbid"):
         default     = True,
         description = "Whether to make file logging non-blocking and thread-safe."
     )
-    file_path: str | None = Field(
+    file_path: Optional[str] = Field(
         default     = "logs/thermur.log",
         description = "Path to the log file. If None, file logging is disabled."
     )
@@ -52,7 +52,7 @@ class WandbModel(BaseModel, extra="forbid"):
     These parameters control how training runs are logged and organized for
     visualization, analysis, and comparison.
     """
-    entity: str | None = Field(
+    entity: Optional[str] = Field(
         default     = None,
         description = "The W&B entity (username or team name)."
     )
