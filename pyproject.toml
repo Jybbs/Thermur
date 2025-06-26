@@ -20,6 +20,7 @@ dependencies    = [
     "pyarrow",
     "pyvista",
     "qpth",
+    "questionary",
     "rich",
     "torch",
     "torch-geometric",
