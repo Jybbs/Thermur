@@ -6,7 +6,6 @@ enabling real-time visualization of agent motion, thermal conditions, wind field
 safety constraints, and communication topologies. It serves as a critical tool
 for debugging, qualitative assessment, and insight generation.
 """
-from .colors     import create_temperature_colormap, temperature_to_color
 from .renderers  import *
 from .sampling   import *
 from .visualizer import Visualizer
@@ -21,10 +20,6 @@ __all__ = [
     "render_safety_boundary",
     "render_temperature_field",
     "render_wind_field",
-
-    # Color utilities
-    "create_temperature_colormap",
-    "temperature_to_color",
 
     # Sampling utilities
     "compute_grid_bounds",

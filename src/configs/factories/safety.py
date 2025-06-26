@@ -11,9 +11,9 @@ from thermur   import ThermalBarrierFunction, SafetyFilter
 
 build_thermal_barrier = builds(
     ThermalBarrierFunction,
-    config              = zen("${cbf}"),
+    config                  = zen("${cbf}"),
     populate_full_signature = True,
-    zen_dataclass       = {
+    zen_dataclass           = {
         "module"   : "src.configs.factories.safety",
         "cls_name" : "ThermalBarrierBuild"
     }
@@ -21,10 +21,10 @@ build_thermal_barrier = builds(
 
 build_safety_filter = builds(
     SafetyFilter,
-    barrier              = build_thermal_barrier,
-    config               = zen("${.}"),
+    barrier                 = build_thermal_barrier,
+    config                  = zen("${.}"),
     populate_full_signature = True,
-    zen_dataclass        = {
+    zen_dataclass           = {
         "module"   : "src.configs.factories.safety",
         "cls_name" : "SafetyFilterBuild"
     }
