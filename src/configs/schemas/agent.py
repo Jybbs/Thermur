@@ -4,7 +4,7 @@ Agent and swarm models.
 This module defines the Pydantic models for agent physical properties
 and swarm collective behavior parameters.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
@@ -29,17 +29,15 @@ class AgentModel(BaseModel, extra="forbid"):
             "visible color."
         )
     )
-    max_temperature: float = Field(
+    max_temperature: PositiveFloat = Field(
         default     = 500.0,
-        gt          = 0,
         description = (
             "Maximum survivable agent temperature in Fahrenheit (°F), defining "
             "the hard safety boundary h(𝐱) for the CBF."
         )
     )
-    thermal_time_constant: float = Field(
+    thermal_time_constant: PositiveFloat = Field(
         default     = 5.0,
-        gt          = 0,
         description = (
             "RC thermal model time constant (τ) in seconds, used to estimate "
             "internal temperature."
@@ -57,22 +55,20 @@ class SwarmModel(BaseModel, extra="forbid"):
     This metric-based neighborhood is a practical starting point, while natural
     flocks often use a fixed topological neighborhood (e.g., 6-7 nearest agents).
     """
-    agent_count: int = Field(
+    agent_count: PositiveInt = Field(
         default     = 30,
         gt          = 1,
         description = "The number of agents (N) in the swarm."
     )
-    communication_range: float = Field(
+    communication_range: PositiveFloat = Field(
         default     = 50.0,
-        gt          = 0,
         description = (
             "The metric distance in meters for defining the topological "
             "neighborhood graph."
         )
     )
-    formation_scale_factor: float = Field(
+    formation_scale_factor: PositiveFloat = Field(
         default     = 0.5,
-        gt          = 0,
         description = (
             "Scaling factor applied to initial agent formations, as a fraction "
             "of the communication range. Controls the density of the swarm."
@@ -84,9 +80,9 @@ class SwarmModel(BaseModel, extra="forbid"):
             "The geometric formation of the swarm at the start of the simulation."
         )
     )
-    spatial_dims: int = Field(
+    spatial_dims: PositiveInt = Field(
         default     = 3,
-        gt          = 1,
+        ge          = 2,
         description = (
             "The number of spatial dimensions in the simulation (e.g., 2 for 2D, 3 "
             "for 3D)."

@@ -10,24 +10,22 @@ from hydra_zen   import builds, make_config, ZenStore
 
 
 imitation_config = make_config(
-    # Parameter models
-    hyperparameters = builds(HyperparameterModel),
-    collector       = builds(CollectorModel),
-    replay_buffer   = builds(ReplayBufferModel),
-    logging         = builds(LoggingModel),
-    wandb           = builds(WandbModel),
-    environment     = builds(EnvironmentModel),
-    swarm           = builds(SwarmModel),
+    # Parameter models  
     agent           = builds(AgentModel),
+    environment     = builds(EnvironmentModel),
+    hyperparameters = builds(HyperparameterModel),
+    swarm           = builds(SwarmModel),
     
     # Component builders
-    simulation        = build_environment,
-    expert_policy     = build_flocking_controller,
-    policy            = build_policy,
     data_collector    = build_collector,
     experience_buffer = build_replay_buffer,
+    expert_policy     = build_flocking_controller,
     loss_function     = build_loss,
+    monitoring        = build_monitoring,
     optimizer         = build_optimizer,
+    policy            = build_policy,
+    simulation        = build_simulation,
+    visualizer        = build_visualizer,
     
     # Hydra defaults
     defaults = ["_self_"],

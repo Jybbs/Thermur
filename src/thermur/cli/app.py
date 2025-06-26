@@ -22,6 +22,7 @@ app = Typer(
     add_completion = False,
 )
 
+
 def version_callback(value: bool):
     """
     A callback function triggered by the `--version` flag.
@@ -53,6 +54,7 @@ def train():
 
     Example:
         thermur train
+        thermur train visualization.enabled=true
         thermur train hyperparameters.learning_rate=0.001
         thermur train +experiment=large_swarm
     """
@@ -71,6 +73,7 @@ def train():
         config_name  = "train",
         config_path  = None,
         version_base = None,
+        with_log_configuration = False,
     )
     def hydra_train(cfg):
         """
@@ -88,25 +91,41 @@ def train():
         """
         print("[bold green]Starting Thermur imitation learning training[/]")
         
-        configure_loguru(instantiate(cfg.logging, _parser=pydantic_parser))
+        configure_loguru(instantiate(cfg.monitoring.logging, _parser=pydantic_parser))
         set_seed(instantiate(cfg.hyperparameters, _parser=pydantic_parser).seed)
 
         print("[yellow]Instantiating components...[/]")
-        components = {
-            "environment"       : instantiate(cfg.environment,       _parser=pydantic_parser),
-            "expert_policy"     : instantiate(cfg.expert_policy,     _parser=pydantic_parser),
-            "policy"            : instantiate(cfg.policy,            _parser=pydantic_parser),
-            "data_collector"    : instantiate(cfg.data_collector,    _parser=pydantic_parser),
-            "experience_buffer" : instantiate(cfg.experience_buffer, _parser=pydantic_parser),
-            "loss_function"     : instantiate(cfg.loss_function,     _parser=pydantic_parser),
-            "optimizer"         : instantiate(cfg.optimizer,         _parser=pydantic_parser),
-            "hyperparameters"   : instantiate(cfg.hyperparameters,   _parser=pydantic_parser),
-            "wandb_config"      : instantiate(cfg.wandb,             _parser=pydantic_parser),
-        }
+        
+        # Build all components from configuration
+        environment       = instantiate(cfg.simulation,        _parser=pydantic_parser)
+        expert_policy     = instantiate(cfg.expert_policy,     _parser=pydantic_parser)
+        policy            = instantiate(cfg.policy,            _parser=pydantic_parser)
+        data_collector    = instantiate(cfg.data_collector,    _parser=pydantic_parser)
+        experience_buffer = instantiate(cfg.experience_buffer, _parser=pydantic_parser)
+        loss_function     = instantiate(cfg.loss_function,     _parser=pydantic_parser)
+        optimizer         = instantiate(cfg.optimizer,         _parser=pydantic_parser)
+        hyperparameters   = instantiate(cfg.hyperparameters,   _parser=pydantic_parser)
+        wandb_config      = instantiate(cfg.monitoring.wandb,  _parser=pydantic_parser)
+        
+        # Build visualizer if configured (but may not be used if disabled)
+        visualizer = None
+        if hasattr(cfg, 'visualization'):
+            visualizer = instantiate(cfg.visualization, _parser=pydantic_parser)
         
         # Launch the main imitation learning training loop with all components.
         print("[green]Starting training loop...[/]")
-        train_imitation_learning(**components)
+        train_imitation_learning(
+            environment       = environment,
+            expert_policy     = expert_policy,
+            policy            = policy,
+            data_collector    = data_collector,
+            experience_buffer = experience_buffer,
+            loss_function     = loss_function,
+            optimizer         = optimizer,
+            hyperparameters   = hyperparameters,
+            wandb_config      = wandb_config,
+            visualizer        = visualizer,
+        )
 
     hydra_train()
 

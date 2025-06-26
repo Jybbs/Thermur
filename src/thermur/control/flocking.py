@@ -72,18 +72,18 @@ class ExpertFlockingController:
             A tensor of velocity commands for all agents.
         """
         self._reset_shared_state()
-        self._update_graph_state(sd.edge_index, sd.position.size(0))
+        self._update_graph_state(sd["edge_index"], sd["position"].size(0))
 
         # Compute the nominal control based on Reynolds rules and thermal potential
         w = self.reynolds_weights
         u_nominal = (
-            w.w_cohesion   * self._compute_cohesion(sd.position)   +
-            w.w_separation * self._compute_separation(sd.position) +
-            w.w_alignment  * self._compute_alignment(sd.velocity)  +
+            w.w_cohesion   * self._compute_cohesion(sd["position"])   +
+            w.w_separation * self._compute_separation(sd["position"]) +
+            w.w_alignment  * self._compute_alignment(sd["velocity"])  +
             w.w_thermal    * self._compute_thermal(
-                sd.position,
-                sd.temperature,
-                grad_temp = getattr(sd, 'temperature_grad', None)
+                sd["position"],
+                sd["temperature"],
+                grad_temp = sd.get("temperature_grad", None)
             )
         )
         
