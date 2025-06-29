@@ -187,6 +187,54 @@ def ask_for_config_overrides() -> list[str]:
     return overrides
 
 
+def edit_multiple_fields(
+    fields      : list[tuple],
+    prefix      : str,
+    description : str,
+) -> list[str]:
+    """
+    Runs an interactive loop to prompt the user to edit multiple fields.
+
+    Args:
+        fields      : A list of tuples, each containing info about a field.
+        prefix      : The dot-path prefix for generating Hydra overrides.
+        description : A message to display to the user before prompting.
+
+    Returns:
+        A list of generated override strings.
+    """
+    ui.print_message(description, "info")
+    overrides = []
+    
+    while True:
+        field_to_edit = ui.console.input("[bold]Field to edit: [/bold]").strip()
+        
+        if not field_to_edit:
+            break
+        
+        field_data = next((f for f in fields if f[0] == field_to_edit), None)
+        
+        if not field_data:
+            ui.print_message(f"Field '{field_to_edit}' not found", "warning")
+            continue
+        
+        name, field_type, current_val, desc = field_data
+        
+        new_value = prompt_for_field_value(
+            field_name  = name,
+            field_type  = field_type,
+            current     = str(current_val),
+            description = desc,
+        )
+        
+        if new_value is not None and str(new_value) != str(current_val):
+            override_str = f"{prefix}.{name}={new_value}" if prefix else f"{name}={new_value}"
+            overrides.append(override_str)
+            ui.print_message(f"Added override: {override_str}", "success")
+    
+    return overrides
+
+
 def confirm_system_override(issues: list[str]) -> bool:
     """
     Displays detected system issues and asks the user for confirmation to proceed.
@@ -465,6 +513,7 @@ def select_config_component(
     choices = []
     for name, desc in options:
         choice_text = f"[{CLIConstants.UI.CYAN_STYLE}]{name}[/]"
+        
         if desc:
             # Truncate long descriptions to keep the prompt clean
             desc_limit = 50
