@@ -3,7 +3,6 @@ Command-line interface for the Thermur project.
 
 This package provides the main entry point for the CLI application.
 """
-from .cli       import app
-from .constants import CLIConstants
+from .cli import cli
 
-__all__ = ["cli", "CLIConstants"]
+__all__ = ["cli"]

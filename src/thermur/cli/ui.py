@@ -5,15 +5,15 @@ This module provides a consistent console interface leveraging Rich's
 built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
-from rich          import progress
-from rich.align    import Align
-from rich.console  import Console
-from rich.panel    import Panel
-from rich.rule     import Rule
-from rich.syntax   import Syntax
-from rich.table    import Table
-from rich.text     import Text
-from rich.theme    import Theme
+from rich         import progress
+from rich.align   import Align
+from rich.console import Console
+from rich.panel   import Panel
+from rich.rule    import Rule
+from rich.syntax  import Syntax
+from rich.table   import Table
+from rich.text    import Text
+from rich.theme   import Theme
 
 
 class ThermurUI:
@@ -41,7 +41,7 @@ class ThermurUI:
         )
 
     @staticmethod
-    def format_fire_gradient_text(text: str) -> Text:
+    def format_fire_gradient_text(self, text: str) -> Text:
         """
         Format text with the distinctive Thermur fire gradient colors.
         
@@ -121,8 +121,8 @@ class ThermurUI:
 
     def print_section(
         self,
-        title: str,
-        style: str = self.constants.UI.DEFAULT_SECTION_STYLE
+        title : str,
+        style : str
     ):
         """
         Print a section divider with title.
@@ -223,7 +223,7 @@ class ThermurUI:
         self,
         label  : str,
         status : str,
-        style  : str = self.constants.UI.DEFAULT_BADGE_STYLE,
+        style  : str
     ):
         """
         Print a status badge.
@@ -549,6 +549,7 @@ class ThermurUI:
 
     @staticmethod
     def create_progress_bar(
+        self,
         color         : str,
         used_fraction : float,
         length        : int = None,
