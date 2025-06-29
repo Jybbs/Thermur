@@ -4,6 +4,7 @@ Constants for the thermal swarm training CLI interface.
 Provides styling configurations, preset definitions, and validation parameters
 for thermally-constrained drone swarm simulation and training workflows.
 """
+from sys import version_info
 
 
 class CLIConstants:
@@ -390,6 +391,16 @@ class CLIConstants:
             "heat-aware-navigation",
             "imitation-learning-tests",
         ]
+
+        # Status messages
+        STATUS_NOT_INSTALLED  = "[red]❌ Not Installed[/red]"
+        DETAILS_NOT_INSTALLED = "[yellow]pip install wandb[/yellow]"
+        STATUS_CONNECTED      = "[green]✅ Connected[/green]"
+        DETAILS_CONNECTED     = "[cyan]@{user}[/cyan]"
+        STATUS_API_KEY        = "[green]✅ API Key Set[/green]"
+        DETAILS_API_KEY       = "[white]Ready to track[/white]"
+        STATUS_NOT_CONNECTED  = "[yellow]⚠️  Not Connected[/yellow]"
+        DETAILS_NOT_CONNECTED = "[yellow]Run 'wandb login'[/yellow]"
     
     
     class Validation:
@@ -474,3 +485,137 @@ class CLIConstants:
         # Default style fallbacks
         DEFAULT_SECTION_STYLE = "accent"
         DEFAULT_BADGE_STYLE   = "success"
+
+
+class System:
+        """
+        Constants for system diagnostics, resource checking, and validation.
+
+        This class holds static data for generating system diagnostic tables,
+        defining resource thresholds, and providing standardized validation
+        messages used throughout the CLI.
+        """
+        GPU_UNAVAILABLE         = "💡 GPU not available - consider using a smaller batch size"
+        INVALID_OVERRIDE_FORMAT = "Invalid override format (missing '=')"
+        INVALID_OVERRIDE_KEY    = "Invalid override key format"
+        PROGRESS_BAR_LENGTH     = 20
+        RESOURCE_MISSING_MSG    = {
+            "disk"   : "Could not check disk space",
+            "memory" : "Install psutil for memory info",
+        }
+
+        TABLE_COLUMNS = [
+            {
+                "header" : "Component",
+                "style"  : "bold bright_blue",
+                "width"  : 20
+            },
+            {
+                "header" : "Status",
+                "style"  : "bold",
+                "width"  : 18
+            },
+            {
+                "header" : "Details",
+                "style"  : "bright_white",
+                "width"  : 35
+            },
+        ]
+
+        SYSTEM_COMPONENTS = {
+            "thermur" : "🔥 Thermur",
+            "python"  : "🐍 Python",
+            "torch"   : "🔦 PyTorch",
+            "gpu"     : "🎮 GPU",
+            "mujoco"  : "🤖 MuJoCo",
+            "memory"  : "💾 Memory",
+            "storage" : "💿 Storage",
+        }
+
+        # Provides the dynamic rendering logic for each component defined in
+        # SYSTEM_COMPONENTS. The UI build process will "zip" these two
+        # dictionaries together using their shared keys.
+        SYSTEM_LOGIC = {
+            "thermur": {
+                "status"  : lambda info: "[bright_green]✅ Installed[/bright_green]",
+                "details" : lambda info: f"[bright_cyan]v{info['thermur']}[/bright_cyan]",
+            },
+            "python": {
+                "status"  : lambda info: (
+                    "[bright_green]✅ Supported[/bright_green]"
+                    if info["python_version_info"] >= (3, 9)
+                        else "[yellow]⚠️  Outdated[/yellow]"
+                ),
+                "details" : lambda info: f"[bright_cyan]v{info['python']}[/bright_cyan]",
+            },
+            "torch": {
+                "status"  : lambda info: (
+                    "[bright_green]✅ CUDA Ready[/bright_green]"
+                    if info["cuda"]
+                        else "[yellow]⚠️  CPU Mode[/yellow]"
+                ),
+                "details" : lambda info: (
+                    f"[bright_cyan]v{info['torch']}[/bright_cyan] • "
+                    f"[bright_magenta]CUDA {info['cuda_version']}[/bright_magenta]"
+                    if info["cuda"]
+                        else f"[bright_cyan]v{info['torch']}[/bright_cyan]"
+                ),
+            },
+            "gpu": {
+                "status"  : lambda info: (
+                    "[bright_green]✅ Available[/bright_green]"
+                    if info["cuda"]
+                        else "[red]❌ Not Found[/red]"
+                ),
+                "details" : lambda info: (
+                    f"[bright_green]{info.get('gpu_name', '')}[/bright_green]\n"
+                    f"[white]Memory: {info.get('gpu_memory', 'N/A')}[/white]"
+                    if info["cuda"]
+                        else "[yellow]Training will be slower on CPU[/yellow]"
+                ),
+            },
+            "mujoco": {
+                "status"  : lambda info: (
+                    "[bright_green]✅ Installed[/bright_green]"
+                    if info["mujoco"]
+                        else "[red]❌ Missing[/red]"
+                ),
+                "details" : lambda info: (
+                    f"[bright_cyan]v{info['mujoco']}[/bright_cyan] • Physics ready"
+                    if info["mujoco"]
+                        else "[yellow]pip install mujoco[/yellow]"
+                ),
+            },
+            "memory": {
+                "is_resource" : True,
+                "status"      : lambda info: (
+                    "[grey50]❓ Unknown[/grey50]"
+                    if not info.get("memory_total")
+                        else "[red]⚠️  Low[/red]"           if info["memory_available"] < 4
+                        else "[yellow]✅ Adequate[/yellow]" if info["memory_available"] < 8
+                        else "[bright_green]✅ Plenty[/bright_green]"
+                ),
+            },
+            "storage": {
+                "is_resource" : True,
+                "status"      : lambda info: (
+                    "[grey50]❓ Unknown[/grey50]"
+                    if not info.get("disk_total")
+                        else "[red]❌ Critical[/red]"       if info["disk_free"] < 5
+                        else "[yellow]⚠️  Limited[/yellow]" if info["disk_free"] < 20
+                        else "[bright_green]✅ Available[/bright_green]"
+                ),
+            },
+        }
+
+        TABLE_SETTINGS = {
+            "border_style" : "bright_blue",
+            "box"          : None,
+            "header_style" : "bold bright_cyan on grey15",
+            "padding"      : (0, 1),
+            "show_edge"    : True,
+            "style"        : "bright_white on grey11",
+            "title_style"  : "bold bright_white on grey23",
+        }
+        TABLE_TITLE = "🖥️  System Diagnostics"
+
