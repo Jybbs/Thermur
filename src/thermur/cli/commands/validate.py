@@ -1,0 +1,121 @@
+"""
+Validation command for the Thermur CLI.
+
+This module provides the 'validate' command, which allows users to check
+their system setup and configuration syntax without initiating a full
+training run.
+"""
+from time  import sleep
+from typer import Context, Option, Typer
+
+cmd_validate = Typer(
+    add_completion           = False,
+    rich_markup_mode         = "rich",
+    no_args_is_help          = True,
+    pretty_exceptions_enable = True,
+)
+
+
+@cmd_validate.command("validate")
+def validate(
+    ctx: Context,
+    config_overrides: list[str] | None = Option(
+        None,
+        "--config", "-c",
+        help="Configuration overrides to validate"
+    ),
+):
+    """
+    ✅ Validate system setup and configuration without starting training.
+
+    Performs comprehensive validation of the training environment including
+    system requirements, configuration syntax, and integration status, providing
+    a full report of any potential issues.
+    """
+    command = ValidateCommand(ctx)
+    command.run(config_overrides=config_overrides)
+
+
+class ValidateCommand:
+    """
+    Encapsulates the logic for the 'validate' command.
+
+    This class provides a structured way to run all system and configuration
+    validations, using components from the shared Typer context.
+    """
+    def __init__(self, ctx: Context):
+        """
+        Initializes the command with shared context components.
+
+        Args:
+            ctx: The Typer context, which holds the shared AppContext object
+                 containing UI, system, and other core components.
+        """
+        self.constants = ctx.obj.constants
+        self.system    = ctx.obj.system
+        self.ui        = ctx.obj.ui
+
+    def run(self, config_overrides: list[str] | None):
+        """
+        Executes the main validation workflow.
+
+        Args:
+            config_overrides : A list of Hydra configuration overrides to validate.
+        """
+        self.ui.print_header(
+            self.constants.Headers.VALIDATE_TITLE,
+            self.constants.Headers.VALIDATE_SUBTITLE
+        )
+
+        self._perform_system_validation()
+
+        self.ui.print_section(self.constants.Sections.CONFIG_CHECK, "config")
+
+        with self.ui.console.status(
+            self.constants.Status.VALIDATING_CONFIG,
+            spinner="dots"
+        ):
+            sleep(0.3)
+            issues = self.system.validate_config_overrides(config_overrides, self.constants)
+
+        if issues:
+            self.ui.print_message(self.constants.Validation.CONFIG_ISSUES_FOUND, "warning")
+            for issue in issues:
+                self.ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
+        else:
+            self.ui.print_message(self.constants.Validation.CONFIG_VALIDATION_PASSED, "success")
+
+        self.ui.print_section(self.constants.Sections.INTEGRATION_CHECK, "swarm")
+        status, details = self.system.check_wandb_status(self.constants)
+
+        if "Not" in status:
+            self.ui.print_message(f"wandb: {details}", "warning")
+        else:
+            self.ui.print_message(f"wandb: {details}", "success")
+
+        self.ui.console.print()
+        if issues or "Not" in status:
+            self.ui.print_message(self.constants.Validation.VALIDATION_WITH_WARNINGS, "warning")
+            self.ui.print_message(self.constants.Validation.REVIEW_ISSUES_TIP, "tip")
+        else:
+            self.ui.print_message(self.constants.Validation.ALL_VALIDATIONS_PASSED, "success")
+            self.ui.print_message(self.constants.Validation.SYSTEM_READY, "success")
+
+    def _perform_system_validation(self):
+        """
+        Performs comprehensive system validation checks.
+
+        This helper validates hardware capabilities, software versions, and
+        integration status, displaying the results in a formatted table.
+        """
+        self.ui.print_section(self.constants.Sections.SYSTEM_VALIDATION, "thermal")
+
+        info = self.system.get_system_info(self.constants)
+        table = self.ui.create_system_table(info)
+
+        self.ui.console.print(table)
+        self.ui.console.print()
+
+        status, details = self.system.check_wandb_status(self.constants)
+        self.ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
+        self.ui.console.print()
