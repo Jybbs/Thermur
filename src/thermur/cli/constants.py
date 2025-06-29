@@ -44,6 +44,8 @@ class CLIConstants:
             "#FFFACD",      # r - lemon chiffon
         ]
         
+        FIRE_GRADIENT_STYLED = [f"bold {c}" for c in FIRE_GRADIENT]
+        
         STYLES = {
             "info"      : "bright_cyan",
             "warning"   : "bright_yellow",
@@ -103,32 +105,45 @@ class CLIConstants:
                 "emoji"    : "⚡",
                 "desc"     : "Minimal setup for rapid testing",
                 "best_for" : "Quick experiments & debugging",
+                "prompt"   : "⚡ quick     - Fast testing & experiments",
             },
             "standard": {
                 "name"     : "standard",
                 "emoji"    : "🔥",
                 "desc"     : "Balanced configuration for most tasks",
                 "best_for" : "Regular training runs",
+                "prompt"   : "🔥 standard  - Balanced performance",
             },
             "large": {
                 "name"     : "large",
                 "emoji"    : "💪",
                 "desc"     : "High-capacity models & longer training",
                 "best_for" : "Production & final models",
+                "prompt"   : "💪 large     - Maximum capacity",
             },
             "debug": {
                 "name"     : "debug",
                 "emoji"    : "🔍",
                 "desc"     : "Verbose logging & validation checks",
                 "best_for" : "Troubleshooting issues",
+                "prompt"   : "🔍 debug     - Detailed diagnostics",
             },
             "custom": {
                 "name"     : "custom",
                 "emoji"    : "🎨",
                 "desc"     : "Start from scratch with full control",
                 "best_for" : "Advanced users",
+                "prompt"   : "🎨 custom    - Configure everything manually",
             },
         }
+
+        TABLE_COLUMNS = [
+            ("Preset",      "bright_cyan",   12, "left"),
+            ("Description", "bright_white",  40, "left"),
+            ("Best For",    "bright_yellow", 30, "left"),
+        ]
+
+        TABLE_TITLE = "Available Presets"
     
     
     class SystemChecks:
@@ -312,6 +327,17 @@ class CLIConstants:
                 "note"    : "Detailed usage information",
             },
         ]
+
+        OVERRIDE_SYNTAX_HELP = (
+            "# Override examples:\n"
+            "hyperparameters.lr=0.001          # Learning rate\n"
+            "hyperparameters.batch_size=64     # Batch size\n"
+            "swarm.num_drones=10               # Number of drones\n"
+            "environment.max_temp=85.0         # Temperature limit\n"
+            "+experiment=my_custom_setup       # Load experiment"
+        )
+
+        OVERRIDE_SYNTAX_TITLE = "Configuration Override Syntax"
     
     
     class Tips:
@@ -384,6 +410,16 @@ class CLIConstants:
         """
         User interface constants for Rich components.
         """
+        CATEGORY_EMOJIS = {
+            "hyperparameters" : "🎛️",
+            "environment"     : "🌍",
+            "swarm"           : "🐦‍⬛",
+            "policy"          : "🧠",
+            "monitoring"      : "📊",
+            "visualization"   : "📈",
+            "default"         : "⚙️",
+        }
+
         # Panel settings
         PANEL_PADDING      = (1, 3)
         PANEL_BORDER_STYLE = "bright_blue"
@@ -413,11 +449,18 @@ class CLIConstants:
         DIM_STYLE            = "dim italic"
         WHITE_STYLE          = "white"
         CYAN_STYLE           = "bright_cyan"
+        SYNTAX_THEME         = "monokai"
         
         # Resource display colors
         RESOURCE_COLOR_GOOD     = "bright_green"
         RESOURCE_COLOR_WARNING  = "yellow"
         RESOURCE_COLOR_CRITICAL = "red"
+        
+        # A pre-formatted string for displaying system resource details.
+        # It leaves placeholders for the later .format() call in ui.py.
+        RESOURCE_DETAILS_TEMPLATE = (
+            f"[{WHITE_STYLE}]{{:.1f}}{{}} free of {{:.1f}}{{}}[/]"
+        )
         
         # Characters
         FILLED_CHAR   = "█"

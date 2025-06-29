@@ -1,166 +1,152 @@
 """
-Interactive prompts for the Thermur CLI with enhanced visual feedback.
+Orchestrates the CLI's interactive dialogues using the questionary library.
 
-This module provides rich user interaction functionality for gathering input,
-confirming actions, and guiding users through configuration choices.
+This module is responsible for the "conversation" flow of the application. It
+uses the ThermurUI class to render complex components and CLIConstants for all
+static text and configuration, but it defines the logic for asking questions,
+gathering input, and confirming actions with the user.
 """
 import questionary
 
 from rich.align  import Align
 from rich.panel  import Panel
 from rich.prompt import Confirm
-from rich.syntax import Syntax
-from rich.table  import Table
 
-from .ui import console, print_message, print_section
+from .constants import CLIConstants
+from .ui        import ThermurUI
 
-
-# Define a thermal-inspired style for questionary
-thermal_style = questionary.Style([
-    ('question',       'fg:#ff6b6b bold'),      # Bright red for questions
-    ('answer',         'fg:#4ecdc4 bold'),      # Bright cyan for answers
-    ('pointer',        'fg:#ffe66d bold'),      # Bright yellow for pointer
-    ('highlighted',    'fg:#ff6b6b bold'),      # Bright red for highlighted
-    ('selected',       'fg:#4ecdc4'),           # Cyan for selected
-    ('separator',      'fg:#95e1d3'),           # Light cyan for separators
-    ('instruction',    'fg:#f38181'),           # Light red for instructions
-    ('text',           'fg:#ffffff'),           # White for text
-    ('disabled',       'fg:#808080 italic'),    # Gray for disabled options
-])
+ui            = ThermurUI()
+thermal_style = questionary.Style(CLIConstants.Messages.QUESTIONARY_STYLE)
 
 
 def select_configuration_preset() -> str | None:
     """
-    Prompt user to select a configuration preset with visual descriptions.
+    Prompts the user to select a high-level configuration preset.
     
+    This function first displays a descriptive table of available presets,
+    then presents an interactive list. This initial choice allows users to
+    quickly start with sensible defaults for different use cases without
+    needing to configure every detail manually.
+
     Returns:
-        Selected preset name or None if user chooses custom configuration
+        The string name of the selected preset (e.g., "standard"), or None if
+        the user explicitly chooses the "custom" configuration option.
     """
-    print_section("Configuration Presets", "config")
+    ui.print_section("Configuration Presets", style="accent")
     
-    # Create a table showing preset details
-    table = Table(
-        show_header  = True,
-        header_style = "bold bright_cyan",
-        border_style = "bright_blue",
-        title        = "Available Presets",
-        title_style  = "bold bright_white",
-        show_edge    = False,
-        padding      = (0, 1),
+    table = ui.create_aligned_table(
+        title   = CLIConstants.Presets.TABLE_TITLE,
+        columns = CLIConstants.Presets.TABLE_COLUMNS,
     )
     
-    table.add_column("Preset",       style="bright_cyan",   width=12)
-    table.add_column("Description",  style="bright_white",  width=40)
-    table.add_column("Best For",     style="bright_yellow", width=30)
-    
-    presets = [
-        ("quick",    "Minimal setup for rapid testing",          "Quick experiments & debugging"),
-        ("standard", "Balanced configuration for most tasks",     "Regular training runs"),
-        ("large",    "High-capacity models & longer training",   "Production & final models"),
-        ("debug",    "Verbose logging & validation checks",      "Troubleshooting issues"),
-        ("custom",   "Start from scratch with full control",     "Advanced users"),
-    ]
-    
-    for name, desc, use_case in presets:
+    preset_configs = CLIConstants.Presets.CONFIGS
+    for name, config in preset_configs.items():
         if name == "custom":
-            table.add_row(f"[italic]{name}[/italic]", f"[italic]{desc}[/italic]", f"[italic]{use_case}[/italic]")
+            # The "custom" option is styled differently to indicate it's a
+            # special case that bypasses the standard presets.
+            row_style = f"[{CLIConstants.UI.MUTED_STYLE}]"
+            table.add_row(
+                f"{row_style}{config['name']}[/]",
+                f"{row_style}{config['desc']}[/]",
+                f"{row_style}{config['best_for']}[/]",
+            )
         else:
-            table.add_row(name, desc, use_case)
+            table.add_row(config['name'], config['desc'], config['best_for'])
     
-    console.print(table)
-    console.print()
+    ui.console.print(table)
+    ui.console.print()
     
-    # Create choices with emojis
+    # Build choices for the interactive list from the same constants
     choices = [
-        questionary.Choice("⚡ quick     - Fast testing & experiments",                     value="quick"),
-        questionary.Choice("🔥 standard  - Balanced performance",                          value="standard"),
-        questionary.Choice("💪 large     - Maximum capacity",                              value="large"),
-        questionary.Choice("🔍 debug     - Detailed diagnostics",                          value="debug"),
-        questionary.Separator("─" * 40),
-        questionary.Choice("🎨 custom    - Configure everything manually",                 value=None),
+        questionary.Choice(config['prompt'], value=config['name'])
+        for name, config in preset_configs.items() if name != "custom"
     ]
+    choices.extend([
+        questionary.Separator(),
+        questionary.Choice(
+            title = preset_configs['custom']['prompt'], 
+            value = None  # A value of None signifies custom configuration
+        ),
+    ])
     
-    preset = questionary.select(
+    chosen_preset = questionary.select(
         "Which configuration preset would you like to use?",
         choices = choices,
         style   = thermal_style,
     ).ask()
     
-    if preset:
-        print_message(f"Selected preset: [bright_cyan]{preset}[/bright_cyan]", "success")
+    if chosen_preset:
+        ui.print_message(
+            f"Selected preset: [{CLIConstants.UI.CYAN_STYLE}]{chosen_preset}[/]",
+            msg_type="success"
+        )
     else:
-        print_message("Custom configuration selected - full control mode", "info")
+        ui.print_message(
+            "Custom configuration selected - full control mode", 
+            msg_type="info"
+        )
     
-    return preset
+    return chosen_preset
 
 
 def ask_wandb_project_name() -> str:
     """
-    Prompt for wandb project name with suggestions.
-    
+    Guides the user in setting a Weights & Biases project name for tracking.
+
+    This prompt explains the purpose of wandb and provides relevant examples
+    to help the user choose a suitable project name. It falls back to a
+    sensible default if no input is given.
+
     Returns:
-        Project name for wandb tracking
+        The final project name for wandb tracking.
     """
-    console.print()
-    print_message("Configure experiment tracking", "swarm")
-    console.print("[muted]wandb will track metrics, logs, and model checkpoints[/muted]")
-    console.print()
-    
-    # Show example project names
-    examples = Panel(
-        "[bright_cyan]Examples:[/bright_cyan]\n"
-        "  • thermal-swarm-v1\n"
-        "  • drone-flocking-experiments\n" 
-        "  • heat-aware-navigation\n"
-        "  • imitation-learning-tests",
-        border_style = "bright_blue",
-        padding      = (0, 2),
+    ui.console.print()
+    ui.print_message("Configure experiment tracking", "swarm")
+    ui.console.print(
+        f"[{CLIConstants.UI.MUTED_STYLE}]"
+        "wandb will track metrics, logs, and model checkpoints"
+        "[/]"
     )
-    console.print(examples)
-    console.print()
+    ui.console.print()
     
-    project = questionary.text(
+    examples = ui.create_examples_panel(
+        items = CLIConstants.Wandb.EXAMPLE_PROJECTS,
+        title = "Examples"
+    )
+    ui.console.print(examples)
+    ui.console.print()
+    
+    project_name = questionary.text(
         "Enter wandb project name:",
-        default     = "thermur",
+        default     = CLIConstants.Wandb.DEFAULT_PROJECT,
         style       = thermal_style,
         instruction = "(press Enter for default)",
     ).ask()
     
-    print_message(f"Project name: [bright_cyan]{project}[/bright_cyan]", "success")
-    return project
+    ui.print_message(f"Project name: [{CLIConstants.UI.CYAN_STYLE}]{project_name}[/]", "success")
+    return project_name
 
 
 def ask_for_config_overrides() -> list[str]:
     """
-    Prompt for additional configuration overrides with examples.
-    
+    Asks the user if they wish to provide advanced configuration overrides.
+
+    If confirmed, this function enters a loop to collect multiple Hydra-style
+    override strings (e.g., 'hyperparameters.lr=0.001'). It displays syntax
+    examples to guide the user on the correct format.
+
     Returns:
-        List of Hydra-style configuration overrides
+        A list of configuration override strings, which may be empty.
     """
-    console.print()
-    print_section("Advanced Configuration", "config")
+    ui.console.print()
+    ui.print_section("Advanced Configuration", "config")
     
-    # Show override syntax examples
-    syntax_panel = Panel(
-        Syntax(
-            "# Override examples:\n"
-            "hyperparameters.lr=0.001          # Learning rate\n"
-            "hyperparameters.batch_size=64     # Batch size\n"
-            "swarm.num_drones=10               # Number of drones\n"
-            "environment.max_temp=85.0         # Temperature limit\n"
-            "+experiment=my_custom_setup       # Load experiment",
-            "python",
-            theme        = "monokai",
-            line_numbers = False,
-        ),
-        title        = "Configuration Override Syntax",
-        border_style = "bright_blue",
-        padding      = (1, 2),
+    syntax_panel = ui.create_syntax_panel(
+        code  = CLIConstants.Commands.OVERRIDE_SYNTAX_HELP,
+        title = CLIConstants.Commands.OVERRIDE_SYNTAX_TITLE,
     )
-    console.print(syntax_panel)
-    console.print()
-    
-    overrides = []
+    ui.console.print(syntax_panel)
+    ui.console.print()
     
     add_overrides = questionary.confirm(
         "Would you like to add configuration overrides?",
@@ -168,163 +154,168 @@ def ask_for_config_overrides() -> list[str]:
         style   = thermal_style,
     ).ask()
     
-    if add_overrides:
-        console.print()
-        console.print("[muted]Enter overrides one at a time (empty line to finish):[/muted]")
+    if not add_overrides:
+        return []
+
+    ui.console.print()
+    ui.console.print(
+        f"[{CLIConstants.UI.MUTED_STYLE}]"
+        "Enter overrides one at a time (empty line to finish):"
+        "[/]"
+    )
+    
+    overrides = []
+    while True:
+        override = questionary.text(
+            "Override:",
+            style       = thermal_style,
+            instruction = "(e.g., hyperparameters.lr=0.001)",
+        ).ask()
         
-        while True:
-            override = questionary.text(
-                "Override:",
-                style       = thermal_style,
-                instruction = "(e.g., hyperparameters.lr=0.001)",
-            ).ask()
-            
-            if not override:
-                break
-            
-            overrides.append(override)
-            console.print(f"  [success]✓[/success] Added: [bright_cyan]{override}[/bright_cyan]")
+        if not override:
+            break
         
-        if overrides:
-            console.print()
-            print_message(f"Added {len(overrides)} configuration override(s)", "success")
+        overrides.append(override)
+        success_style = CLIConstants.Theme.STYLES['success']
+        cyan_style    = CLIConstants.UI.CYAN_STYLE
+        ui.console.print(f"  [{success_style}]✓[/] Added: [{cyan_style}]{override}[/]")
+    
+    if overrides:
+        ui.console.print()
+        ui.print_message(f"Added {len(overrides)} configuration override(s)", "success")
     
     return overrides
 
 
 def confirm_system_override(issues: list[str]) -> bool:
     """
-    Confirm whether to proceed despite system issues.
+    Displays detected system issues and asks the user for confirmation to proceed.
     
+    This function acts as a safety check, ensuring the user is aware of
+    potential configuration or environment problems before continuing with a
+    potentially long-running or unstable process.
+
     Args:
-        issues : List of system/configuration issues found
+        issues: A list of string descriptions of the issues found.
         
     Returns:
-        True to proceed, False to cancel
+        True if the user confirms they want to proceed, False otherwise.
     """
-    console.print()
-    warning_panel = Panel(
-        "[bold bright_yellow]⚠️  Configuration Issues Detected[/bold bright_yellow]\n\n" +
-        "\n".join(f"• {issue}" for issue in issues),
-        border_style = "bright_yellow",
-        padding      = (1, 2),
-    )
-    console.print(warning_panel)
-    console.print()
+    ui.console.print()
     
+    warning_panel = ui.create_warning_panel(
+        title  = "⚠️  Configuration Issues Detected",
+        issues = issues
+    )
+    ui.console.print(warning_panel)
+    ui.console.print()
+    
+    warning_style = CLIConstants.Theme.STYLES['warning']
     return Confirm.ask(
-        "[bright_yellow]Do you want to proceed anyway?[/bright_yellow]",
-        console = console,
+        f"[{warning_style}]Do you want to proceed anyway?[/]",
+        console = ui.console,
         default = False,
     )
 
 
 def show_training_summary(config: dict) -> bool:
     """
-    Display training configuration summary and confirm.
+    Presents a final summary of all chosen configurations for user confirmation.
     
+    This is the last step before initiating a long-running process. It gives
+    the user a final chance to review their choices (preset, wandb project,
+    overrides, etc.) and either confirm or cancel the operation.
+
     Args:
-        config : Dictionary containing training configuration
+        config: A dictionary containing the final configuration settings.
         
     Returns:
-        True to proceed with training, False to cancel
+        True if the user confirms to start training, False otherwise.
     """
-    console.print()
-    print_section("Training Configuration Summary", "thermal")
+    ui.console.print()
+    ui.print_section("Training Configuration Summary", "thermal")
     
-    # Create summary table
-    table = Table(
-        show_header  = False,
-        border_style = "bright_blue",
-        box          = None,
-        padding      = (0, 2),
-        expand       = False,
+    table = ui.create_aligned_table(
+        title     = "",
+        columns   = [("Setting", "bright_cyan", 20, "left"), 
+                     ("Value", "bright_white", 40, "left")],
+        show_edge = False,
+        box       = None,
     )
     
-    table.add_column("Setting",  style="bright_cyan",  width=20)
-    table.add_column("Value",    style="bright_white", width=30)
+    gpu_status   = "🎮 GPU Acceleration" if config.get("gpu_available") else "💻 CPU Mode"
+    num_overrides = config.get('overrides', 0)
     
-    # Add configuration rows
-    gpu_status = "🎮 GPU Acceleration" if config["gpu_available"] else "💻 CPU Mode"
-    table.add_row("Configuration", f"[bright_yellow]{config['preset']}[/bright_yellow]")
-    table.add_row("wandb Project", f"[bright_blue]{config['wandb_project']}[/bright_blue]")
-    table.add_row("Overrides",     f"[bright_magenta]{config['overrides']} custom settings[/bright_magenta]")
-    table.add_row("Hardware",      gpu_status)
+    summary_data = [
+        ("Configuration", f"[{CLIConstants.Theme.STYLES['warning']}]{config.get('preset')}[/]"),
+        ("wandb Project", f"[{CLIConstants.Theme.STYLES['swarm']}]{config.get('wandb_project')}[/]"),
+        ("Overrides", f"[{CLIConstants.Theme.STYLES['drone']}]{num_overrides} custom settings[/]"),
+        ("Hardware", gpu_status),
+    ]
+    for key, value in summary_data:
+        table.add_row(key, value)
     
-    # Center the table
-    console.print(Align.center(table))
-    console.print()
+    ui.console.print(Align.center(table))
+    ui.console.print()
     
-    # Training readiness indicator
-    ready_panel = Panel(
-        Align.center(
-            "[bold bright_green]✅ Ready to Train![/bold bright_green]\n"
-            "[muted]Your thermal swarm is configured and ready to learn[/muted]",
-            vertical="middle",
-        ),
-        border_style = "bright_green",
-        padding      = (1, 3),
+    ready_panel = ui.create_ready_panel(
+        title    = "✅ Ready to Train!",
+        subtitle = "Your thermal swarm is configured and ready to learn"
     )
-    console.print(ready_panel)
-    console.print()
+    ui.console.print(ready_panel)
+    ui.console.print()
     
+    success_style = CLIConstants.Theme.STYLES['success']
     return Confirm.ask(
-        "[bright_green]Start training with this configuration?[/bright_green]",
-        console = console,
+        f"[{success_style}]Start training with this configuration?[/]",
+        console = ui.console,
         default = True,
     )
 
 
 def select_config_to_edit(configs: list[str]) -> str | None:
     """
-    Select a configuration to edit from available options.
-    
+    Renders an interactive list for exploring Hydra configuration groups.
+
+    This function categorizes a flat list of configuration keys (e.g.,
+    'hyperparameters.lr') into navigable groups. It uses emojis to visually
+    distinguish between categories.
+
     Args:
-        configs : List of available configuration names
+        configs: A flat list of available configuration names.
         
     Returns:
-        Selected configuration name or None
+        The string name of the selected configuration, or None if the user
+        chooses to go back.
     """
     if not configs:
-        print_message("No configurations available", "warning")
+        ui.print_message("No configurations available", "warning")
         return None
     
-    # Group configs by category
+    # Group configuration keys by their parent name (e.g., 'hyperparameters')
     categories = {}
-    for config in configs:
-        if '.' in config:
-            category = config.split('.')[0]
-        else:
-            category = "main"
-        
+    for cfg in configs:
+        category = cfg.split('.')[0] if '.' in cfg else "main"
         if category not in categories:
             categories[category] = []
-        categories[category].append(config)
+        categories[category].append(cfg)
     
-    # Build choices with categories
+    # Build the choice list for questionary with separators and emojis
     choices = []
+    emojis  = CLIConstants.UI.CATEGORY_EMOJIS
     for category, items in sorted(categories.items()):
         if category != "main":
             choices.append(questionary.Separator(f"── {category.title()} ──"))
         
         for item in sorted(items):
-            # Add emoji based on category
-            emoji = {
-                "hyperparameters" : "🎛️",
-                "environment"     : "🌍",
-                "swarm"           : "🐦‍⬛",
-                "policy"          : "🧠",
-                "monitoring"      : "📊",
-                "visualization"   : "📈",
-            }.get(category, "⚙️")
-            
+            emoji = emojis.get(category, emojis["default"])
             display_name = item.split('.')[-1] if '.' in item else item
-            choices.append(
-                questionary.Choice(f"{emoji} {display_name}", value=item)
-            )
+            choices.append(questionary.Choice(f"{emoji} {display_name}", value=item))
     
-    choices.append(questionary.Separator("─" * 40))
-    choices.append(questionary.Choice("↩️  Back to main menu", value=None))
+    choices.extend([
+        questionary.Separator(),
+        questionary.Choice("↩️  Back to main menu", value=None)
+    ])
     
     return questionary.select(
         "Select configuration to explore:",
@@ -340,58 +331,76 @@ def edit_config_value(
     description : str | None = None
 ) -> any:
     """
-    Edit a configuration value based on its type.
+    Prompts the user to edit a single configuration value, handling basic types.
     
+    This function displays the context of the field being edited (its name,
+    type, current value, and description) and provides a type-aware prompt
+    for the new value.
+
     Args:
-        field_name  : Name of the field being edited
-        field_type  : Type of the field (str, int, float, bool)
-        current_val : Current value
-        description : Optional field description
+        field_name: The name of the field being edited (e.g., "learning_rate").
+        field_type: The type of the field as a string ('str', 'int', 'float', 'bool').
+        current_val: The current value of the field.
+        description: An optional description of the field's purpose.
         
     Returns:
-        New value or current value if unchanged
+        The new value, which may be the same as the current value if unchanged.
+        The return type will match the requested `field_type`.
     """
-    console.print()
+    ui.console.print()
     
-    # Show field info
+    # Build the content for the informational panel
+    content = (f"[{CLIConstants.UI.TITLE_TEXT_STYLE}]{field_name}[/]\n"
+               f"[{CLIConstants.UI.MUTED_STYLE}]Type: {field_type}[/]\n"
+               f"[{CLIConstants.UI.MUTED_STYLE}]Current: "
+               f"[{CLIConstants.UI.WHITE_STYLE}]{current_val}[/][/]")
+    
+    if description:
+        content += f"\n[{CLIConstants.UI.SUBTITLE_TEXT_STYLE}]{description}[/]"
+        
     info_panel = Panel(
-        f"[bold bright_cyan]{field_name}[/bold bright_cyan]\n"
-        f"[muted]Type: {field_type}[/muted]\n"
-        f"[muted]Current: [bright_white]{current_val}[/bright_white][/muted]" +
-        (f"\n[italic]{description}[/italic]" if description else ""),
-        border_style = "bright_blue",
+        content,
+        border_style = CLIConstants.UI.PANEL_BORDER_STYLE,
         padding      = (1, 2),
     )
-    console.print(info_panel)
-    console.print()
+    ui.console.print(info_panel)
+    ui.console.print()
     
-    # Handle different types
+    # Provide a type-specific prompt
     if field_type == "bool":
         new_val = questionary.confirm(
-            f"Set {field_name} to:",
-            default = current_val,
-            style   = thermal_style,
+            f"Set {field_name} to:", default=bool(current_val), style=thermal_style
         ).ask()
-    elif field_type in ["int", "float"]:
-        validator = lambda x: x.replace('.', '').replace('-', '').isdigit() if field_type == "float" else x.replace('-', '').isdigit()
-        new_val = questionary.text(
-            f"Enter new value for {field_name}:",
-            default     = str(current_val),
-            style       = thermal_style,
-            validate    = validator,
-        ).ask()
-        new_val = float(new_val) if field_type == "float" else int(new_val)
-    else:  # string
-        new_val = questionary.text(
-            f"Enter new value for {field_name}:",
-            default = str(current_val) if current_val is not None else "",
-            style   = thermal_style,
-        ).ask()
-    
-    if new_val != current_val:
-        print_message(f"Updated {field_name}: [bright_cyan]{current_val}[/bright_cyan] → [bright_green]{new_val}[/bright_green]", "success")
     else:
-        print_message("Value unchanged", "info")
+        new_val_str = questionary.text(
+            f"Enter new value for {field_name}:",
+            default=str(current_val) if current_val is not None else "",
+            style=thermal_style,
+        ).ask()
+        
+        # Attempt to cast the new string value to the correct type
+        try:
+            if new_val_str is None: # User cancelled
+                return current_val
+            if field_type == "int":
+                new_val = int(new_val_str)
+            elif field_type == "float":
+                new_val = float(new_val_str)
+            else: # string
+                new_val = new_val_str
+                
+        except (ValueError, TypeError):
+            ui.print_message(f"Invalid {field_type} value. Keeping original.", "error")
+            return current_val
+
+    if new_val != current_val:
+        success_style = CLIConstants.Theme.STYLES['success']
+        ui.print_message(f"Updated {field_name}: "
+                         f"[{CLIConstants.UI.CYAN_STYLE}]{current_val}[/] → "
+                         f"[{success_style}]{new_val}[/]",
+                         "success")
+    else:
+        ui.print_message("Value unchanged", "info")
     
     return new_val
 
@@ -402,30 +411,32 @@ def prompt_for_field_value(
     current    : str
 ) -> any:
     """
-    Prompt for a field value with type-specific validation.
+    Prompts for a field value with type-specific validation (alias).
     
-    This is an alias for edit_config_value to match the explorer's expectations.
-    
+    This function serves as a type-converting wrapper around `edit_config_value`.
+    It takes a string representation of the current value (as provided by the
+    configuration explorer) and casts it to its proper Python type before
+    passing it to the editing prompt.
+
     Args:
-        field_name : Name of the field
-        field_type : Type string for the field
-        current    : Current value as string
+        field_name: The name of the configuration field.
+        field_type: The type of the field as a string ('str', 'int', etc.).
+        current: The current value of the field, always provided as a string.
         
     Returns:
-        New value with proper type or None if cancelled
+        The new value with the proper type, or the original value if cancelled.
     """
-    # Convert current string to appropriate type
-    if field_type == "bool":
-        current_val = current.lower() == "true"
-    elif field_type == "int":
-        current_val = int(current) if current.isdigit() else 0
-    elif field_type == "float":
-        try:
-            current_val = float(current)
-        except ValueError:
-            current_val = 0.0
-    else:
-        current_val = current
+    try:
+        if field_type == "bool":
+            current_val = current.lower() == "true"
+        elif field_type == "int":
+            current_val = int(current) if current else 0
+        elif field_type == "float":
+            current_val = float(current) if current else 0.0
+        else:
+            current_val = current
+    except (ValueError, TypeError):
+        current_val = current  # Fallback for complex types or parse errors
     
     return edit_config_value(field_name, field_type, current_val)
 
@@ -435,32 +446,38 @@ def select_config_component(
     options : list[tuple[str, str]]
 ) -> str | None:
     """
-    Select a configuration component from a list of options.
+    Presents a navigable list of components or options to the user.
     
+    This function is a generic selector that takes a list of name/description
+    pairs and formats them into a clean, readable, and interactive list for
+    the user to choose from. It also handles truncating long descriptions
+    to maintain a tidy layout.
+
     Args:
-        title   : Title for the selection prompt
-        options : List of (name, description) tuples
+        title: The title to display above the list of options.
+        options: A list of (name, description) tuples to be presented.
         
     Returns:
-        Selected component name or None if cancelled
+        The string `name` of the selected component, or None if the user goes back.
     """
-    print_section(title, "config")
+    ui.print_section(title, "config")
     
-    # Build choices with descriptions
     choices = []
     for name, desc in options:
-        # Format the choice nicely
-        choice_text = f"[bright_cyan]{name}[/bright_cyan]"
+        choice_text = f"[{CLIConstants.UI.CYAN_STYLE}]{name}[/]"
         if desc:
-            # Truncate long descriptions
-            if len(desc) > 50:
-                desc = desc[:47] + "..."
-            choice_text += f" - [muted]{desc}[/muted]"
+            # Truncate long descriptions to keep the prompt clean
+            desc_limit = 50
+            if len(desc) > desc_limit:
+                desc = desc[:desc_limit - 3] + "..."
+            choice_text += f" - [{CLIConstants.UI.MUTED_STYLE}]{desc}[/]"
         
         choices.append(questionary.Choice(choice_text, value=name))
     
-    choices.append(questionary.Separator("─" * 40))
-    choices.append(questionary.Choice("↩️  Back", value=None))
+    choices.extend([
+        questionary.Separator(),
+        questionary.Choice("↩️  Back", value=None)
+    ])
     
     selected = questionary.select(
         "Select component to explore:",
@@ -469,6 +486,6 @@ def select_config_component(
     ).ask()
     
     if selected:
-        print_message(f"Selected: [bright_cyan]{selected}[/bright_cyan]", "success")
+        ui.print_message(f"Selected: [{CLIConstants.UI.CYAN_STYLE}]{selected}[/]", "success")
     
     return selected
