@@ -31,7 +31,7 @@ dependencies    = [
 ]
 
 [project.scripts]
-thermur = "src.thermur.cli.app:app"
+thermur = "src.thermur.cli.cli:cli"
 
 [tool.poetry]
 packages = [{ include = "src" }]

@@ -9,31 +9,74 @@ from sys import version_info
 
 class CLIConstants:
     """
-    Constants for thermal swarm training CLI operations.
-    
-    Namespaced access to styling, presets, and validation parameters specific
-    to multi-agent thermal simulation and GNN policy training.
+    Provides a centralized, namespaced repository for all static CLI data.
+
+    This class holds all static values, such as theme colors, message templates,
+    preset configurations, and validation rules. It is designed to be
+    instantiated a single time in the main application (`cli.py`) and then
+    passed to any component that requires access to this data, ensuring
+    consistency and ease of maintenance.
     """
     
     class Core:
         """
         Fundamental CLI application constants.
         
-        Line length constraints, application metadata, and core configuration
-        parameters governing CLI behavior.
+        Defines the application's top-level metadata, such as its name and a
+        brief description, which are used by Typer to build the main help text.
         """
-        MAX_LINE_LENGTH = 88
         APP_NAME        = "thermur"
         APP_DESCRIPTION = "🔥 Thermally-constrained drone swarm training toolkit"
-    
-    
+
+
+    class Headers:
+        """
+        Titles and subtitles for different CLI sections.
+        
+        These constants are used with `ui.print_header` to create the main
+        styled panels that introduce a command's function to the user.
+        """
+        MAIN_TITLE           = "Welcome to Thermur"
+        MAIN_SUBTITLE        = "Thermal Drone Swarm Training"
+        INFO_TITLE           = "Thermur System Information"
+        MONITOR_TITLE        = "wandb Monitoring"
+        MONITOR_SUBTITLE_TPL = "Project: {project}"
+        TRAIN_TITLE          = "Thermur Training System"
+        TRAIN_SUBTITLE       = "Thermally-constrained drone swarm imitation learning"
+        VALIDATE_TITLE       = "System Validation"
+        VALIDATE_SUBTITLE    = "Pre-flight checks for training"
+        CONFIG_GEN_TITLE     = "Generated Configuration Overrides"
+
+
+    class Sections:
+        """
+        Titles for different content sections printed to the console.
+        
+        These are used with `ui.print_section` to create styled horizontal
+        rules that visually break up the content of a command's output.
+        """
+        QUICK_START         = "Quick Start"
+        GETTING_STARTED     = "Getting Started"
+        AVAILABLE_COMMANDS  = "Available Commands"
+        INTEGRATION_STATUS  = "Integration Status"
+        FEATURES            = "Features & Capabilities"
+        CONFIG_SYSTEM       = "Configuration System"
+        SYSTEM_VALIDATION   = "System Validation"
+        CONFIG_CHECK        = "Configuration Check"
+        INTEGRATION_CHECK   = "Integration Check"
+        CONFIG_SETUP        = "Configuration Setup"
+        INIT_TRAINING       = "Initializing Training"
+        BUILDING_COMPONENTS = "Building Training Components"
+        TRAINING_STARTED    = "Training Started"
+
+
     class Theme:
         """
         Thermal physics-inspired styling for CLI interface.
         
-        Color mappings reflecting thermal domain physics. Fire gradient
-        represents temperature transitions T_min → T_max while maintaining
-        terminal readability.
+        Color mappings reflecting thermal domain physics. The fire gradient
+        represents temperature transitions from T_min to T_max while
+        maintaining terminal readability.
         """
         FIRE_GRADIENT = [
             "#8B0000", # T
@@ -65,8 +108,31 @@ class CLIConstants:
     
     class Messages:
         """
-        Message styling configurations for CLI output.
+        Message styling and text configurations for CLI output.
+        
+        This class centralizes all user-facing strings, from simple status
+        updates to formatted error messages, to ensure consistency.
         """
+        SKIPPING_CHECKS          = "Skipping system checks (--force enabled)"
+        TRAINING_CANCELLED       = "Training cancelled by user."
+        TRAINING_INTERRUPTED     = "Training interrupted by user."
+        TRAINING_FAILED_TPL      = "Training failed: {e}"
+        LOADING_COMPONENTS       = "Loading training components..."
+        COMPONENTS_INITIALIZED   = "All components initialized successfully!"
+        MONITORING_DYNAMICS      = "Monitoring thermal constraints and swarm dynamics"
+        TRACK_WANDB              = "Track progress in your wandb dashboard"
+        TRAINING_COMPLETE_HEADER = "Training Complete! 🎉"
+        TRAINING_COMPLETE_SUB    = "Your thermal swarm has learned to fly"
+        NO_CONFIG_CHANGES        = "No configuration changes made."
+        CONFIG_GEN_ADD_CMD       = "Add these to your training command:"
+        CONFIG_GEN_USE_IND       = "Or use them individually:"
+        WANDB_UNAVAILABLE        = "wandb not available - install with 'pip install wandb'"
+        BROWSER_LAUNCH_TPL       = "Opening dashboard for project: [bright_cyan]{project}[/bright_cyan]"
+        BROWSER_SUCCESS          = "Dashboard opened in your default browser!"
+        BROWSER_FAIL_TPL         = "Failed to open browser: {e}"
+        BROWSER_MANUAL_TPL       = "Please visit manually: {url}"
+        READY_TO_TRAIN           = "Ready to train some thermal swarms? 🔥"
+
         TYPES = {
             "step"    : {"icon": "🔥", "style": "thermal"},
             "info"    : {"icon": "💡", "style": "info"},
@@ -90,15 +156,33 @@ class CLIConstants:
             ('text',        'fg:#ffffff'),
             ('disabled',    'fg:#808080 italic'),
         ]
-    
-    
+
+
+    class Status:
+        """
+        Text for status indicators shown during processing.
+        
+        These strings are used in progress bars and spinners to provide
+        real-time feedback to the user about what the application is doing.
+        """
+        CHECKING_REQS            = "[thermal]Checking system requirements...[/thermal]"
+        VALIDATING_CONFIG        = "[accent]Validating configuration...[/accent]"
+        LAUNCHING_BROWSER        = "[swarm]Launching browser...[/swarm]"
+        INIT_MODULES             = "Initializing core modules..."
+        LOADING_CONFIG_SYS       = "Loading configuration system..."
+        REGISTERING_CONFIGS      = "Registering configurations..."
+        PREPARING_HYDRA          = "Preparing Hydra runtime..."
+        READY_TO_TRAIN           = "Ready to train!"
+        INSTANTIATING_COMPONENTS = "Instantiating components..."
+        SETUP_COMPONENT_TPL      = "Setting up {display_name}..."
+
+
     class Presets:
         """
         Thermal swarm training configuration presets.
         
-        Parameter combinations optimized for different experimental scenarios.
-        Each preset balances computational cost with training effectiveness
-        for thermal constraint environments.
+        Each preset is a named collection of parameters optimized for a
+        specific use case, from rapid debugging to full-scale training runs.
         """
         CONFIGS = {
             "quick": {
@@ -225,8 +309,8 @@ class CLIConstants:
         """
         Thermur platform capabilities and implementation status.
         
-        Core features enabling thermal constraint modeling, multi-agent
-        coordination, and imitation learning for drone swarm training.
+        This list defines the core features of the platform, which are
+        displayed in a table by the `info` command.
         """
         LIST = [
             {
@@ -266,7 +350,6 @@ class CLIConstants:
             },
         ]
         
-        # Table column definitions
         TABLE_COLUMNS = [
             ("Feature",     "bright_cyan",  25, "left"),
             ("Description", "bright_white", 45, "left"),
@@ -280,8 +363,8 @@ class CLIConstants:
         """
         CLI command definitions and usage examples.
         
-        Available commands for thermal swarm training workflows, including
-        training execution, system validation, and experiment monitoring.
+        This class holds the metadata for all available CLI commands, which is
+        used to dynamically generate help text and welcome screens.
         """
         AVAILABLE = [
             {
@@ -341,6 +424,28 @@ class CLIConstants:
         OVERRIDE_SYNTAX_TITLE = "Configuration Override Syntax"
 
 
+    class Training:
+        """
+        Configuration for the training process and component instantiation.
+        
+        This class decouples the `cli.py` orchestrator from the specific set
+        of components required for a training run.
+        """
+        COMPONENT_CONFIGS = [
+            ("environment",       "simulation",        "🌍 Environment"),
+            ("expert_policy",     "expert_policy",     "🎓 Expert Policy"),
+            ("policy",            "policy",            "🧠 Learning Policy"),
+            ("data_collector",    "data_collector",    "📊 Data Collector"),
+            ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
+            ("loss_function",     "loss_function",     "📏 Loss Function"),
+            ("optimizer",         "optimizer",         "⚙️  Optimizer"),
+            ("hyperparameters",   "hyperparameters",   "🎛️  Hyperparameters"),
+            ("wandb_config",      "monitoring.wandb",  "📊 wandb Tracking"),
+        ]
+
+        VISUALIZER_KEY = "visualization"
+
+
     class Explorer:
         """
         Constants for the interactive configuration explorer.
@@ -348,19 +453,16 @@ class CLIConstants:
         Defines titles, messages, and table structures used to build the
         interactive exploration interface in the CLI.
         """
-        # Titles and Headers
         HEADER_TITLE          = "Interactive Configuration Explorer"
         EDIT_HEADER_PREFIX    = "Editing"
         EXPLORE_HEADER_PREFIX = "Exploring"
         SCHEMA_TABLE_TITLE    = "Schema Fields"
         DATACLASS_TABLE_TITLE = "Dataclass Fields"
 
-        # Component Names
         WORKLOAD_COMPONENT_NAME = "Workload"
         GENERIC_COMPONENT_NAME  = "Configuration Component"
         NESTED_COMPONENT_NAME   = "Nested Component"
         
-        # Messages
         PROMPT_TO_EDIT       = "Enter field names to edit, or press Enter to finish."
         FIELD_PROMPT         = "[bold]Field to edit: [/bold]"
         NO_WORKLOADS_FOUND   = "No workload configurations found"
@@ -373,7 +475,6 @@ class CLIConstants:
         OVERRIDES_GENERATED  = "Generated {count} configuration overrides"
         DEFAULT_WORKLOAD_DOC = "Workload configuration"
 
-        # Table Configurations
         SCHEMA_TABLE_COLUMNS = [
             ("Field",       "bright_cyan",   20, "left"),
             ("Type",        "bright_white",  15, "left"),
@@ -392,8 +493,8 @@ class CLIConstants:
         """
         Thermal swarm training workflow guidance.
         
-        Best practices for experiment setup, monitoring, and parameter
-        optimization in thermal constraint environments.
+        These tips are displayed by the `info` command to provide users with
+        quick, actionable advice for using the CLI effectively.
         """
         TRAINING = [
             {
@@ -423,8 +524,8 @@ class CLIConstants:
         """
         Weights & Biases integration configuration.
         
-        Environment variables and project naming conventions for experiment
-        tracking in thermal swarm training workflows.
+        This class centralizes environment variable keys and project naming
+        conventions for experiment tracking in wandb.
         """
         API_KEY_ENV = "WANDB_API_KEY"
         ENTITY_ENV  = "WANDB_ENTITY"
@@ -439,7 +540,6 @@ class CLIConstants:
             "imitation-learning-tests",
         ]
 
-        # Status messages
         STATUS_NOT_INSTALLED  = "[red]❌ Not Installed[/red]"
         DETAILS_NOT_INSTALLED = "[yellow]pip install wandb[/yellow]"
         STATUS_CONNECTED      = "[green]✅ Connected[/green]"
@@ -452,21 +552,29 @@ class CLIConstants:
     
     class Validation:
         """
-        System validation requirements and diagnostics.
+        System validation requirements and diagnostic messages.
         
-        Minimum system specifications and common configuration issues
-        for thermal swarm simulation and training environments.
+        This class holds minimum system specifications and common configuration
+        issues for thermal swarm simulation and training environments.
         """
         REQUIRED_PYTHON_VERSION = (3, 9)
         
-        COMMON_ISSUES = [
-            "💡 GPU not available - consider using a smaller batch size",
-        ]
+        CONFIG_FAIL_MSG          = "Configuration validation failed:"
+        CONFIG_ISSUES_FOUND      = "Configuration issues found:"
+        CONFIG_VALIDATION_PASSED = "Configuration validation passed!"
+        VALIDATION_WITH_WARNINGS = "⚠️  Validation completed with warnings"
+        REVIEW_ISSUES_TIP        = "Review the issues above before training"
+        ALL_VALIDATIONS_PASSED   = "✅ All validations passed!"
+        SYSTEM_READY             = "Your system is ready for training"
+        FORCE_OVERRIDE_TIP       = "Use --force to override or fix the issues above."
     
     
     class UI:
         """
         User interface constants for Rich components.
+        
+        Defines static configuration for all Rich-rendered components, such
+        as padding, border styles, colors, and character sets.
         """
         CATEGORY_EMOJIS = {
             "hyperparameters" : "🎛️",
@@ -478,19 +586,16 @@ class CLIConstants:
             "default"         : "⚙️",
         }
 
-        # Panel settings
         PANEL_PADDING      = (1, 3)
         PANEL_BORDER_STYLE = "bright_blue"
         PANEL_BOX          = "ROUNDED"
         
-        # Table settings
         TABLE_PADDING      = (0, 1)
         TABLE_TITLE_STYLE  = "bold bright_cyan"
         TABLE_HEADER_STYLE = "bold bright_blue"
         TABLE_BORDER_STYLE = "bright_blue"
         TABLE_BOX          = "MINIMAL"
         
-        # Progress bar settings
         PROGRESS_BAR_WIDTH          = 30
         PROGRESS_BAR_DEFAULT_LENGTH = 20
         PROGRESS_SPINNER            = "dots"
@@ -498,38 +603,31 @@ class CLIConstants:
         PROGRESS_STYLE              = "thermal"
         PROGRESS_COMPLETE_STYLE     = "bright_red"
         
-        # Text styling
-        HEADER_TEXT_STYLE    = "bold bright_white"
-        TITLE_TEXT_STYLE     = "bold bright_cyan"
-        SUBTITLE_TEXT_STYLE  = "muted italic"
-        COMMAND_STYLE        = "bold accent"
-        MUTED_STYLE          = "muted"
-        DIM_STYLE            = "dim italic"
-        WHITE_STYLE          = "white"
-        CYAN_STYLE           = "bright_cyan"
-        SYNTAX_THEME         = "monokai"
+        HEADER_TEXT_STYLE   = "bold bright_white"
+        TITLE_TEXT_STYLE    = "bold bright_cyan"
+        SUBTITLE_TEXT_STYLE = "muted italic"
+        COMMAND_STYLE       = "bold accent"
+        MUTED_STYLE         = "muted"
+        DIM_STYLE           = "dim italic"
+        WHITE_STYLE         = "white"
+        CYAN_STYLE          = "bright_cyan"
+        SYNTAX_THEME        = "monokai"
         
-        # Resource display colors
         RESOURCE_COLOR_GOOD     = "bright_green"
         RESOURCE_COLOR_WARNING  = "yellow"
         RESOURCE_COLOR_CRITICAL = "red"
         
-        # A pre-formatted string for displaying system resource details.
-        # It leaves placeholders for the later .format() call in ui.py.
         RESOURCE_DETAILS_TEMPLATE = (
             f"[{WHITE_STYLE}]{{:.1f}}{{}} free of {{:.1f}}{{}}[/]"
         )
         
-        # Characters
         FILLED_CHAR   = "█"
         UNFILLED_CHAR = "░"
         BULLET_CHAR   = "•"
         
-        # wandb
         WANDB_URL_PLACEHOLDER = "YOUR_USERNAME"
         WANDB_ICON            = "📊"
         
-        # Default style fallbacks
         DEFAULT_SECTION_STYLE = "accent"
         DEFAULT_BADGE_STYLE   = "success"
 
@@ -579,9 +677,6 @@ class CLIConstants:
             "storage" : "💿 Storage",
         }
 
-        # Provides the dynamic rendering logic for each component defined in
-        # SYSTEM_COMPONENTS. The UI build process will "zip" these two
-        # dictionaries together using their shared keys.
         SYSTEM_LOGIC = {
 
             "thermur": {
@@ -672,4 +767,3 @@ class CLIConstants:
             "title_style"  : "bold bright_white on grey23",
         }
         TABLE_TITLE = "🖥️  System Diagnostics"
-

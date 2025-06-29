@@ -7,7 +7,6 @@ the raw data that other modules, like the UI, will then format and display.
 """
 import os
 
-from .constants         import CLIConstants
 from functools          import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from platform           import platform, python_version
@@ -19,8 +18,14 @@ from wandb              import Api, api
 
 class SystemInspector:
     """
-    Provides a collection of static methods for system diagnostics,
-    resource checking, and validation.
+    Provides static methods for system diagnostics and resource validation.
+
+    This class acts as a stateless utility for querying the host environment.
+    Its methods are static because they do not depend on any instance-specific
+    state. For methods that require access to constant values (e.g., for
+    validation rules or API keys), the `CLIConstants` object is passed in as a
+    parameter, adhering to a dependency injection pattern without requiring
+    an instance of the class.
     """
     @staticmethod
     def _safe_import(
@@ -66,14 +71,12 @@ class SystemInspector:
 
     @staticmethod
     @lru_cache(maxsize=1)
-    def get_system_info() -> dict[str, any]:
+    def get_system_info(constants) -> dict[str, any]:
         """
         Gather comprehensive system information using platform tools.
 
-        This function collects hardware specifications, software versions, and runtime
-        environment details to provide a complete picture of the training environment.
-        It checks for GPU capabilities, memory availability, and the status of key
-        integrations like MuJoCo and wandb.
+        Args:
+            constants: An instance of `CLIConstants`.
 
         Returns:
             A dictionary containing system details.
@@ -96,7 +99,6 @@ class SystemInspector:
             info["gpu_memory"]   = f"{props.total_memory / 1e9:.1f}GB"
             info["gpu_name"]     = cuda.get_device_name(0)
 
-        # Safely check for optional dependencies
         try:
             from psutil import virtual_memory
             mem                      = virtual_memory()
@@ -114,16 +116,15 @@ class SystemInspector:
             info["disk_free"]  = 0
             info["disk_total"] = 0
 
-        # Handle wandb state
         info["wandb_installed"] = SystemInspector._safe_import(attr="__version__", package="wandb") is not None
         info["wandb_user"]      = None
         api_key_exists          = False
         if info["wandb_installed"]:
-            api_key_exists = os.environ.get(CLIConstants.Wandb.API_KEY_ENV) or api.api_key
+            api_key_exists = os.environ.get(constants.Wandb.API_KEY_ENV) or api.api_key
 
         if api_key_exists:
-            old_mode = os.environ.get(CLIConstants.Wandb.MODE_ENV)
-            os.environ[CLIConstants.Wandb.MODE_ENV] = "offline"
+            old_mode = os.environ.get(constants.Wandb.MODE_ENV)
+            os.environ[constants.Wandb.MODE_ENV] = "offline"
 
             try:
                 user               = Api().viewer
@@ -132,66 +133,62 @@ class SystemInspector:
                 info["wandb_user"] = None  
             finally:
                 if old_mode:
-                    os.environ[CLIConstants.Wandb.MODE_ENV] = old_mode
+                    os.environ[constants.Wandb.MODE_ENV] = old_mode
                 else:
-                    os.environ.pop(CLIConstants.Wandb.MODE_ENV, None)
+                    os.environ.pop(constants.Wandb.MODE_ENV, None)
 
         return info
 
     @staticmethod
-    def check_wandb_status() -> tuple[str, str]:
+    def check_wandb_status(constants) -> tuple[str, str]:
         """
         Check wandb installation and login status.
 
-        Verifies whether wandb is installed and properly authenticated without
-        triggering login prompts. This allows the CLI to display integration
-        status without interrupting the user workflow.
+        Args:
+            constants: An instance of `CLIConstants`.
 
         Returns:
             A tuple of (status, details) for wandb integration.
         """
-        info = SystemInspector.get_system_info()
+        info = SystemInspector.get_system_info(constants)
 
         if not info["wandb_installed"]:
             return (
-                CLIConstants.Wandb.STATUS_NOT_INSTALLED,
-                CLIConstants.Wandb.DETAILS_NOT_INSTALLED,
+                constants.Wandb.STATUS_NOT_INSTALLED,
+                constants.Wandb.DETAILS_NOT_INSTALLED,
             )
 
         if info["wandb_user"]:
             return (
-                CLIConstants.Wandb.STATUS_CONNECTED,
-                CLIConstants.Wandb.DETAILS_CONNECTED.format(user=info["wandb_user"]),
+                constants.Wandb.STATUS_CONNECTED,
+                constants.Wandb.DETAILS_CONNECTED.format(user=info["wandb_user"]),
             )
 
-        api_key_exists = os.environ.get(CLIConstants.Wandb.API_KEY_ENV) or api.api_key
+        api_key_exists = os.environ.get(constants.Wandb.API_KEY_ENV) or api.api_key
         if api_key_exists:
             return (
-                CLIConstants.Wandb.STATUS_API_KEY,
-                CLIConstants.Wandb.DETAILS_API_KEY,
+                constants.Wandb.STATUS_API_KEY,
+                constants.Wandb.DETAILS_API_KEY,
             )
 
         return (
-            CLIConstants.Wandb.STATUS_NOT_CONNECTED,
-            CLIConstants.Wandb.DETAILS_NOT_CONNECTED,
+            constants.Wandb.STATUS_NOT_CONNECTED,
+            constants.Wandb.DETAILS_NOT_CONNECTED,
         )
 
     @staticmethod
-    def get_wandb_url(project: str = "thermur") -> str | None:
+    def get_wandb_url(constants, project: str = "thermur") -> str | None:
         """
         Generate wandb project URL if possible.
 
-        Constructs the wandb dashboard URL based on available authentication
-        information. It falls back to placeholder URLs when specific user
-        information is unavailable.
-
         Args:
-            project: The name of the wandb project.
+            constants : An instance of `CLIConstants`.
+            project   : The name of the wandb project.
 
         Returns:
             The URL to the wandb project dashboard, or None if not available.
         """
-        info = SystemInspector.get_system_info()
+        info = SystemInspector.get_system_info(constants)
 
         if not info["wandb_installed"]:
             return None
@@ -199,24 +196,21 @@ class SystemInspector:
         if info["wandb_user"]:
             return f"https://wandb.ai/{info['wandb_user']}/{project}"
 
-        entity = os.environ.get(CLIConstants.Wandb.ENTITY_ENV)
+        entity = os.environ.get(constants.Wandb.ENTITY_ENV)
         return (
             f"https://wandb.ai/{entity}/{project}"
             if entity
-            else f"https://wandb.ai/{CLIConstants.UI.WANDB_URL_PLACEHOLDER}/{project}"
+            else f"https://wandb.ai/{constants.UI.WANDB_URL_PLACEHOLDER}/{project}"
         )
 
     @staticmethod
-    def validate_config_overrides(overrides: list[str] | None) -> list[str]:
+    def validate_config_overrides(overrides: list[str] | None, constants) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
-        Performs syntax validation on configuration overrides and checks for
-        system compatibility issues. This helps catch common configuration
-        errors before training begins.
-
         Args:
-            overrides: A list of configuration overrides to validate.
+            overrides : A list of configuration overrides to validate.
+            constants : An instance of `CLIConstants`.
 
         Returns:
             A list of validation issues found; empty if all are valid.
@@ -227,16 +221,16 @@ class SystemInspector:
         issues = []
         for o in overrides:
             if "=" not in o:
-                issues.append(f"{CLIConstants.System.INVALID_OVERRIDE_FORMAT}: {o}")
+                issues.append(f"{constants.System.INVALID_OVERRIDE_FORMAT}: {o}")
                 continue
 
             key            = o.split("=")[0]
             sanitized_key  = key.lstrip("+").replace(".", "").replace("_", "")
             key_is_invalid = not sanitized_key.isalnum()
             if key_is_invalid:
-                issues.append(f"{CLIConstants.System.INVALID_OVERRIDE_KEY}: {o}")
+                issues.append(f"{constants.System.INVALID_OVERRIDE_KEY}: {o}")
 
-        if not SystemInspector.get_system_info()["cuda"]:
-            issues.append(CLIConstants.System.GPU_UNAVAILABLE)
+        if not SystemInspector.get_system_info(constants)["cuda"]:
+            issues.append(constants.System.GPU_UNAVAILABLE)
 
         return issues

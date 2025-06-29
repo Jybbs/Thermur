@@ -5,7 +5,6 @@ This module provides a consistent console interface leveraging Rich's
 built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
-from .constants    import CLIConstants
 from rich          import progress
 from rich.align    import Align
 from rich.console  import Console
@@ -19,14 +18,25 @@ from rich.theme    import Theme
 
 class ThermurUI:
     """
-    Manages all Rich console rendering for the Thermur CLI.
+    Manages all console rendering for the Thermur CLI using the Rich library.
+
+    This class centralizes the creation of styled components like headers, tables,
+    panels, and progress bars. It receives a `CLIConstants` object during
+    initialization, which it uses to configure all visual styles. This ensures a
+    consistent look and feel across the entire application. It is instantiated
+    once in `app.py` and passed to other components that need to render output.
     """
-    def __init__(self):
+    def __init__(self, constants):
         """
         Initializes the ThermurUI with a configured Rich console.
+
+        Args:
+            constants: An instance of `CLIConstants` containing all static
+                       style and text data for the CLI.
         """
-        self.console = Console(
-            theme     = Theme(CLIConstants.Theme.STYLES),
+        self.constants = constants
+        self.console   = Console(
+            theme     = Theme(self.constants.Theme.STYLES),
             highlight = False
         )
 
@@ -46,7 +56,7 @@ class ThermurUI:
             Rich Text object with fire gradient colors applied per character
         """
         formatted_text = Text()
-        fire_colors    = CLIConstants.Theme.FIRE_GRADIENT_STYLED
+        fire_colors    = self.constants.Theme.FIRE_GRADIENT_STYLED
         
         for i, char in enumerate(text):
             color_index = i % len(fire_colors)
@@ -76,24 +86,24 @@ class ThermurUI:
             parts = title.split("Thermur", 1)
             
             if parts[0]:
-                title_text.append(parts[0], style=CLIConstants.UI.HEADER_TEXT_STYLE)
+                title_text.append(parts[0], style=self.constants.UI.HEADER_TEXT_STYLE)
             
             title_text.append_text(self.format_fire_gradient_text("Thermur"))
             
             if parts[1]:
-                title_text.append(parts[1], style=CLIConstants.UI.HEADER_TEXT_STYLE)
+                title_text.append(parts[1], style=self.constants.UI.HEADER_TEXT_STYLE)
         else:
-            title_text.append(title, style=CLIConstants.UI.TITLE_TEXT_STYLE)
+            title_text.append(title, style=self.constants.UI.TITLE_TEXT_STYLE)
         
         if subtitle:
             title_text.append("\n")
-            title_text.append(subtitle, style=CLIConstants.UI.SUBTITLE_TEXT_STYLE)
+            title_text.append(subtitle, style=self.constants.UI.SUBTITLE_TEXT_STYLE)
         
         return Panel(
             Align.center(title_text),
-            border_style = CLIConstants.UI.PANEL_BORDER_STYLE,
-            box          = CLIConstants.UI.PANEL_BOX,
-            padding      = CLIConstants.UI.PANEL_PADDING,
+            border_style = self.constants.UI.PANEL_BORDER_STYLE,
+            box          = self.constants.UI.PANEL_BOX,
+            padding      = self.constants.UI.PANEL_PADDING,
         )
 
     def print_header(self, title: str, subtitle: str | None = None):
@@ -112,7 +122,7 @@ class ThermurUI:
     def print_section(
         self,
         title: str,
-        style: str = CLIConstants.UI.DEFAULT_SECTION_STYLE
+        style: str = self.constants.UI.DEFAULT_SECTION_STYLE
     ):
         """
         Print a section divider with title.
@@ -139,9 +149,9 @@ class ThermurUI:
             message  : The message text to display
             msg_type : Type of message (info, warning, error, etc.)
         """
-        config = CLIConstants.Messages.TYPES.get(
+        config = self.constants.Messages.TYPES.get(
             msg_type, 
-            CLIConstants.Messages.TYPES["info"]
+            self.constants.Messages.TYPES["info"]
         )
         
         self.console.print(
@@ -166,15 +176,15 @@ class ThermurUI:
             note        : Optional note about the command
         """
         self.console.print(
-            f"  [{CLIConstants.UI.MUTED_STYLE}]{description}:[/]"
+            f"  [{self.constants.UI.MUTED_STYLE}]{description}:[/]"
         )
         self.console.print(
-            f"  [{CLIConstants.UI.COMMAND_STYLE}]$ {command}[/]"
+            f"  [{self.constants.UI.COMMAND_STYLE}]$ {command}[/]"
         )
         
         if note:
             self.console.print(
-                f"  [{CLIConstants.UI.DIM_STYLE}]  {note}[/]"
+                f"  [{self.constants.UI.DIM_STYLE}]  {note}[/]"
             )
         
         self.console.print()
@@ -198,22 +208,22 @@ class ThermurUI:
         """
         if desc:
             self.console.print(
-                f"  [{CLIConstants.Theme.STYLES['accent']}]{key}[/] = "
-                f"[{CLIConstants.UI.WHITE_STYLE}]{value}[/]  "
-                f"[{CLIConstants.Theme.STYLES['dim']}]# {desc}[/]"
+                f"  [{self.constants.Theme.STYLES['accent']}]{key}[/] = "
+                f"[{self.constants.UI.WHITE_STYLE}]{value}[/]  "
+                f"[{self.constants.Theme.STYLES['dim']}]# {desc}[/]"
             )
 
         else:
             self.console.print(
-                f"  [{CLIConstants.Theme.STYLES['accent']}]{key}[/] = "
-                f"[{CLIConstants.UI.WHITE_STYLE}]{value}[/]"
+                f"  [{self.constants.Theme.STYLES['accent']}]{key}[/] = "
+                f"[{self.constants.UI.WHITE_STYLE}]{value}[/]"
             )
 
     def print_status_badge(
         self,
         label  : str,
         status : str,
-        style  : str = CLIConstants.UI.DEFAULT_BADGE_STYLE,
+        style  : str = self.constants.UI.DEFAULT_BADGE_STYLE,
     ):
         """
         Print a status badge.
@@ -240,17 +250,17 @@ class ThermurUI:
             project : The wandb project name
             url     : Optional URL to the project dashboard
         """
-        icon = CLIConstants.UI.WANDB_ICON
-        if url and CLIConstants.UI.WANDB_URL_PLACEHOLDER not in url:
+        icon = self.constants.UI.WANDB_ICON
+        if url and self.constants.UI.WANDB_URL_PLACEHOLDER not in url:
             self.console.print(
-                f"[{CLIConstants.Theme.STYLES['swarm']}]{icon} Dashboard: "
+                f"[{self.constants.Theme.STYLES['swarm']}]{icon} Dashboard: "
                 f"[link={url}]{url}[/link][/]"
             )
 
         else:
             self.console.print(
-                f"[{CLIConstants.Theme.STYLES['swarm']}]{icon} Project: "
-                f"[{CLIConstants.UI.CYAN_STYLE}]{project}[/][/]"
+                f"[{self.constants.Theme.STYLES['swarm']}]{icon} Project: "
+                f"[{self.constants.UI.CYAN_STYLE}]{project}[/][/]"
             )
 
     def print_training_tips(self):
@@ -261,18 +271,18 @@ class ThermurUI:
         training runs, using tips from centralized constants.
         """
         self.print_section(
-            title = CLIConstants.Tips.SECTION_TITLE, 
-            style = CLIConstants.Tips.SECTION_STYLE
+            title = self.constants.Tips.SECTION_TITLE, 
+            style = self.constants.Tips.SECTION_STYLE
         )
         
-        for tip in CLIConstants.Tips.TRAINING:
+        for tip in self.constants.Tips.TRAINING:
             self.console.print(
-                f"  [{CLIConstants.Tips.BULLET_STYLE}]"
-                f"{CLIConstants.UI.BULLET_CHAR}"
-                f"[/{CLIConstants.Tips.BULLET_STYLE}] {tip['desc']}"
+                f"  [{self.constants.Tips.BULLET_STYLE}]"
+                f"{self.constants.UI.BULLET_CHAR}"
+                f"[/{self.constants.Tips.BULLET_STYLE}] {tip['desc']}"
             )
             self.console.print(
-                f"    [{CLIConstants.Theme.STYLES['dim']}]{tip['command']}[/]"
+                f"    [{self.constants.Theme.STYLES['dim']}]{tip['command']}[/]"
             )
         
         self.console.print()
@@ -291,26 +301,26 @@ class ThermurUI:
         return progress.Progress(
 
             progress.SpinnerColumn(
-                spinner_name = CLIConstants.UI.PROGRESS_SPINNER,
-                style        = CLIConstants.UI.PROGRESS_STYLE,
+                spinner_name = self.constants.UI.PROGRESS_SPINNER,
+                style        = self.constants.UI.PROGRESS_STYLE,
             ),
 
             progress.TextColumn(
-                f"[{CLIConstants.UI.PROGRESS_STYLE}]"
+                f"[{self.constants.UI.PROGRESS_STYLE}]"
                 "{task.description}"
-                f"[/{CLIConstants.UI.PROGRESS_STYLE}]"
+                f"[/{self.constants.UI.PROGRESS_STYLE}]"
             ),
             progress.BarColumn(
-                bar_width      = CLIConstants.UI.PROGRESS_BAR_WIDTH,
-                complete_style = CLIConstants.UI.PROGRESS_COMPLETE_STYLE,
-                style          = CLIConstants.UI.PROGRESS_STYLE,
+                bar_width      = self.constants.UI.PROGRESS_BAR_WIDTH,
+                complete_style = self.constants.UI.PROGRESS_COMPLETE_STYLE,
+                style          = self.constants.UI.PROGRESS_STYLE,
             ),
 
             progress.TaskProgressColumn(),
-            CLIConstants.UI.BULLET_CHAR,
+            self.constants.UI.BULLET_CHAR,
 
             progress.TimeElapsedColumn(),
-            CLIConstants.UI.BULLET_CHAR,
+            self.constants.UI.BULLET_CHAR,
 
             progress.MofNCompleteColumn(),
             console   = self.console,
@@ -345,16 +355,16 @@ class ThermurUI:
             Configured Table instance ready for content population
         """
         if border_style is None:
-            border_style = CLIConstants.UI.TABLE_BORDER_STYLE
+            border_style = self.constants.UI.TABLE_BORDER_STYLE
             
         table = Table(
             title        = title,
-            title_style  = CLIConstants.UI.TABLE_TITLE_STYLE,
-            header_style = CLIConstants.UI.TABLE_HEADER_STYLE,
+            title_style  = self.constants.UI.TABLE_TITLE_STYLE,
+            header_style = self.constants.UI.TABLE_HEADER_STYLE,
             border_style = border_style,
-            box          = CLIConstants.UI.TABLE_BOX,
+            box          = self.constants.UI.TABLE_BOX,
             show_edge    = show_edge,
-            padding      = CLIConstants.UI.TABLE_PADDING,
+            padding      = self.constants.UI.TABLE_PADDING,
             expand       = expand,
             **kwargs,
         )
@@ -385,19 +395,19 @@ class ThermurUI:
             A formatted Rich table containing system diagnostics.
         """
         table = self.create_aligned_table(
-            title   = CLIConstants.System.TABLE_TITLE,
-            columns = [(c["header"], c["style"], c["width"], "left") for c in CLIConstants.System.TABLE_COLUMNS],
-            **CLIConstants.System.TABLE_SETTINGS,
+            title   = self.constants.System.TABLE_TITLE,
+            columns = [(c["header"], c["style"], c["width"], "left") for c in self.constants.System.TABLE_COLUMNS],
+            **self.constants.System.TABLE_SETTINGS,
         )
 
-        for key, title in CLIConstants.System.SYSTEM_COMPONENTS.items():
-            logic = CLIConstants.System.SYSTEM_LOGIC[key]
+        for key, title in self.constants.System.SYSTEM_COMPONENTS.items():
+            logic = self.constants.System.SYSTEM_LOGIC[key]
             
             if logic.get("is_resource"):
                 progress_bar, details_text = self.format_resource_display(
                     available_gb = system_info.get(f"{key}_available", 0),
                     total_gb     = system_info.get(f"{key}_total", 0),
-                    thresholds   = getattr(CLIConstants.SystemChecks, f"{str.upper(key)}_THRESHOLDS"),
+                    thresholds   = getattr(self.constants.SystemChecks, f"{str.upper(key)}_THRESHOLDS"),
                 )
                 details = f"{progress_bar}\n{details_text}"
 
@@ -431,12 +441,12 @@ class ThermurUI:
             A configured Panel object.
         """
         example_text = "\n".join(
-            f"  {CLIConstants.UI.BULLET_CHAR} {item}" for item in items
+            f"  {self.constants.UI.BULLET_CHAR} {item}" for item in items
         )
-        content = f"[{CLIConstants.UI.CYAN_STYLE}]{title}:[/]\n{example_text}"
+        content = f"[{self.constants.UI.CYAN_STYLE}]{title}:[/]\n{example_text}"
         return Panel(
             content,
-            border_style = CLIConstants.UI.PANEL_BORDER_STYLE,
+            border_style = self.constants.UI.PANEL_BORDER_STYLE,
             padding      = (0, 2),
         )
 
@@ -456,12 +466,12 @@ class ThermurUI:
         """
         return Panel(
             title        = title,
-            border_style = CLIConstants.UI.PANEL_BORDER_STYLE,
+            border_style = self.constants.UI.PANEL_BORDER_STYLE,
             padding      = (1, 2),
             renderable   = Syntax(
                 code         = code,
                 lexer        = "yaml",
-                theme        = CLIConstants.UI.SYNTAX_THEME,
+                theme        = self.constants.UI.SYNTAX_THEME,
                 line_numbers = False,
             ),
         )
@@ -480,14 +490,14 @@ class ThermurUI:
         Returns:
             A configured Panel object with warning styling.
         """
-        style = CLIConstants.Theme.STYLES['warning']
+        style = self.constants.Theme.STYLES['warning']
 
         return Panel(
             border_style = style, 
             padding      = (1, 2),
             renderable   = (
                 f"[bold {style}]{title}[/]\n\n" +
-                "\n".join(f"{CLIConstants.UI.BULLET_CHAR} {i}" for i in issues)
+                "\n".join(f"{self.constants.UI.BULLET_CHAR} {i}" for i in issues)
             )
         )
 
@@ -505,16 +515,16 @@ class ThermurUI:
         Returns:
             A configured Panel object with success styling.
         """
-        style = CLIConstants.Theme.STYLES['success']
+        style = self.constants.Theme.STYLES['success']
         content = Align.center(
             f"[bold {style}]{title}[/]\n"
-            f"[{CLIConstants.UI.MUTED_STYLE}]{subtitle}[/]",
+            f"[{self.constants.UI.MUTED_STYLE}]{subtitle}[/]",
             vertical="middle",
         )
         return Panel(
             content, 
             border_style = style, 
-            padding      = CLIConstants.UI.PANEL_PADDING
+            padding      = self.constants.UI.PANEL_PADDING
         )
 
     def create_feature_table(self):
@@ -528,11 +538,11 @@ class ThermurUI:
             A formatted table with feature information
         """
         table = self.create_aligned_table(
-            title   = CLIConstants.Features.TABLE_TITLE,
-            columns = CLIConstants.Features.TABLE_COLUMNS,
+            title   = self.constants.Features.TABLE_TITLE,
+            columns = self.constants.Features.TABLE_COLUMNS,
         )
         
-        for feature in CLIConstants.Features.LIST:
+        for feature in self.constants.Features.LIST:
             table.add_row(feature["name"], feature["desc"], feature["status"])
         
         return table
@@ -558,14 +568,14 @@ class ThermurUI:
             Rich markup string representing the styled progress bar
         """
         if length is None:
-            length = CLIConstants.System.PROGRESS_BAR_LENGTH
+            length = self.constants.System.PROGRESS_BAR_LENGTH
             
         return (
             f"[{color}]"
-            f"{CLIConstants.UI.FILLED_CHAR * int(used_fraction * length)}"
-            f"[/{color}][{CLIConstants.UI.PROGRESS_UNFILLED_COLOR}]"
-            f"{CLIConstants.UI.UNFILLED_CHAR * (length - int(used_fraction * length))}"
-            f"[/{CLIConstants.UI.PROGRESS_UNFILLED_COLOR}]"
+            f"{self.constants.UI.FILLED_CHAR * int(used_fraction * length)}"
+            f"[/{color}][{self.constants.UI.PROGRESS_UNFILLED_COLOR}]"
+            f"{self.constants.UI.UNFILLED_CHAR * (length - int(used_fraction * length))}"
+            f"[/{self.constants.UI.PROGRESS_UNFILLED_COLOR}]"
         )
 
     def format_resource_display(
@@ -595,13 +605,13 @@ class ThermurUI:
         low_thresh, med_thresh = thresholds
         
         color = (
-            CLIConstants.UI.RESOURCE_COLOR_CRITICAL if available_gb < low_thresh else
-            CLIConstants.UI.RESOURCE_COLOR_WARNING  if available_gb < med_thresh else
-            CLIConstants.UI.RESOURCE_COLOR_GOOD
+            self.constants.UI.RESOURCE_COLOR_CRITICAL if available_gb < low_thresh else
+            self.constants.UI.RESOURCE_COLOR_WARNING  if available_gb < med_thresh else
+            self.constants.UI.RESOURCE_COLOR_GOOD
         )
         
         progress_bar = self.create_progress_bar(color, used_fraction)
-        details_text = CLIConstants.UI.RESOURCE_DETAILS_TEMPLATE.format(
+        details_text = self.constants.UI.RESOURCE_DETAILS_TEMPLATE.format(
             available_gb, unit, total_gb, unit
         )
         

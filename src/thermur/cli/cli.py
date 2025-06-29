@@ -1,32 +1,35 @@
 """
 Enhanced console-script target for Thermur, built with Typer and Rich.
 
-This module provides the main CLI interface with visual feedback, system 
+This module provides the main CLI interface with visual feedback, system
 validation, configuration management, and seamless wandb integration.
 
 The execution flow is:
 1. User runs `thermur <command>` in the terminal
 2. The `[project.scripts]` entry in `pyproject.toml` points to `src.__main__:cli`
-3. `src.__main__.py` calls the `app` object from this file
+3. `src.__main__.py` calls the `cli` object from this file
 4. Typer parses the command-line arguments and invokes the appropriate function
 """
-import sys
-import time
-import typer
-import webbrowser
+from .ui         import ThermurUI
+from .constants  import CLIConstants
+from .explorer   import ConfigExplorer
+from .prompts    import CLIPrompts
+from .system     import SystemInspector
+from sys         import argv
+from time        import sleep
+from typer       import Context, Exit, Option, Typer
+from webbrowser  import open
+
+# Create single, shared instances of the core CLI components.
+constants = CLIConstants()
+ui        = ThermurUI(constants)
+system    = SystemInspector()
+prompts   = CLIPrompts(ui, constants)
 
 
-from .ui   import *
-from .constants import CLIConstants
-from .explorer  import ConfigExplorer
-from .prompts   import *
-from .system    import *
-from importlib  import metadata
-
-
-app = typer.Typer(
-    name                     = CLIConstants.Core.APP_NAME,
-    help                     = CLIConstants.Core.APP_DESCRIPTION,
+cli = Typer(
+    name                     = constants.Core.APP_NAME,
+    help                     = constants.Core.APP_DESCRIPTION,
     add_completion           = False,
     rich_markup_mode         = "rich",
     no_args_is_help          = True,
@@ -37,67 +40,63 @@ app = typer.Typer(
 def version_callback(value: bool):
     """
     Show version information with system details.
-    
+
     Displays comprehensive version information including system hardware,
     software versions, and integration status when the --version flag is used.
-    
+
     Args:
         value : True if --version flag is present
     """
     if not value:
         return
-    
-    print_header("Thermur", "Thermal Drone Swarm Training")
-    
-    # Get version info
-    info = get_system_info()
-    print_config_value("Version", f"v{info['thermur']}", "Thermur package version")
-    print_config_value("Python",  f"v{info['python']}",  "Python runtime version")
-    print_config_value("PyTorch", f"v{info['torch']}",   "Deep learning framework")
-    console.print()
-    
-    # Display system info table
-    table = create_system_table(console)
-    console.print(table)
-    
-    # wandb status
-    print_section("Integration Status", style="swarm")
-    status, details = check_wandb_status()
-    console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
-    
-    # Show quick start
-    print_section("Quick Start", style="bright_green")
-    
-    for example in CLIConstants.Commands.EXAMPLES[:2]:
-        print_command_example(example["desc"], example["command"], example["note"])
-    
-    raise typer.Exit()
+
+    ui.print_header(constants.Headers.MAIN_TITLE, constants.Headers.MAIN_SUBTITLE)
+
+    info = system.get_system_info(constants)
+    ui.print_config_value("Version", f"v{info['thermur']}", "Thermur package version")
+    ui.print_config_value("Python",  f"v{info['python']}",  "Python runtime version")
+    ui.print_config_value("PyTorch", f"v{info['torch']}",   "Deep learning framework")
+    ui.console.print()
+
+    table = ui.create_system_table(info)
+    ui.console.print(table)
+
+    ui.print_section(constants.Sections.INTEGRATION_STATUS, style="swarm")
+    status, details = system.check_wandb_status(constants)
+    ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
+
+    ui.print_section(constants.Sections.QUICK_START, style="bright_green")
+
+    for example in constants.Commands.EXAMPLES[:2]:
+        ui.print_command_example(example["desc"], example["command"], example["note"])
+
+    raise Exit()
 
 
-@app.command("train")
+@cli.command("train")
 def train(
-    ctx: typer.Context,
-    preset: str | None = typer.Option(
+    ctx: Context,
+    preset: str | None = Option(
         None,
         "--preset", "-p",
         help="Configuration preset (quick, standard, large, debug)"
     ),
-    interactive: bool = typer.Option(
+    interactive: bool = Option(
         True,
         "--interactive/--no-interactive", "-i/-n",
         help="Enable interactive configuration prompts"
     ),
-    force: bool = typer.Option(
+    force: bool = Option(
         False,
         "--force", "-f",
         help="Skip system checks and warnings"
     ),
-    wandb_project: str | None = typer.Option(
+    wandb_project: str | None = Option(
         None,
         "--wandb-project", "-w",
         help="wandb project name for experiment tracking"
     ),
-    config_overrides: list[str] | None = typer.Option(
+    config_overrides: list[str] | None = Option(
         None,
         "--config", "-c",
         help="Hydra configuration overrides"
@@ -105,29 +104,27 @@ def train(
 ):
     """
     🔥 Train the thermal drone swarm using imitation learning.
-    
-    This command provides a comprehensive training workflow with system 
+
+    This command provides a comprehensive training workflow with system
     validation, configuration management, and seamless wandb integration.
-    
+
     Examples:
-        thermur train                                    # Interactive training
-        thermur train --preset quick                     # Quick test run
+        thermur train                                   # Interactive training
+        thermur train --preset quick                    # Quick test run
         thermur train --config hyperparameters.lr=0.01  # Custom learning rate
         thermur train --wandb-project my-experiment     # Custom wandb project
         thermur train --no-interactive --force          # Non-interactive mode
     """
-    print_header(
-        "Thermur Training System",
-        "Thermally-constrained drone swarm imitation learning"
+    ui.print_header(
+        constants.Headers.TRAIN_TITLE,
+        constants.Headers.TRAIN_SUBTITLE
     )
-    
-    # System validation
+
     if not force:
         _perform_system_validation()
     else:
-        print_message("Skipping system checks (--force enabled)", "warning")
-    
-    # Configuration setup
+        ui.print_message(constants.Messages.SKIPPING_CHECKS, "warning")
+
     preset, wandb_project, config_overrides = _setup_configuration(
         preset           = preset,
         wandb_project    = wandb_project,
@@ -135,37 +132,37 @@ def train(
         interactive      = interactive,
         force            = force,
     )
-    
-    # Final confirmation
+
     if interactive:
         _confirm_training_setup(preset, wandb_project, config_overrides)
-    
-    # Start training
+
     _initiate_training(preset, config_overrides, wandb_project)
 
 
 def _perform_system_validation():
     """
     Perform comprehensive system validation checks.
-    
+
     Validates hardware capabilities, software versions, and integration status
-    before proceeding with training initialization.
+    before proceeding with training initialization. This function includes a
+    brief pause to improve the user's perception of the check being performed.
     """
-    print_section("System Validation", "thermal")
-    
-    with console.status(
-        "[thermal]Checking system requirements...[/thermal]", 
+    ui.print_section(constants.Sections.SYSTEM_VALIDATION, "thermal")
+
+    with ui.console.status(
+        constants.Status.CHECKING_REQS,
         spinner="dots"
     ):
-        time.sleep(0.5)  # Brief pause for visual effect
-        table = create_system_table(console)
-    
-    console.print(table)
-    console.print()
-    
-    status, details = check_wandb_status()
-    console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
-    console.print()
+        sleep(0.5)  # Brief pause for visual effect
+        info = system.get_system_info(constants)
+        table = ui.create_system_table(info)
+
+    ui.console.print(table)
+    ui.console.print()
+
+    status, details = system.check_wandb_status(constants)
+    ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
+    ui.console.print()
 
 
 def _setup_configuration(
@@ -177,72 +174,75 @@ def _setup_configuration(
 ) -> tuple[str | None, str, list[str] | None]:
     """
     Setup and validate training configuration.
-    
+
     Handles preset selection, wandb project naming, and configuration overrides
-    through interactive prompts or defaults.
-    
+    through interactive prompts or command-line flags, then validates the
+    resulting configuration before proceeding.
+
     Args:
         preset           : Configuration preset name
         wandb_project    : wandb project name
         config_overrides : Hydra configuration overrides
         interactive      : Whether to use interactive prompts
         force            : Whether to skip validation
-        
+
     Returns:
         Tuple of (preset, wandb_project, config_overrides)
     """
-    print_section("Configuration Setup", "accent")
-    
-    # Select preset
+    ui.print_section(constants.Sections.CONFIG_SETUP, "accent")
+
     if interactive and not preset:
-        preset = select_configuration_preset()
-    
+        preset = prompts.select_configuration_preset()
+
     if preset:
-        print_message(
-            f"Using preset: [bright_cyan]{preset}[/bright_cyan]", 
+        ui.print_message(
+            f"Using preset: [bright_cyan]{preset}[/bright_cyan]",
             "config"
         )
-    
-    # Setup wandb project
+
     if interactive and not wandb_project:
-        wandb_project = ask_wandb_project_name()
+        wandb_project = prompts.ask_wandb_project_name()
     elif not wandb_project:
-        wandb_project = CLIConstants.Wandb.DEFAULT_PROJECT
-    
-    # Handle configuration overrides
+        wandb_project = constants.Wandb.DEFAULT_PROJECT
+
     if interactive and not config_overrides:
-        additional = ask_for_config_overrides()
+        additional       = prompts.ask_for_config_overrides()
         config_overrides = (config_overrides or []) + additional
-    
-    # Validate configuration
-    issues = validate_config_overrides(config_overrides)
-    
+
+    issues = system.validate_config_overrides(config_overrides, constants)
+
     if issues and not force:
         _handle_configuration_issues(issues, interactive)
-    
+
     return preset, wandb_project, config_overrides
 
 
 def _handle_configuration_issues(issues: list[str], interactive: bool):
     """
     Handle configuration validation issues.
-    
+
+    If in interactive mode, displays the issues and asks the user to confirm
+    if they wish to proceed. In non-interactive mode, it prints the errors
+    and exits with a non-zero status code.
+
     Args:
         issues      : List of validation issues
         interactive : Whether to prompt for confirmation
     """
-    if interactive and not confirm_system_override(issues):
-        print_message("Training cancelled by user.", "warning")
-        raise typer.Exit()
+    if interactive and not prompts.confirm_system_override(issues):
+        ui.print_message(constants.Messages.TRAINING_CANCELLED, "warning")
+        raise Exit()
+
     elif not interactive:
-        print_message("Configuration validation failed:", "error")
+        ui.print_message(constants.Validation.CONFIG_FAIL_MSG, "error")
+
         for issue in issues:
-            console.print(f"  • {issue}")
-        print_message(
-            "Use --force to override or fix the issues above.", 
+            ui.console.print(f"  • {issue}")
+        ui.print_message(
+            constants.Validation.FORCE_OVERRIDE_TIP,
             "info"
         )
-        raise typer.Exit(1)
+        raise Exit(1)
 
 
 def _confirm_training_setup(
@@ -252,23 +252,26 @@ def _confirm_training_setup(
 ):
     """
     Show training summary and get final confirmation.
-    
+
+    Presents a final summary of all settings to the user. This is the last
+    chance for a user to cancel before the training process begins.
+
     Args:
         preset           : Configuration preset
         wandb_project    : wandb project name
         config_overrides : Configuration overrides
     """
-    info = get_system_info()
+    info = system.get_system_info(constants)
     summary = {
         "preset"        : preset or "default",
         "wandb_project" : wandb_project,
         "overrides"     : len(config_overrides or []),
         "gpu_available" : info["cuda"],
     }
-    
-    if not show_training_summary(summary):
-        print_message("Training cancelled by user.", "warning")
-        raise typer.Exit()
+
+    if not prompts.show_training_summary(summary):
+        ui.print_message(constants.Messages.TRAINING_CANCELLED, "warning")
+        raise Exit()
 
 
 def _initiate_training(
@@ -278,27 +281,32 @@ def _initiate_training(
 ):
     """
     Initialize and start the training process.
-    
+
+    This function serves as the final gateway before running the core training
+    logic, handling any exceptions that may occur during the run.
+
     Args:
         preset           : Configuration preset
         config_overrides : Configuration overrides
         wandb_project    : wandb project name
     """
-    print_section("Initializing Training", "thermal")
-    
-    url = get_wandb_url(wandb_project)
-    print_wandb_info(wandb_project, url)
-    console.print()
-    
+    ui.print_section(constants.Sections.INIT_TRAINING, "thermal")
+
+    url = system.get_wandb_url(constants, wandb_project)
+    ui.print_wandb_info(wandb_project, url)
+    ui.console.print()
+
     try:
         _run_training(preset, config_overrides, wandb_project)
+
     except KeyboardInterrupt:
-        console.print()
-        print_message("Training interrupted by user.", "warning")
-        raise typer.Exit()
+        ui.console.print()
+        ui.print_message(constants.Messages.TRAINING_INTERRUPTED, "warning")
+        raise Exit()
+
     except Exception as e:
-        print_message(f"Training failed: {str(e)}", "error")
-        raise typer.Exit(1)
+        ui.print_message(constants.Messages.TRAINING_FAILED_TPL.format(e=e), "error")
+        raise Exit(1)
 
 
 def _run_training(
@@ -308,35 +316,33 @@ def _run_training(
 ):
     """
     Execute the training workflow with progress tracking.
-    
+
     This function manages the lazy loading of training dependencies and
     orchestrates the component initialization process with visual feedback.
-    
+
     Args:
         preset           : Configuration preset to use
         config_overrides : List of Hydra configuration overrides
         wandb_project    : wandb project name
     """
-    print_message("Loading training components...", "info")
-    
-    # Build Hydra configuration
+    ui.print_message(constants.Messages.LOADING_COMPONENTS, "info")
+
     hydra_train = _build_hydra_configuration(
         preset           = preset,
         config_overrides = config_overrides,
         wandb_project    = wandb_project,
     )
-    
-    console.print()
-    
-    # Execute with config
+
+    ui.console.print()
+
     if preset or config_overrides:
         args = []
         if preset:
             args.append(f"+preset={preset}")
         if config_overrides:
             args.extend(config_overrides)
-        sys.argv.extend(args)
-    
+        argv.extend(args)
+
     hydra_train()
 
 
@@ -347,46 +353,49 @@ def _build_hydra_configuration(
 ):
     """
     Build Hydra configuration with lazy imports.
-    
+
+    This function wraps the core training logic in a Hydra-decorated function.
+    Heavy dependencies like Hydra and PyTorch are imported lazily inside this
+    function to keep the CLI startup fast for other commands.
+
     Args:
         preset           : Configuration preset
         config_overrides : Configuration overrides
         wandb_project    : wandb project name
-        
+
     Returns:
         Hydra-decorated training function
     """
-    with create_progress() as progress:
-        task = progress.add_task("Initializing core modules...", total=100)
-        
-        # Lazy imports
+    with ui.create_thermal_progress() as progress:
+        task = progress.add_task(constants.Status.INIT_MODULES, total=100)
+
         progress.update(
-            task, 
-            advance     = 20, 
-            description = "Loading configuration system..."
+            task,
+            advance     = 20,
+            description = constants.Status.LOADING_CONFIG_SYS
         )
         from configs                        import imitation_config, register_configs
         from hydra_zen                      import instantiate, zen
         from hydra_zen.third_party.pydantic import pydantic_parser
         from thermur                        import (
-            configure_loguru, 
-            set_seed, 
+            configure_loguru,
+            set_seed,
             train_imitation_learning
         )
-        
+
         progress.update(
-            task, 
-            advance     = 30, 
-            description = "Registering configurations..."
+            task,
+            advance     = 30,
+            description = constants.Status.REGISTERING_CONFIGS
         )
         register_configs()
-        
+
         progress.update(
-            task, 
-            advance     = 50, 
-            description = "Preparing Hydra runtime..."
+            task,
+            advance     = 50,
+            description = constants.Status.PREPARING_HYDRA
         )
-        
+
         @zen(imitation_config).hydra_main(
             config_name            = "train",
             config_path            = None,
@@ -396,7 +405,7 @@ def _build_hydra_configuration(
         def hydra_train(cfg):
             """
             Execute training with resolved configuration.
-            
+
             This inner function is decorated with Hydra to handle configuration
             resolution and instantiation of all training components.
             """
@@ -408,9 +417,9 @@ def _build_hydra_configuration(
                 set_seed                 = set_seed,
                 train_imitation_learning = train_imitation_learning,
             )
-        
-        progress.update(task, advance=100, description="Ready to train!")
-    
+
+        progress.update(task, advance=100, description=constants.Status.READY_TO_TRAIN)
+
     return hydra_train
 
 
@@ -424,7 +433,11 @@ def _execute_training_workflow(
 ):
     """
     Execute the main training workflow with component instantiation.
-    
+
+    This function takes the resolved Hydra configuration and uses it to set up
+    logging, random seeds, and instantiate all necessary training components
+    before starting the main training loop.
+
     Args:
         cfg                      : Resolved Hydra configuration
         instantiate              : Hydra-zen instantiate function
@@ -433,186 +446,168 @@ def _execute_training_workflow(
         set_seed                 : Random seed setting function
         train_imitation_learning : Main training function
     """
-    print_section("Building Training Components", "thermal")
-    
-    # Setup
+    ui.print_section(constants.Sections.BUILDING_COMPONENTS, "thermal")
+
     configure_loguru(
         instantiate(cfg.monitoring.logging, _parser=pydantic_parser)
     )
     set_seed(
         instantiate(cfg.hyperparameters, _parser=pydantic_parser).seed
     )
-    
-    # Build components
+
     components = _instantiate_training_components(
         cfg             = cfg,
         instantiate     = instantiate,
         pydantic_parser = pydantic_parser,
     )
-    
-    print_message("All components initialized successfully!", "success")
-    console.print()
-    
-    # Launch training
-    print_section("Training Started", "thermal")
-    print_message("Monitoring thermal constraints and swarm dynamics", "thermal")
-    print_message("Track progress in your wandb dashboard", "swarm")
-    console.print()
-    
+
+    ui.print_message(constants.Messages.COMPONENTS_INITIALIZED, "success")
+    ui.console.print()
+
+    ui.print_section(constants.Sections.TRAINING_STARTED, "thermal")
+    ui.print_message(constants.Messages.MONITORING_DYNAMICS, "thermal")
+    ui.print_message(constants.Messages.TRACK_WANDB, "swarm")
+    ui.console.print()
+
     train_imitation_learning(**components)
-    
-    console.print()
-    print_header("Training Complete! 🎉", "Your thermal swarm has learned to fly")
+
+    ui.console.print()
+    ui.print_header(
+        constants.Messages.TRAINING_COMPLETE_HEADER,
+        constants.Messages.TRAINING_COMPLETE_SUB
+    )
 
 
 def _instantiate_training_components(cfg, instantiate, pydantic_parser):
     """
     Instantiate all training components with progress tracking.
-    
+
+    Iterates through a predefined list of components from the constants file,
+    resolves their configurations from the main `cfg` object, and instantiates
+    them. A progress bar provides visual feedback on this setup process.
+
     Args:
         cfg             : Resolved Hydra configuration
         instantiate     : Hydra-zen instantiate function
         pydantic_parser : Pydantic parser
-        
+
     Returns:
         Dictionary of instantiated components
     """
-    with create_progress() as progress:
-        task = progress.add_task("Instantiating components...", total=9)
-        
+    with ui.create_thermal_progress() as progress:
+        component_configs = constants.Training.COMPONENT_CONFIGS
+        task = progress.add_task(
+            constants.Status.INSTANTIATING_COMPONENTS, total=len(component_configs)
+        )
+
         components = {}
-        component_configs = [
-            ("environment",       "simulation",        "🌍 Environment"),
-            ("expert_policy",     "expert_policy",     "🎓 Expert Policy"),
-            ("policy",            "policy",            "🧠 Learning Policy"),
-            ("data_collector",    "data_collector",    "📊 Data Collector"),
-            ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
-            ("loss_function",     "loss_function",     "📏 Loss Function"),
-            ("optimizer",         "optimizer",         "⚙️  Optimizer"),
-            ("hyperparameters",   "hyperparameters",   "🎛️  Hyperparameters"),
-            ("wandb_config",      "monitoring.wandb",  "📊 wandb Tracking"),
-        ]
-        
         for i, (key, config_path, display_name) in enumerate(component_configs):
             progress.update(
-                task, 
-                completed   = i, 
-                description = f"Setting up {display_name}..."
+                task,
+                completed   = i,
+                description = constants.Status.SETUP_COMPONENT_TPL.format(
+                    display_name=display_name
+                )
             )
-            time.sleep(0.2)  # Brief pause for visual effect
-            
-            # Handle nested configs
+            sleep(0.2)  # Brief pause for visual effect
+
             if "." in config_path:
                 parent, child = config_path.split(".")
                 config_obj = getattr(cfg, parent)[child]
             else:
                 config_obj = getattr(cfg, config_path)
-            
+
             components[key] = instantiate(config_obj, _parser=pydantic_parser)
-        
-        progress.update(task, completed=9)
-        
-        # Optional visualizer
-        if hasattr(cfg, 'visualization'):
+
+        progress.update(task, completed=len(component_configs))
+
+        visualizer_key = constants.Training.VISUALIZER_KEY
+        if hasattr(cfg, visualizer_key):
             components['visualizer'] = instantiate(
-                cfg.visualization, 
+                getattr(cfg, visualizer_key),
                 _parser=pydantic_parser
             )
         else:
             components['visualizer'] = None
-    
+
     return components
 
 
-@app.command("configure")
+@cli.command("configure")
 def configure():
     """
     🔧 Interactive configuration explorer and editor.
-    
+
     Navigate the configuration hierarchy interactively, view Pydantic schemas,
     and edit values without manually writing Hydra overrides.
     """
-    explorer  = ConfigExplorer()
+    explorer  = ConfigExplorer(ui, prompts, constants)
     overrides = explorer.explore_interactive()
-    
+
     if overrides:
-        console.print()
-        print_header("Generated Configuration Overrides")
-        
-        print_message("Add these to your training command:", "info")
-        console.print()
-        
-        # Build command
+        ui.console.print()
+        ui.print_header(constants.Headers.CONFIG_GEN_TITLE)
+
+        ui.print_message(constants.Messages.CONFIG_GEN_ADD_CMD, "info")
+        ui.console.print()
+
         cmd_parts = ["thermur train"]
         for override in overrides:
             cmd_parts.append(f'--config "{override}"')
-        
+
         command = " ".join(cmd_parts)
-        console.print(f"[bold accent]$ {command}[/bold accent]")
-        console.print()
-        
-        # Also show as separate lines
-        print_message("Or use them individually:", "tip")
+        ui.console.print(f"[bold accent]$ {command}[/bold accent]")
+        ui.console.print()
+
+        ui.print_message(constants.Messages.CONFIG_GEN_USE_IND, "tip")
         for override in overrides:
-            print_config_value("--config", override)
+            ui.print_config_value("--config", override)
     else:
-        print_message("No configuration changes made.", "info")
+        ui.print_message(constants.Messages.NO_CONFIG_CHANGES, "info")
 
 
-@app.command("info")
+@cli.command("info")
 def info():
     """
     📊 Display comprehensive system and configuration information.
-    
+
     Shows detailed information about the current system setup, including
     hardware capabilities, software versions, and configuration status.
     """
-    print_header("Thermur System Information")
-    
-    # System diagnostics
-    print_section("System Diagnostics", "thermal")
-    table = create_system_table(console)
-    console.print(table)
-    
-    # wandb status
-    print_section("Integration Status", "swarm")
-    status, details = check_wandb_status()
-    print_wandb_info(CLIConstants.Wandb.DEFAULT_PROJECT, get_wandb_url())
-    console.print(f"[muted]Status: {status} • {details}[/muted]")
-    
-    # Features
-    print_section("Features & Capabilities", "accent")
-    features_table = create_feature_table()
-    console.print(features_table)
-    
-    # Configuration info
-    print_section("Configuration System", "config")
-    print_config_value(
-        "Config Path", 
-        "configs/", 
+    ui.print_header(constants.Headers.INFO_TITLE)
+
+    _perform_system_validation()
+
+    ui.print_section(constants.Sections.FEATURES, "accent")
+    features_table = ui.create_feature_table()
+    ui.console.print(features_table)
+
+    ui.print_section(constants.Sections.CONFIG_SYSTEM, "config")
+    ui.print_config_value(
+        "Config Path",
+        "configs/",
         "Hydra configuration directory"
     )
-    
-    preset_names = ", ".join(CLIConstants.Presets.CONFIGS.keys())
-    print_config_value(
-        "Presets", 
-        preset_names, 
+
+    preset_names = ", ".join(constants.Presets.CONFIGS.keys())
+    ui.print_config_value(
+        "Presets",
+        preset_names,
         "Available training presets"
     )
-    
-    print_config_value(
-        "Explorer", 
-        "thermur configure", 
+
+    ui.print_config_value(
+        "Explorer",
+        "thermur configure",
         "Interactive configuration tool"
     )
-    
-    # Show tips
-    print_training_tips()
+
+    ui.print_training_tips()
 
 
-@app.command("validate")
+@cli.command("validate")
 def validate(
-    config_overrides: list[str] | None = typer.Option(
+    config_overrides: list[str] | None = Option(
         None,
         "--config", "-c",
         help="Configuration overrides to validate"
@@ -620,109 +615,99 @@ def validate(
 ):
     """
     ✅ Validate system setup and configuration without starting training.
-    
+
     Performs comprehensive validation of the training environment including
     system requirements, configuration syntax, and integration status.
     """
-    print_header("System Validation", "Pre-flight checks for training")
-    
-    # System validation
-    print_section("Hardware & Software", "thermal")
-    
-    with console.status(
-        "[thermal]Running system diagnostics...[/thermal]", 
+    ui.print_header(constants.Headers.VALIDATE_TITLE, constants.Headers.VALIDATE_SUBTITLE)
+
+    _perform_system_validation()
+
+    ui.print_section(constants.Sections.CONFIG_CHECK, "config")
+
+    with ui.console.status(
+        constants.Status.VALIDATING_CONFIG,
         spinner="dots"
     ):
-        time.sleep(0.5)
-        table = create_system_table(console)
-    
-    console.print(table)
-    
-    # Config validation
-    print_section("Configuration Check", "config")
-    
-    with console.status(
-        "[accent]Validating configuration...[/accent]", 
-        spinner="dots"
-    ):
-        time.sleep(0.3)
-        issues = validate_config_overrides(config_overrides)
-    
+        sleep(0.3)
+        issues = system.validate_config_overrides(config_overrides, constants)
+
     if issues:
-        print_message("Configuration issues found:", "warning")
+        ui.print_message(constants.Validation.CONFIG_ISSUES_FOUND, "warning")
         for issue in issues:
-            console.print(f"  [warning]⚠️  {issue}[/warning]")
+            ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
     else:
-        print_message("Configuration validation passed!", "success")
-    
-    # wandb validation
-    print_section("Integration Check", "swarm")
-    status, details = check_wandb_status()
-    
+        ui.print_message(constants.Validation.CONFIG_VALIDATION_PASSED, "success")
+
+    ui.print_section(constants.Sections.INTEGRATION_CHECK, "swarm")
+    status, details = system.check_wandb_status(constants)
+
     if "Not" in status:
-        print_message(f"wandb: {details}", "warning")
+        ui.print_message(f"wandb: {details}", "warning")
     else:
-        print_message(f"wandb: {details}", "success")
-    
-    # Summary
-    console.print()
+        ui.print_message(f"wandb: {details}", "success")
+
+    ui.console.print()
     if issues or "Not" in status:
-        print_message("⚠️  Validation completed with warnings", "warning")
-        print_message("Review the issues above before training", "tip")
+        ui.print_message(constants.Validation.VALIDATION_WITH_WARNINGS, "warning")
+        ui.print_message(constants.Validation.REVIEW_ISSUES_TIP, "tip")
     else:
-        print_message("✅ All validations passed!", "success")
-        print_message("Your system is ready for training", "success")
+        ui.print_message(constants.Validation.ALL_VALIDATIONS_PASSED, "success")
+        ui.print_message(constants.Validation.SYSTEM_READY, "success")
 
 
-@app.command("monitor")
+@cli.command("monitor")
 def monitor(
-    project: str = typer.Option(
-        CLIConstants.Wandb.DEFAULT_PROJECT,
+    project: str = Option(
+        constants.Wandb.DEFAULT_PROJECT,
         "--project", "-p",
         help="wandb project name to monitor"
     )
 ):
     """
     📈 Open wandb monitoring dashboard for the specified project.
-    
+
     Quickly opens the wandb dashboard in your default browser to monitor
     training progress, view metrics, and analyze experiment results.
     """
-    print_header("wandb Monitoring", f"Project: {project}")
-    
-    url = get_wandb_url(project)
-    
+    ui.print_header(
+        constants.Headers.MONITOR_TITLE,
+        constants.Headers.MONITOR_SUBTITLE_TPL.format(project=project)
+    )
+
+    url = system.get_wandb_url(constants, project)
+
     if not url:
-        print_message(
-            "wandb not available - install with 'pip install wandb'", 
+        ui.print_message(
+            constants.Messages.WANDB_UNAVAILABLE,
             "error"
         )
-        raise typer.Exit(1)
-    
-    print_message(
-        f"Opening dashboard for project: [bright_cyan]{project}[/bright_cyan]", 
+        raise Exit(1)
+
+    ui.print_message(
+        constants.Messages.BROWSER_LAUNCH_TPL.format(project=project),
         "swarm"
     )
-    print_wandb_info(project, url)
-    console.print()
-    
+    ui.print_wandb_info(project, url)
+    ui.console.print()
+
     try:
-        with console.status(
-            "[swarm]Launching browser...[/swarm]", 
+        with ui.console.status(
+            constants.Status.LAUNCHING_BROWSER,
             spinner="dots"
         ):
-            time.sleep(0.5)
-            webbrowser.open(url)
-        print_message("Dashboard opened in your default browser!", "success")
+            sleep(0.5)
+            open(url)
+        ui.print_message(constants.Messages.BROWSER_SUCCESS, "success")
     except Exception as e:
-        print_message(f"Failed to open browser: {str(e)}", "error")
-        print_message(f"Please visit manually: {url}", "info")
+        ui.print_message(constants.Messages.BROWSER_FAIL_TPL.format(e=e), "error")
+        ui.print_message(constants.Messages.BROWSER_MANUAL_TPL.format(url=url), "info")
 
 
-@app.callback(invoke_without_command=True)
+@cli.callback(invoke_without_command=True)
 def main_callback(
-    ctx: typer.Context,
-    version: bool | None = typer.Option(
+    ctx: Context,
+    version: bool | None = Option(
         None,
         "--version",
         "-v",
@@ -733,34 +718,30 @@ def main_callback(
 ):
     """
     🔥 Thermur: Thermally-constrained drone swarm training toolkit.
-    
-    A command-line interface for training and managing thermal drone 
+
+    A command-line interface for training and managing thermal drone
     swarm behaviors using imitation learning.
-    
+
     Use 'thermur <command> --help' for detailed command information.
     """
     if ctx.invoked_subcommand is None:
-        # Show a nice welcome screen when no command is given
-        print_header("Welcome to Thermur", "Thermal Drone Swarm Training")
-        
-        # Show available commands
-        print_section("Available Commands", "accent")
-        
-        for cmd_info in CLIConstants.Commands.AVAILABLE:
-            console.print(
+        ui.print_header(constants.Headers.MAIN_TITLE, constants.Headers.MAIN_SUBTITLE)
+        ui.print_section(constants.Sections.AVAILABLE_COMMANDS, "accent")
+
+        for cmd_info in constants.Commands.AVAILABLE:
+            ui.console.print(
                 f"  {cmd_info['icon']} [bold accent]{cmd_info['name']:10}"
                 f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
             )
-        
-        # Show examples
-        print_section("Getting Started", "bright_green")
-        
-        for example in CLIConstants.Commands.EXAMPLES:
-            print_command_example(
-                example["desc"], 
-                example["command"], 
+
+        ui.print_section(constants.Sections.GETTING_STARTED, "bright_green")
+
+        for example in constants.Commands.EXAMPLES:
+            ui.print_command_example(
+                example["desc"],
+                example["command"],
                 example["note"]
             )
-        
-        console.print()
-        print_message("Ready to train some thermal swarms? 🔥", "thermal")
+
+        ui.console.print()
+        ui.print_message(constants.Messages.READY_TO_TRAIN, "thermal")
