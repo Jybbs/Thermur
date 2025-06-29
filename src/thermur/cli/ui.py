@@ -606,3 +606,48 @@ class ThermurUI:
         )
         
         return progress_bar, details_text
+    
+    @staticmethod
+    def get_field_type_string(field_type: any) -> str:
+        """
+        Get a readable type string for a Pydantic model field.
+
+        Args:
+            field_type: The type annotation to inspect.
+
+        Returns:
+            A human-readable type string (e.g., "int", "list[str]").
+        """
+        from typing import get_args, get_origin
+        
+        if origin := get_origin(field_type):
+            args = get_args(field_type)
+            if not args:
+                return origin.__name__
+            
+            inner_types = ", ".join(ThermurUI.get_field_type_string(arg) for arg in args)
+            return f"{origin.__name__}[{inner_types}]"
+        
+        return getattr(field_type, "__name__", str(field_type))
+
+    @staticmethod
+    def get_component_description(component: any) -> str:
+        """
+        Generate a concise, one-line description for a configuration component.
+        
+        Args:
+            component: The configuration component to describe.
+            
+        Returns:
+            A human-readable description string.
+        """
+        from hydra_zen import get_target
+
+        if doc := getattr(component, "__doc__", None):
+            return doc.strip().split("\n")[0]
+        
+        if target := getattr(component, "_target_", None):
+            if target_obj := get_target(component):
+                return f"{target_obj.__module__}.{target_obj.__name__}"
+        
+        return f"Configuration object ({type(component).__name__})"

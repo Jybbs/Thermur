@@ -36,13 +36,13 @@ class CLIConstants:
         terminal readability.
         """
         FIRE_GRADIENT = [
-            "#8B0000",      # T - dark red
-            "#DC143C",      # h - crimson
-            "#FF4500",      # e - orange red
-            "#FF8C00",      # r - dark orange
-            "#FFD700",      # m - gold
-            "#FFFF00",      # u - yellow
-            "#FFFACD",      # r - lemon chiffon
+            "#8B0000", # T
+            "#DC143C", # h
+            "#FF4500", # e
+            "#FF8C00", # r
+            "#FFD700", # m
+            "#FFFF00", # u
+            "#FFFACD", # r
         ]
         
         FIRE_GRADIENT_STYLED = [f"bold {c}" for c in FIRE_GRADIENT]
@@ -339,6 +339,53 @@ class CLIConstants:
         )
 
         OVERRIDE_SYNTAX_TITLE = "Configuration Override Syntax"
+
+
+    class Explorer:
+        """
+        Constants for the interactive configuration explorer.
+        
+        Defines titles, messages, and table structures used to build the
+        interactive exploration interface in the CLI.
+        """
+        # Titles and Headers
+        HEADER_TITLE          = "Interactive Configuration Explorer"
+        EDIT_HEADER_PREFIX    = "Editing"
+        EXPLORE_HEADER_PREFIX = "Exploring"
+        SCHEMA_TABLE_TITLE    = "Schema Fields"
+        DATACLASS_TABLE_TITLE = "Dataclass Fields"
+
+        # Component Names
+        WORKLOAD_COMPONENT_NAME = "Workload"
+        GENERIC_COMPONENT_NAME  = "Configuration Component"
+        NESTED_COMPONENT_NAME   = "Nested Component"
+        
+        # Messages
+        PROMPT_TO_EDIT       = "Enter field names to edit, or press Enter to finish."
+        FIELD_PROMPT         = "[bold]Field to edit: [/bold]"
+        NO_WORKLOADS_FOUND   = "No workload configurations found"
+        CONFIG_IMPORT_FAILED = "Failed to import configs module"
+        MAX_DEPTH_REACHED    = "Reached maximum exploration depth"
+        FIELD_NOT_FOUND      = "Field '{field_name}' not found"
+        UNKNOWN_CONFIG_TYPE  = "Unknown configuration type: {type_name}"
+        CANNOT_EXPLORE       = "Cannot explore target: {type_name}"
+        OVERRIDE_ADDED       = "Added override: {override}"
+        OVERRIDES_GENERATED  = "Generated {count} configuration overrides"
+        DEFAULT_WORKLOAD_DOC = "Workload configuration"
+
+        # Table Configurations
+        SCHEMA_TABLE_COLUMNS = [
+            ("Field",       "bright_cyan",   20, "left"),
+            ("Type",        "bright_white",  15, "left"),
+            ("Default",     "bright_yellow", 20, "left"),
+            ("Description", "muted",         45, "left"),
+        ]
+        
+        DATACLASS_TABLE_COLUMNS = [
+            ("Field",          "bright_cyan",   20, "left"),
+            ("Type",           "bright_white",  20, "left"),
+            ("Value / Target", "bright_yellow", 45, "left"),
+        ]
     
     
     class Tips:
@@ -487,7 +534,7 @@ class CLIConstants:
         DEFAULT_BADGE_STYLE   = "success"
 
 
-class System:
+    class System:
         """
         Constants for system diagnostics, resource checking, and validation.
 
@@ -536,10 +583,12 @@ class System:
         # SYSTEM_COMPONENTS. The UI build process will "zip" these two
         # dictionaries together using their shared keys.
         SYSTEM_LOGIC = {
+
             "thermur": {
                 "status"  : lambda info: "[bright_green]✅ Installed[/bright_green]",
                 "details" : lambda info: f"[bright_cyan]v{info['thermur']}[/bright_cyan]",
             },
+
             "python": {
                 "status"  : lambda info: (
                     "[bright_green]✅ Supported[/bright_green]"
@@ -548,6 +597,7 @@ class System:
                 ),
                 "details" : lambda info: f"[bright_cyan]v{info['python']}[/bright_cyan]",
             },
+
             "torch": {
                 "status"  : lambda info: (
                     "[bright_green]✅ CUDA Ready[/bright_green]"
@@ -561,6 +611,7 @@ class System:
                         else f"[bright_cyan]v{info['torch']}[/bright_cyan]"
                 ),
             },
+
             "gpu": {
                 "status"  : lambda info: (
                     "[bright_green]✅ Available[/bright_green]"
@@ -574,6 +625,7 @@ class System:
                         else "[yellow]Training will be slower on CPU[/yellow]"
                 ),
             },
+
             "mujoco": {
                 "status"  : lambda info: (
                     "[bright_green]✅ Installed[/bright_green]"
@@ -586,6 +638,7 @@ class System:
                         else "[yellow]pip install mujoco[/yellow]"
                 ),
             },
+
             "memory": {
                 "is_resource" : True,
                 "status"      : lambda info: (
@@ -596,6 +649,7 @@ class System:
                         else "[bright_green]✅ Plenty[/bright_green]"
                 ),
             },
+
             "storage": {
                 "is_resource" : True,
                 "status"      : lambda info: (
