@@ -261,8 +261,8 @@ class ThermurUI:
         training runs, using tips from centralized constants.
         """
         self.print_section(
-            CLIConstants.Tips.SECTION_TITLE, 
-            style=CLIConstants.Tips.SECTION_STYLE
+            title = CLIConstants.Tips.SECTION_TITLE, 
+            style = CLIConstants.Tips.SECTION_STYLE
         )
         
         for tip in CLIConstants.Tips.TRAINING:
@@ -320,11 +320,12 @@ class ThermurUI:
 
     def create_aligned_table(
         self,
-        title        : str,
         columns      : list[tuple[str, str, int, str]],
+        title        : str = "",
         border_style : str = None,
         show_edge    : bool = False,
         expand       : bool = False,
+        **kwargs
     ) -> Table:
         """
         Create a properly aligned table with consistent thermal styling.
@@ -333,11 +334,12 @@ class ThermurUI:
         ensuring visual consistency across all CLI components.
         
         Args:
-            title        : Table title displayed at the top
             columns      : List of (title, style, width, align) tuples
+            title        : Table title displayed at the top
             border_style : Rich style string for table borders
             show_edge    : Whether to display table edge borders
             expand       : Whether to expand table to full terminal width
+            **kwargs     : Additional keyword arguments for Rich Table
             
         Returns:
             Configured Table instance ready for content population
@@ -354,6 +356,7 @@ class ThermurUI:
             show_edge    = show_edge,
             padding      = CLIConstants.UI.TABLE_PADDING,
             expand       = expand,
+            **kwargs,
         )
         
         for col_title, style, width, align in columns:
@@ -364,6 +367,49 @@ class ThermurUI:
                 justify = align,
             )
         
+        return table
+
+    def create_system_table(self, system_info: dict) -> Table:
+        """
+        Create a Rich table with system information.
+
+        Generates a comprehensive diagnostic table by combining static component
+        definitions with dynamic rendering logic, both sourced from constants.
+        The table uses visual indicators and progress bars to make the system
+        status immediately apparent.
+
+        Args:
+            system_info: A dictionary of system details from `system.get_system_info()`.
+
+        Returns:
+            A formatted Rich table containing system diagnostics.
+        """
+        table = self.create_aligned_table(
+            title   = CLIConstants.System.TABLE_TITLE,
+            columns = [(c["header"], c["style"], c["width"], "left") for c in CLIConstants.System.TABLE_COLUMNS],
+            **CLIConstants.System.TABLE_SETTINGS,
+        )
+
+        for key, title in CLIConstants.System.SYSTEM_COMPONENTS.items():
+            logic = CLIConstants.System.SYSTEM_LOGIC[key]
+            
+            if logic.get("is_resource"):
+                progress_bar, details_text = self.format_resource_display(
+                    available_gb = system_info.get(f"{key}_available", 0),
+                    total_gb     = system_info.get(f"{key}_total", 0),
+                    thresholds   = getattr(CLIConstants.SystemChecks, f"{str.upper(key)}_THRESHOLDS"),
+                )
+                details = f"{progress_bar}\n{details_text}"
+
+            else:
+                details = logic["details"](system_info)
+                
+            table.add_row(
+                title, 
+                logic["status"](system_info), 
+                details
+            )
+
         return table
 
     def create_examples_panel(
@@ -512,7 +558,7 @@ class ThermurUI:
             Rich markup string representing the styled progress bar
         """
         if length is None:
-            length = CLIConstants.UI.PROGRESS_BAR_DEFAULT_LENGTH
+            length = CLIConstants.System.PROGRESS_BAR_LENGTH
             
         return (
             f"[{color}]"
