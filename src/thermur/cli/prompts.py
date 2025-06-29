@@ -12,7 +12,7 @@ from rich.prompt import Confirm
 from rich.syntax import Syntax
 from rich.table  import Table
 
-from .console import console, print_message, print_section
+from .ui import console, print_message, print_section
 
 
 # Define a thermal-inspired style for questionary
