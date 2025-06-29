@@ -15,7 +15,7 @@ from hydra_zen  import builds, get_target, zen
 from pydantic   import BaseModel
 from rich.table import Table
 
-from .console import console, print_header, print_message, print_section
+from .ui import console, print_header, print_message, print_section
 from .prompts import prompt_for_field_value, select_config_component
 
 
