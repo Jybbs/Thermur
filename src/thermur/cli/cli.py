@@ -6,10 +6,7 @@ all available commands from the .commands subpackage. It is also responsible
 for creating the shared application context.
 """
 from .commands  import *
-from .constants import CLIConstants
-from .prompts   import CLIPrompts
-from .system    import SystemInspector
-from .ui        import ThermurUI
+from .helpers   import CLIConstants, CLIPrompts, SystemInspector, ThermurUI
 from typer      import Context, Exit, Option, Typer
 
 
