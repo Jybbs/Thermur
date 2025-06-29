@@ -6,9 +6,6 @@ interactively browse and edit hydra-zen configuration schemas. The primary
 goal is to offer a guided way to discover available parameters and generate
 valid Hydra override strings for a training run.
 """
-from .constants import CLIConstants
-from .prompts   import edit_multiple_fields, select_config_component
-from .ui        import ThermurUI
 from hydra_zen  import get_target
 from pydantic   import BaseModel
 
@@ -16,23 +13,32 @@ from pydantic   import BaseModel
 class ConfigExplorer:
     """
     Interactively discovers, navigates, and edits configuration schemas.
-    
-    This class handles the user-facing workflow for exploring nested
-    configuration objects, displaying their structure and documentation in a
-    readable format, and collecting user edits to generate a list of
-    Hydra-compliant command-line overrides.
+
+    This class orchestrates the user-facing workflow for exploring nested
+    configuration objects. It uses `ThermurUI` for rendering, `CLIPrompts` for
+    user input, and `CLIConstants` for static text, all of which are injected
+    during initialization. This keeps the explorer focused on the logic of
+    navigating the config tree while delegating I/O and data to other components.
     """
-    
-    def __init__(self):
+
+    def __init__(
+        self, 
+        ui, 
+        prompts, 
+        constants
+    ):
         """
-        Initializes the configuration explorer.
-        
-        This sets up the necessary state for an exploration session, including
-        a list to hold generated overrides and an instance of the ThermurUI
-        for rendering console output.
+        Initializes the configuration explorer with its dependencies.
+
+        Args:
+            ui        : An initialized `ThermurUI` object for rendering components.
+            prompts   : An initialized `CLIPrompts` object for handling user input.
+            constants : An instance of `CLIConstants`.
         """
         self.overrides = []
-        self.ui        = ThermurUI()
+        self.ui        = ui
+        self.prompts   = prompts
+        self.constants = constants
     
     def explore_interactive(self) -> list[str]:
         """
@@ -45,7 +51,7 @@ class ConfigExplorer:
         Returns:
             A list of Hydra configuration override strings.
         """
-        self.ui.print_header(CLIConstants.Explorer.HEADER_TITLE)
+        self.ui.print_header(self.constants.Explorer.HEADER_TITLE)
         
         # Lazy-import heavy modules only when the explorer is used
         try:
@@ -53,7 +59,7 @@ class ConfigExplorer:
             register_configs()
         except ImportError:
             self.ui.print_message(
-                CLIConstants.Explorer.CONFIG_IMPORT_FAILED, "error"
+                self.constants.Explorer.CONFIG_IMPORT_FAILED, "error"
             )
             return []
         
@@ -66,7 +72,7 @@ class ConfigExplorer:
         if self.overrides:
             self.ui.console.print()
             self.ui.print_message(
-                CLIConstants.Explorer.OVERRIDES_GENERATED.format(
+                self.constants.Explorer.OVERRIDES_GENERATED.format(
                     count=len(self.overrides)
                 ), 
                 "success"
@@ -87,17 +93,17 @@ class ConfigExplorer:
         workloads = self._discover_workloads()
         if not workloads:
             self.ui.print_message(
-                CLIConstants.Explorer.NO_WORKLOADS_FOUND, "error"
+                self.constants.Explorer.NO_WORKLOADS_FOUND, "error"
             )
             return None
         
         workload_options = [
-            (name, doc or CLIConstants.Explorer.DEFAULT_WORKLOAD_DOC) 
+            (name, doc or self.constants.Explorer.DEFAULT_WORKLOAD_DOC) 
             for name, doc in workloads
         ]
         
-        selected_name = select_config_component(
-            CLIConstants.Explorer.WORKLOAD_COMPONENT_NAME, workload_options
+        selected_name = self.prompts.select_config_component(
+            self.constants.Explorer.WORKLOAD_COMPONENT_NAME, workload_options
         )
         return next(
             (config for name, config in workloads if name == selected_name), 
@@ -124,7 +130,7 @@ class ConfigExplorer:
             ]
 
         except Exception as e:
-            msg = f"{CLIConstants.Explorer.NO_WORKLOADS_FOUND}: {e}"
+            msg = f"{self.constants.Explorer.NO_WORKLOADS_FOUND}: {e}"
             self.ui.print_message(msg, "error")
             return []
     
@@ -147,7 +153,7 @@ class ConfigExplorer:
         """
         if depth > 10:
             self.ui.print_message(
-                CLIConstants.Explorer.MAX_DEPTH_REACHED, "warning"
+                self.constants.Explorer.MAX_DEPTH_REACHED, "warning"
             )
             return
 
@@ -157,7 +163,7 @@ class ConfigExplorer:
             self._explore_builds_node(config, prefix, depth)
         else:
             self.ui.print_message(
-                CLIConstants.Explorer.UNKNOWN_CONFIG_TYPE.format(
+                self.constants.Explorer.UNKNOWN_CONFIG_TYPE.format(
                     type_name=type(config).__name__
                 ), 
                 "warning"
@@ -185,8 +191,8 @@ class ConfigExplorer:
         if not component_options:
             return
 
-        title        = f"{CLIConstants.Explorer.GENERIC_COMPONENT_NAME} (depth {depth})"
-        selected_key = select_config_component(title, component_options)
+        title        = f"{self.constants.Explorer.GENERIC_COMPONENT_NAME} (depth {depth})"
+        selected_key = self.prompts.select_config_component(title, component_options)
         
         if selected_key:
             new_prefix = f"{prefix}.{selected_key}" if prefix else selected_key
@@ -215,7 +221,7 @@ class ConfigExplorer:
             self._explore_dataclass(config_builds, prefix, depth)
         else:
             self.ui.print_message(
-                CLIConstants.Explorer.CANNOT_EXPLORE.format(
+                self.constants.Explorer.CANNOT_EXPLORE.format(
                     type_name=type(target).__name__
                 ), 
                 "warning"
@@ -234,7 +240,7 @@ class ConfigExplorer:
             prefix       : The dot-path prefix for Hydra overrides.
         """
         header = (
-            f"{CLIConstants.Explorer.EDIT_HEADER_PREFIX} {schema_class.__name__}"
+            f"{self.constants.Explorer.EDIT_HEADER_PREFIX} {schema_class.__name__}"
         )
         self.ui.print_header(header)
         
@@ -247,8 +253,8 @@ class ConfigExplorer:
         field_info    = []
         
         table = self.ui.create_aligned_table(
-            title   = CLIConstants.Explorer.SCHEMA_TABLE_TITLE,
-            columns = CLIConstants.Explorer.SCHEMA_TABLE_COLUMNS,
+            title   = self.constants.Explorer.SCHEMA_TABLE_TITLE,
+            columns = self.constants.Explorer.SCHEMA_TABLE_COLUMNS,
         )
         
         for name, field in schema_fields.items():
@@ -266,10 +272,10 @@ class ConfigExplorer:
         self.ui.console.print(table)
         self.ui.console.print()
         
-        new_overrides = edit_multiple_fields(
+        new_overrides = self.prompts.edit_multiple_fields(
             fields      = field_info,
             prefix      = prefix,
-            description = CLIConstants.Explorer.PROMPT_TO_EDIT
+            description = self.constants.Explorer.PROMPT_TO_EDIT
         )
         self.overrides.extend(new_overrides)
     
@@ -288,14 +294,14 @@ class ConfigExplorer:
             depth         : The current recursion depth.
         """
         header = (
-            f"{CLIConstants.Explorer.EXPLORE_HEADER_PREFIX} "
+            f"{self.constants.Explorer.EXPLORE_HEADER_PREFIX} "
             f"{type(dataclass_obj).__name__}"
         )
         self.ui.print_header(header)
         
         table = self.ui.create_aligned_table(
-            title   = CLIConstants.Explorer.DATACLASS_TABLE_TITLE,
-            columns = CLIConstants.Explorer.DATACLASS_TABLE_COLUMNS,
+            title   = self.constants.Explorer.DATACLASS_TABLE_TITLE,
+            columns = self.constants.Explorer.DATACLASS_TABLE_COLUMNS,
         )
         
         field_info = [
@@ -315,8 +321,8 @@ class ConfigExplorer:
             (name, self.ui.get_component_description(val)) 
             for name, val in field_info
         ]
-        field_to_explore = select_config_component(
-            CLIConstants.Explorer.NESTED_COMPONENT_NAME, component_options
+        field_to_explore = self.prompts.select_config_component(
+            self.constants.Explorer.NESTED_COMPONENT_NAME, component_options
         )
         
         if field_to_explore:
