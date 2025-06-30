@@ -12,11 +12,11 @@ vectorized operations where possible and PyVista's optimized rendering
 pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
-from __future__ import annotations
-from pydantic   import BaseModel
-from pyvista    import Actor, ImageData, PolyData, Plotter
-from torch      import Tensor
-from typing     import Optional
+from __future__                import annotations
+from pyvista                   import Actor, ImageData, PolyData, Plotter
+from torch                     import Tensor
+from typing                    import Optional
+from configs.imitation.schemas import VisualizationModel
 
 import numpy   as np
 import pyvista as pv
@@ -25,13 +25,11 @@ import pyvista as pv
 def render_agents(
     plotter     : Plotter,
     position    : Tensor,
-    velocity    : Optional[Tensor]    = None,
-    temperature : Optional[Tensor]    = None,
-    colormap    : Optional[str]       = None,
-    glyphs      : Optional[BaseModel] = None,
-    colors      : Optional[BaseModel] = None,
-    opacities   : Optional[BaseModel] = None,
-    show_trails : bool                = False,
+    velocity    : Optional[Tensor]             = None,
+    temperature : Optional[Tensor]             = None,
+    colormap    : Optional[str]                = None,
+    config      : Optional[VisualizationModel] = None,
+    show_trails : bool                         = False,
 ) -> list[Actor]:
     """
     Render agents as glyphs (spheres or arrows) in the visualization.

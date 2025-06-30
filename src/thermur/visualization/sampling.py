@@ -9,11 +9,11 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
-from __future__ import annotations
-from pydantic   import BaseModel
-from pyvista    import Axes, ImageData, PolyData
-from torch      import Tensor
-from typing     import Any
+from __future__                import annotations
+from pyvista                   import Axes, ImageData, PolyData
+from torch                     import Tensor
+from typing                    import Any
+from configs.imitation.schemas import VisualizationModel
 
 import numpy   as np
 import pyvista as pv
@@ -22,7 +22,7 @@ import torch
 
 def compute_grid_bounds(
     position    : Tensor,
-    grid_config : BaseModel,
+    grid_config : VisualizationModel,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute the bounding box for a grid based on agent positions.
@@ -77,7 +77,7 @@ def create_coordinate_axes(
 def create_temperature_grid(
     environment : Any,
     position    : Tensor,
-    grid_config : BaseModel,
+    grid_config : VisualizationModel,
 ) -> ImageData:
     """
     Create a uniform grid of temperature values from the environment.
@@ -113,7 +113,7 @@ def create_temperature_grid(
 def create_wind_grid(
     simulation  : Any,
     position    : Tensor,
-    grid_config : BaseModel,
+    grid_config : VisualizationModel,
 ) -> PolyData:
     """
     Create a grid of wind vectors from the environment data source.
