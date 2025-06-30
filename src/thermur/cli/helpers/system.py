@@ -9,6 +9,7 @@ import os
 
 from functools          import lru_cache
 from importlib.metadata import PackageNotFoundError, version
+from omegaconf          import DictConfig
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
@@ -22,9 +23,9 @@ class SystemInspector:
 
     This class acts as a stateless utility for querying the host environment.
     Its methods are static because they do not depend on any instance-specific
-    state. For methods that require access to constant values (e.g., for
-    validation rules or API keys), the `CLIConstants` object is passed in as a
-    parameter, adhering to a dependency injection pattern without requiring
+    state. For methods that require access to configuration values (e.g., for
+    validation rules or API keys), DictConfig objects are passed in as
+    parameters, adhering to a dependency injection pattern without requiring
     an instance of the class.
     """
     @staticmethod
@@ -71,12 +72,12 @@ class SystemInspector:
 
     @staticmethod
     @lru_cache(maxsize=1)
-    def get_system_info(constants) -> dict[str, any]:
+    def get_system_info(wandb_config: DictConfig) -> dict[str, any]:
         """
         Gather comprehensive system information using platform tools.
 
         Args:
-            constants: An instance of `CLIConstants`.
+            wandb_config: Wandb-related configuration from DictConfig.
 
         Returns:
             A dictionary containing system details.
@@ -120,11 +121,11 @@ class SystemInspector:
         info["wandb_user"]      = None
         api_key_exists          = False
         if info["wandb_installed"]:
-            api_key_exists = os.environ.get(constants.Wandb.API_KEY_ENV) or api.api_key
+            api_key_exists = os.environ.get(wandb_config.api_key_env) or api.api_key
 
         if api_key_exists:
-            old_mode = os.environ.get(constants.Wandb.MODE_ENV)
-            os.environ[constants.Wandb.MODE_ENV] = "offline"
+            old_mode = os.environ.get(wandb_config.mode_env)
+            os.environ[wandb_config.mode_env] = "offline"
 
             try:
                 user               = Api().viewer
@@ -133,62 +134,63 @@ class SystemInspector:
                 info["wandb_user"] = None  
             finally:
                 if old_mode:
-                    os.environ[constants.Wandb.MODE_ENV] = old_mode
+                    os.environ[wandb_config.mode_env] = old_mode
                 else:
-                    os.environ.pop(constants.Wandb.MODE_ENV, None)
+                    os.environ.pop(wandb_config.mode_env, None)
 
         return info
 
     @staticmethod
-    def check_wandb_status(constants) -> tuple[str, str]:
+    def check_wandb_status(messages: DictConfig) -> tuple[str, str]:
         """
         Check wandb installation and login status.
 
         Args:
-            constants: An instance of `CLIConstants`.
+            messages: Messages configuration containing wandb status messages.
 
         Returns:
             A tuple of (status, details) for wandb integration.
         """
-        info = SystemInspector.get_system_info(constants)
+        info = SystemInspector.get_system_info(messages.wandb_display)
 
         if not info["wandb_installed"]:
             return (
-                constants.Wandb.STATUS_NOT_INSTALLED,
-                constants.Wandb.DETAILS_NOT_INSTALLED,
+                messages.wandb_status_not_installed,
+                messages.wandb_details_not_installed,
             )
 
         if info["wandb_user"]:
             return (
-                constants.Wandb.STATUS_CONNECTED,
-                constants.Wandb.DETAILS_CONNECTED.format(user=info["wandb_user"]),
+                messages.wandb_status_connected,
+                messages.wandb_details_connected.format(user=info["wandb_user"]),
             )
 
-        api_key_exists = os.environ.get(constants.Wandb.API_KEY_ENV) or api.api_key
+        api_key_exists = os.environ.get(messages.wandb_display.api_key_env) or api.api_key
         if api_key_exists:
             return (
-                constants.Wandb.STATUS_API_KEY,
-                constants.Wandb.DETAILS_API_KEY,
+                messages.wandb_status_api_key,
+                messages.wandb_details_api_key,
             )
 
         return (
-            constants.Wandb.STATUS_NOT_CONNECTED,
-            constants.Wandb.DETAILS_NOT_CONNECTED,
+            messages.wandb_status_not_connected,
+            messages.wandb_details_not_connected,
         )
 
     @staticmethod
-    def get_wandb_url(constants, project: str = "thermur") -> str | None:
+    def get_wandb_url(wandb_config: DictConfig, ui_config: DictConfig, project: str = "thermur") -> str | None:
         """
         Generate wandb project URL if possible.
 
         Args:
-            constants : An instance of `CLIConstants`.
-            project   : The name of the wandb project.
+            wandb_config : Wandb configuration from DictConfig.
+            ui_config    : UI configuration from DictConfig.
+            project      : The name of the wandb project.
 
         Returns:
             The URL to the wandb project dashboard, or None if not available.
         """
-        info = SystemInspector.get_system_info(constants)
+        info = SystemInspector.get_system_info(wandb_config)
 
         if not info["wandb_installed"]:
             return None
@@ -196,21 +198,22 @@ class SystemInspector:
         if info["wandb_user"]:
             return f"https://wandb.ai/{info['wandb_user']}/{project}"
 
-        entity = os.environ.get(constants.Wandb.ENTITY_ENV)
+        entity = os.environ.get(wandb_config.entity_env)
         return (
             f"https://wandb.ai/{entity}/{project}"
             if entity
-            else f"https://wandb.ai/{constants.UI.WANDB_URL_PLACEHOLDER}/{project}"
+            else f"https://wandb.ai/{ui_config.wandb_url_placeholder}/{project}"
         )
 
     @staticmethod
-    def validate_config_overrides(overrides: list[str] | None, constants) -> list[str]:
+    def validate_config_overrides(overrides: list[str] | None, system_config: DictConfig, wandb_config: DictConfig) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
         Args:
-            overrides : A list of configuration overrides to validate.
-            constants : An instance of `CLIConstants`.
+            overrides     : A list of configuration overrides to validate.
+            system_config : System configuration from DictConfig.
+            wandb_config  : Wandb configuration from DictConfig.
 
         Returns:
             A list of validation issues found; empty if all are valid.
@@ -221,16 +224,16 @@ class SystemInspector:
         issues = []
         for o in overrides:
             if "=" not in o:
-                issues.append(f"{constants.System.INVALID_OVERRIDE_FORMAT}: {o}")
+                issues.append(f"{system_config.invalid_override_format}: {o}")
                 continue
 
             key            = o.split("=")[0]
             sanitized_key  = key.lstrip("+").replace(".", "").replace("_", "")
             key_is_invalid = not sanitized_key.isalnum()
             if key_is_invalid:
-                issues.append(f"{constants.System.INVALID_OVERRIDE_KEY}: {o}")
+                issues.append(f"{system_config.invalid_override_key}: {o}")
 
-        if not SystemInspector.get_system_info(constants)["cuda"]:
-            issues.append(constants.System.GPU_UNAVAILABLE)
+        if not SystemInspector.get_system_info(wandb_config)["cuda"]:
+            issues.append(system_config.gpu_unavailable)
 
         return issues

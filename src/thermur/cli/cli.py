@@ -2,27 +2,37 @@
 Enhanced console-script target for Thermur, built with Typer and Rich.
 
 This module provides the main CLI interface by discovering and registering
-all available commands from the .commands subpackage. It is also responsible
-for creating the shared application context.
+all available commands from the .commands subpackage. It uses Hydra for
+configuration management, providing a flexible and type-safe approach to
+managing CLI settings.
 """
-from .commands  import *
-from .helpers   import CLIConstants, CLIPrompts, SystemInspector, ThermurUI
-from typer      import Context, Exit, Option, Typer
+from .commands    import *
+from .helpers     import CLIPrompts, SystemInspector, ThermurUI
+from configs      import cli_config, register_cli_configs
+from hydra_zen    import zen
+from omegaconf    import DictConfig
+from typer        import Context, Exit, Option, Typer
 
 
 class AppContext:
     """
     A container for shared application state and components.
 
-    This class initializes the core user interface, constants, system inspector,
-    and prompt orchestrator a single time. An instance of this class is created
-    in the main callback and passed to all commands via the Typer context.
+    This class initializes the core user interface, system inspector, and prompt
+    orchestrator using the Hydra configuration. An instance is created once in
+    the main callback and passed to all commands via the Typer context.
     """
-    def __init__(self):
-        self.constants = CLIConstants()
-        self.ui        = ThermurUI(self.constants)
-        self.system    = SystemInspector()
-        self.prompts   = CLIPrompts(self.ui, self.constants)
+    def __init__(self, cfg: DictConfig):
+        """
+        Initialize the application context with Hydra configuration.
+        
+        Args:
+            cfg: The resolved Hydra configuration containing all CLI settings.
+        """
+        self.config  = cfg
+        self.ui      = ThermurUI(cfg.theme, cfg.ui)
+        self.system  = SystemInspector()
+        self.prompts = CLIPrompts(self.ui, cfg.prompts, cfg.messages)
 
 
 def get_context(ctx: Context) -> AppContext:
@@ -40,25 +50,15 @@ def get_context(ctx: Context) -> AppContext:
         The singleton AppContext instance for the current application run.
     """
     if not ctx.obj:
-        ctx.obj = AppContext()
+        raise RuntimeError(
+            "AppContext not initialized. This should not happen if CLI is "
+            "invoked through the Hydra-decorated main function."
+        )
         
     return ctx.obj
 
 
-cli = Typer(
-    name                     = "thermur",
-    help                     = "🔥 Thermally-constrained drone swarm training toolkit",
-    add_completion           = False,
-    rich_markup_mode         = "rich",
-    no_args_is_help          = True,
-    pretty_exceptions_enable = True,
-)
-
-cli.add_typer(cmd_train,     name = "train")
-cli.add_typer(cmd_configure, name = "configure")
-cli.add_typer(cmd_info,      name = "info")
-cli.add_typer(cmd_validate,  name = "validate")
-cli.add_typer(cmd_monitor,   name = "monitor")
+cli = None
 
 
 def version_callback(value: bool, ctx: Context):
@@ -77,12 +77,12 @@ def version_callback(value: bool, ctx: Context):
 
     app_context = get_context(ctx)
     ui          = app_context.ui
-    constants   = app_context.constants
+    cfg         = app_context.config
     system      = app_context.system
 
-    ui.print_header(constants.Headers.MAIN_TITLE, constants.Headers.MAIN_SUBTITLE)
+    ui.print_header(cfg.headers.main_title, cfg.headers.main_subtitle)
 
-    info = system.get_system_info(constants)
+    info = system.get_system_info(cfg.wandb_display)
     ui.print_config_value("Version", f"v{info['thermur']}", "Thermur package version")
     ui.print_config_value("Python",  f"v{info['python']}",  "Python runtime version")
     ui.print_config_value("PyTorch", f"v{info['torch']}",   "Deep learning framework")
@@ -91,19 +91,18 @@ def version_callback(value: bool, ctx: Context):
     table = ui.create_system_table(info)
     ui.console.print(table)
 
-    ui.print_section(constants.Sections.INTEGRATION_STATUS, style="swarm")
-    status, details = system.check_wandb_status(constants)
+    ui.print_section(cfg.sections.integration_status, style="swarm")
+    status, details = system.check_wandb_status(cfg.messages)
     ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
 
-    ui.print_section(constants.Sections.QUICK_START, style="bright_green")
+    ui.print_section(cfg.sections.quick_start, style="bright_green")
 
-    for example in constants.Commands.EXAMPLES[:2]:
+    for example in cfg.commands.examples[:2]:
         ui.print_command_example(example["desc"], example["command"], example["note"])
 
     raise Exit()
 
 
-@cli.callback(invoke_without_command=True)
 def main_callback(
     ctx     : Context,
     version : bool | None = Option(
@@ -126,21 +125,21 @@ def main_callback(
     app_context = get_context(ctx)
 
     if ctx.invoked_subcommand is None:
-        ui = app_context.ui
-        constants = app_context.constants
+        ui  = app_context.ui
+        cfg = app_context.config
 
-        ui.print_header(constants.Headers.MAIN_TITLE, constants.Headers.MAIN_SUBTITLE)
-        ui.print_section(constants.Sections.AVAILABLE_COMMANDS, "accent")
+        ui.print_header(cfg.headers.main_title, cfg.headers.main_subtitle)
+        ui.print_section(cfg.sections.available_commands, "accent")
 
-        for cmd_info in constants.Commands.AVAILABLE:
+        for cmd_info in cfg.commands.available:
             ui.console.print(
                 f"  {cmd_info['icon']} [bold accent]{cmd_info['name']:10}"
                 f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
             )
 
-        ui.print_section(constants.Sections.GETTING_STARTED, "bright_green")
+        ui.print_section(cfg.sections.getting_started, "bright_green")
 
-        for example in constants.Commands.EXAMPLES:
+        for example in cfg.commands.examples:
             ui.print_command_example(
                 example["desc"],
                 example["command"],
@@ -148,4 +147,63 @@ def main_callback(
             )
 
         ui.console.print()
-        ui.print_message(constants.Messages.READY_TO_TRAIN, "thermal")
+        ui.print_message(cfg.messages.ready_to_train, "thermal")
+
+
+def create_cli_app(cfg: DictConfig) -> Typer:
+    """
+    Creates the Typer CLI application with the given configuration.
+    
+    Args:
+        cfg: The resolved Hydra configuration.
+        
+    Returns:
+        The configured Typer application.
+    """
+    app = Typer(
+        name                     = cfg.cli.app_name,
+        help                     = cfg.cli.app_description,
+        add_completion           = False,
+        rich_markup_mode         = "rich",
+        no_args_is_help          = True,
+        pretty_exceptions_enable = True,
+    )
+    
+    app.add_typer(cmd_train,     name = "train")
+    app.add_typer(cmd_configure, name = "configure")
+    app.add_typer(cmd_info,      name = "info")
+    app.add_typer(cmd_validate,  name = "validate")
+    app.add_typer(cmd_monitor,   name = "monitor")
+    
+    app.callback(invoke_without_command=True)(main_callback)
+    
+    return app
+
+
+@zen(cli_config).hydra_main(
+    config_name  = "cli",
+    version_base = None,
+)
+def main(cfg: DictConfig) -> None:
+    """
+    Main entry point for the Hydra-based CLI.
+    
+    This function is decorated with @hydra.main to enable configuration
+    management. It creates the CLI app and runs it with the loaded configuration.
+    
+    Args:
+        cfg: The resolved Hydra configuration.
+    """
+    register_cli_configs()
+    
+    global cli
+    cli = create_cli_app(cfg)
+    
+    ctx     = Context()
+    ctx.obj = AppContext(cfg)
+    
+    cli(standalone_mode=False, ctx=ctx)
+
+
+if __name__ == "__main__":
+    main()

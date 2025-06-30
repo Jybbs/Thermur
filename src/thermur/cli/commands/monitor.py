@@ -51,9 +51,9 @@ class MonitorCommand:
             ctx: The Typer context, which holds the shared AppContext object
                  containing UI, system, and other core components.
         """
-        self.constants = ctx.obj.constants
-        self.system    = ctx.obj.system
-        self.ui        = ctx.obj.ui
+        self.config = ctx.obj.config
+        self.system = ctx.obj.system
+        self.ui     = ctx.obj.ui
 
     def run(self, project: str | None):
         """
@@ -66,24 +66,24 @@ class MonitorCommand:
             project : The wandb project name to open, or None to use the default.
         """
         if project is None:
-            project = self.constants.Wandb.DEFAULT_PROJECT
+            project = self.config.wandb.default_project
 
         self.ui.print_header(
-            self.constants.Headers.MONITOR_TITLE,
-            self.constants.Headers.MONITOR_SUBTITLE_TPL.format(project=project)
+            self.config.headers.monitor_title,
+            self.config.headers.monitor_subtitle_tpl.format(project=project)
         )
 
-        url = self.system.get_wandb_url(self.constants, project)
+        url = self.system.get_wandb_url(self.config, project)
 
         if not url:
             self.ui.print_message(
-                self.constants.Messages.WANDB_UNAVAILABLE,
+                self.config.messages.wandb_unavailable,
                 "error"
             )
             raise Exit(1)
 
         self.ui.print_message(
-            self.constants.Messages.BROWSER_LAUNCH_TPL.format(project=project),
+            self.config.messages.browser_launch_tpl.format(project=project),
             "swarm"
         )
         self.ui.print_wandb_info(project, url)
@@ -91,12 +91,12 @@ class MonitorCommand:
 
         try:
             with self.ui.console.status(
-                self.constants.Status.LAUNCHING_BROWSER,
+                self.config.status.launching_browser,
                 spinner="dots"
             ):
                 sleep(0.5)
                 open(url)
-            self.ui.print_message(self.constants.Messages.BROWSER_SUCCESS, "success")
+            self.ui.print_message(self.config.messages.browser_success, "success")
         except Exception as e:
-            self.ui.print_message(self.constants.Messages.BROWSER_FAIL_TPL.format(e=e), "error")
-            self.ui.print_message(self.constants.Messages.BROWSER_MANUAL_TPL.format(url=url), "info")
+            self.ui.print_message(self.config.messages.browser_fail_tpl.format(e=e), "error")
+            self.ui.print_message(self.config.messages.browser_manual_tpl.format(url=url), "info")

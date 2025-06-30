@@ -11,13 +11,15 @@ from .monitoring    import build_monitoring
 from .optimizer     import build_optimizer
 from .policy        import build_policy
 from .replay        import build_replay_buffer
-from .simulation    import build_simulation
+from .safety        import build_safety_filter, build_thermal_barrier
+from .simulation    import build_data_source, build_simulation
 from .swarm         import build_action_spec, build_observation_spec
 from .visualization import build_visualizer
 
 __all__ = [
     "build_action_spec",
     "build_collector",
+    "build_data_source",
     "build_flocking_controller",
     "build_loss",
     "build_monitoring",
@@ -25,6 +27,8 @@ __all__ = [
     "build_optimizer",
     "build_policy",
     "build_replay_buffer",
+    "build_safety_filter",
     "build_simulation",
+    "build_thermal_barrier",
     "build_visualizer",
 ]

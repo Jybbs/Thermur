@@ -2,12 +2,13 @@
 Orchestrates the CLI's interactive dialogues using the questionary library.
 
 This module is responsible for the "conversation" flow of the application. It
-uses the ThermurUI class to render complex components and CLIConstants for all
+uses the ThermurUI class to render complex components and DictConfig objects for all
 static text and configuration, but it defines the logic for asking questions,
 gathering input, and confirming actions with the user.
 """
 import questionary
 
+from omegaconf   import DictConfig
 from rich.align  import Align
 from rich.panel  import Panel
 from rich.prompt import Confirm
@@ -18,27 +19,30 @@ class CLIPrompts:
     Manages all interactive command-line dialogues for the Thermur CLI.
 
     This class encapsulates the logic for asking the user questions, presenting
-    choices, and confirming actions. It relies on a `ThermurUI` instance and a
-    `CLIConstants` object, both provided during initialization, to render
-    visuals and access static text. This keeps the interactive logic separate
+    choices, and confirming actions. It relies on a `ThermurUI` instance and 
+    DictConfig objects for prompts and messages, both provided during initialization,
+    to render visuals and access static text. This keeps the interactive logic separate
     from both the UI rendering and the core application orchestration.
     """
     def __init__(
         self, 
         ui, 
-        constants
+        prompts: DictConfig,
+        messages: DictConfig
     ):
         """
         Initializes the prompt orchestrator.
 
         Args:
-            ui        : An initialized `ThermurUI` object for rendering components.
-            constants : An instance of `CLIConstants`.
+            ui       : An initialized `ThermurUI` object for rendering components.
+            prompts  : Prompts configuration containing prompts-related settings.
+            messages : Messages configuration containing message templates.
         """
         self.ui            = ui
-        self.constants     = constants
+        self.prompts       = prompts
+        self.messages      = messages
         self.thermal_style = questionary.Style(
-            self.constants.Messages.QUESTIONARY_STYLE
+            self.messages.questionary_style
         )
 
     def select_configuration_preset(self) -> str | None:
@@ -57,14 +61,14 @@ class CLIPrompts:
         self.ui.print_section("Configuration Presets", style="accent")
 
         table = self.ui.create_aligned_table(
-            title   = self.constants.Presets.TABLE_TITLE,
-            columns = self.constants.Presets.TABLE_COLUMNS,
+            title   = self.prompts.presets_table_title,
+            columns = self.prompts.presets_table_columns,
         )
 
-        preset_configs = self.constants.Presets.CONFIGS
+        preset_configs = self.prompts.preset_configs
         for name, config in preset_configs.items():
             if name == "custom":
-                row_style = f"[{self.constants.UI.MUTED_STYLE}]"
+                row_style = f"[{self.ui.ui.muted_style}]"
                 table.add_row(
                     f"{row_style}{config['name']}[/]",
                     f"{row_style}{config['desc']}[/]",
@@ -96,7 +100,7 @@ class CLIPrompts:
 
         if chosen_preset:
             self.ui.print_message(
-                f"Selected preset: [{self.constants.UI.CYAN_STYLE}]{chosen_preset}[/]",
+                f"Selected preset: [{self.ui.ui.cyan_style}]{chosen_preset}[/]",
                 msg_type="success"
             )
         else:
@@ -121,14 +125,14 @@ class CLIPrompts:
         self.ui.console.print()
         self.ui.print_message("Configure experiment tracking", "swarm")
         self.ui.console.print(
-            f"[{self.constants.UI.MUTED_STYLE}]"
+            f"[{self.ui.ui.muted_style}]"
             "wandb will track metrics, logs, and model checkpoints"
             "[/]"
         )
         self.ui.console.print()
 
         examples = self.ui.create_examples_panel(
-            items = self.constants.Wandb.EXAMPLE_PROJECTS,
+            items = self.prompts.wandb_example_projects,
             title = "Examples"
         )
         self.ui.console.print(examples)
@@ -136,13 +140,13 @@ class CLIPrompts:
 
         project_name = questionary.text(
             "Enter wandb project name:",
-            default     = self.constants.Wandb.DEFAULT_PROJECT,
+            default     = self.prompts.wandb_default_project,
             style       = self.thermal_style,
             instruction = "(press Enter for default)",
         ).ask()
 
         self.ui.print_message(
-            f"Project name: [{self.constants.UI.CYAN_STYLE}]{project_name}[/]", "success"
+            f"Project name: [{self.ui.ui.cyan_style}]{project_name}[/]", "success"
         )
         return project_name
 
@@ -161,8 +165,8 @@ class CLIPrompts:
         self.ui.print_section("Advanced Configuration", "config")
 
         syntax_panel = self.ui.create_syntax_panel(
-            code  = self.constants.Commands.OVERRIDE_SYNTAX_HELP,
-            title = self.constants.Commands.OVERRIDE_SYNTAX_TITLE,
+            code  = self.prompts.override_syntax_help,
+            title = self.prompts.override_syntax_title,
         )
         self.ui.console.print(syntax_panel)
         self.ui.console.print()
@@ -178,7 +182,7 @@ class CLIPrompts:
 
         self.ui.console.print()
         self.ui.console.print(
-            f"[{self.constants.UI.MUTED_STYLE}]"
+            f"[{self.ui.ui.muted_style}]"
             "Enter overrides one at a time (empty line to finish):"
             "[/]"
         )
@@ -195,8 +199,8 @@ class CLIPrompts:
                 break
 
             overrides.append(override)
-            success_style = self.constants.Theme.STYLES['success']
-            cyan_style    = self.constants.UI.CYAN_STYLE
+            success_style = self.ui.theme.styles['success']
+            cyan_style    = self.ui.ui.cyan_style
             self.ui.console.print(f"  [{success_style}]✓[/] Added: [{cyan_style}]{override}[/]")
 
         if overrides:
@@ -276,7 +280,7 @@ class CLIPrompts:
         self.ui.console.print(warning_panel)
         self.ui.console.print()
 
-        warning_style = self.constants.Theme.STYLES['warning']
+        warning_style = self.ui.theme.styles['warning']
         return Confirm.ask(
             f"[{warning_style}]Do you want to proceed anyway?[/]",
             console = self.ui.console,
@@ -312,9 +316,9 @@ class CLIPrompts:
         num_overrides = config.get('overrides', 0)
 
         summary_data = [
-            ("Configuration", f"[{self.constants.Theme.STYLES['warning']}]{config.get('preset')}[/]"),
-            ("wandb Project", f"[{self.constants.Theme.STYLES['swarm']}]{config.get('wandb_project')}[/]"),
-            ("Overrides", f"[{self.constants.Theme.STYLES['drone']}]{num_overrides} custom settings[/]"),
+            ("Configuration", f"[{self.ui.theme.styles['warning']}]{config.get('preset')}[/]"),
+            ("wandb Project", f"[{self.ui.theme.styles['swarm']}]{config.get('wandb_project')}[/]"),
+            ("Overrides", f"[{self.ui.theme.styles['drone']}]{num_overrides} custom settings[/]"),
             ("Hardware", gpu_status),
         ]
         for key, value in summary_data:
@@ -330,7 +334,7 @@ class CLIPrompts:
         self.ui.console.print(ready_panel)
         self.ui.console.print()
 
-        success_style = self.constants.Theme.STYLES['success']
+        success_style = self.ui.theme.styles['success']
         return Confirm.ask(
             f"[{success_style}]Start training with this configuration?[/]",
             console = self.ui.console,
@@ -364,7 +368,7 @@ class CLIPrompts:
             categories[category].append(cfg)
 
         choices = []
-        emojis  = self.constants.UI.CATEGORY_EMOJIS
+        emojis  = self.ui.ui.category_emojis
         for category, items in sorted(categories.items()):
             if category != "main":
                 choices.append(questionary.Separator(f"── {category.title()} ──"))
@@ -411,17 +415,17 @@ class CLIPrompts:
         """
         self.ui.console.print()
 
-        content = (f"[{self.constants.UI.TITLE_TEXT_STYLE}]{field_name}[/]\n"
-                   f"[{self.constants.UI.MUTED_STYLE}]Type: {field_type}[/]\n"
-                   f"[{self.constants.UI.MUTED_STYLE}]Current: "
-                   f"[{self.constants.UI.WHITE_STYLE}]{current_val}[/][/]")
+        content = (f"[{self.ui.ui.title_text_style}]{field_name}[/]\n"
+                   f"[{self.ui.ui.muted_style}]Type: {field_type}[/]\n"
+                   f"[{self.ui.ui.muted_style}]Current: "
+                   f"[{self.ui.ui.white_style}]{current_val}[/][/]")
 
         if description:
-            content += f"\n[{self.constants.UI.SUBTITLE_TEXT_STYLE}]{description}[/]"
+            content += f"\n[{self.ui.ui.subtitle_text_style}]{description}[/]"
 
         info_panel = Panel(
             content,
-            border_style = self.constants.UI.PANEL_BORDER_STYLE,
+            border_style = self.ui.ui.panel_border_style,
             padding      = (1, 2),
         )
         self.ui.console.print(info_panel)
@@ -452,9 +456,9 @@ class CLIPrompts:
                 return current_val
 
         if new_val != current_val:
-            success_style = self.constants.Theme.STYLES['success']
+            success_style = self.ui.theme.styles['success']
             self.ui.print_message(f"Updated {field_name}: "
-                             f"[{self.constants.UI.CYAN_STYLE}]{current_val}[/] → "
+                             f"[{self.ui.ui.cyan_style}]{current_val}[/] → "
                              f"[{success_style}]{new_val}[/]",
                              "success")
         else:
@@ -524,13 +528,13 @@ class CLIPrompts:
 
         choices = []
         for name, desc in options:
-            choice_text = f"[{self.constants.UI.CYAN_STYLE}]{name}[/]"
+            choice_text = f"[{self.ui.ui.cyan_style}]{name}[/]"
 
             if desc:
                 desc_limit = 50
                 if len(desc) > desc_limit:
                     desc = desc[:desc_limit - 3] + "..."
-                choice_text += f" - [{self.constants.UI.MUTED_STYLE}]{desc}[/]"
+                choice_text += f" - [{self.ui.ui.muted_style}]{desc}[/]"
 
             choices.append(questionary.Choice(choice_text, value=name))
 
@@ -547,7 +551,7 @@ class CLIPrompts:
 
         if selected:
             self.ui.print_message(
-                f"Selected: [{self.constants.UI.CYAN_STYLE}]{selected}[/]", "success"
+                f"Selected: [{self.ui.ui.cyan_style}]{selected}[/]", "success"
             )
 
         return selected
