@@ -41,8 +41,8 @@ class CLIPrompts:
         self.ui            = ui
         self.prompts       = prompts
         self.messages      = messages
-        self.thermal_style = questionary.Style(
-            self.messages.questionary_style
+        self.thermal_style = questionary.Style.from_dict(
+            dict(self.prompts.questionary_style)
         )
 
     def select_configuration_preset(self) -> str | None:

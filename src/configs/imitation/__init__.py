@@ -4,7 +4,6 @@ Imitation learning configuration domain.
 This package contains all configuration-related code for imitation learning,
 including schemas, factories, and workloads organized by functionality.
 """
-# Import submodules for easy access
 from . import factories, schemas, workloads
 
 # Re-export key items from workloads
@@ -21,11 +20,12 @@ from .factories import (
 # For convenience, re-export commonly used schemas
 from .schemas import (
     AgentModel,
+    DataConfig,
     EnvironmentModel,
     FlockingModel,
-    GNNModel,
-    HyperparameterModel,
+    GNNConfig,
     SwarmModel,
+    TrainingConfig,
 )
 
 __all__ = [
@@ -46,9 +46,10 @@ __all__ = [
     
     # Commonly used schemas
     "AgentModel",
+    "DataConfig",
     "EnvironmentModel",
     "FlockingModel", 
-    "GNNModel",
-    "HyperparameterModel",
+    "GNNConfig",
     "SwarmModel",
+    "TrainingConfig",
 ]

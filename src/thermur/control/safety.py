@@ -8,9 +8,10 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 """
 import torch
 
-from qpth.qp import QPFunction
-from torch   import Tensor
-from typing  import Any, Tuple
+from pydantic import BaseModel
+from qpth.qp  import QPFunction
+from torch    import Tensor
+from typing   import Any, Tuple
 
 
 class ThermalBarrierFunction:
@@ -28,17 +29,22 @@ class ThermalBarrierFunction:
         ∇h(𝐬) · u ≥ -α·h(𝐬), where α is a class-K function.
     """
     
-    def __init__(self, config: Any):
+    def __init__(
+        self,
+        max_temperature      : float,
+        activation_tolerance : float
+    ):
         """
         Initializes the thermal barrier function.
         
         Args:
-            config: A configuration instance containing CBF parameters like alpha
-                   and debug_mode.
+            max_temperature      : Maximum safe temperature T_max for agents
+            activation_tolerance : Threshold for determining CBF activation
         """
-        self.config           = config
-        self.activation_count = 0
-        self.total_queries    = 0
+        self.max_temperature      = max_temperature
+        self.activation_tolerance = activation_tolerance
+        self.activation_count     = 0
+        self.total_queries        = 0
     
     def evaluate(self, sd: Any) -> Tuple[Tensor, Tensor]:
         """
@@ -63,7 +69,7 @@ class ThermalBarrierFunction:
             # Fall back to gradient from agent position if not provided
             temp_grad = None
             
-        h_values = self.config.agent.max_temperature - temperature
+        h_values = self.max_temperature - temperature
         h_grads  = -temp_grad if temp_grad is not None else None
         
         return h_values, h_grads
@@ -106,8 +112,11 @@ class SafetyFilter:
 
     def __init__(
         self, 
-        barrier : ThermalBarrierFunction, 
-        config  : Any
+        barrier      : ThermalBarrierFunction,
+        agent_count  : int,
+        spatial_dims : int,
+        cbf_alpha    : float,
+        qp_solver    : BaseModel
     ):
         """
         Initializes the safety filter with its required configurations.
@@ -116,15 +125,20 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            barrier : The ThermalBarrierFunction instance that defines
-                      the safety boundary.
-            config. : A safety configuration instance (from hydra instantiation)
-                      containing swarm and QP solver parameters.
+            barrier      : The ThermalBarrierFunction instance that defines
+                          the safety boundary.
+            agent_count  : Number of agents in the swarm
+            spatial_dims : Spatial dimensions (2D or 3D)
+            cbf_alpha    : CBF constraint parameter α
+            qp_solver    : QP solver configuration model
         """
-        self.barrier = barrier
-        self.config  = config
-        self.Q       = torch.eye(
-            n      = self.config.swarm.spatial_dims,
+        self.barrier      = barrier
+        self.agent_count  = agent_count
+        self.spatial_dims = spatial_dims
+        self.cbf_alpha    = cbf_alpha
+        self.qp_solver    = qp_solver
+        self.Q            = torch.eye(
+            n      = spatial_dims,
             dtype  = torch.float32,
             device = "cpu",
         )
@@ -154,13 +168,13 @@ class SafetyFilter:
             The batch of safe control actions `u*`.
         """
         h_values, h_grads = self.barrier.evaluate(sd)
-        agent_count       = self.config.swarm.agent_count
+        agent_count       = self.agent_count
         device            = u_nominal.device
 
         # Instantiate the QP solver with its configuration.
         solver = QPFunction(
-            eps     = self.config.qp.eps,
-            maxIter = self.config.qp.max_iter,
+            eps     = self.qp_solver.eps,
+            maxIter = self.qp_solver.max_iter,
         )
 
         try:
@@ -168,7 +182,7 @@ class SafetyFilter:
                 Q = self.Q.to(device).expand(agent_count, -1, -1),
                 p = -u_nominal,
                 G = -h_grads.unsqueeze(1),
-                h = (self.config.cbf.alpha * h_values).unsqueeze(1),
+                h = (self.cbf_alpha * h_values).unsqueeze(1),
                 A = torch.empty(0, device=device),
                 b = torch.empty(0, device=device),
             )
@@ -177,11 +191,11 @@ class SafetyFilter:
             is_active = torch.norm(
                 input = u_safe - u_nominal, 
                 dim   = 1
-            ) > self.barrier.config.activation_tolerance
+            ) > self.barrier.activation_tolerance
             self.barrier.log_activation(is_active)
 
         except Exception as e:
-            if self.config.qp.on_failure == "use_nominal":
+            if self.qp_solver.on_failure == "use_nominal":
                 return u_nominal
             
             else:

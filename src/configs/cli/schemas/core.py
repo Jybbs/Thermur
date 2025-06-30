@@ -47,6 +47,36 @@ class CommandsModel(BaseModel, extra="forbid"):
     This model centralizes command definitions used to generate help text
     and documentation. Each command has an icon, name, and description.
     """
+    available: list[dict[str, str]] = Field(
+        default = [
+            {"icon": "🚀", "name": "train",     "desc": "Train thermal drone swarm behaviors"},
+            {"icon": "⚙️", "name": "configure", "desc": "Manage training configurations"},
+            {"icon": "ℹ️", "name": "info",      "desc": "Display system and configuration details"},
+            {"icon": "✓", "name": "validate",  "desc": "Validate configuration and dependencies"},
+            {"icon": "📊", "name": "monitor",   "desc": "Monitor training progress and resources"},
+        ],
+        description = "List of available commands with metadata"
+    )
+    examples: list[dict[str, str]] = Field(
+        default = [
+            {
+                "desc"    : "Start interactive training",
+                "command" : "thermur train",
+                "note"    : "Guides you through configuration"
+            },
+            {
+                "desc"    : "Quick test run",
+                "command" : "thermur train --preset quick",
+                "note"    : "5 epochs, ideal for testing"
+            },
+            {
+                "desc"    : "Train with custom learning rate",
+                "command" : "thermur train --config hyperparameters.lr=0.001",
+                "note"    : "Override specific parameters"
+            },
+        ],
+        description = "Example commands for quick start guide"
+    )
     override_syntax_help: str = Field(
         default = (
             "# Override examples:\n"

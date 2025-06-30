@@ -4,7 +4,6 @@ CLI configuration domain.
 This package contains all configuration-related code for the Thermur CLI,
 including schemas, factories, and workloads organized by functionality.
 """
-# Import submodules for easy access
 from . import factories, schemas, workloads
 
 # For convenience, re-export commonly used schemas at the domain level

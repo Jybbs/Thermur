@@ -4,7 +4,7 @@ UI and theme configuration schemas for the Thermur CLI.
 This module defines models for terminal rendering, styling, and visual
 elements used throughout the CLI interface.
 """
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
 
 
 class ThemeModel(BaseModel, extra="forbid"):
@@ -125,7 +125,7 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "ROUNDED",
         description = "Box type for Rich panels"
     )
-    panel_padding: tuple[int, int] = Field(
+    panel_padding: tuple[PositiveInt, PositiveInt] = Field(
         default     = (1, 3),
         description = "Padding for Rich panels (vertical, horizontal)"
     )
@@ -133,11 +133,11 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "dodger_blue2",
         description = "Primary color for important elements"
     )
-    progress_bar_default_length: int = Field(
+    progress_bar_default_length: PositiveInt = Field(
         default     = 20,
         description = "Default length for progress bars"
     )
-    progress_bar_width: int = Field(
+    progress_bar_width: PositiveInt = Field(
         default     = 30,
         description = "Width for progress bars"
     )
@@ -189,6 +189,94 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "monokai",
         description = "Theme for syntax highlighting"
     )
+    system_table_columns: list[dict[str, str | int]] = Field(
+        default = [
+            {
+                "header" : "Component",
+                "style"  : "bright_cyan",
+                "width"  : 20
+            },
+            {
+                "header" : "Value",
+                "style"  : "white",
+                "width"  : 40
+            },
+        ],
+        description = "Column definitions for system info table"
+    )
+    system_table_settings: dict[str, str | bool] = Field(
+        default = {
+            "box"          : "MINIMAL",
+            "border_style" : "bright_blue",
+            "title_style"  : "bold bright_cyan",
+            "show_lines"   : True,
+        },
+        description = "Settings for system info table"
+    )
+    system_table_title: str = Field(
+        default     = "System Information",
+        description = "Title for the system info table"
+    )
+    system_components: dict[str, str] = Field(
+        default = {
+            "python"       : "Python",
+            "torch"        : "PyTorch",
+            "cuda"         : "CUDA Available",
+            "device_count" : "GPU Devices",
+            "platform"     : "Platform",
+            "memory"       : "Memory (RAM)",
+            "disk"         : "Disk Storage",
+        },
+        description = "Component names for system info display"
+    )
+    system_logic: dict[str, dict[str, str | bool]] = Field(
+        default = {
+            "python" : {
+                "format" : "v{}",
+                "key"    : "python"
+            },
+            "torch" : {
+                "format" : "v{}",
+                "key"    : "torch"
+            },
+            "cuda" : {
+                "format" : "{}",
+                "key"    : "cuda"
+            },
+            "device_count" : {
+                "format" : "{} device(s)",
+                "key"    : "device_count"
+            },
+            "platform" : {
+                "format" : "{}",
+                "key"    : "platform"
+            },
+            "memory" : {
+                "is_resource" : True,
+                "available"   : "memory_available",
+                "total"       : "memory_total",
+                "unit"        : "GB"
+            },
+            "disk" : {
+                "is_resource" : True,
+                "available"   : "disk_available",
+                "total"       : "disk_total",
+                "unit"        : "GB"
+            },
+        },
+        description = "Logic for formatting system component values"
+    )
+    system_checks_thresholds: dict[str, tuple[PositiveInt, PositiveInt]] = Field(
+        default = {
+            "MEMORY_thresholds" : (4, 8),
+            "DISK_thresholds"   : (5, 20),
+        },
+        description = "Warning and critical thresholds for system resources"
+    )
+    system_progress_bar_length: PositiveInt = Field(
+        default     = 20,
+        description = "Length of progress bars in system info display"
+    )
     table_border_style: str = Field(
         default     = "bright_blue",
         description = "Border style for Rich tables"
@@ -201,7 +289,7 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "bold bright_blue",
         description = "Style for table headers"
     )
-    table_padding: tuple[int, int] = Field(
+    table_padding: tuple[NonNegativeInt, PositiveInt] = Field(
         default     = (0, 1),
         description = "Padding for Rich tables (vertical, horizontal)"
     )

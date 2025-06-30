@@ -38,42 +38,42 @@ class GNNPolicy(Module):
     """
     def __init__(
         self, 
-        config
+        gnn_config
     ):
         """
         Initializes the GNN policy network.
 
         Args:
-            config: A GNN configuration instance (from hydra instantiation)
-                   containing architectural hyperparameters like hidden dimension,
-                   number of layers, activation function, and I/O dimensions.
+            gnn_config: A GNN configuration instance (from hydra instantiation)
+                        containing architectural hyperparameters like hidden dimension,
+                        number of layers, activation function, and I/O dimensions.
         """
         super().__init__()
-        self.config = config
+        self.gnn_config = gnn_config
         
         # Extract dimensions from config
-        in_dim  = config.input_dim
-        out_dim = config.output_dim
+        in_dim  = gnn_config.input_dim
+        out_dim = gnn_config.output_dim
 
         # Maps raw node features [𝐩, 𝐯, T, ∇T, E] to the hidden dimension.
-        self.encoder = Linear(in_dim, config.hidden_dim)
+        self.encoder = Linear(in_dim, gnn_config.hidden_dim)
 
         # A stack of GNN layers and recurrent cells for state updates.
         self.convs = ModuleList()
         self.grus  = ModuleList()
-        for _ in range(config.num_layers):
-            self.convs.append(GCNConv(config.hidden_dim, config.hidden_dim))
-            self.grus.append(GRUCell(config.hidden_dim, config.hidden_dim))
+        for _ in range(gnn_config.num_layers):
+            self.convs.append(GCNConv(gnn_config.hidden_dim, gnn_config.hidden_dim))
+            self.grus.append(GRUCell(gnn_config.hidden_dim, gnn_config.hidden_dim))
 
         # Maps the final hidden state to a nominal action vector 𝐮_nom.
-        self.decoder = Linear(config.hidden_dim, out_dim)
+        self.decoder = Linear(gnn_config.hidden_dim, out_dim)
 
         # --- Activation Function ---
         self.activation = {
             "relu" : ReLU, 
             "silu" : SiLU, 
             "tanh" : Tanh
-        }[config.activation]()
+        }[gnn_config.activation]()
 
     def forward(self, data: Data) -> Tensor:
         """

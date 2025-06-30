@@ -1,27 +1,32 @@
 """
-Imitation learning configuration for Thermur.
+Imitation learning configuration workload.
 
-This module defines the configuration for training the GNN policy via 
-behavioral cloning from the expert flocking controller.
+This module defines the top-level configuration structure for training
+the GNN policy via behavioral cloning from expert demonstrations.
 """
 from ..factories import *
 from ..schemas   import *
-from hydra_zen   import builds, make_config, ZenStore
+from hydra_zen   import make_config, zen, ZenStore
 
 
 imitation_config = make_config(
-    # Parameter models  
-    agent           = builds(AgentModel),
-    environment     = builds(EnvironmentModel),
-    hyperparameters = builds(HyperparameterModel),
-    swarm           = builds(SwarmModel),
+    # Configuration models (validated but not instantiated)
+    agent           = zen(AgentModel),
+    cbf             = zen(CBFModel),
+    data            = zen(DataConfig),
+    environment     = zen(EnvironmentModel),
+    gnn             = zen(GNNConfig),
+    logging         = zen(LoggingModel),
+    qp_solver       = zen(QPSolverModel),
+    swarm           = zen(SwarmModel),
+    training        = zen(TrainingConfig),
+    wandb           = zen(WandbModel),
     
-    # Component builders
+    # Instantiatable components
     data_collector    = build_collector,
     experience_buffer = build_replay_buffer,
     expert_policy     = build_flocking_controller,
     loss_function     = build_loss,
-    monitoring        = build_monitoring,
     optimizer         = build_optimizer,
     policy            = build_policy,
     simulation        = build_simulation,
@@ -37,7 +42,6 @@ def register_configs():
     """
     store = ZenStore(overwrite_ok=True)
     
-    # Register the main training config
     store(
         imitation_config, 
         name    = "train", 
@@ -45,5 +49,4 @@ def register_configs():
         package = "_global_"
     )
     
-    # Add to Hydra
     store.add_to_hydra_store()

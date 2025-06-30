@@ -23,22 +23,22 @@ class EnvironmentDataSource:
     """
     def __init__(
         self, 
-        data_path: str, 
-        interpolation = None
+        data_path     : str,
+        interpolation : "ThermalInterpolationModel"
     ):
         """
         Loads the dataset from the specified path and initializes configuration.
         
         Args:
             data_path     : Path to the NetCDF dataset file
-            interpolation : Configuration parameters for thermal data interpolation
+            interpolation : Thermal interpolation configuration model
         """
-        self.dataset    = open_dataset(data_path, cache=True)
-        self.config     = interpolation
-        self.coord_vars = list(self.dataset.coords)
+        self.dataset       = open_dataset(data_path, cache=True)
+        self.interpolation = interpolation
+        self.coord_vars    = list(self.dataset.coords)
         
-        if hasattr(self.config, 'temperature_variable'):
-            self.temp_var = self.config.temperature_variable
+        if interpolation.temperature_variable in self.dataset.variables:
+            self.temp_var = interpolation.temperature_variable
 
         else:
             temp_vars = [v for v in self.dataset.variables 
@@ -109,13 +109,14 @@ class EnvironmentDataSource:
         Returns:
             numpy.ndarray [N, 3] containing temperature gradients
         """
-        epsilon         = self.config.epsilon
+        epsilon         = self.interpolation.epsilon
         num_agents, dim = positions.shape
         gradients       = zeros((num_agents, dim))
         axes            = ['x', 'y', 'z']
+        dim_names       = [self.interpolation.x_dimension, self.interpolation.y_dimension, self.interpolation.z_dimension]
         
         for i in range(min(dim, len(axes))):
-            dim_name = getattr(self.config, f"{axes[i]}_dimension")
+            dim_name = dim_names[i]
             if dim_name not in self.coord_vars:
                 continue
             
@@ -149,7 +150,7 @@ class EnvironmentDataSource:
             float(self.dataset[self.temp_var].interp(
                 coords = {d: a[i:i + 1] for d, a in coords.items()},
                 method = "linear",
-                kwargs = {"fill_value": self.config.fill_value},
+                kwargs = {"fill_value": self.interpolation.fill_value},
             ).values)
             for i in range(n_points)
         ]
@@ -185,7 +186,7 @@ class EnvironmentDataSource:
             return temperatures, gradients
             
         fallback_temp = Tensor(
-            [self.config.fallback_temperature], 
+            [self.interpolation.fallback_temperature], 
             device = temperatures.device
         )
         
@@ -222,7 +223,7 @@ class EnvironmentDataSource:
         return self.dataset[self.temp_var].interp(
             coords = coords_dict, 
             method = "linear", 
-            kwargs = {"fill_value": self.config.fill_value}
+            kwargs = {"fill_value": self.interpolation.fill_value}
         )
     
     def _transform_coordinates(self, positions: Tensor) -> dict[str, ndarray]:
@@ -241,9 +242,9 @@ class EnvironmentDataSource:
         """
         position_array = positions.detach().cpu().numpy()
         dim_mapping    = {
-            0 : self.config.x_dimension,
-            1 : self.config.y_dimension,
-            2 : self.config.z_dimension
+            0 : self.interpolation.x_dimension,
+            1 : self.interpolation.y_dimension,
+            2 : self.interpolation.z_dimension
         }
         
         return {

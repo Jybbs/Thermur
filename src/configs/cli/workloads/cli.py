@@ -5,13 +5,11 @@ This module defines the configuration for the CLI system, composing all
 necessary schemas and factories to create a Hydra-compatible configuration
 that can be used with @hydra.main decorator.
 """
-from hydra_zen import builds, make_config, ZenStore
-
 from ..factories import *
-from ..schemas import *
+from ..schemas   import *
+from hydra_zen   import make_config, ZenStore
 
 
-# Create the CLI configuration by composing all components
 cli_config = make_config(
     # Core CLI configuration
     cli                 = build_cli,
@@ -55,7 +53,6 @@ def register_cli_configs():
     """
     store = ZenStore(overwrite_ok=True)
     
-    # Register the CLI config
     store(
         cli_config,
         name    = "cli",
@@ -63,5 +60,4 @@ def register_cli_configs():
         package = "_global_"
     )
     
-    # Add to Hydra
     store.add_to_hydra_store()

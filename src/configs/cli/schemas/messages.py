@@ -139,6 +139,38 @@ class MessagesModel(BaseModel, extra="forbid"):
         default     = "wandb not available - install with 'pip install wandb'",
         description = "Message when wandb is not installed"
     )
+    wandb_details_api_key: str = Field(
+        default     = "Run 'wandb login' to connect",
+        description = "Details when API key exists but not logged in"
+    )
+    wandb_details_connected: str = Field(
+        default     = "Logged in as: {user}",
+        description = "Details when wandb is connected"
+    )
+    wandb_details_not_connected: str = Field(
+        default     = "Run 'wandb login' to authenticate",
+        description = "Details when wandb is installed but not connected"
+    )
+    wandb_details_not_installed: str = Field(
+        default     = "Install with: pip install wandb",
+        description = "Details when wandb is not installed"
+    )
+    wandb_status_api_key: str = Field(
+        default     = "[yellow]API key found[/yellow]",
+        description = "Status when API key exists but not logged in"
+    )
+    wandb_status_connected: str = Field(
+        default     = "[green]Connected[/green]",
+        description = "Status when wandb is connected"
+    )
+    wandb_status_not_connected: str = Field(
+        default     = "[red]Not connected[/red]",
+        description = "Status when wandb is installed but not connected"
+    )
+    wandb_status_not_installed: str = Field(
+        default     = "[red]Not installed[/red]",
+        description = "Status when wandb is not installed"
+    )
 
 
 class MessageTypesModel(BaseModel, extra="forbid"):

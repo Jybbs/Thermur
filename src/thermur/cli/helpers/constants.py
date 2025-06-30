@@ -439,8 +439,6 @@ class CLIConstants:
             ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
             ("loss_function",     "loss_function",     "📏 Loss Function"),
             ("optimizer",         "optimizer",         "⚙️  Optimizer"),
-            ("hyperparameters",   "hyperparameters",   "🎛️  Hyperparameters"),
-            ("wandb_config",      "monitoring.wandb",  "📊 wandb Tracking"),
         ]
 
         VISUALIZER_KEY = "visualization"
