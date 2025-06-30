@@ -44,9 +44,9 @@ class InfoCommand:
             ctx: The Typer context, which holds the shared AppContext object
                  containing UI, system, and other core components.
         """
-        self.constants = ctx.obj.constants
-        self.system    = ctx.obj.system
-        self.ui        = ctx.obj.ui
+        self.config = ctx.obj.config
+        self.system = ctx.obj.system
+        self.ui     = ctx.obj.ui
 
     def run(self):
         """
@@ -55,22 +55,22 @@ class InfoCommand:
         This method orchestrates the process of printing headers, validating
         the system, and displaying tables of features and configurations.
         """
-        self.ui.print_header(self.constants.Headers.INFO_TITLE)
+        self.ui.print_header(self.config.headers.info_title)
 
         self._perform_system_validation()
 
-        self.ui.print_section(self.constants.Sections.FEATURES, "accent")
+        self.ui.print_section(self.config.sections.features, "accent")
         features_table = self.ui.create_feature_table()
         self.ui.console.print(features_table)
 
-        self.ui.print_section(self.constants.Sections.CONFIG_SYSTEM, "config")
+        self.ui.print_section(self.config.sections.config_system, "config")
         self.ui.print_config_value(
             "Config Path",
             "configs/",
             "Hydra configuration directory"
         )
 
-        preset_names = ", ".join(self.constants.Presets.CONFIGS.keys())
+        preset_names = ", ".join(self.config.presets.configs.keys())
         self.ui.print_config_value(
             "Presets",
             preset_names,
@@ -92,14 +92,14 @@ class InfoCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_section(self.constants.Sections.SYSTEM_VALIDATION, "thermal")
+        self.ui.print_section(self.config.sections.system_validation, "thermal")
 
-        info = self.system.get_system_info(self.constants)
+        info  = self.system.get_system_info(self.config)
         table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)
         self.ui.console.print()
 
-        status, details = self.system.check_wandb_status(self.constants)
+        status, details = self.system.check_wandb_status(self.config)
         self.ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
         self.ui.console.print()

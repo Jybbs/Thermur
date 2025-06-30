@@ -48,10 +48,10 @@ class ConfigureCommand:
             ctx: The Typer context, which holds the shared AppContext object
                  containing UI, prompts, and other core components.
         """
-        self.constants = ctx.obj.constants
+        self.config    = ctx.obj.config
         self.prompts   = ctx.obj.prompts
         self.ui        = ctx.obj.ui
-        self.explorer  = ConfigExplorer(self.ui, self.prompts, self.constants)
+        self.explorer  = ConfigExplorer(self.ui, self.prompts, self.config.explorer)
 
     def run(self):
         """
@@ -65,9 +65,9 @@ class ConfigureCommand:
 
         if overrides:
             self.ui.console.print()
-            self.ui.print_header(self.constants.Headers.CONFIG_GEN_TITLE)
+            self.ui.print_header(self.config.headers.config_gen_title)
 
-            self.ui.print_message(self.constants.Messages.CONFIG_GEN_ADD_CMD, "info")
+            self.ui.print_message(self.config.messages.config_gen_add_cmd, "info")
             self.ui.console.print()
 
             cmd_parts = ["thermur train"]
@@ -78,8 +78,8 @@ class ConfigureCommand:
             self.ui.console.print(f"[bold accent]$ {command}[/bold accent]")
             self.ui.console.print()
 
-            self.ui.print_message(self.constants.Messages.CONFIG_GEN_USE_IND, "tip")
+            self.ui.print_message(self.config.messages.config_gen_use_ind, "tip")
             for override in overrides:
                 self.ui.print_config_value("--config", override)
         else:
-            self.ui.print_message(self.constants.Messages.NO_CONFIG_CHANGES, "info")
+            self.ui.print_message(self.config.messages.no_config_changes, "info")

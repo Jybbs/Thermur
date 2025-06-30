@@ -7,6 +7,7 @@ goal is to offer a guided way to discover available parameters and generate
 valid Hydra override strings for a training run.
 """
 from hydra_zen  import get_target
+from omegaconf  import DictConfig
 from pydantic   import BaseModel
 
 
@@ -16,7 +17,7 @@ class ConfigExplorer:
 
     This class orchestrates the user-facing workflow for exploring nested
     configuration objects. It uses `ThermurUI` for rendering, `CLIPrompts` for
-    user input, and `CLIConstants` for static text, all of which are injected
+    user input, and DictConfig for static text and settings, all of which are injected
     during initialization. This keeps the explorer focused on the logic of
     navigating the config tree while delegating I/O and data to other components.
     """
@@ -25,20 +26,20 @@ class ConfigExplorer:
         self, 
         ui, 
         prompts, 
-        constants
+        explorer_config: DictConfig
     ):
         """
         Initializes the configuration explorer with its dependencies.
 
         Args:
-            ui        : An initialized `ThermurUI` object for rendering components.
-            prompts   : An initialized `CLIPrompts` object for handling user input.
-            constants : An instance of `CLIConstants`.
+            ui              : An initialized `ThermurUI` object for rendering components.
+            prompts         : An initialized `CLIPrompts` object for handling user input.
+            explorer_config : Explorer configuration from DictConfig.
         """
         self.overrides = []
         self.ui        = ui
         self.prompts   = prompts
-        self.constants = constants
+        self.config    = explorer_config
     
     def explore_interactive(self) -> list[str]:
         """
@@ -51,7 +52,7 @@ class ConfigExplorer:
         Returns:
             A list of Hydra configuration override strings.
         """
-        self.ui.print_header(self.constants.Explorer.HEADER_TITLE)
+        self.ui.print_header(self.config.header_title)
         
         # Lazy-import heavy modules only when the explorer is used
         try:
@@ -59,7 +60,7 @@ class ConfigExplorer:
             register_configs()
         except ImportError:
             self.ui.print_message(
-                self.constants.Explorer.CONFIG_IMPORT_FAILED, "error"
+                self.config.config_import_failed, "error"
             )
             return []
         
@@ -72,7 +73,7 @@ class ConfigExplorer:
         if self.overrides:
             self.ui.console.print()
             self.ui.print_message(
-                self.constants.Explorer.OVERRIDES_GENERATED.format(
+                self.config.overrides_generated.format(
                     count=len(self.overrides)
                 ), 
                 "success"
@@ -93,17 +94,17 @@ class ConfigExplorer:
         workloads = self._discover_workloads()
         if not workloads:
             self.ui.print_message(
-                self.constants.Explorer.NO_WORKLOADS_FOUND, "error"
+                self.config.no_workloads_found, "error"
             )
             return None
         
         workload_options = [
-            (name, doc or self.constants.Explorer.DEFAULT_WORKLOAD_DOC) 
+            (name, doc or self.config.default_workload_doc) 
             for name, doc in workloads
         ]
         
         selected_name = self.prompts.select_config_component(
-            self.constants.Explorer.WORKLOAD_COMPONENT_NAME, workload_options
+            self.config.workload_component_name, workload_options
         )
         return next(
             (config for name, config in workloads if name == selected_name), 
@@ -130,7 +131,7 @@ class ConfigExplorer:
             ]
 
         except Exception as e:
-            msg = f"{self.constants.Explorer.NO_WORKLOADS_FOUND}: {e}"
+            msg = f"{self.config.no_workloads_found}: {e}"
             self.ui.print_message(msg, "error")
             return []
     
@@ -153,7 +154,7 @@ class ConfigExplorer:
         """
         if depth > 10:
             self.ui.print_message(
-                self.constants.Explorer.MAX_DEPTH_REACHED, "warning"
+                self.config.max_depth_reached, "warning"
             )
             return
 
@@ -163,7 +164,7 @@ class ConfigExplorer:
             self._explore_builds_node(config, prefix, depth)
         else:
             self.ui.print_message(
-                self.constants.Explorer.UNKNOWN_CONFIG_TYPE.format(
+                self.config.unknown_config_type.format(
                     type_name=type(config).__name__
                 ), 
                 "warning"
@@ -191,7 +192,7 @@ class ConfigExplorer:
         if not component_options:
             return
 
-        title        = f"{self.constants.Explorer.GENERIC_COMPONENT_NAME} (depth {depth})"
+        title        = f"{self.config.generic_component_name} (depth {depth})"
         selected_key = self.prompts.select_config_component(title, component_options)
         
         if selected_key:
@@ -221,7 +222,7 @@ class ConfigExplorer:
             self._explore_dataclass(config_builds, prefix, depth)
         else:
             self.ui.print_message(
-                self.constants.Explorer.CANNOT_EXPLORE.format(
+                self.config.cannot_explore.format(
                     type_name=type(target).__name__
                 ), 
                 "warning"
@@ -240,7 +241,7 @@ class ConfigExplorer:
             prefix       : The dot-path prefix for Hydra overrides.
         """
         header = (
-            f"{self.constants.Explorer.EDIT_HEADER_PREFIX} {schema_class.__name__}"
+            f"{self.config.edit_header_prefix} {schema_class.__name__}"
         )
         self.ui.print_header(header)
         
@@ -253,8 +254,8 @@ class ConfigExplorer:
         field_info    = []
         
         table = self.ui.create_aligned_table(
-            title   = self.constants.Explorer.SCHEMA_TABLE_TITLE,
-            columns = self.constants.Explorer.SCHEMA_TABLE_COLUMNS,
+            title   = self.config.schema_table_title,
+            columns = self.config.schema_table_columns,
         )
         
         for name, field in schema_fields.items():
@@ -275,7 +276,7 @@ class ConfigExplorer:
         new_overrides = self.prompts.edit_multiple_fields(
             fields      = field_info,
             prefix      = prefix,
-            description = self.constants.Explorer.PROMPT_TO_EDIT
+            description = self.config.prompt_to_edit
         )
         self.overrides.extend(new_overrides)
     
@@ -294,14 +295,14 @@ class ConfigExplorer:
             depth         : The current recursion depth.
         """
         header = (
-            f"{self.constants.Explorer.EXPLORE_HEADER_PREFIX} "
+            f"{self.config.explore_header_prefix} "
             f"{type(dataclass_obj).__name__}"
         )
         self.ui.print_header(header)
         
         table = self.ui.create_aligned_table(
-            title   = self.constants.Explorer.DATACLASS_TABLE_TITLE,
-            columns = self.constants.Explorer.DATACLASS_TABLE_COLUMNS,
+            title   = self.config.dataclass_table_title,
+            columns = self.config.dataclass_table_columns,
         )
         
         field_info = [
@@ -322,7 +323,7 @@ class ConfigExplorer:
             for name, val in field_info
         ]
         field_to_explore = self.prompts.select_config_component(
-            self.constants.Explorer.NESTED_COMPONENT_NAME, component_options
+            self.config.nested_component_name, component_options
         )
         
         if field_to_explore:
