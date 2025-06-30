@@ -6,11 +6,14 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from __future__ import annotations
-from torch      import Tensor
+from __future__                import annotations
+from torch                     import Tensor
+from typing                    import Any, Optional
+from configs.imitation.schemas import ControlModel, SwarmModel
 
 import torch
 import torch.nn.functional as F
+
 
 
 class ExpertFlockingController:
@@ -30,10 +33,10 @@ class ExpertFlockingController:
 
     def __init__(
         self,
-        agent_properties,
-        flocking_params,
-        reynolds_weights,
-        safety_filter = None
+        agent_properties : SwarmModel,
+        flocking_params  : ControlModel,
+        reynolds_weights : ControlModel,
+        safety_filter    : Optional[Any] = None
     ):
         """
         Initializes the controller with the necessary configuration models.
@@ -52,7 +55,7 @@ class ExpertFlockingController:
         self.safety_filter    = safety_filter
         self._reset_shared_state()
 
-    def compute_nominal_action(self, sd) -> Tensor:
+    def compute_nominal_action(self, sd: dict[str, Tensor]) -> Tensor:
         """
         Computes the collective nominal control action for the entire swarm.
 
@@ -236,7 +239,7 @@ class ExpertFlockingController:
         self,
         position    : Tensor,
         temperature : Tensor,
-        grad_temp   : Tensor = None
+        grad_temp   : Optional[Tensor] = None
     ) -> Tensor:
         """
         Calculates the thermal repulsion force for each agent.

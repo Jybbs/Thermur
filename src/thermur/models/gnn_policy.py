@@ -10,11 +10,12 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
-from __future__           import annotations
-from torch                import Tensor
-from torch.nn             import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
-from torch_geometric.data import Data
-from torch_geometric.nn   import GCNConv
+from __future__                import annotations
+from torch                     import Tensor
+from torch.nn                  import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
+from torch_geometric.data      import Data
+from torch_geometric.nn        import GCNConv
+from configs.imitation.schemas import LearningModel
 
 
 class GNNPolicy(Module):
@@ -39,42 +40,42 @@ class GNNPolicy(Module):
     """
     def __init__(
         self, 
-        gnn_config
+        learning_config : LearningModel
     ):
         """
         Initializes the GNN policy network.
 
         Args:
-            gnn_config: A GNN configuration instance (from hydra instantiation)
-                        containing architectural hyperparameters like hidden dimension,
-                        number of layers, activation function, and I/O dimensions.
+            learning_config: A learning configuration instance containing
+                             architectural hyperparameters like hidden dimension,
+                             number of layers, activation function, and I/O dimensions.
         """
         super().__init__()
-        self.gnn_config = gnn_config
+        self.learning_config = learning_config
         
         # Extract dimensions from config
-        in_dim  = gnn_config.input_dim
-        out_dim = gnn_config.output_dim
+        in_dim  = learning_config.input_dim
+        out_dim = learning_config.output_dim
 
         # Maps raw node features [𝐩, 𝐯, T, ∇T, E] to the hidden dimension.
-        self.encoder = Linear(in_dim, gnn_config.hidden_dim)
+        self.encoder = Linear(in_dim, learning_config.hidden_dim)
 
         # A stack of GNN layers and recurrent cells for state updates.
         self.convs = ModuleList()
         self.grus  = ModuleList()
-        for _ in range(gnn_config.num_layers):
-            self.convs.append(GCNConv(gnn_config.hidden_dim, gnn_config.hidden_dim))
-            self.grus.append(GRUCell(gnn_config.hidden_dim, gnn_config.hidden_dim))
+        for _ in range(learning_config.num_layers):
+            self.convs.append(GCNConv(learning_config.hidden_dim, learning_config.hidden_dim))
+            self.grus.append(GRUCell(learning_config.hidden_dim, learning_config.hidden_dim))
 
         # Maps the final hidden state to a nominal action vector 𝐮_nom.
-        self.decoder = Linear(gnn_config.hidden_dim, out_dim)
+        self.decoder = Linear(learning_config.hidden_dim, out_dim)
 
         # --- Activation Function ---
         self.activation = {
             "relu" : ReLU, 
             "silu" : SiLU, 
             "tanh" : Tanh
-        }[gnn_config.activation]()
+        }[learning_config.activation]()
 
     def forward(self, data: Data) -> Tensor:
         """

@@ -6,11 +6,10 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from __future__ import annotations
-from pydantic   import BaseModel
-from qpth.qp    import QPFunction
-from torch      import Tensor
-from typing     import Any, Tuple
+from __future__                import annotations
+from qpth.qp                   import QPFunction
+from torch                     import Tensor
+from configs.imitation.schemas import SafetyModel
 
 import torch
 
@@ -47,7 +46,7 @@ class ThermalBarrierFunction:
         self.activation_count     = 0
         self.total_queries        = 0
     
-    def evaluate(self, sd: Any) -> Tuple[Tensor, Tensor]:
+    def evaluate(self, sd: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
         """
         Computes the barrier function h(𝐬) and its gradient ∇h(𝐬).
         
@@ -113,11 +112,11 @@ class SafetyFilter:
 
     def __init__(
         self, 
-        barrier      : ThermalBarrierFunction,
-        agent_count  : int,
-        spatial_dims : int,
-        cbf_alpha    : float,
-        qp_solver    : BaseModel
+        barrier       : ThermalBarrierFunction,
+        agent_count   : int,
+        spatial_dims  : int,
+        cbf_alpha     : float,
+        safety_config : SafetyModel
     ):
         """
         Initializes the safety filter with its required configurations.
@@ -131,14 +130,14 @@ class SafetyFilter:
             agent_count  : Number of agents in the swarm
             spatial_dims : Spatial dimensions (2D or 3D)
             cbf_alpha    : CBF constraint parameter α
-            qp_solver    : QP solver configuration model
+            safety_config : QP solver configuration model
         """
-        self.barrier      = barrier
-        self.agent_count  = agent_count
-        self.spatial_dims = spatial_dims
-        self.cbf_alpha    = cbf_alpha
-        self.qp_solver    = qp_solver
-        self.Q            = torch.eye(
+        self.barrier       = barrier
+        self.agent_count   = agent_count
+        self.spatial_dims  = spatial_dims
+        self.cbf_alpha     = cbf_alpha
+        self.safety_config = safety_config
+        self.Q             = torch.eye(
             n      = spatial_dims,
             dtype  = torch.float32,
             device = "cpu",
@@ -146,7 +145,7 @@ class SafetyFilter:
 
     def filter(
         self, 
-        sd        : Any, 
+        sd        : dict[str, Tensor], 
         u_nominal : Tensor
     ) -> Tensor:
         """
@@ -174,8 +173,8 @@ class SafetyFilter:
 
         # Instantiate the QP solver with its configuration.
         solver = QPFunction(
-            eps     = self.qp_solver.eps,
-            maxIter = self.qp_solver.max_iter,
+            eps     = self.safety_config.qp_eps,
+            maxIter = self.safety_config.qp_max_iter,
         )
 
         try:
@@ -196,7 +195,7 @@ class SafetyFilter:
             self.barrier.log_activation(is_active)
 
         except Exception as e:
-            if self.qp_solver.on_failure == "use_nominal":
+            if self.safety_config.qp_on_failure == "nominal":
                 return u_nominal
             
             else:

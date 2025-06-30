@@ -19,7 +19,7 @@ from thermur.utils      import EnvironmentDataSource, set_seed
 
 build_data_source = builds(
         EnvironmentDataSource,
-        data_path     = SI("${physics.thermal_data_source}"),
+        data_path      = SI("${physics.thermal_data_source}"),
         physics_config = zen(PhysicsModel),
         populate_full_signature = True,
     )
