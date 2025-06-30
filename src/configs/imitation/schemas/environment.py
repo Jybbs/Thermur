@@ -50,6 +50,14 @@ class ThermalInterpolationModel(BaseModel, extra="forbid"):
         default     = 0.1,
         description = "Relative padding to add to bounds for interpolation stability."
     )
+    epsilon: PositiveFloat = Field(
+        default     = 1e-6,
+        description = "Small step size for finite difference gradient calculations."
+    )
+    fallback_temperature: float = Field(
+        default     = 20.0,
+        description = "Temperature value to use when interpolation fails or returns NaN."
+    )
     fill_value: float = Field(
         default     = float("nan"),
         description = "Value to return for queries outside the data bounds."
@@ -57,4 +65,20 @@ class ThermalInterpolationModel(BaseModel, extra="forbid"):
     method: Literal["linear", "nearest", "cubic"] = Field(
         default     = "linear",
         description = "Interpolation method for thermal field queries."
+    )
+    temperature_variable: str = Field(
+        default     = "temperature",
+        description = "Name of the temperature variable in the NetCDF dataset."
+    )
+    x_dimension: str = Field(
+        default     = "x",
+        description = "Name of the x-coordinate dimension in the dataset."
+    )
+    y_dimension: str = Field(
+        default     = "y",
+        description = "Name of the y-coordinate dimension in the dataset."
+    )
+    z_dimension: str = Field(
+        default     = "z",
+        description = "Name of the z-coordinate dimension in the dataset."
     )

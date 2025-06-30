@@ -5,10 +5,10 @@ This module defines the configuration builder for the visualization component,
 creating a Hydra-compatible config that instantiates the Visualizer with
 parameters validated by the VisualizationModel Pydantic model.
 """
-from ..schemas import ColorModel, GlyphModel, GridModel, OpacityModel, VisualizationModel
-from hydra_zen import builds, zen
-from omegaconf import SI
-from thermur   import Visualizer
+from ..schemas             import ColorModel, GlyphModel, GridModel, OpacityModel, VisualizationModel
+from hydra_zen             import builds, zen
+from omegaconf             import SI
+from thermur.visualization import Visualizer
 
 
 build_visualizer = builds(
@@ -18,7 +18,7 @@ build_visualizer = builds(
     grids                   = zen(GridModel),
     opacity                 = zen(OpacityModel),
     visualization           = zen(VisualizationModel),
-    max_temperature         = SI("${safety.max_temperature}"),
+    max_temperature         = SI("${agent.max_temperature}"),
     simulation              = SI("${simulation}"),
     populate_full_signature = True,
     zen_dataclass           = {

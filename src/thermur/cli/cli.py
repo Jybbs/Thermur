@@ -2,16 +2,21 @@
 Enhanced console-script target for Thermur, built with Typer and Rich.
 
 This module provides the main CLI interface by discovering and registering
-all available commands from the .commands subpackage. It uses Hydra for
-configuration management, providing a flexible and type-safe approach to
-managing CLI settings.
+all available commands from the .commands subpackage. It uses Hydra-zen
+to load and validate the CLI configuration through Pydantic schemas.
 """
-from .commands    import *
-from .helpers     import CLIPrompts, SystemInspector, ThermurUI
-from configs      import cli_config, register_cli_configs
-from hydra_zen    import zen
-from omegaconf    import DictConfig
-from typer        import Context, Exit, Option, Typer
+from .commands                      import *
+from .helpers                       import CLIPrompts, SystemInspector, ThermurUI
+from hydra_zen                      import instantiate
+from hydra_zen.third_party.pydantic import pydantic_parser
+from configs.cli                    import cli_config
+from typer                          import Context, Exit, Option, Typer
+
+cfg = instantiate(
+    cli_config(),
+    _parser   = pydantic_parser,
+    _convert_ = "all"
+)
 
 
 class AppContext:
@@ -19,15 +24,12 @@ class AppContext:
     A container for shared application state and components.
 
     This class initializes the core user interface, system inspector, and prompt
-    orchestrator using the Hydra configuration. An instance is created once in
-    the main callback and passed to all commands via the Typer context.
+    orchestrator using the Hydra-zen configuration. An instance is created once
+    in the main callback and passed to all commands via the Typer context.
     """
-    def __init__(self, cfg: DictConfig):
+    def __init__(self):
         """
-        Initialize the application context with Hydra configuration.
-        
-        Args:
-            cfg: The resolved Hydra configuration containing all CLI settings.
+        Initialize the application context with the loaded configuration.
         """
         self.config  = cfg
         self.ui      = ThermurUI(cfg.theme, cfg.ui)
@@ -50,15 +52,9 @@ def get_context(ctx: Context) -> AppContext:
         The singleton AppContext instance for the current application run.
     """
     if not ctx.obj:
-        raise RuntimeError(
-            "AppContext not initialized. This should not happen if CLI is "
-            "invoked through the Hydra-decorated main function."
-        )
+        ctx.obj = AppContext()
         
     return ctx.obj
-
-
-cli = None
 
 
 def version_callback(value: bool, ctx: Context):
@@ -92,7 +88,7 @@ def version_callback(value: bool, ctx: Context):
     ui.console.print(table)
 
     ui.print_section(cfg.sections.integration_status, style="swarm")
-    status, details = system.check_wandb_status(cfg.messages)
+    status, details = system.check_wandb_status(cfg)
     ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
 
     ui.print_section(cfg.sections.quick_start, style="bright_green")
@@ -150,17 +146,11 @@ def main_callback(
         ui.print_message(cfg.messages.ready_to_train, "thermal")
 
 
-def create_cli_app(cfg: DictConfig) -> Typer:
+def create_cli():
     """
-    Creates the Typer CLI application with the given configuration.
-    
-    Args:
-        cfg: The resolved Hydra configuration.
-        
-    Returns:
-        The configured Typer application.
+    Create and configure the Typer CLI application.
     """
-    app = Typer(
+    cli = Typer(
         name                     = cfg.cli.app_name,
         help                     = cfg.cli.app_description,
         add_completion           = False,
@@ -169,40 +159,26 @@ def create_cli_app(cfg: DictConfig) -> Typer:
         pretty_exceptions_enable = True,
     )
     
-    app.add_typer(cmd_train,     name = "train")
-    app.add_typer(cmd_configure, name = "configure")
-    app.add_typer(cmd_info,      name = "info")
-    app.add_typer(cmd_validate,  name = "validate")
-    app.add_typer(cmd_monitor,   name = "monitor")
+    cli.add_typer(cmd_train,     name = "train")
+    cli.add_typer(cmd_configure, name = "configure")
+    cli.add_typer(cmd_info,      name = "info")
+    cli.add_typer(cmd_validate,  name = "validate")
+    cli.add_typer(cmd_monitor,   name = "monitor")
     
-    app.callback(invoke_without_command=True)(main_callback)
+    cli.callback(invoke_without_command=True)(main_callback)
     
-    return app
+    return cli
 
 
-@zen(cli_config).hydra_main(
-    config_name  = "cli",
-    version_base = None,
-)
-def main(cfg: DictConfig) -> None:
+def main():
     """
-    Main entry point for the Hydra-based CLI.
+    Main entry point for the CLI.
     
-    This function is decorated with @hydra.main to enable configuration
-    management. It creates the CLI app and runs it with the loaded configuration.
-    
-    Args:
-        cfg: The resolved Hydra configuration.
+    This function creates and runs the CLI application with the loaded
+    configuration. The context is handled by Typer during command invocation.
     """
-    register_cli_configs()
-    
-    global cli
-    cli = create_cli_app(cfg)
-    
-    ctx     = Context()
-    ctx.obj = AppContext(cfg)
-    
-    cli(standalone_mode=False, ctx=ctx)
+    cli = create_cli()
+    cli()
 
 
 if __name__ == "__main__":

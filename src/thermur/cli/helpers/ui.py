@@ -6,7 +6,7 @@ built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
 from omegaconf    import DictConfig
-from rich         import progress
+from rich         import progress, box
 from rich.align   import Align
 from rich.console import Console
 from rich.panel   import Panel
@@ -103,7 +103,6 @@ class ThermurUI:
         return Panel(
             Align.center(title_text),
             border_style = self.ui.panel_border_style,
-            box          = self.ui.panel_box,
             padding      = self.ui.panel_padding,
         )
 
@@ -307,9 +306,7 @@ class ThermurUI:
             ),
 
             progress.TextColumn(
-                f"[{self.ui.progress_style}]"
-                "{task.description}"
-                f"[/{self.ui.progress_style}]"
+                "[{0}]{{task.description}}[/{0}]".format(self.ui.progress_style)
             ),
             progress.BarColumn(
                 bar_width      = self.ui.progress_bar_width,
@@ -363,7 +360,7 @@ class ThermurUI:
             title_style  = self.ui.table_title_style,
             header_style = self.ui.table_header_style,
             border_style = border_style,
-            box          = self.ui.table_box,
+            box          = getattr(box, self.ui.table_box, box.MINIMAL),
             show_edge    = show_edge,
             padding      = self.ui.table_padding,
             expand       = expand,
@@ -395,10 +392,16 @@ class ThermurUI:
         Returns:
             A formatted Rich table containing system diagnostics.
         """
+        settings = dict(self.ui.system_table_settings)
+        # Remove parameters that are handled by create_aligned_table itself
+        for param in ['box', 'title_style', 'border_style']:
+            if param in settings:
+                del settings[param]
+            
         table = self.create_aligned_table(
             title   = self.ui.system_table_title,
             columns = [(c["header"], c["style"], c["width"], "left") for c in self.ui.system_table_columns],
-            **self.ui.system_table_settings,
+            **settings,
         )
 
         for key, title in self.ui.system_components.items():
@@ -406,20 +409,19 @@ class ThermurUI:
             
             if logic.get("is_resource"):
                 progress_bar, details_text = self.format_resource_display(
-                    available_gb = system_info.get(f"{key}_available", 0),
-                    total_gb     = system_info.get(f"{key}_total", 0),
+                    available_gb = system_info.get(logic.get("available"), 0),
+                    total_gb     = system_info.get(logic.get("total"), 0),
                     thresholds   = self.ui.system_checks_thresholds.get(f"{str.upper(key)}_thresholds"),
                 )
-                details = f"{progress_bar}\n{details_text}"
+                value = f"{progress_bar} {details_text}"
 
             else:
-                details = logic["details"](system_info)
+                # For non-resource items, format the value using the format string
+                raw_value  = system_info.get(logic.get("key", key))
+                format_str = logic.get("format", "{}")
+                value      = format_str.format(raw_value) if raw_value is not None else "N/A"
                 
-            table.add_row(
-                title, 
-                logic["status"](system_info), 
-                details
-            )
+            table.add_row(Text(title), Text(value))
 
         return table
 

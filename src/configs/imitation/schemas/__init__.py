@@ -7,17 +7,21 @@ learning domain, organized by functionality.
 from .agent         import *
 from .environment   import *
 from .flocking      import *
+from .imitation     import *
 from .logging       import *
-from .policy        import *
 from .safety        import *
 from .swarm         import *
-from .training      import *
 from .visualization import *
 
 __all__ = [
     # .agent
     "AgentModel",
     "SwarmModel",
+    
+    # .imitation
+    "DataConfig",
+    "GNNConfig",
+    "TrainingConfig",
     
     # .environment
     "EnvironmentModel",
@@ -27,12 +31,14 @@ __all__ = [
     "FlockingModel",
     "ReynoldsWeightsModel",
     
+    # .imitation
+    "DataConfig",
+    "GNNConfig",
+    "TrainingConfig",
+    
     # .logging
     "LoggingModel",
     "WandbModel",
-    
-    # .policy
-    "GNNModel",
     
     # .safety
     "CBFModel",
@@ -41,13 +47,6 @@ __all__ = [
     # .swarm
     "SwarmActionModel",
     "SwarmObservationModel",
-    
-    # .training
-    "CheckpointModel",
-    "CollectorModel", 
-    "HyperparameterModel",
-    "ReplayBufferModel",
-    "StorageModel",
     
     # .visualization
     "ColorModel",

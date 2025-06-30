@@ -146,11 +146,11 @@ class Visualizer:
         
         Args:
             observation: Current simulation state containing:
-                        - position: Agent positions (N, 3)
-                        - velocity: Agent velocities (N, 3) 
-                        - temperature: Agent temperatures (N, 1)
-                        - temperature_grad: Temperature gradients (N, 3)
-                        - edge_index: Communication graph edges (2, E)
+                - position         : Agent positions (N, 3)
+                - velocity         : Agent velocities (N, 3) 
+                - temperature      : Agent temperatures (N, 1)
+                - temperature_grad : Temperature gradients (N, 3)
+                - edge_index       : Communication graph edges (2, E)
         """
         if self._plotter is None:
             self._initialize_plotter()

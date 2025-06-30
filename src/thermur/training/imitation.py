@@ -1,31 +1,31 @@
 """
-Imitation learning training utilities.
+Imitation learning training loop.
 
-This module provides clean, focused functions for training policies
-via behavioral cloning, without the overhead of an orchestrator class.
-It includes functions for managing the training loop, collecting expert 
-demonstrations, and handling model checkpoints.
+This module implements behavioral cloning for training a GNN policy
+to mimic expert flocking behavior while respecting thermal constraints.
 """
-import os
+from __future__ import annotations
+
 import torch
 import wandb
 
-from loguru             import logger
-from pydantic           import BaseModel
-from torch.nn           import Module
-from torch.optim        import Optimizer
-from torchrl.collectors import SyncDataCollector
-from torchrl.data       import TensorDictReplayBuffer
-from torchrl.envs       import EnvBase
-from torchrl.modules    import SafeModule
-from torchrl.objectives import LossModule
-from tqdm               import tqdm
-from typing             import Any, Optional
+from configs.imitation.schemas import DataConfig, GNNConfig, TrainingConfig, WandbModel
+from loguru                    import logger
+from pathlib                   import Path
+from thermur.visualization     import Visualizer
+from torch.nn                  import Module
+from torch.optim               import Optimizer
+from torchrl.collectors        import SyncDataCollector
+from torchrl.data              import TensorDictReplayBuffer
+from torchrl.envs              import EnvBase
+from torchrl.modules           import SafeModule
+from torchrl.objectives        import LossModule
+from tqdm                      import tqdm
 
 
 def cleanup_resources(
     data_collector : SyncDataCollector,
-    visualizer     : Optional[Any],
+    visualizer     : Visualizer | None,
     pbar           : tqdm
 ) -> None:
     """
@@ -47,8 +47,8 @@ def cleanup_resources(
 
 
 def initialize_wandb(
-    hyperparameters : BaseModel,
-    wandb_config    : BaseModel
+    training     : TrainingConfig,
+    wandb_config : WandbModel
 ) -> None:
     """
     Initialize Weights & Biases for experiment tracking.
@@ -57,18 +57,18 @@ def initialize_wandb(
     configuration settings. Only initializes if W&B is enabled in the config.
     
     Args:
-        hyperparameters : Training hyperparameters model
-        wandb_config    : W&B configuration model
+        training     : Training hyperparameters and settings
+        wandb_config : W&B configuration model
     """
     if wandb_config.mode != "disabled":
         wandb.init(
-            config  = {
-                "hyperparameters": hyperparameters.__dict__,
-                "wandb"          : wandb_config.__dict__,
-            },
+            project = wandb_config.project,
             entity  = wandb_config.entity,
             mode    = wandb_config.mode,
-            project = wandb_config.project,
+            config  = {
+                "training" : training.model_dump(),
+                "wandb"    : wandb_config.model_dump(),
+            }
         )
         logger.info("Weights & Biases initialized for experiment tracking.")
 
@@ -95,10 +95,11 @@ def save_checkpoint(
         save_path   : Directory to save checkpoints
         is_final    : Whether this is the final checkpoint
     """
-    os.makedirs(save_path, exist_ok=True)
+    save_dir = Path(save_path)
+    save_dir.mkdir(parents=True, exist_ok=True)
     
     filename  = "final.pt" if is_final else f"checkpoint_{frame_count}.pt"
-    full_path = os.path.join(save_path, filename)
+    full_path = save_dir / filename
     
     torch.save(
         {
@@ -119,37 +120,39 @@ def train_imitation_learning(
     experience_buffer : TensorDictReplayBuffer,
     loss_function     : LossModule,
     optimizer         : Optimizer,
-    hyperparameters   : BaseModel,
-    wandb_config      : BaseModel,
-    visualizer        : Optional[Any] = None,
+    training          : TrainingConfig,
+    wandb_config      : WandbModel,
+    visualizer        : Visualizer | None = None,
 ) -> None:
     """
     Train a policy via imitation learning (behavioral cloning).
-
-    This function implements the training loop for imitation learning,
-    collecting expert demonstrations and training the policy to match
-    the expert's actions. It manages the data collection, optimization,
-    visualization, and logging processes.
-
+    
+    Implements the training loop that collects expert demonstrations and
+    trains the GNN policy to minimize:
+    
+        L_imitation = 𝔼_𝒟[||π_θ(s) - π*(s)||²]
+    
+    where π_θ is the learned policy and π* is the expert policy.
+    
     Args:
-        environment       : The simulation environment
-        expert_policy     : The expert policy generating demonstrations
-        policy            : The GNN policy to be trained
-        data_collector    : Collects experiences from the environment
-        experience_buffer : Stores collected experiences
-        loss_function     : Computes the imitation loss
-        optimizer         : Updates the policy parameters
-        hyperparameters   : Training hyperparameters
-        wandb_config      : Weights & Biases configuration
-        visualizer        : Optional visualization module (None to disable)
+        environment       : Simulation environment for data collection
+        expert_policy     : Expert controller providing demonstrations
+        policy            : GNN policy network to train
+        data_collector    : Manages environment interaction loop
+        experience_buffer : Stores transitions for replay
+        loss_function     : Computes imitation loss
+        optimizer         : Updates policy parameters
+        training          : Training hyperparameters and settings
+        wandb_config      : Experiment tracking configuration
+        visualizer        : Optional 3D visualization module
     """
-    device = torch.device(hyperparameters.device)
+    device = torch.device(training.device)
     
     # Initialize experiment tracking
-    initialize_wandb(hyperparameters, wandb_config)
+    initialize_wandb(training, wandb_config)
     
-    logger.info(f"Starting training for {data_collector.total_frames} frames.")
-    pbar = tqdm(total=data_collector.total_frames)
+    logger.info(f"Starting training for {training.total_frames} frames.")
+    pbar = tqdm(total=training.total_frames)
     
     total_frames = 0
     for i, data in enumerate(data_collector):
@@ -173,22 +176,37 @@ def train_imitation_learning(
             optimizer.step()
             optimizer.zero_grad()
             
-            if i % hyperparameters.log_interval == 0:
+            if i % training.log_interval == 0:
                 if wandb_config.mode != "disabled":
                     wandb.log({"train/loss": loss.item()}, step=total_frames)
                 pbar.set_description(f"Loss: {loss.item():.4f}")
+        
+        # Save checkpoint if needed
+        if total_frames % training.checkpoint_interval == 0:
+            save_checkpoint(
+                policy, 
+                optimizer, 
+                total_frames, 
+                training.checkpoint_path
+            )
     
     # Clean up resources
     cleanup_resources(data_collector, visualizer, pbar)
     
     # Save final checkpoint
-    save_checkpoint(policy, optimizer, total_frames, "checkpoints", is_final=True)
+    save_checkpoint(
+        policy, 
+        optimizer, 
+        total_frames, 
+        training.checkpoint_path, 
+        is_final=True
+    )
     logger.info("Training finished successfully.")
 
 
 def update_visualization(
-    visualizer         : Optional[Any],
-    latest_observation : dict[str, Any]
+    visualizer         : Visualizer,
+    latest_observation : dict[str, any]
 ) -> None:
     """
     Update the visualization with the latest observation.
@@ -198,7 +216,7 @@ def update_visualization(
     a visualizer is provided.
     
     Args:
-        visualizer         : The visualization module instance or None
+        visualizer         : The visualization module instance
         latest_observation : The most recent observation from the environment
     """
     if visualizer is not None:

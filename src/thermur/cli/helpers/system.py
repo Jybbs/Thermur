@@ -7,6 +7,7 @@ the raw data that other modules, like the UI, will then format and display.
 """
 import os
 
+from contextlib         import contextmanager
 from functools          import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from omegaconf          import DictConfig
@@ -14,6 +15,7 @@ from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
 from torch              import cuda, __version__ as torch_version
+from typing             import Iterator
 from wandb              import Api, api
 
 
@@ -48,6 +50,29 @@ class SystemInspector:
         
         except (ImportError, AttributeError):
             return None
+    
+    @staticmethod
+    @contextmanager
+    def _temporary_env(var_name: str, value: str) -> Iterator[None]:
+        """
+        Context manager for temporarily setting an environment variable.
+        
+        Args:
+            var_name : Name of the environment variable
+            value    : Temporary value to set
+            
+        Yields:
+            None during the context
+        """
+        old_value = os.environ.get(var_name)
+        os.environ[var_name] = value
+        try:
+            yield
+        finally:
+            if old_value is not None:
+                os.environ[var_name] = old_value
+            else:
+                os.environ.pop(var_name, None)
 
     @staticmethod
     def _safe_version(
@@ -72,7 +97,7 @@ class SystemInspector:
 
     @staticmethod
     @lru_cache(maxsize=1)
-    def get_system_info(wandb_config: DictConfig) -> dict[str, any]:
+    def get_system_info(wandb_config: DictConfig) -> dict[str, str | int | float | bool | None]:
         """
         Gather comprehensive system information using platform tools.
 
@@ -124,34 +149,28 @@ class SystemInspector:
             api_key_exists = os.environ.get(wandb_config.api_key_env) or api.api_key
 
         if api_key_exists:
-            old_mode = os.environ.get(wandb_config.mode_env)
-            os.environ[wandb_config.mode_env] = "offline"
-
-            try:
-                user               = Api().viewer
-                info["wandb_user"] = user.get("username") if user else None
-            except Exception:
-                info["wandb_user"] = None  
-            finally:
-                if old_mode:
-                    os.environ[wandb_config.mode_env] = old_mode
-                else:
-                    os.environ.pop(wandb_config.mode_env, None)
+            with SystemInspector._temporary_env(wandb_config.mode_env, "offline"):
+                try:
+                    user               = Api().viewer
+                    info["wandb_user"] = user.get("username") if user else None
+                except Exception:
+                    info["wandb_user"] = None
 
         return info
 
     @staticmethod
-    def check_wandb_status(messages: DictConfig) -> tuple[str, str]:
+    def check_wandb_status(cfg: DictConfig) -> tuple[str, str]:
         """
         Check wandb installation and login status.
 
         Args:
-            messages: Messages configuration containing wandb status messages.
+            cfg: Full configuration object.
 
         Returns:
             A tuple of (status, details) for wandb integration.
         """
-        info = SystemInspector.get_system_info(messages.wandb_display)
+        info     = SystemInspector.get_system_info(cfg.wandb_display)
+        messages = cfg.messages
 
         if not info["wandb_installed"]:
             return (
@@ -165,7 +184,7 @@ class SystemInspector:
                 messages.wandb_details_connected.format(user=info["wandb_user"]),
             )
 
-        api_key_exists = os.environ.get(messages.wandb_display.api_key_env) or api.api_key
+        api_key_exists = os.environ.get(cfg.wandb_display.api_key_env) or api.api_key
         if api_key_exists:
             return (
                 messages.wandb_status_api_key,
@@ -178,7 +197,11 @@ class SystemInspector:
         )
 
     @staticmethod
-    def get_wandb_url(wandb_config: DictConfig, ui_config: DictConfig, project: str = "thermur") -> str | None:
+    def get_wandb_url(
+        wandb_config : DictConfig, 
+        ui_config    : DictConfig, 
+        project      : str = "thermur"
+    ) -> str | None:
         """
         Generate wandb project URL if possible.
 

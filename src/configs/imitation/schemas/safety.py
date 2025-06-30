@@ -1,64 +1,62 @@
 """
-Safety mechanism models.
+Safety system configuration.
 
-This module defines the Pydantic models for Control Barrier Function
-and Quadratic Program solver parameters.
+This module defines the unified configuration for Control Barrier Functions
+and quadratic program solvers used to ensure thermal safety constraints.
 """
-from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
+from __future__ import annotations
+
+from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
-class CBFModel(BaseModel, extra="forbid"):
+class SafetyConfig(BaseModel, extra="forbid"):
     """
-    Parameters for the Control Barrier Function (CBF) safety filter.
-
-    The CBF guarantees forward invariance of the safety set C, ensuring agents
-    do not exceed `max_temperature` via the constraint: ḣ(𝐱) ≥ -αh(𝐱). This
-    is solved in real-time via a Quadratic Program (QP).
+    Unified safety system configuration.
+    
+    Combines Control Barrier Function parameters and QP solver settings
+    into a single configuration for the safety filtering system that
+    ensures all control commands respect thermal constraints.
     """
-    activation_tolerance: PositiveFloat = Field(
-        default     = 1e-5,
+    # Control Barrier Function parameters
+    cbf_alpha: PositiveFloat = Field(
+        default     = 2.5,
         description = (
-            "Numerical tolerance for detecting CBF activations. If the norm of "
-            "the difference between safe and nominal actions exceeds this value, "
-            "the CBF is considered active for that agent."
+            "CBF class-K function parameter α controlling the rate of "
+            "exponential safety convergence: ḣ(x) + α·h(x) ≥ 0."
         )
     )
-    alpha: PositiveFloat = Field(
-        default     = 0.5,
+    activation_tolerance: NonNegativeFloat = Field(
+        default     = 5.0,
         description = (
-            "Class-K function gain (α) for the CBF safety constraint, "
-            "controlling convergence to the safe set."
+            "Temperature buffer δ in Celsius before CBF activation. "
+            "CBF triggers when T > T_max - δ."
         )
     )
-    debug_mode: bool = Field(
+    
+    # QP solver settings
+    qp_eps: PositiveFloat = Field(
+        default     = 1e-6,
+        description = "Numerical tolerance ε for QP solver convergence."
+    )
+    qp_max_iter: PositiveInt = Field(
+        default     = 100,
+        description = "Maximum iterations for iterative QP solver."
+    )
+    qp_on_failure: Literal["zero", "nominal", "raise"] = Field(
+        default     = "zero",
+        description = (
+            "Action on QP solver failure: 'zero' (safe stop), "
+            "'nominal' (pass through), or 'raise' (exception)."
+        )
+    )
+    
+    # Debug and monitoring
+    qp_verbose: bool = Field(
         default     = False,
-        description = (
-            "Enable visualization of the T_max isotherm and detailed logging "
-            "of CBF activations during simulation."
-        )
+        description = "Enable verbose QP solver output for debugging."
     )
-
-
-class QPSolverModel(BaseModel, extra="forbid"):
-    """
-    Parameters for the qpth Quadratic Program (QP) solver.
-
-    These settings control the behavior and numerical precision of the
-    differentiable QP solver used in the safety filter.
-    """
-    eps: PositiveFloat = Field(
-        default     = 1e-7,
-        description = "Tolerance for constraint satisfaction in the QP solver."
-    )
-    max_iter: PositiveInt = Field(
-        default     = 20,
-        description = "Maximum number of iterations for the QP solver."
-    )
-    on_failure: Literal["error", "use_nominal"] = Field(
-        default     = "error",
-        description = (
-            "Action to take if the QP solver fails. 'error' raises an "
-            "exception, 'use_nominal' falls back to the original unsafe action."
-        )
+    log_violations: bool = Field(
+        default     = True,
+        description = "Log safety constraint violations to monitor performance."
     )

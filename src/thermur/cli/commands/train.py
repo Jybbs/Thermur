@@ -5,9 +5,8 @@ This module encapsulates all logic for the 'train' command, including
 system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
-from sys   import argv
-from time  import sleep
-from typer import Context, Exit, Option, Typer
+from omegaconf import OmegaConf
+from typer     import Context, Exit, Option, Typer
 
 cmd_train = Typer(
     add_completion           = False,
@@ -143,27 +142,16 @@ class TrainCommand:
             wandb_project    = wandb_project
         )
 
-    def _build_hydra_configuration(
-        self,
-        config_overrides : list[str] | None,
-        preset           : str | None,
-        wandb_project    : str,
-    ):
+    def _prepare_training_imports(self):
         """
-        Builds the Hydra-decorated training function with lazy imports.
+        Lazily imports heavy dependencies for training.
 
-        This method wraps the core training logic in a function that is then
-        decorated by Hydra. Heavy dependencies like PyTorch and Hydra itself
-        are imported only when this method is called, ensuring that other CLI
-        commands (like `info` or `validate`) have a fast startup time.
-
-        Args:
-            config_overrides : A list of configuration override strings.
-            preset           : The configuration preset name.
-            wandb_project    : The wandb project name for tracking.
+        This method imports PyTorch, Hydra, and other training dependencies
+        only when training is actually initiated, ensuring that other CLI
+        commands have a fast startup time.
 
         Returns:
-            A Hydra-decorated function ready to be executed.
+            A dictionary of imported modules and functions.
         """
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(self.config.status.init_modules, total=100)
@@ -174,7 +162,7 @@ class TrainCommand:
                 description = self.config.status.loading_config_sys
             )
             from configs                        import imitation_config, register_configs
-            from hydra_zen                      import instantiate, zen
+            from hydra_zen                      import instantiate, launch
             from hydra_zen.third_party.pydantic import pydantic_parser
             from thermur                        import (
                 configure_loguru,
@@ -195,35 +183,19 @@ class TrainCommand:
                 description = self.config.status.preparing_hydra
             )
 
-            @zen(imitation_config).hydra_main(
-                config_name            = "train",
-                config_path            = None,
-                version_base           = None,
-                with_log_configuration = False,
-            )
-            def hydra_train(cfg):
-                """
-                Executes training with a fully resolved Hydra configuration.
-
-                This inner function is the target of the Hydra decorator. It
-                receives the populated configuration object (`cfg`) and orchestrates
-                the final training workflow.
-
-                Args:
-                    cfg : The fully instantiated and merged Hydra config object.
-                """
-                self._execute_training_workflow(
-                    cfg                      = cfg,
-                    configure_loguru         = configure_loguru,
-                    instantiate              = instantiate,
-                    pydantic_parser          = pydantic_parser,
-                    set_seed                 = set_seed,
-                    train_imitation_learning = train_imitation_learning,
-                )
+            imports = {
+                "imitation_config"        : imitation_config,
+                "instantiate"             : instantiate,
+                "launch"                  : launch,
+                "pydantic_parser"         : pydantic_parser,
+                "configure_loguru"        : configure_loguru,
+                "set_seed"                : set_seed,
+                "train_imitation_learning" : train_imitation_learning,
+            }
 
             progress.update(task, advance=100, description=self.config.status.ready_to_train)
 
-        return hydra_train
+        return imports
 
     def _confirm_training_setup(
         self,
@@ -243,27 +215,18 @@ class TrainCommand:
             preset           : The selected configuration preset.
             wandb_project    : The configured wandb project name.
         """
-        info = self.system.get_system_info(self.config)
         summary = {
             "preset"        : preset or "default",
             "wandb_project" : wandb_project,
             "overrides"     : len(config_overrides or []),
-            "gpu_available" : info["cuda"],
+            "gpu_available" : self.system.get_system_info(self.config)["cuda"],
         }
 
         if not self.prompts.show_training_summary(summary):
             self.ui.print_message(self.config.messages.training_cancelled, "warning")
             raise Exit()
 
-    def _execute_training_workflow(
-        self,
-        cfg,
-        configure_loguru,
-        instantiate,
-        pydantic_parser,
-        set_seed,
-        train_imitation_learning,
-    ):
+    def _execute_training_workflow(self, cfg):
         """
         Executes the main training workflow with instantiated components.
 
@@ -272,27 +235,29 @@ class TrainCommand:
         before starting the main training loop.
 
         Args:
-            cfg                      : The resolved Hydra configuration object.
-            configure_loguru         : The function to configure the logger.
-            instantiate              : The hydra-zen function to instantiate objects.
-            pydantic_parser          : The parser for Pydantic models.
-            set_seed                 : The function to set the random seed.
-            train_imitation_learning : The core function for the training loop.
+            cfg : The resolved Hydra configuration object.
         """
+        imports                  = self._training_imports
+        instantiate              = imports["instantiate"]
+        pydantic_parser          = imports["pydantic_parser"]
+        configure_loguru         = imports["configure_loguru"]
+        set_seed                 = imports["set_seed"]
+        train_imitation_learning = imports["train_imitation_learning"]
         self.ui.print_section(self.config.sections.building_components, "thermal")
 
-        configure_loguru(
-            instantiate(cfg.monitoring.logging, _parser=pydantic_parser)
-        )
-        set_seed(
-            instantiate(cfg.hyperparameters, _parser=pydantic_parser).seed
-        )
+        # Direct config access - no instantiation needed
+        configure_loguru(cfg.logging)
+        set_seed(cfg.training.seed)
 
         components = self._instantiate_training_components(
             cfg             = cfg,
             instantiate     = instantiate,
             pydantic_parser = pydantic_parser,
         )
+        
+        # Pass configs as validated Pydantic models
+        components["training"]     = cfg.training
+        components["wandb_config"] = cfg.wandb
 
         self.ui.print_message(self.config.messages.components_initialized, "success")
         self.ui.console.print()
@@ -326,19 +291,15 @@ class TrainCommand:
             interactive : Whether the CLI is in interactive mode.
             issues      : A list of validation issue strings to display.
         """
-        if interactive and not self.prompts.confirm_system_override(issues):
-            self.ui.print_message(self.config.messages.training_cancelled, "warning")
-            raise Exit()
-
-        elif not interactive:
+        if interactive:
+            if not self.prompts.confirm_system_override(issues):
+                self.ui.print_message(self.config.messages.training_cancelled, "warning")
+                raise Exit()
+        else:
             self.ui.print_message(self.config.validation.config_fail_msg, "error")
-
             for issue in issues:
                 self.ui.console.print(f"  • {issue}")
-            self.ui.print_message(
-                self.config.validation.force_override_tip,
-                "info"
-            )
+            self.ui.print_message(self.config.validation.force_override_tip, "info")
             raise Exit(1)
 
     def _initiate_training(
@@ -361,18 +322,16 @@ class TrainCommand:
         """
         self.ui.print_section(self.config.sections.init_training, "thermal")
 
-        url = self.system.get_wandb_url(self.config, wandb_project)
-        self.ui.print_wandb_info(wandb_project, url)
+        wandb_url = self.system.get_wandb_url(self.config, wandb_project)
+        self.ui.print_wandb_info(wandb_project, wandb_url)
         self.ui.console.print()
 
         try:
             self._run_training(config_overrides, preset, wandb_project)
-
         except KeyboardInterrupt:
             self.ui.console.print()
             self.ui.print_message(self.config.messages.training_interrupted, "warning")
             raise Exit()
-
         except Exception as e:
             self.ui.print_message(self.config.messages.training_failed_tpl.format(e=e), "error")
             raise Exit(1)
@@ -413,26 +372,23 @@ class TrainCommand:
                         display_name=display_name
                     )
                 )
-                sleep(0.2)  # Brief pause for visual effect
-
-                if "." in config_path:
-                    parent, child = config_path.split(".")
-                    config_obj = getattr(cfg, parent)[child]
-                else:
-                    config_obj = getattr(cfg, config_path)
+                config_obj = OmegaConf.select(cfg, config_path)
+                
+                if config_obj is None:
+                    raise ValueError(f"Configuration path '{config_path}' not found")
 
                 components[key] = instantiate(config_obj, _parser=pydantic_parser)
 
             progress.update(task, completed=len(component_configs))
 
+            # Handle optional visualizer
             visualizer_key = self.config.training.visualizer_key
-            if hasattr(cfg, visualizer_key):
-                components['visualizer'] = instantiate(
-                    getattr(cfg, visualizer_key),
-                    _parser=pydantic_parser
-                )
-            else:
-                components['visualizer'] = None
+            visualizer_cfg = OmegaConf.select(cfg, visualizer_key)
+            components['visualizer'] = (
+                instantiate(visualizer_cfg, _parser=pydantic_parser) 
+                if visualizer_cfg is not None 
+                else None
+            )
 
         return components
 
@@ -441,17 +397,15 @@ class TrainCommand:
         Performs comprehensive system validation checks.
 
         This helper validates hardware capabilities, software versions, and
-        integration status before proceeding with training initialization. It
-        includes a brief pause to improve the user's perception of the check.
+        integration status before proceeding with training initialization.
         """
         self.ui.print_section(self.config.sections.system_validation, "thermal")
 
         with self.ui.console.status(
             self.config.status.checking_reqs,
-            spinner="dots"
+            spinner = "dots"
         ):
-            sleep(0.5)  # Brief pause for visual effect
-            info = self.system.get_system_info(self.config)
+            info  = self.system.get_system_info(self.config)
             table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)
@@ -468,11 +422,11 @@ class TrainCommand:
         wandb_project    : str,
     ):
         """
-        Executes the training workflow with progress tracking.
+        Executes the training workflow using hydra_zen.launch.
 
         This function manages the lazy loading of training dependencies and
-        orchestrates the component initialization process with visual feedback,
-        finally calling the Hydra-decorated function.
+        launches the training job using hydra_zen's programmatic interface,
+        which is cleaner than manipulating sys.argv.
 
         Args:
             config_overrides : List of Hydra configuration overrides.
@@ -481,23 +435,33 @@ class TrainCommand:
         """
         self.ui.print_message(self.config.messages.loading_components, "info")
 
-        hydra_train = self._build_hydra_configuration(
-            config_overrides = config_overrides,
-            preset           = preset,
-            wandb_project    = wandb_project,
-        )
+        imports = self._prepare_training_imports()
 
         self.ui.console.print()
 
-        if preset or config_overrides:
-            args = []
-            if preset:
-                args.append(f"+preset={preset}")
-            if config_overrides:
-                args.extend(config_overrides)
-            argv.extend(args)
+        overrides = []
+        if preset:
+            overrides.append(f"+preset={preset}")
+        if config_overrides:
+            overrides.extend(config_overrides)
 
-        hydra_train()
+        # Create a wrapper function that passes imports via closure
+        def training_task(cfg):
+            self._training_imports = imports
+            return self._execute_training_workflow(cfg)
+
+        job = imports["launch"](
+            config                 = imports["imitation_config"],
+            task_function          = training_task,
+            overrides              = overrides,
+            config_name            = "train",
+            version_base           = None,
+            with_log_configuration = False,
+        )
+
+        # Check job status
+        if job.status.name != "COMPLETED":
+            raise RuntimeError(f"Training job failed with status: {job.status}")
 
     def _setup_configuration(
         self,
@@ -526,8 +490,11 @@ class TrainCommand:
         """
         self.ui.print_section(self.config.sections.config_setup, "accent")
 
-        if interactive and not preset:
-            preset = self.prompts.select_configuration_preset()
+        preset = (
+            self.prompts.select_configuration_preset() 
+            if interactive and not preset 
+            else preset
+        )
 
         if preset:
             self.ui.print_message(
@@ -535,18 +502,19 @@ class TrainCommand:
                 "config"
             )
 
-        if interactive and not wandb_project:
-            wandb_project = self.prompts.ask_wandb_project_name()
-        elif not wandb_project:
-            wandb_project = self.config.wandb.default_project
+        wandb_project = (
+            self.prompts.ask_wandb_project_name() 
+            if interactive and not wandb_project
+            else wandb_project or self.config.wandb.default_project
+        )
 
         if interactive and not config_overrides:
             additional       = self.prompts.ask_for_config_overrides()
             config_overrides = (config_overrides or []) + additional
 
-        issues = self.system.validate_config_overrides(config_overrides, self.config)
-
-        if issues and not force:
-            self._handle_configuration_issues(interactive, issues)
+        if not force:
+            issues = self.system.validate_config_overrides(config_overrides, self.config)
+            if issues:
+                self._handle_configuration_issues(interactive, issues)
 
         return preset, wandb_project, config_overrides
