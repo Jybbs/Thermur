@@ -6,7 +6,9 @@ via behavioral cloning.
 """
 from __future__         import annotations
 from torch.nn           import functional, Module
+from torchrl.data       import TensorDict
 from torchrl.objectives import LossModule
+from typing             import Any
 
 
 class ImitationLoss(LossModule):
@@ -27,7 +29,7 @@ class ImitationLoss(LossModule):
         super().__init__()
         self.policy_network = policy_network
         
-    def forward(self, tensordict):
+    def forward(self, tensordict: TensorDict) -> dict[str, Any]:
         """
         Compute the imitation loss.
         
@@ -37,17 +39,11 @@ class ImitationLoss(LossModule):
         Returns:
             Dictionary containing the computed loss.
         """
-        # Get policy predictions
-        policy_out = self.policy_network(tensordict)
-        predicted_actions = policy_out["action"]
-        
-        # Get expert actions
-        expert_actions = tensordict["action"]
-        
-        # Compute MSE loss
-        loss = functional.mse_loss(predicted_actions, expert_actions)
+        predicted_actions = self.policy_network(tensordict)["action"]
+        expert_actions    = tensordict["action"]
+        loss              = functional.mse_loss(predicted_actions, expert_actions)
         
         return {
-            "loss": loss,
-            "loss_imitation": loss,
+            "loss"           : loss,
+            "loss_imitation" : loss,
         }

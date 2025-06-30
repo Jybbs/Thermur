@@ -11,13 +11,13 @@ various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
 both light and dark themes.
 """
-from __future__ import annotations
-from .renderers import *
-from .sampling  import create_wind_grid
-from pydantic   import BaseModel
-from pyvista    import Actor, Plotter
-from tensordict import TensorDictBase
-from typing     import Optional
+from __future__                import annotations
+from .renderers                import *
+from .sampling                 import create_wind_grid
+from pyvista                   import Actor, Plotter
+from tensordict                import TensorDictBase
+from typing                    import Optional
+from configs.imitation.schemas import VisualizationModel
 
 import pyvista as pv
 
@@ -46,13 +46,9 @@ class Visualizer:
     
     def __init__(
         self,
-        colors          : BaseModel,
-        glyphs          : BaseModel,
-        grids           : BaseModel,
-        opacity         : BaseModel,
-        visualization   : BaseModel,
-        max_temperature : float,
-        simulation      : Optional[object] = None,
+        visualization_config : VisualizationModel,
+        max_temperature      : float,
+        simulation           : Optional[object] = None,
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -63,20 +59,12 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            colors          : Color configuration model for visualization elements
-            glyphs          : Glyph configuration model for agent representation
-            grids           : Grid configuration model for sampling parameters
-            opacity         : Opacity configuration model for transparency settings
-            visualization   : Main visualization configuration with feature toggles
-            max_temperature : Maximum safe temperature (T_max) for safety visualization
-            simulation      : Optional simulation reference for accessing environment data
+            visualization_config : Consolidated visualization configuration model
+            max_temperature      : Maximum safe temperature (T_max) for safety visualization
+            simulation           : Optional simulation reference for accessing environment data
         """
         # Store configuration models
-        self.colors          = colors
-        self.glyphs          = glyphs
-        self.grids           = grids
-        self.opacity         = opacity
-        self.visualization   = visualization
+        self.config          = visualization_config
         self.max_temperature = max_temperature
         self.simulation      = simulation
         

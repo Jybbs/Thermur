@@ -11,13 +11,14 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from __future__   import annotations
-from ..utils      import generate_swarm_xml, load_swarm_model
-from pathlib      import Path
-from tensordict   import TensorDict, TensorDictBase
-from torch        import Tensor
-from torchrl.envs import EnvBase
-from typing       import Callable, Optional
+from __future__                import annotations
+from ..utils                   import generate_swarm_xml, load_swarm_model
+from pathlib                   import Path
+from tensordict                import TensorDict, TensorDictBase
+from torch                     import Tensor
+from torchrl.envs              import EnvBase
+from typing                    import Any, Callable, Optional
+from configs.imitation.schemas import PhysicsModel, SwarmModel
 
 import math
 import mujoco as mj
@@ -40,55 +41,35 @@ class SimulationEnv(EnvBase):
 
     def __init__(
         self,
-        action_spec            : TensorDictBase,
-        compute_edge_index     : Callable,
-        data_source            : Callable,
-        observation_spec       : TensorDictBase,
-        seed_fn                : Optional[Callable] = None,
-        assets_dir             : str   = None,
-        simulation_step        : float = None,
-        agent_count            : int   = None,
-        communication_range    : float = None,
-        formation_scale_factor : float = None,
-        initial_formation      : str   = None,
-        spatial_dims           : int   = None,
+        action_spec        : TensorDictBase,
+        compute_edge_index : Callable,
+        data_source        : Any,
+        observation_spec   : TensorDictBase,
+        physics_config     : PhysicsModel,
+        swarm_config       : SwarmModel,
+        seed_fn            : Optional[Callable] = None,
     ):
         """
         Initializes the Thermur environment with dependency injection.
 
         Args:
-            action_spec            : The action space specification.
-            compute_edge_index     : A callable that computes communication graph edges.
-            data_source            : A callable that provides environmental data queries.
-            observation_spec       : The observation space specification.
-            seed_fn                : Optional callable for setting random seeds.
-            assets_dir             : Directory containing MJCF assets for the MuJoCo simulation.
-            simulation_step        : Time step (in seconds) for the physics simulation.
-            agent_count            : Number of agents in the swarm.
-            communication_range    : Maximum distance for inter-agent communication.
-            formation_scale_factor : Scaling factor for initial agent formation.
-            initial_formation      : Initial swarm formation type ('sphere' or 'cube').
-            spatial_dims           : Number of spatial dimensions (2 or 3).
+            action_spec        : The action space specification.
+            compute_edge_index : A callable that computes communication graph edges.
+            data_source        : A callable that provides environmental data queries.
+            observation_spec   : The observation space specification.
+            physics_config     : Physics simulation configuration.
+            swarm_config       : Swarm parameters configuration.
+            seed_fn            : Optional callable for setting random seeds.
         """
         super().__init__(device="cpu")
-        self.action_spec            = action_spec
-        self.compute_edge_index     = compute_edge_index
-        self.data_source            = data_source
-        self.observation_spec       = observation_spec
-        self.seed_fn                = seed_fn
-        
-        # Store environment parameters
-        self.assets_dir             = assets_dir
-        self.simulation_step        = simulation_step
-        
-        # Store swarm parameters
-        self.agent_count            = agent_count
-        self.communication_range    = communication_range
-        self.formation_scale_factor = formation_scale_factor
-        self.initial_formation      = initial_formation
-        self.spatial_dims           = spatial_dims
-        
-        self.physics_model          = self._initialize_physics()
+        self.action_spec        = action_spec
+        self.compute_edge_index = compute_edge_index
+        self.data_source        = data_source
+        self.observation_spec   = observation_spec
+        self.physics_config     = physics_config
+        self.swarm_config       = swarm_config
+        self.seed_fn            = seed_fn
+        self.physics_model      = self._initialize_physics()
 
     def _initialize_physics(self):
         """
@@ -142,8 +123,8 @@ class SimulationEnv(EnvBase):
             {
                 "position"         : scaled_positions,
                 "velocity"         : torch.zeros_like(scaled_positions),
-                "temperature"      : torch.zeros(self.agent_count),
-                "temperature_grad" : torch.zeros((self.agent_count, self.spatial_dims)),
+                "temperature"      : torch.zeros(self.swarm_config.agent_count),
+                "temperature_grad" : torch.zeros((self.swarm_config.agent_count, self.swarm_config.spatial_dims)),
                 "edge_index"       : torch.zeros((2, 0), dtype=torch.long),
                 "reward"           : torch.zeros(self.agent_count),
                 "done"             : torch.zeros(1, dtype=torch.bool),
