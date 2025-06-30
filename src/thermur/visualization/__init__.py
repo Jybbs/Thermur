@@ -6,6 +6,7 @@ enabling real-time visualization of agent motion, thermal conditions, wind field
 safety constraints, and communication topologies. It serves as a critical tool
 for debugging, qualitative assessment, and insight generation.
 """
+from __future__  import annotations
 from .renderers  import *
 from .sampling   import *
 from .visualizer import Visualizer

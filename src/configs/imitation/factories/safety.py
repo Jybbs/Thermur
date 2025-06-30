@@ -5,7 +5,8 @@ This module defines configuration builders for the Control Barrier Function
 and safety filter components. These builders leverage Pydantic validation
 through the zen() wrapper.
 """
-from ..schemas       import QPSolverModel
+from __future__      import annotations
+from ..schemas       import SafetyModel
 from hydra_zen       import builds, zen
 from omegaconf       import SI
 from thermur.control import ThermalBarrierFunction, SafetyFilter
@@ -13,8 +14,8 @@ from thermur.control import ThermalBarrierFunction, SafetyFilter
 
 build_thermal_barrier = builds(
     ThermalBarrierFunction,
-    max_temperature         = SI("${agent.max_temperature}"),
-    activation_tolerance    = SI("${cbf.activation_tolerance}"),
+    max_temperature         = SI("${swarm.max_temperature}"),
+    activation_tolerance    = SI("${safety.activation_tolerance}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.factories.safety",
@@ -34,8 +35,7 @@ build_safety_filter = builds(
     barrier                 = build_thermal_barrier,
     agent_count             = SI("${swarm.agent_count}"),
     spatial_dims            = SI("${swarm.spatial_dims}"),
-    cbf_alpha               = SI("${cbf.alpha}"),
-    qp_solver               = zen(QPSolverModel),
+    safety_config           = zen(SafetyModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.factories.safety",

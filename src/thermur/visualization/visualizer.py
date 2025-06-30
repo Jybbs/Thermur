@@ -11,20 +11,15 @@ various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
 both light and dark themes.
 """
-import pyvista as pv
-
+from __future__ import annotations
+from .renderers import *
+from .sampling  import create_wind_grid
 from pydantic   import BaseModel
 from pyvista    import Actor, Plotter
 from tensordict import TensorDictBase
 from typing     import Optional
 
-from .renderers  import (
-    render_agents,
-    render_communication_graph,
-    render_safety_boundary, 
-    render_wind_field
-)
-from .sampling import create_wind_grid
+import pyvista as pv
 
 
 class Visualizer:

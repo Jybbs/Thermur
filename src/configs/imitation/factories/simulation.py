@@ -3,12 +3,13 @@ Hydra-zen builder for the Thermur simulation environment.
 
 This module defines the configuration builder for SimulationEnv, which creates
 a Hydra-compatible config that instantiates the environment with validated
-parameters from the EnvironmentModel Pydantic model.
+parameters from the PhysicsModel Pydantic model.
 
 The environment follows dependency injection principles, so all dependencies
 are provided as arguments rather than imported directly.
 """
-from ..schemas          import ThermalInterpolationModel
+from __future__         import annotations
+from ..schemas          import PhysicsModel
 from .swarm             import build_action_spec, build_observation_spec
 from hydra_zen          import builds, zen
 from omegaconf          import SI
@@ -18,8 +19,8 @@ from thermur.utils      import EnvironmentDataSource, set_seed
 
 build_data_source = builds(
         EnvironmentDataSource,
-        data_path     = SI("${environment.data_source}"),
-        interpolation = zen(ThermalInterpolationModel),
+        data_path     = SI("${physics.thermal_data_source}"),
+        physics_config = zen(PhysicsModel),
         populate_full_signature = True,
     )
 
@@ -31,9 +32,9 @@ build_simulation = builds(
     observation_spec        = build_observation_spec,
     seed_fn                 = set_seed,
 
-    # Environment parameters from schema
-    assets_dir              = SI("${environment.assets_dir}"),
-    simulation_step         = SI("${environment.simulation_step}"),
+    # Physics parameters from schema
+    assets_dir              = SI("${physics.assets_dir}"),
+    simulation_step         = SI("${physics.simulation_step}"),
 
     # Swarm parameters from schema
     agent_count             = SI("${swarm.agent_count}"),

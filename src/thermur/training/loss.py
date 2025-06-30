@@ -4,6 +4,7 @@ Loss functions for imitation learning.
 This module provides loss functions used in training policies
 via behavioral cloning.
 """
+from __future__         import annotations
 from torch.nn           import functional, Module
 from torchrl.objectives import LossModule
 

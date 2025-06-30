@@ -12,14 +12,14 @@ vectorized operations where possible and PyVista's optimized rendering
 pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
+from __future__ import annotations
+from pydantic   import BaseModel
+from pyvista    import Actor, ImageData, PolyData, Plotter
+from torch      import Tensor
+from typing     import Optional
+
 import numpy   as np
 import pyvista as pv
-
-from pydantic       import BaseModel
-from pyvista        import Actor, ImageData, PolyData, Plotter
-from pyvista.core   import _vtk_core as _vtk
-from torch          import Tensor
-from typing         import Optional, Union
 
 
 def render_agents(

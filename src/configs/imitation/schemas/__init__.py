@@ -4,49 +4,39 @@ Pydantic schemas for imitation learning configuration.
 This package contains all type-checked models used in the imitation
 learning domain, organized by functionality.
 """
-from .agent         import *
-from .environment   import *
-from .flocking      import *
-from .imitation     import *
-from .logging       import *
+from __future__     import annotations
+from .control       import *
+from .learning      import *
+from .monitoring    import *
+from .physics       import *
 from .safety        import *
+from .specs         import *
 from .swarm         import *
 from .visualization import *
 
 __all__ = [
-    # .agent
-    "AgentModel",
-    "SwarmModel",
+    # .control
+    "ControlModel",
     
-    # .imitation
-    "DataConfig",
-    "GNNConfig",
-    "TrainingConfig",
+    # .learning  
+    "LearningModel",
     
-    # .environment
-    "EnvironmentModel",
-    "ThermalInterpolationModel",
-    
-    # .flocking
-    "FlockingModel",
-    "ReynoldsWeightsModel",
-    
-    # .imitation
-    "DataConfig",
-    "GNNConfig",
-    "TrainingConfig",
-    
-    # .logging
+    # .monitoring
     "LoggingModel",
     "WandbModel",
     
-    # .safety
-    "CBFModel",
-    "QPSolverModel",
+    # .physics
+    "PhysicsModel",
     
-    # .swarm
+    # .safety
+    "SafetyModel",
+    
+    # .specs
     "SwarmActionModel",
     "SwarmObservationModel",
+    
+    # .swarm
+    "SwarmModel",
     
     # .visualization
     "ColorModel",

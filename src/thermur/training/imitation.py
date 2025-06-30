@@ -4,12 +4,8 @@ Imitation learning training loop.
 This module implements behavioral cloning for training a GNN policy
 to mimic expert flocking behavior while respecting thermal constraints.
 """
-from __future__ import annotations
-
-import torch
-import wandb
-
-from configs.imitation.schemas import DataConfig, GNNConfig, TrainingConfig, WandbModel
+from __future__                import annotations
+from configs.imitation.schemas import LearningModel, WandbModel
 from loguru                    import logger
 from pathlib                   import Path
 from thermur.visualization     import Visualizer
@@ -21,6 +17,9 @@ from torchrl.envs              import EnvBase
 from torchrl.modules           import SafeModule
 from torchrl.objectives        import LossModule
 from tqdm                      import tqdm
+
+import torch
+import wandb
 
 
 def cleanup_resources(
@@ -47,7 +46,7 @@ def cleanup_resources(
 
 
 def initialize_wandb(
-    training     : TrainingConfig,
+    learning     : LearningModel,
     wandb_config : WandbModel
 ) -> None:
     """
@@ -57,7 +56,7 @@ def initialize_wandb(
     configuration settings. Only initializes if W&B is enabled in the config.
     
     Args:
-        training     : Training hyperparameters and settings
+        learning     : Learning hyperparameters and settings
         wandb_config : W&B configuration model
     """
     if wandb_config.mode != "disabled":
@@ -66,7 +65,7 @@ def initialize_wandb(
             entity  = wandb_config.entity,
             mode    = wandb_config.mode,
             config  = {
-                "training" : training.model_dump(),
+                "learning" : learning.model_dump(),
                 "wandb"    : wandb_config.model_dump(),
             }
         )
@@ -120,7 +119,7 @@ def train_imitation_learning(
     experience_buffer : TensorDictReplayBuffer,
     loss_function     : LossModule,
     optimizer         : Optimizer,
-    training          : TrainingConfig,
+    learning          : LearningModel,
     wandb_config      : WandbModel,
     visualizer        : Visualizer | None = None,
 ) -> None:
@@ -142,17 +141,17 @@ def train_imitation_learning(
         experience_buffer : Stores transitions for replay
         loss_function     : Computes imitation loss
         optimizer         : Updates policy parameters
-        training          : Training hyperparameters and settings
+        learning          : Learning hyperparameters and settings
         wandb_config      : Experiment tracking configuration
         visualizer        : Optional 3D visualization module
     """
-    device = torch.device(training.device)
+    device = torch.device(learning.device)
     
     # Initialize experiment tracking
-    initialize_wandb(training, wandb_config)
+    initialize_wandb(learning, wandb_config)
     
-    logger.info(f"Starting training for {training.total_frames} frames.")
-    pbar = tqdm(total=training.total_frames)
+    logger.info(f"Starting training for {learning.total_frames} frames.")
+    pbar = tqdm(total=learning.total_frames)
     
     total_frames = 0
     for i, data in enumerate(data_collector):
@@ -176,18 +175,18 @@ def train_imitation_learning(
             optimizer.step()
             optimizer.zero_grad()
             
-            if i % training.log_interval == 0:
+            if i % learning.log_interval == 0:
                 if wandb_config.mode != "disabled":
                     wandb.log({"train/loss": loss.item()}, step=total_frames)
                 pbar.set_description(f"Loss: {loss.item():.4f}")
         
         # Save checkpoint if needed
-        if total_frames % training.checkpoint_interval == 0:
+        if total_frames % learning.checkpoint_interval == 0:
             save_checkpoint(
                 policy, 
                 optimizer, 
                 total_frames, 
-                training.checkpoint_path
+                learning.checkpoint_path
             )
     
     # Clean up resources
@@ -198,7 +197,7 @@ def train_imitation_learning(
         policy, 
         optimizer, 
         total_frames, 
-        training.checkpoint_path, 
+        learning.checkpoint_path, 
         is_final=True
     )
     logger.info("Training finished successfully.")

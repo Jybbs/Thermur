@@ -1,97 +1,74 @@
 """
-Physics and simulation configuration.
+Physics and simulation model.
 
-This module defines configurations for the physical simulation environment,
-including MuJoCo settings, thermal dynamics, and world properties.
+This module defines the unified configuration for the physical simulation
+environment, including MuJoCo settings and thermal field interpolation.
 """
 from __future__ import annotations
-
-from pathlib  import Path
-from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
-from typing   import Literal
+from pathlib    import Path
+from pydantic   import BaseModel, Field, PositiveFloat
 
 
-class PhysicsConfig(BaseModel, extra="forbid"):
+class PhysicsModel(BaseModel, extra="forbid"):
     """
-    Physical simulation and environment configuration.
+    Unified physics and environmental simulation configuration.
     
     Controls the MuJoCo physics engine settings, simulation timestep,
-    and environmental properties used throughout the system.
+    spatial bounds, and thermal field interpolation parameters used
+    throughout the system.
+    
+    The simulation operates on a discrete timestep Δt, advancing the
+    physics state according to the equations of motion. The thermal
+    field provides spatially-varying temperature data T(𝐱) through
+    interpolation of gridded measurements.
+    
+    Gradient computation uses finite differences with step size ε:
+    
+        ∇T(𝐱) ≈ [T(𝐱 + εê_i) - T(𝐱 - εê_i)] / 2ε
+    
+    where ê_i are the standard basis vectors in ℝ^d.
     """
-    # Simulation settings
     simulation_step: PositiveFloat = Field(
         default     = 0.05,
         description = "Physics simulation timestep Δt in seconds."
     )
-    episode_length: PositiveInt = Field(
-        default     = 500,
-        description = "Maximum steps per episode before reset."
-    )
-    
-    # Environment paths
     assets_dir: Path = Field(
-        default     = Path("assets/mujoco"),
+        default     = Path("src/thermur/simulation/assets"),
         description = "Directory containing MuJoCo XML model files."
     )
-    
-    # World properties
-    world_bounds: tuple[float, float, float] = Field(
-        default     = (100.0, 100.0, 50.0),
-        description = "World boundary dimensions (x, y, z) in meters."
+    bounds_min: list[float] = Field(
+        default     = [0.0, 0.0, 0.0],
+        description = "Minimum coordinates [x_min, y_min, z_min] of workspace."
     )
-    gravity: tuple[float, float, float] = Field(
-        default     = (0.0, 0.0, -9.81),
-        description = "Gravity vector (x, y, z) in m/s²."
+    bounds_max: list[float] = Field(
+        default     = [50.0, 50.0, 20.0],
+        description = "Maximum coordinates [x_max, y_max, z_max] of workspace."
     )
-    
-    # Thermal environment
-    ambient_temperature: float = Field(
-        default     = 20.0,
-        description = "Ambient temperature T_amb in Celsius."
+    data_source: Path = Field(
+        default     = Path("data/environment/sample_field.nc"),
+        description = "Path to NetCDF file containing thermal field data."
     )
-    thermal_noise_scale: float = Field(
-        default     = 0.1,
-        description = "Scale factor for thermal measurement noise."
-    )
-
-
-class ThermalFieldConfig(BaseModel, extra="forbid"):
-    """
-    Thermal field interpolation and data source configuration.
-    
-    Defines how environmental temperature data is loaded, interpolated,
-    and made available to agents for navigation decisions.
-    """
-    # Data source settings
-    data_path: Path = Field(
-        default     = Path("data/thermal_field.npz"),
-        description = "Path to thermal field data file."
-    )
-    
-    # Interpolation parameters
     epsilon: PositiveFloat = Field(
-        default     = 1e-8,
-        description = "Numerical stability constant for gradient computation."
+        default     = 1e-6,
+        description = "Finite difference step size ε for gradient computation."
     )
     fallback_temperature: float = Field(
-        default     = 300.0,
-        description = "Temperature value used outside data bounds (Kelvin)."
+        default     = 20.0,
+        description = "Default temperature T_default when interpolation fails."
     )
     temperature_variable: str = Field(
         default     = "temperature",
-        description = "Variable name in data file containing temperature field."
+        description = "NetCDF variable name containing temperature data."
     )
-    
-    # Field dimensions
     x_dimension: str = Field(
         default     = "x",
-        description = "Variable name for x-coordinate grid."
+        description = "NetCDF dimension name for x-coordinate."
     )
     y_dimension: str = Field(
-        default     = "y", 
-        description = "Variable name for y-coordinate grid."
+        default     = "y",
+        description = "NetCDF dimension name for y-coordinate."
     )
     z_dimension: str = Field(
         default     = "z",
-        description = "Variable name for z-coordinate grid."
+        description = "NetCDF dimension name for z-coordinate."
     )

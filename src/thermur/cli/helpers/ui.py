@@ -5,6 +5,8 @@ This module provides a consistent console interface leveraging Rich's
 built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
+from __future__ import annotations
+
 from omegaconf    import DictConfig
 from rich         import progress, box
 from rich.align   import Align

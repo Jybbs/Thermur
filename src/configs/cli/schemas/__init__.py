@@ -4,6 +4,8 @@ Pydantic schemas for the Thermur CLI configuration.
 This package organizes CLI-related configuration models by functionality,
 providing type-safe validation for all CLI components.
 """
+from __future__ import annotations
+
 from .core     import CLIModel, CommandsModel, TrainingComponentsModel
 from .explorer import ExplorerMessagesModel, ExplorerModel
 from .messages import (

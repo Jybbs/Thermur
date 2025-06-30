@@ -4,6 +4,7 @@ Imitation learning configuration workload.
 This module defines the top-level configuration structure for training
 the GNN policy via behavioral cloning from expert demonstrations.
 """
+from __future__  import annotations
 from ..factories import *
 from ..schemas   import *
 from hydra_zen   import make_config, zen, ZenStore
@@ -11,15 +12,13 @@ from hydra_zen   import make_config, zen, ZenStore
 
 imitation_config = make_config(
     # Configuration models (validated but not instantiated)
-    agent           = zen(AgentModel),
-    cbf             = zen(CBFModel),
-    data            = zen(DataConfig),
-    environment     = zen(EnvironmentModel),
-    gnn             = zen(GNNConfig),
+    control         = zen(ControlModel),
+    learning        = zen(LearningModel),
     logging         = zen(LoggingModel),
-    qp_solver       = zen(QPSolverModel),
+    physics         = zen(PhysicsModel),
+    safety          = zen(SafetyModel),
     swarm           = zen(SwarmModel),
-    training        = zen(TrainingConfig),
+    visualization   = zen(VisualizationModel),
     wandb           = zen(WandbModel),
     
     # Instantiatable components

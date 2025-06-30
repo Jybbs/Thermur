@@ -4,29 +4,11 @@ Imitation learning configuration domain.
 This package contains all configuration-related code for imitation learning,
 including schemas, factories, and workloads organized by functionality.
 """
-from . import factories, schemas, workloads
-
-# Re-export key items from workloads
+from __future__           import annotations
+from .                    import factories, schemas, workloads
+from .factories           import *
+from .schemas             import *
 from .workloads.imitation import imitation_config, register_configs
-
-# For convenience, re-export commonly used factories
-from .factories import (
-    build_collector,
-    build_flocking_controller,
-    build_policy,
-    build_simulation,
-)
-
-# For convenience, re-export commonly used schemas
-from .schemas import (
-    AgentModel,
-    DataConfig,
-    EnvironmentModel,
-    FlockingModel,
-    GNNConfig,
-    SwarmModel,
-    TrainingConfig,
-)
 
 __all__ = [
     # Submodules
@@ -45,11 +27,10 @@ __all__ = [
     "build_simulation",
     
     # Commonly used schemas
-    "AgentModel",
-    "DataConfig",
-    "EnvironmentModel",
-    "FlockingModel", 
-    "GNNConfig",
+    "ControlModel",
+    "LearningModel",
+    "PhysicsModel",
+    "SafetyModel", 
     "SwarmModel",
-    "TrainingConfig",
+    "VisualizationModel",
 ]
