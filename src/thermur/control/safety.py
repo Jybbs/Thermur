@@ -6,12 +6,13 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-import torch
+from __future__ import annotations
+from pydantic   import BaseModel
+from qpth.qp    import QPFunction
+from torch      import Tensor
+from typing     import Any, Tuple
 
-from pydantic import BaseModel
-from qpth.qp  import QPFunction
-from torch    import Tensor
-from typing   import Any, Tuple
+import torch
 
 
 class ThermalBarrierFunction:

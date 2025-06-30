@@ -5,6 +5,8 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
+from __future__ import annotations
+
 import os
 
 from contextlib         import contextmanager

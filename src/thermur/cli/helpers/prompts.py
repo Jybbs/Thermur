@@ -6,6 +6,8 @@ uses the ThermurUI class to render complex components and DictConfig objects for
 static text and configuration, but it defines the logic for asking questions,
 gathering input, and confirming actions with the user.
 """
+from __future__ import annotations
+
 import questionary
 
 from omegaconf   import DictConfig

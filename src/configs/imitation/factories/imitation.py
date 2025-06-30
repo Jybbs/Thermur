@@ -4,7 +4,8 @@ Hydra-zen builders for training components.
 This module consolidates configuration builders for the policy network,
 optimizer, and loss function - all core components of the training loop.
 """
-from ..schemas        import GNNConfig, TrainingConfig
+from __future__       import annotations
+from ..schemas        import LearningModel
 from hydra_zen        import builds, zen
 from omegaconf        import SI
 from thermur.models   import GNNPolicy
@@ -14,7 +15,7 @@ from torch.optim      import AdamW
 
 build_policy = builds(
     GNNPolicy,
-    gnn_config              = zen(GNNConfig),
+    learning_config         = zen(LearningModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.imitation",
@@ -31,8 +32,8 @@ structure to output nominal control actions u_nom for each agent.
 build_optimizer = builds(
     AdamW,
     params                  = SI("${policy}"),
-    lr                      = SI("${training.learning_rate}"),
-    weight_decay            = SI("${training.weight_decay}"),
+    lr                      = SI("${learning.learning_rate}"),
+    weight_decay            = SI("${learning.weight_decay}"),
     populate_full_signature = False,
     zen_partial             = True,
     zen_dataclass           = {

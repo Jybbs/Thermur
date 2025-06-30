@@ -10,6 +10,7 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
+from __future__           import annotations
 from torch                import Tensor
 from torch.nn             import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
 from torch_geometric.data import Data

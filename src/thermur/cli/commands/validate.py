@@ -5,8 +5,8 @@ This module provides the 'validate' command, which allows users to check
 their system setup and configuration syntax without initiating a full
 training run.
 """
-from time  import sleep
-from typer import Context, Option, Typer
+from __future__ import annotations
+from typer      import Context, Option, Typer
 
 cmd_validate = Typer(
     add_completion           = False,
@@ -75,7 +75,6 @@ class ValidateCommand:
             self.config.status.validating_config,
             spinner="dots"
         ):
-            sleep(0.3)
             issues = self.system.validate_config_overrides(config_overrides, self.config)
 
         if issues:

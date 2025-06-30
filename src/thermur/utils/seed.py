@@ -1,9 +1,10 @@
 """
 Utilities for ensuring reproducible results via random seeding.
 """
-from loguru import logger
-from numpy  import random
-from torch  import backends, cuda, manual_seed
+from __future__ import annotations
+from loguru     import logger
+from numpy      import random
+from torch      import backends, cuda, manual_seed
 
 
 def set_seed(seed: int):

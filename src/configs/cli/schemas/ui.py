@@ -4,6 +4,8 @@ UI and theme configuration schemas for the Thermur CLI.
 This module defines models for terminal rendering, styling, and visual
 elements used throughout the CLI interface.
 """
+from __future__ import annotations
+
 from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
 
 

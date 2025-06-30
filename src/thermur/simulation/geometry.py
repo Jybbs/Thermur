@@ -4,7 +4,8 @@ Provides stateless utility functions for geometric computations.
 These functions are designed to be pure, vectorized operations on torch
 Tensors, suitable for use in environments, policies, and analysis scripts.
 """
-from torch import cdist, nonzero, Tensor
+from __future__ import annotations
+from torch      import cdist, nonzero, Tensor
 
 
 def compute_edge_index(pos: Tensor, r: float) -> Tensor:

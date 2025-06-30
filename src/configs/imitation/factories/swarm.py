@@ -4,11 +4,12 @@ Hydra-zen builders for swarm data specifications.
 This module provides factory functions that create torchrl spec objects
 through builder functions that are compatible with Hydra's serialization.
 """
-import torch
-
+from __future__   import annotations
 from hydra_zen    import builds
 from omegaconf    import SI
 from torchrl.data import Composite, TensorSpec
+
+import torch
 
 
 def create_edge_index_spec(n: int):

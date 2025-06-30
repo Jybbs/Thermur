@@ -6,10 +6,11 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
+from __future__ import annotations
+from torch      import Tensor
+
 import torch
 import torch.nn.functional as F
-
-from torch  import Tensor
 
 
 class ExpertFlockingController:

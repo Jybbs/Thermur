@@ -5,11 +5,12 @@ This module provides a class to abstract away the details of reading and
 interpolating from large, gridded datasets like the NetCDF files produced by
 WRF-Fire.
 """
-import torch
+from __future__ import annotations
+from numpy      import ndarray, zeros
+from torch      import Tensor
+from xarray     import DataArray, open_dataset
 
-from numpy  import ndarray, zeros
-from torch  import Tensor
-from xarray import DataArray, open_dataset
+import torch
 
 
 class EnvironmentDataSource:
@@ -23,22 +24,22 @@ class EnvironmentDataSource:
     """
     def __init__(
         self, 
-        data_path     : str,
-        interpolation : "ThermalInterpolationModel"
+        data_path      : str,
+        physics_config : "PhysicsModel"
     ):
         """
         Loads the dataset from the specified path and initializes configuration.
         
         Args:
-            data_path     : Path to the NetCDF dataset file
-            interpolation : Thermal interpolation configuration model
+            data_path      : Path to the NetCDF dataset file
+            physics_config : Physics configuration model with thermal interpolation settings
         """
-        self.dataset       = open_dataset(data_path, cache=True)
-        self.interpolation = interpolation
-        self.coord_vars    = list(self.dataset.coords)
+        self.dataset        = open_dataset(data_path, cache=True)
+        self.physics_config = physics_config
+        self.coord_vars     = list(self.dataset.coords)
         
-        if interpolation.temperature_variable in self.dataset.variables:
-            self.temp_var = interpolation.temperature_variable
+        if physics_config.temperature_variable in self.dataset.variables:
+            self.temp_var = physics_config.temperature_variable
 
         else:
             temp_vars = [v for v in self.dataset.variables 
@@ -109,11 +110,11 @@ class EnvironmentDataSource:
         Returns:
             numpy.ndarray [N, 3] containing temperature gradients
         """
-        epsilon         = self.interpolation.epsilon
+        epsilon         = self.physics_config.epsilon
         num_agents, dim = positions.shape
         gradients       = zeros((num_agents, dim))
         axes            = ['x', 'y', 'z']
-        dim_names       = [self.interpolation.x_dimension, self.interpolation.y_dimension, self.interpolation.z_dimension]
+        dim_names       = [self.physics_config.x_dimension, self.physics_config.y_dimension, self.physics_config.z_dimension]
         
         for i in range(min(dim, len(axes))):
             dim_name = dim_names[i]
@@ -150,7 +151,7 @@ class EnvironmentDataSource:
             float(self.dataset[self.temp_var].interp(
                 coords = {d: a[i:i + 1] for d, a in coords.items()},
                 method = "linear",
-                kwargs = {"fill_value": self.interpolation.fill_value},
+                kwargs = {"fill_value": self.physics_config.fill_value},
             ).values)
             for i in range(n_points)
         ]
@@ -186,7 +187,7 @@ class EnvironmentDataSource:
             return temperatures, gradients
             
         fallback_temp = Tensor(
-            [self.interpolation.fallback_temperature], 
+            [self.physics_config.fallback_temperature], 
             device = temperatures.device
         )
         
@@ -223,7 +224,7 @@ class EnvironmentDataSource:
         return self.dataset[self.temp_var].interp(
             coords = coords_dict, 
             method = "linear", 
-            kwargs = {"fill_value": self.interpolation.fill_value}
+            kwargs = {"fill_value": self.physics_config.fill_value}
         )
     
     def _transform_coordinates(self, positions: Tensor) -> dict[str, ndarray]:
@@ -242,9 +243,9 @@ class EnvironmentDataSource:
         """
         position_array = positions.detach().cpu().numpy()
         dim_mapping    = {
-            0 : self.interpolation.x_dimension,
-            1 : self.interpolation.y_dimension,
-            2 : self.interpolation.z_dimension
+            0 : self.physics_config.x_dimension,
+            1 : self.physics_config.y_dimension,
+            2 : self.physics_config.z_dimension
         }
         
         return {

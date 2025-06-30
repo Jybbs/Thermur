@@ -6,8 +6,9 @@ capabilities of the Thermur simulation. These include rendering options,
 display properties, and toggles for various visualization elements like
 agent representations, thermal fields, safety boundaries, and graph topology.
 """
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveFloat, PositiveInt
-from typing   import Literal
+from __future__ import annotations
+from pydantic   import BaseModel, Field, NonNegativeInt, PositiveFloat, PositiveInt
+from typing     import Literal
 
 
 class ColorModel(BaseModel, extra="forbid"):

@@ -5,12 +5,11 @@ This module defines the unified configuration for Control Barrier Functions
 and quadratic program solvers used to ensure thermal safety constraints.
 """
 from __future__ import annotations
+from pydantic   import BaseModel, Field, NonNegativeFloat, PositiveFloat, PositiveInt
+from typing     import Literal
 
-from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat, PositiveInt
-from typing   import Literal
 
-
-class SafetyConfig(BaseModel, extra="forbid"):
+class SafetyModel(BaseModel, extra="forbid"):
     """
     Unified safety system configuration.
     
@@ -29,7 +28,7 @@ class SafetyConfig(BaseModel, extra="forbid"):
     activation_tolerance: NonNegativeFloat = Field(
         default     = 5.0,
         description = (
-            "Temperature buffer δ in Celsius before CBF activation. "
+            "Temperature buffer δ in Fahrenheit before CBF activation. "
             "CBF triggers when T > T_max - δ."
         )
     )

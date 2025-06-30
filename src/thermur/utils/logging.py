@@ -9,8 +9,9 @@ rotation policies.
 At import time, Loguru's default handler is removed to prevent any logging
 before the application is properly configured.
 """
-from loguru import logger
-from sys    import stderr
+from __future__ import annotations
+from loguru     import logger
+from sys        import stderr
 
 logger.remove()
 logger = logger

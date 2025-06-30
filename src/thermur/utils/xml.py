@@ -5,9 +5,10 @@ This module provides functions for dynamically generating and loading MuJoCo
 models with varying numbers of agents, enabling true multi-agent physics
 simulation for swarm environments.
 """
-import mujoco as mj
+from __future__ import annotations
+from pathlib    import Path
 
-from pathlib import Path
+import mujoco as mj
 
 
 def generate_swarm_xml(
