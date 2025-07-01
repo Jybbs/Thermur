@@ -58,11 +58,15 @@ class MonitorCommand:
             project : The wandb project name to open, or None to use the default.
         """
         if project is None:
-            project = self.config.wandb.default_project
+            project = self.config.wandb_display.default_project
 
         self.ui.print_header(self.config.headers.monitor_title)
 
-        url = self.system.get_wandb_url(self.config, project)
+        url = self.system.get_wandb_url(
+            wandb_config = self.config.wandb_display, 
+            ui_config    = self.config.ui, 
+            project      = project
+        )
 
         if not url:
             self.ui.print_message(

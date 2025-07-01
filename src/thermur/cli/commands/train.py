@@ -308,8 +308,14 @@ class TrainCommand:
         """
         self.ui.print_section(self.config.sections.init_training, "thermal")
 
-        wandb_url = self.system.get_wandb_url(self.config, wandb_project)
-        self.ui.print_wandb_info(wandb_project, wandb_url)
+        self.ui.print_wandb_info(
+            project = wandb_project, 
+            url     = self.system.get_wandb_url(
+                wandb_config = self.config.wandb_display, 
+                ui_config    = self.config.ui, 
+                project      = wandb_project
+            )
+        )
         self.ui.console.print()
 
         try:
@@ -319,7 +325,7 @@ class TrainCommand:
             self.ui.print_message(self.config.messages.training_interrupted, "warning")
             raise Exit()
         except Exception as e:
-            self.ui.print_message(self.config.messages.training_failed_tpl.format(e=e), "error")
+            self.ui.print_message(self.config.messages.training_failed_template.format(e=e), "error")
             raise Exit(1)
 
     def _instantiate_training_components(
@@ -392,7 +398,7 @@ class TrainCommand:
             spinner = "dots"
         ):
             info  = self.system.get_system_info(self.config.wandb_display)
-            table = self.ui.create_system_table(info)
+            table = self.ui.create_system_table(info, self.config.system)
 
         self.ui.console.print(table)
         self.ui.console.print()
@@ -491,7 +497,7 @@ class TrainCommand:
         wandb_project = (
             self.prompts.ask_wandb_project_name() 
             if interactive and not wandb_project
-            else wandb_project or self.config.wandb.default_project
+            else wandb_project or self.config.wandb_display.default_project
         )
 
         if interactive and not config_overrides:
@@ -499,7 +505,11 @@ class TrainCommand:
             config_overrides = (config_overrides or []) + additional
 
         if not force:
-            issues = self.system.validate_config_overrides(config_overrides, self.config)
+            issues = self.system.validate_config_overrides(
+                overrides     = config_overrides, 
+                system_config = self.config.system, 
+                wandb_config  = self.config.wandb_display
+            )
             if issues:
                 self._handle_configuration_issues(interactive, issues)
 
