@@ -10,25 +10,9 @@ from omegaconf   import DictConfig
 from rich.align  import Align
 from rich.panel  import Panel
 from rich.prompt import Confirm
-from typing      import Any, TypedDict
+from typing      import Any
 
 import questionary
-
-
-class TrainingConfig(TypedDict, total=False):
-    """Type definition for training configuration summary."""
-    preset: str
-    wandb_project: str
-    overrides: int
-    gpu_available: bool
-
-
-class FieldInfo(TypedDict):
-    """Type definition for field information."""
-    name: str
-    field_type: str
-    current_val: Any
-    desc: str
 
 
 class CLIPrompts:
@@ -304,7 +288,7 @@ class CLIPrompts:
             default = False,
         )
 
-    def show_training_summary(self, config: TrainingConfig) -> bool:
+    def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
         Presents a final summary of all chosen configurations for user confirmation.
 

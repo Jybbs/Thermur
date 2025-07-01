@@ -54,10 +54,10 @@ class ConfigExplorer:
         """
         self.ui.print_header(self.config.header_title)
         
-        # Lazy-import heavy modules only when the explorer is used
+        # Import heavy modules only when the explorer is used
         try:
-            from configs import register_configs
-            register_configs()
+            from configs.imitation.workloads import imitation_config
+            from configs.cli.workloads import cli_config
         except ImportError:
             self.ui.print_message(
                 self.config.config_import_failed, "error"
@@ -122,12 +122,13 @@ class ConfigExplorer:
             A list of (name, config_object) tuples for available workloads.
         """
         try:
-            # Lazy-import to keep CLI startup fast
-            import configs.workloads as workloads_module
+            # Import to keep CLI startup fast
+            from configs.imitation import imitation_config
+            from configs.cli       import cli_config
             
             return [
-                (name.replace("_config", ""), getattr(workloads_module, name))
-                for name in dir(workloads_module) if name.endswith("_config")
+                ("imitation", imitation_config),
+                ("cli",       cli_config)
             ]
 
         except Exception as e:
