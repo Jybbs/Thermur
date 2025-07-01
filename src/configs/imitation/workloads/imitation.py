@@ -26,7 +26,17 @@ imitation_config = make_config(
 
 def register_imitation_configs():
     """
-    Register imitation configurations with Hydra's ConfigStore.
+    Register imitation learning configurations with Hydra's ConfigStore.
+    
+    This function adds the complete imitation learning configuration to Hydra's
+    global ConfigStore under the name "train". The configuration orchestrates
+    all components needed for behavioral cloning: the simulation environment,
+    expert controller, GNN policy, optimizer, loss function, data collection,
+    and visualization.
+    
+    The registered config enables training runs via:
+    
+        @hydra.main(version_base=None, config_path="...", config_name="train")
     """
     store = ZenStore(overwrite_ok=True)
     

@@ -21,7 +21,7 @@ from .imitation.schemas.safety        import SafetyModel
 from .imitation.schemas.swarm         import SwarmModel
 from .imitation.schemas.specs         import SwarmActionModel, SwarmObservationModel
 from .imitation.schemas.monitoring    import LoggingModel, WandbModel
-from .imitation.schemas.visualization import ColorModel, GlyphModel, GridModel,  OpacityModel, VisualizationModel
+from .imitation.schemas.visualization import ColorModel, GlyphModel, GridModel, OpacityModel, VisualizationModel
 from .imitation.workloads.imitation   import register_imitation_configs
 
 

@@ -1,3 +1,0 @@
-- What's going on with `flocking`? There's a weird dataclass in there which is an anti-pattern, and we're building and using `zen` for the same model twice. That definitely needs to be cleaned up.
-- All `builds` should have docstrings
-- The CLI is kind of slow.

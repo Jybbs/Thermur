@@ -18,7 +18,13 @@ build_visualizer = builds(
     simulation              = SI("${simulation}"),
     populate_full_signature = True,
     zen_dataclass           = {
-        "module"   : "src.configs.factories.visualization",
+        "module"   : "src.configs.imitation.factories.visualization",
         "cls_name" : "VisualizerBuild"
     }
 )
+"""
+Builder for the swarm visualization system.
+
+Provides real-time rendering of agent positions, temperature fields,
+and safety boundaries for monitoring training progress and behavior.
+"""

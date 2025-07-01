@@ -99,9 +99,21 @@ build_action_spec = builds(
     agent_count  = SI("${swarm.agent_count}"),
     spatial_dims = SI("${swarm.spatial_dims}"),
 )
+"""
+Builder for the action space specification.
+
+Defines the continuous velocity control space for each agent in the swarm,
+compatible with TorchRL's environment interface.
+"""
 
 build_observation_spec = builds(
     create_observation_spec,
     agent_count  = SI("${swarm.agent_count}"),
     spatial_dims = SI("${swarm.spatial_dims}"),
 )
+"""
+Builder for the observation space specification.
+
+Defines the state space including agent kinematics, communication graph
+structure, and environmental temperature data for policy inputs.
+"""
