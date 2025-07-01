@@ -11,7 +11,7 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from ..utils.xml  import generate_swarm_xml, load_swarm_model
+from thermur      import generate_swarm_xml, load_swarm_model
 from tensordict   import TensorDict, TensorDictBase
 from torch        import Tensor
 from torchrl.envs import EnvBase

@@ -17,7 +17,7 @@ build_thermal_barrier = builds(
     activation_tolerance    = SI("${safety.activation_tolerance}"),
     populate_full_signature = True,
     zen_dataclass           = {
-        "module"   : "src.configs.factories.safety",
+        "module"   : "src.configs.imitation.factories.safety",
         "cls_name" : "ThermalBarrierBuild"
     }
 )
@@ -37,7 +37,7 @@ build_safety_filter = builds(
     safety_config           = zen(SafetyModel),
     populate_full_signature = True,
     zen_dataclass           = {
-        "module"   : "src.configs.factories.safety",
+        "module"   : "src.configs.imitation.factories.safety",
         "cls_name" : "SafetyFilterBuild"
     }
 )
