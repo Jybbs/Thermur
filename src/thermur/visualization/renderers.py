@@ -25,11 +25,13 @@ import pyvista as pv
 def render_agents(
     plotter     : Plotter,
     position    : Tensor,
-    velocity    : Optional[Tensor]             = None,
-    temperature : Optional[Tensor]             = None,
-    colormap    : Optional[str]                = None,
-    config      : Optional[VisualizationModel] = None,
-    show_trails : bool                         = False,
+    velocity    : Optional[Tensor]       = None,
+    temperature : Optional[Tensor]       = None,
+    colormap    : Optional[str]          = None,
+    glyphs      : Optional[GlyphModel]   = None,
+    colors      : Optional[ColorModel]   = None,
+    opacities   : Optional[OpacityModel] = None,
+    show_trails : bool                   = False,
 ) -> list[Actor]:
     """
     Render agents as glyphs (spheres or arrows) in the visualization.
