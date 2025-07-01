@@ -67,6 +67,13 @@ class Visualizer:
         self.max_temperature = max_temperature
         self.simulation      = simulation
         
+        # Extract nested configurations for easier access
+        self.visualization = visualization_config
+        self.colors        = visualization_config.colors
+        self.glyphs        = visualization_config.glyphs
+        self.grids         = visualization_config.grids
+        self.opacity       = visualization_config.opacity
+        
         # Initialize rendering state
         self._plotter       : Optional[Plotter]      = None
         self._agent_actors  : Optional[list[Actor]]  = None

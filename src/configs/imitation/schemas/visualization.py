@@ -152,9 +152,25 @@ class VisualizationModel(BaseModel, extra="forbid"):
     simulation elements for debugging, assessment, and analysis purposes. Most
     options can be toggled at runtime.
     """
+    colors: ColorModel = Field(
+        default_factory = ColorModel,
+        description     = "Color configuration for visualization elements."
+    )
     dark_mode: bool = Field(
         default     = True,
         description = "Whether to use a dark theme with black background."
+    )
+    glyphs: GlyphModel = Field(
+        default_factory = GlyphModel,
+        description     = "Glyph configuration for agent rendering."
+    )
+    grids: GridModel = Field(
+        default_factory = GridModel,
+        description     = "Grid configuration for field sampling."
+    )
+    opacity: OpacityModel = Field(
+        default_factory = OpacityModel,
+        description     = "Opacity configuration for visualization elements."
     )
     show_agents: bool = Field(
         default     = True,
