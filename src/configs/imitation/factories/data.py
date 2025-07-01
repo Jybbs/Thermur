@@ -11,11 +11,11 @@ from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
 
 
-build_collector = builds(
+build_data_collector = builds(
     SyncDataCollector,
-    create_env_fn           = SI("${simulation}"),
+    create_env_fn           = SI("${environment}"),
     device                  = SI("${learning.device}"),
-    policy                  = SI("${expert_policy}"),
+    policy                  = SI("${controller}"),
     frames_per_batch        = SI("${learning.frames_per_batch}"),
     total_frames            = SI("${learning.total_frames}"),
     populate_full_signature = False,
@@ -31,7 +31,7 @@ Manages the interaction loop between expert policy and environment,
 collecting demonstration trajectories for imitation learning.
 """
 
-build_replay_buffer = builds(
+build_experience_buffer = builds(
     TensorDictReplayBuffer,
     batch_size              = SI("${learning.batch_size}"),
     sampler                 = builds(SamplerWithoutReplacement),

@@ -12,22 +12,6 @@ from thermur.training import ImitationLoss
 from torch.optim      import AdamW
 
 
-build_learning = builds(
-    LearningModel,
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.imitation",
-        "cls_name" : "LearningBuild"
-    }
-)
-"""
-Builder for the learning configuration.
-
-Provides unified configuration for training hyperparameters, data handling,
-and GNN architecture parameters.
-"""
-
-
 build_policy = builds(
     GNNPolicy,
     learning_config         = zen(LearningModel),
@@ -79,4 +63,19 @@ Builder for the imitation learning loss.
 
 Implements MSE loss L = ||π_θ(s) - π*(s)||² between learned policy π_θ
 and expert demonstrations π* for behavioral cloning.
+"""
+
+build_learning = builds(
+    LearningModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.imitation",
+        "cls_name" : "LearningBuild"
+    }
+)
+"""
+Builder for learning configuration.
+
+Creates a Pydantic-validated learning configuration that manages training
+hyperparameters, batch sizes, and optimization settings.
 """

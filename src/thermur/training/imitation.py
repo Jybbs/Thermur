@@ -18,14 +18,14 @@ from torchrl.objectives import LossModule
 from tqdm               import tqdm
 
 import torch
-import wandb
+import wandb as wb
 
 
 def cleanup_resources(
     data_collector : SyncDataCollector,
     visualizer     : Visualizer | None,
     pbar           : tqdm
-) -> None:
+):
     """
     Clean up resources used during training.
     
@@ -45,9 +45,9 @@ def cleanup_resources(
 
 
 def initialize_wandb(
-    learning     : LearningModel,
-    wandb_config : WandbModel
-) -> None:
+    learning : LearningModel,
+    wandb    : WandbModel
+):
     """
     Initialize Weights & Biases for experiment tracking.
     
@@ -55,17 +55,17 @@ def initialize_wandb(
     configuration settings. Only initializes if W&B is enabled in the config.
     
     Args:
-        learning     : Learning hyperparameters and settings
-        wandb_config : W&B configuration model
+        learning : Learning hyperparameters and settings
+        wandb    : W&B configuration model
     """
-    if wandb_config.mode != "disabled":
-        wandb.init(
-            project = wandb_config.project,
-            entity  = wandb_config.entity,
-            mode    = wandb_config.mode,
+    if wandb.mode != "disabled":
+        wb.init(
+            project = wandb.project,
+            entity  = wandb.entity,
+            mode    = wandb.mode,
             config  = {
                 "learning" : learning.model_dump(),
-                "wandb"    : wandb_config.model_dump(),
+                "wandb"    : wandb.model_dump(),
             }
         )
         logger.info("Weights & Biases initialized for experiment tracking.")
@@ -77,7 +77,7 @@ def save_checkpoint(
     frame_count : int,
     save_path   : str,
     is_final    : bool = False
-) -> None:
+):
     """
     Save a model checkpoint.
 
@@ -111,17 +111,17 @@ def save_checkpoint(
 
 
 def train_imitation_learning(
-    environment       : EnvBase,
-    expert_policy     : SafeModule,
-    policy            : Module,
+    controller        : SafeModule,
     data_collector    : SyncDataCollector,
+    environment       : EnvBase,
     experience_buffer : TensorDictReplayBuffer,
-    loss_function     : LossModule,
-    optimizer         : Optimizer,
     learning          : LearningModel,
-    wandb_config      : WandbModel,
+    loss              : LossModule,
+    optimizer         : Optimizer,
+    policy            : Module,
+    wandb             : WandbModel,
     visualizer        : Visualizer | None = None,
-) -> None:
+):
     """
     Train a policy via imitation learning (behavioral cloning).
     
@@ -130,24 +130,24 @@ def train_imitation_learning(
     
         L_imitation = 𝔼_𝒟[||π_θ(s) - π*(s)||²]
     
-    where π_θ is the learned policy and π* is the expert policy.
+    where π_θ is the learned policy and π* is the expert controller.
     
     Args:
-        environment       : Simulation environment for data collection
-        expert_policy     : Expert controller providing demonstrations
-        policy            : GNN policy network to train
+        controller        : Expert controller providing demonstrations
         data_collector    : Manages environment interaction loop
-        experience_buffer : Stores transitions for replay
-        loss_function     : Computes imitation loss
-        optimizer         : Updates policy parameters
-        learning          : Learning hyperparameters and settings
-        wandb_config      : Experiment tracking configuration
+        environment       : Simulation environment for data collection
+        experience_buffer : Stores and samples demonstration data
+        learning          : Training hyperparameters and settings
+        loss              : Behavioral cloning loss module
+        optimizer         : Gradient-based optimizer
+        policy            : GNN policy network to train
+        wandb             : Experiment tracking configuration
         visualizer        : Optional 3D visualization module
     """
     device = torch.device(learning.device)
     
     # Initialize experiment tracking
-    initialize_wandb(learning, wandb_config)
+    initialize_wandb(learning, wandb)
     
     logger.info(f"Starting training for {learning.total_frames} frames.")
     pbar = tqdm(total=learning.total_frames)
@@ -167,7 +167,7 @@ def train_imitation_learning(
         
         if total_frames > experience_buffer.batch_size:
             batch     = experience_buffer.sample().to(device)
-            loss_dict = loss_function(batch)
+            loss_dict = loss(batch)
             loss      = loss_dict["loss"]
             
             loss.backward()
@@ -175,8 +175,8 @@ def train_imitation_learning(
             optimizer.zero_grad()
             
             if i % learning.log_interval == 0:
-                if wandb_config.mode != "disabled":
-                    wandb.log({"train/loss": loss.item()}, step=total_frames)
+                if wandb.mode != "disabled":
+                    wb.log({"train/loss": loss.item()}, step=total_frames)
                 pbar.set_description(f"Loss: {loss.item():.4f}")
         
         # Save checkpoint if needed
@@ -205,7 +205,7 @@ def train_imitation_learning(
 def update_visualization(
     visualizer         : Visualizer,
     latest_observation : dict[str, any]
-) -> None:
+):
     """
     Update the visualization with the latest observation.
     

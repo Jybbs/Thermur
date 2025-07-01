@@ -197,7 +197,7 @@ class SectionsModel(BaseModel, extra="forbid"):
         description = "Section title for command list"
     )
     building_components: str = Field(
-        default     = "Building Training Components",
+        default     = "Preparing Training Environment",
         description = "Section title during component creation"
     )
     common_commands: str = Field(

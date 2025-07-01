@@ -45,7 +45,7 @@ Loads and interpolates time-varying temperature and wind field data
 from external wildfire simulations (e.g., WRF-Fire outputs).
 """
 
-build_simulation = builds(
+build_environment = builds(
     SimulationEnv,
     action_spec             = build_action_spec,
     compute_edge_index      = compute_edge_index,

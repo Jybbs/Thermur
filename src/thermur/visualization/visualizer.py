@@ -118,7 +118,7 @@ class Visualizer:
         # Use colormap from configuration
         self._colormap = self.colors.colormap
 
-    def update(self, observation: TensorDictBase) -> None:
+    def update(self, observation: TensorDictBase):
         """
         Update the visualization with new simulation data.
         
