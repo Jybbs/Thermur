@@ -93,7 +93,7 @@ class InfoCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_section(self.config.sections.system_validation, "thermal")
+        self.ui.print_section(self.config.sections.system_information, "thermal")
 
         info  = self.system.get_system_info(self.config.wandb_display)
         table = self.ui.create_system_table(info, self.config.system)
