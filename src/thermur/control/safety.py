@@ -6,9 +6,10 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from qpth.qp import QPFunction
-from torch   import Tensor
-from configs import SafetyModel
+from configs    import SafetyModel
+from qpth.qp    import QPFunction
+from tensordict import TensorDict
+from torch      import Tensor
 
 import torch
 
@@ -45,7 +46,7 @@ class ThermalBarrierFunction:
         self.activation_count     = 0
         self.total_queries        = 0
     
-    def evaluate(self, sd: dict[str, Tensor]) -> tuple[Tensor, Tensor]:
+    def evaluate(self, sd: TensorDict) -> tuple[Tensor, Tensor]:
         """
         Computes the barrier function h(𝐬) and its gradient ∇h(𝐬).
         
@@ -144,7 +145,7 @@ class SafetyFilter:
 
     def filter(
         self, 
-        sd        : dict[str, Tensor], 
+        sd        : TensorDict, 
         u_nominal : Tensor
     ) -> Tensor:
         """

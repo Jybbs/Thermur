@@ -6,28 +6,14 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from torch   import Tensor
-from typing  import Optional, Protocol, TypedDict
-from configs import ControlModel, SwarmModel
+from .safety    import SafetyFilter
+from configs    import ControlModel, SwarmModel
+from tensordict import TensorDict
+from torch      import Tensor
+from typing     import Optional
 
 import torch
 import torch.nn.functional as F
-
-
-class SafetyFilter(Protocol):
-    """Protocol for safety filter implementations."""
-    def filter(self, sd: dict[str, Tensor], u_nominal: Tensor) -> Tensor:
-        """Apply safety filtering to nominal control action."""
-        ...
-
-
-class SwarmData(TypedDict, total=False):
-    """Type definition for swarm state data."""
-    position: Tensor
-    velocity: Tensor
-    temperature: Tensor
-    edge_index: Tensor
-    temperature_grad: Tensor  # Optional field
 
 
 
@@ -49,8 +35,7 @@ class ExpertFlockingController:
     def __init__(
         self,
         agent_properties : SwarmModel,
-        flocking_params  : ControlModel,
-        reynolds_weights : ControlModel,
+        control_config   : ControlModel,
         safety_filter    : Optional[SafetyFilter] = None
     ):
         """
@@ -59,24 +44,25 @@ class ExpertFlockingController:
         Args:
             agent_properties : Contains agent-specific properties like the maximum
                                survivable temperature T_max.
-            flocking_params  : Contains numerical parameters for stable force calculations.
-            reynolds_weights : Contains the weights for each potential field component.
+            control_config   : Contains both Reynolds weights (w_cohesion, w_separation,
+                               w_alignment, w_thermal) and numerical parameters
+                               (min_distance, epsilon, temperature_scaling) for
+                               stable force calculations.
             safety_filter    : Optional safety filter that applies a Control Barrier
                                Function to enforce thermal safety constraints.
         """
         self.agent_properties = agent_properties
-        self.flocking_params  = flocking_params
-        self.reynolds_weights = reynolds_weights
+        self.control_config   = control_config
         self.safety_filter    = safety_filter
         self._reset_shared_state()
 
-    def compute_nominal_action(self, sd: SwarmData) -> Tensor:
+    def compute_nominal_action(self, sd: TensorDict) -> Tensor:
         """
         Computes the collective nominal control action for the entire swarm.
 
         This method calculates the weighted sum of forces from all potential
         fields to produce the final velocity command 𝐮_nom. The weights come
-        from the reynolds_weights configuration, balancing the influence of
+        from the control_config, balancing the influence of
         each behavioral component.
         
         If a safety_filter is provided, the nominal control action is passed
@@ -94,12 +80,11 @@ class ExpertFlockingController:
         self._update_graph_state(sd["edge_index"], sd["position"].size(0))
 
         # Compute the nominal control based on Reynolds rules and thermal potential
-        w = self.reynolds_weights
         u_nominal = (
-            w.w_cohesion   * self._compute_cohesion(sd["position"])   +
-            w.w_separation * self._compute_separation(sd["position"]) +
-            w.w_alignment  * self._compute_alignment(sd["velocity"])  +
-            w.w_thermal    * self._compute_thermal(
+            self.control_config.w_cohesion   * self._compute_cohesion(sd["position"])   +
+            self.control_config.w_separation * self._compute_separation(sd["position"]) +
+            self.control_config.w_alignment  * self._compute_alignment(sd["velocity"])  +
+            self.control_config.w_thermal    * self._compute_thermal(
                 sd["position"],
                 sd["temperature"],
                 grad_temp = sd.get("temperature_grad", None)
@@ -219,10 +204,10 @@ class ExpertFlockingController:
         )
 
         # Apply minimum distance and calculate repulsion
-        distance  = torch.clamp(distance, min=self.flocking_params.min_distance)
+        distance  = torch.clamp(distance, min=self.control_config.min_distance)
         repulsion = torch.divide(
             rel_pos, 
-            distance.pow(2) + self.flocking_params.epsilon
+            distance.pow(2) + self.control_config.epsilon
         )
 
         # Sum repulsion vectors for each agent
@@ -284,11 +269,11 @@ class ExpertFlockingController:
         temperature = self._ensure_1d_temperature(temperature)
         t_margin    = torch.clamp(
             input = self.agent_properties.max_temperature - temperature,
-            min   = self.flocking_params.epsilon
+            min   = self.control_config.epsilon
         )
 
         magnitude = torch.divide(
-            self.flocking_params.temperature_scaling, 
+            self.control_config.temperature_scaling, 
             t_margin
         )
 
@@ -340,7 +325,7 @@ class ExpertFlockingController:
         temp_diff     = temperature[self._edge_target] - temperature[self._edge_source]
         
         # Sum weighted positions and count significant neighbors
-        sig_mask   = torch.abs(input=temp_diff) > self.flocking_params.epsilon
+        sig_mask   = torch.abs(input=temp_diff) > self.control_config.epsilon
         grad_sum   = torch.zeros_like(position)
         sig_counts = torch.bincount(
             input     = self._edge_source[sig_mask],

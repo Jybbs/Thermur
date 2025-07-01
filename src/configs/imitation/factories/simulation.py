@@ -21,6 +21,12 @@ build_data_source = builds(
         physics_config = zen(PhysicsModel),
         populate_full_signature = True,
     )
+"""
+Builder for the environmental data source.
+
+Loads and interpolates time-varying temperature and wind field data
+from external wildfire simulations (e.g., WRF-Fire outputs).
+"""
 
 build_simulation = builds(
     SimulationEnv,
@@ -42,7 +48,13 @@ build_simulation = builds(
     spatial_dims            = SI("${swarm.spatial_dims}"),
     populate_full_signature = True,
     zen_dataclass           = {
-        "module"   : "src.configs.factories.simulation",
+        "module"   : "src.configs.imitation.factories.simulation",
         "cls_name" : "SimulationBuild"
     }
 )
+"""
+Builder for the main simulation environment.
+
+Creates a TorchRL-compatible environment managing multi-agent swarm dynamics
+within MuJoCo physics, integrating real-time environmental hazards.
+"""

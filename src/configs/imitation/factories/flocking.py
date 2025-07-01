@@ -13,11 +13,16 @@ from thermur   import ExpertFlockingController
 build_flocking_controller = builds(
     ExpertFlockingController,
     agent_properties        = zen(SwarmModel),
-    flocking_params         = zen(ControlModel),
-    reynolds_weights        = zen(ControlModel),
+    control_config          = zen(ControlModel),
     populate_full_signature = True,
     zen_dataclass           = {
-        "module"   : "src.configs.factories.flocking",
+        "module"   : "src.configs.imitation.factories.flocking",
         "cls_name" : "FlockingControllerBuild"
     }
 )
+"""
+Builder for the expert flocking controller.
+
+Implements Reynolds rules augmented with thermal avoidance to generate
+expert demonstrations for imitation learning in wildfire scenarios.
+"""

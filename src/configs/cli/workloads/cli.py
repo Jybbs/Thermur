@@ -34,6 +34,15 @@ cli_config = make_config(
 def register_cli_configs():
     """
     Register CLI configurations with Hydra's ConfigStore.
+    
+    This function adds the CLI configuration to Hydra's global ConfigStore
+    for potential use in Hydra-based workflows. However, the Thermur CLI
+    itself directly instantiates cli_config using hydra_zen.instantiate(),
+    allowing for immediate configuration loading without Hydra's runtime 
+    overhead.
+    
+    The configuration includes all UI components, command definitions, themes,
+    and interactive prompts needed for the Thermur command-line interface.
     """
     store = ZenStore(overwrite_ok=True)
     
