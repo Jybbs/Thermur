@@ -5,13 +5,8 @@ This module provides builders that create Hydra-compatible configurations
 for the CLI system. It follows the same clean patterns as other factories
 in the project.
 """
-from hydra_zen          import builds
-from ..schemas.core     import CLIModel, CommandsModel, TrainingComponentsModel
-from ..schemas.explorer import ExplorerMessagesModel, ExplorerModel
-from ..schemas.messages import HeadersModel, MessagesModel, MessageTypesModel, PromptsModel, SectionsModel, StatusModel
-from ..schemas.presets  import PresetsModel, TipsModel
-from ..schemas.system   import SystemModel, ValidationModel, WandbDisplayModel
-from ..schemas.ui       import ThemeModel, UIModel
+from ..schemas import *
+from hydra_zen import builds
 
 build_cli                 = builds(CLIModel)
 build_commands            = builds(CommandsModel)  

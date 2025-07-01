@@ -5,8 +5,8 @@ This module provides an interactive way for users to discover, navigate,
 and edit configuration schemas, generating valid Hydra override strings
 for use in other commands like 'train'.
 """
-from ..helpers.explorer import ConfigExplorer
-from typer              import Context, Typer
+from ..helpers import ConfigExplorer
+from typer     import Context, Typer
 
 cmd_configure = Typer(
     add_completion           = False,

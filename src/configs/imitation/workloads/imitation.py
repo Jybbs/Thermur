@@ -4,12 +4,8 @@ Imitation learning configuration workload.
 This module defines the top-level configuration structure for training
 the GNN policy via behavioral cloning from expert demonstrations.
 """
-from ..factories.data          import build_collector, build_replay_buffer
-from ..factories.flocking      import build_flocking_controller
-from ..factories.imitation     import build_loss, build_optimizer, build_policy
-from ..factories.simulation    import build_simulation
-from ..factories.visualization import build_visualizer
-from hydra_zen                 import make_config, ZenStore
+from ..factories import *
+from hydra_zen   import make_config, ZenStore
 
 imitation_config = make_config(
     data_collector    = build_collector,
