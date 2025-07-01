@@ -6,7 +6,6 @@ hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
 from contextlib         import contextmanager
-from functools          import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from omegaconf          import DictConfig
 from platform           import platform, python_version
