@@ -514,7 +514,7 @@ class ThermurUI:
         Returns:
             A configured Panel object with success styling.
         """
-        style = self.theme.styles['success']
+        style   = self.theme.styles['success']
         content = Align.center(
             f"[bold {style}]{title}[/]\n"
             f"[{self.theme.styles['muted']}]{subtitle}[/]",
