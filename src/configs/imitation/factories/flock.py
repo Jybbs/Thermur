@@ -7,25 +7,9 @@ through builder functions that are compatible with Hydra's serialization.
 from ..schemas    import FlockModel
 from hydra_zen    import builds
 from omegaconf    import SI
-from torchrl.data import Composite, UnboundedContinuousTensorSpec, BoundedTensorSpec
+from torchrl.data import Composite, Unbounded, Bounded
 
 import torch
-
-
-build_flock = builds(
-    FlockModel,
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.flock",
-        "cls_name" : "FlockBuild"
-    }
-)
-"""
-Builder for flock configuration.
-
-Defines agent properties and flock behavior parameters for
-the multi-agent system.
-"""
 
 
 def create_edge_index_spec(n: int):
@@ -42,7 +26,7 @@ def create_edge_index_spec(n: int):
     Returns:
         TensorSpec for graph edge indices with int64 dtype
     """
-    return BoundedTensorSpec(
+    return Bounded(
         low    = 0,
         high   = n - 1,
         shape  = (2, n * (n - 1)),
@@ -55,7 +39,7 @@ def create_float_spec(shape):
     """
     Helper to create float32 TensorSpec with configurable shape.
     """
-    return UnboundedContinuousTensorSpec(
+    return Unbounded(
         shape = shape,
         dtype = torch.float32
     )
@@ -133,4 +117,19 @@ Builder for the observation space specification.
 
 Defines the state space including agent kinematics, communication graph
 structure, and environmental temperature data for policy inputs.
+"""
+
+build_flock = builds(
+    FlockModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.flock",
+        "cls_name" : "FlockBuild"
+    }
+)
+"""
+Builder for flock configuration.
+
+Creates a Pydantic-validated flock configuration that defines agent properties
+including count, spatial dimensions, and temperature constraints.
 """

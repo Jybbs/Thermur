@@ -116,19 +116,19 @@ class TrainingComponentsModel(BaseModel, extra="forbid"):
     """
     component_configs: list[tuple[str, str, str]] = Field(
         default = [
-            ("environment",       "simulation",        "🌍 Environment"),
-            ("expert_policy",     "expert_policy",     "🎓 Expert Policy"),
+            ("environment",       "environment",       "🌍 Environment"),
+            ("controller",        "controller",        "🎓 Controller"),
             ("policy",            "policy",            "🧠 Learning Policy"),
             ("data_collector",    "data_collector",    "📊 Data Collector"),
             ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
-            ("loss_function",     "loss_function",     "📏 Loss Function"),
+            ("loss",              "loss",              "📏 Loss Function"),
             ("optimizer",         "optimizer",         "🔎 Optimizer"),
             ("hyperparameters",   "hyperparameters",   "📌 Hyperparameters"),
-            ("wandb_config",      "monitoring.wandb",  "🎨 wandb Tracking"),
+            ("wandb",             "wandb",             "🎨 wandb Tracking"),
         ],
         description = "List of (key, config_path, display_name) for training components"
     )
     visualizer_key: str = Field(
-        default     = "visualization",
+        default     = "visualizer",
         description = "Configuration key for the visualizer component"
     )

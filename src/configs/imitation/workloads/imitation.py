@@ -8,17 +8,17 @@ from ..factories import *
 from hydra_zen   import make_config, ZenStore
 
 imitation_config = make_config(
-    data_collector    = build_collector,
-    experience_buffer = build_replay_buffer,
-    expert_policy     = build_flocking_controller,
+    controller        = build_controller,
+    data_collector    = build_data_collector,
+    environment       = build_environment,
+    experience_buffer = build_experience_buffer,
     flock             = build_flock,
     learning          = build_learning,
-    loss_function     = build_loss,
     logging           = build_logging,
+    loss              = build_loss,
     optimizer         = build_optimizer,
     physics           = build_physics,
     policy            = build_policy,
-    simulation        = build_simulation,
     visualizer        = build_visualizer,
     wandb             = build_wandb,
     defaults          = ["_self_"],

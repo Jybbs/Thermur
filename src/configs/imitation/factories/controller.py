@@ -10,7 +10,7 @@ from hydra_zen       import builds, zen
 from thermur.control import ExpertFlockingController
 
 
-build_flocking_controller = builds(
+build_controller = builds(
     ExpertFlockingController,
     agent_properties        = zen(FlockModel),
     control_config          = zen(ControlModel),

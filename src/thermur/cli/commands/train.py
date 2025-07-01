@@ -180,7 +180,11 @@ class TrainCommand:
                 "train_imitation_learning" : train_imitation_learning,
             }
 
-            progress.update(task, advance=100, description=self.config.status.ready_to_train)
+            progress.update(
+                task, 
+                completed   = 100, 
+                description = self.config.status.ready_to_train
+            )
 
         return imports
 
@@ -230,11 +234,12 @@ class TrainCommand:
         configure_loguru         = imports["configure_loguru"]
         set_seed                 = imports["set_seed"]
         train_imitation_learning = imports["train_imitation_learning"]
-        self.ui.print_section(self.config.sections.building_components, "thermal")
+        self.ui.print_section(self.config.sections.building_components, "accent")
+        self.ui.console.print()
 
-        # Direct config access - no instantiation needed
         configure_loguru(cfg.logging)
         set_seed(cfg.learning.seed)
+        self.ui.console.print()
 
         components = self._instantiate_training_components(
             cfg             = cfg,
@@ -242,9 +247,8 @@ class TrainCommand:
             pydantic_parser = pydantic_parser,
         )
         
-        # Pass configs as validated Pydantic models
-        components["training"]     = cfg.learning
-        components["wandb_config"] = cfg.wandb
+        components["learning"] = cfg.learning
+        components["wandb"]    = cfg.wandb
 
         self.ui.print_message(self.config.messages.components_initialized, "success")
         self.ui.console.print()
@@ -304,7 +308,7 @@ class TrainCommand:
             preset           : The selected configuration preset.
             wandb_project    : The configured wandb project name.
         """
-        self.ui.print_section(self.config.sections.init_training, "thermal")
+        self.ui.print_section(self.config.sections.init_training, "flock")
 
         self.ui.print_wandb_info(
             project = wandb_project, 
@@ -489,6 +493,11 @@ class TrainCommand:
         if preset:
             self.ui.print_message(
                 f"Using preset: [bright_cyan]{preset}[/bright_cyan]",
+                "config"
+            )
+        elif not interactive:
+            self.ui.print_message(
+                "Using default configuration",
                 "config"
             )
 
