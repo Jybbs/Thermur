@@ -4,9 +4,8 @@ Safety system configuration.
 This module defines the unified configuration for Control Barrier Functions
 and quadratic program solvers used to ensure thermal safety constraints.
 """
-from __future__ import annotations
-from pydantic   import BaseModel, Field, NonNegativeFloat, PositiveFloat, PositiveInt
-from typing     import Literal
+from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat, PositiveInt
+from typing   import Literal
 
 
 class SafetyModel(BaseModel, extra="forbid"):

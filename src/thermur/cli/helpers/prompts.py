@@ -6,14 +6,29 @@ uses the ThermurUI class to render complex components and DictConfig objects for
 static text and configuration, but it defines the logic for asking questions,
 gathering input, and confirming actions with the user.
 """
-from __future__ import annotations
-
 import questionary
 
 from omegaconf   import DictConfig
 from rich.align  import Align
 from rich.panel  import Panel
 from rich.prompt import Confirm
+from typing      import Any, TypedDict
+
+
+class TrainingConfig(TypedDict, total=False):
+    """Type definition for training configuration summary."""
+    preset: str
+    wandb_project: str
+    overrides: int
+    gpu_available: bool
+
+
+class FieldInfo(TypedDict):
+    """Type definition for field information."""
+    name: str
+    field_type: str
+    current_val: Any
+    desc: str
 
 
 class CLIPrompts:
@@ -28,7 +43,7 @@ class CLIPrompts:
     """
     def __init__(
         self, 
-        ui, 
+        ui: Any,  # Should be ThermurUI type when available
         prompts: DictConfig,
         messages: DictConfig
     ):
@@ -213,7 +228,7 @@ class CLIPrompts:
 
     def edit_multiple_fields(
         self,
-        fields      : list[tuple],
+        fields      : list[tuple[str, str, Any, str]],
         prefix      : str,
         description : str,
     ) -> list[str]:
@@ -289,7 +304,7 @@ class CLIPrompts:
             default = False,
         )
 
-    def show_training_summary(self, config: dict) -> bool:
+    def show_training_summary(self, config: TrainingConfig) -> bool:
         """
         Presents a final summary of all chosen configurations for user confirmation.
 
@@ -395,9 +410,9 @@ class CLIPrompts:
         self,
         field_name  : str,
         field_type  : str,
-        current_val : any,
+        current_val : Any,
         description : str | None = None
-    ) -> any:
+    ) -> Any:
         """
         Prompts the user to edit a single configuration value, handling basic types.
 
@@ -474,7 +489,7 @@ class CLIPrompts:
         field_type : str,
         current    : str,
         description: str | None = None
-    ) -> any:
+    ) -> Any:
         """
         Prompts for a field value with type-specific validation (alias).
 

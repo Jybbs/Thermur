@@ -4,7 +4,6 @@ CLI configuration domain.
 This package contains all configuration-related code for the Thermur CLI,
 including schemas, factories, and workloads organized by functionality.
 """
-from __future__ import annotations
 
 from . import factories, schemas, workloads
 

@@ -4,7 +4,6 @@ Hydra-zen configuration factories for imitation learning.
 This package provides builders organized by functional area, matching
 the structure of the business logic components they configure.
 """
-from __future__     import annotations
 from .data          import build_collector, build_replay_buffer
 from .flocking      import build_flocking_controller
 from .safety        import build_safety_filter, build_thermal_barrier

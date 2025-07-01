@@ -5,8 +5,7 @@ This module provides the 'info' command, which displays a comprehensive
 overview of the system setup, including hardware, software versions,
 platform capabilities, and configuration details.
 """
-from __future__ import annotations
-from typer      import Context, Typer
+from typer import Context, Typer
 
 cmd_info = Typer(
     add_completion           = False,

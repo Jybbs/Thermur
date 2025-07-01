@@ -4,7 +4,6 @@ Core configuration schemas for the Thermur CLI.
 This module defines the main CLI configuration model and command-related
 schemas that control the overall behavior of the command-line interface.
 """
-from __future__ import annotations
 
 from pydantic import BaseModel, Field
 

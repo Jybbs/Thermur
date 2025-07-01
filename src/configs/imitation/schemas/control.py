@@ -4,8 +4,7 @@ Control system model.
 This module defines the unified configuration for the flocking controller,
 including Reynolds rules weights and numerical stability parameters.
 """
-from __future__ import annotations
-from pydantic   import BaseModel, Field, NonNegativeFloat, PositiveFloat
+from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat
 
 
 class ControlModel(BaseModel, extra="forbid"):

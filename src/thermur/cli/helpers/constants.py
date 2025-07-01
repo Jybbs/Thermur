@@ -4,7 +4,6 @@ Constants for the thermal swarm training CLI interface.
 Provides styling configurations, preset definitions, and validation parameters
 for thermally-constrained drone swarm simulation and training workflows.
 """
-from __future__ import annotations
 
 from sys import version_info
 

@@ -4,9 +4,8 @@ Swarm configuration model.
 This module defines the unified configuration for the multi-agent swarm,
 including physical properties, collective behavior, and spatial settings.
 """
-from __future__ import annotations
-from pydantic   import BaseModel, Field, PositiveFloat, PositiveInt
-from typing     import Literal
+from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
+from typing   import Literal
 
 
 class SwarmModel(BaseModel, extra="forbid"):
