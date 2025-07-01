@@ -5,7 +5,6 @@ This module provides the 'monitor' command, a convenient shortcut for
 opening the Weights & Biases dashboard for a specified project in the
 user's default web browser.
 """
-from time       import sleep
 from typer      import Context, Exit, Option
 from webbrowser import open
 
@@ -44,6 +43,7 @@ class MonitorCommand:
                  containing UI, system, and other core components.
         """
         self.config = ctx.obj.config
+        self.msgs   = self.config.messages
         self.system = ctx.obj.system
         self.ui     = ctx.obj.ui
 
@@ -70,14 +70,14 @@ class MonitorCommand:
 
         if not url:
             self.ui.print_message(
-                self.config.messages.wandb_unavailable,
-                "error"
+                message  = self.msgs.wandb_unavailable,
+                msg_type = "error"
             )
             raise Exit(1)
 
         self.ui.print_message(
-            self.config.messages.browser_launch_tpl.format(project=project),
-            "flock"
+            message  = self.msgs.browser_launch_template.format(project=project),
+            msg_type = "flock"
         )
         self.ui.print_wandb_info(project, url)
         self.ui.console.print()
@@ -87,9 +87,18 @@ class MonitorCommand:
                 self.config.status.launching_browser,
                 spinner="dots"
             ):
-                sleep(0.5)
                 open(url)
-            self.ui.print_message(self.config.messages.browser_success, "success")
+
+            self.ui.print_message(
+                message  = self.msgs.browser_success, 
+                msg_type = "success"
+            )
         except Exception as e:
-            self.ui.print_message(self.config.messages.browser_fail_tpl.format(e=e), "error")
-            self.ui.print_message(self.config.messages.browser_manual_tpl.format(url=url), "info")
+            self.ui.print_message(
+                message  = self.msgs.browser_fail_template.format(e=e), 
+                msg_type = "error"
+            )
+            self.ui.print_message(
+                message  = self.msgs.browser_manual_template.format(url=url),
+                msg_type = "info"
+            )
