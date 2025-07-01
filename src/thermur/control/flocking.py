@@ -6,8 +6,8 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from torch                     import Tensor
-from typing                    import Optional, Protocol, TypedDict
+from torch   import Tensor
+from typing  import Optional, Protocol, TypedDict
 from configs import ControlModel, SwarmModel
 
 import torch

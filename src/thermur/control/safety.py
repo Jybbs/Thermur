@@ -6,8 +6,8 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from qpth.qp                   import QPFunction
-from torch                     import Tensor
+from qpth.qp import QPFunction
+from torch   import Tensor
 from configs import SafetyModel
 
 import torch

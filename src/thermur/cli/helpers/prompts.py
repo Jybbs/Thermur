@@ -6,13 +6,13 @@ uses the ThermurUI class to render complex components and DictConfig objects for
 static text and configuration, but it defines the logic for asking questions,
 gathering input, and confirming actions with the user.
 """
-import questionary
-
 from omegaconf   import DictConfig
 from rich.align  import Align
 from rich.panel  import Panel
 from rich.prompt import Confirm
 from typing      import Any, TypedDict
+
+import questionary
 
 
 class TrainingConfig(TypedDict, total=False):
