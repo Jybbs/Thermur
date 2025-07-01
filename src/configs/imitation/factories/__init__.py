@@ -15,6 +15,7 @@ The builders are organized by functionality:
 from .data          import *
 from .controller    import *
 from .imitation     import *
+from .monitoring    import *
 from .safety        import *
 from .simulation    import *
 from .flock         import *

@@ -108,5 +108,5 @@ class ValidateCommand:
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[flock]📊 wandb: {status} • {details}[/flock]")
+        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
         self.ui.console.print()

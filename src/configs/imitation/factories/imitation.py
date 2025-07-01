@@ -12,6 +12,22 @@ from thermur.training import ImitationLoss
 from torch.optim      import AdamW
 
 
+build_learning = builds(
+    LearningModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.imitation",
+        "cls_name" : "LearningBuild"
+    }
+)
+"""
+Builder for the learning configuration.
+
+Provides unified configuration for training hyperparameters, data handling,
+and GNN architecture parameters.
+"""
+
+
 build_policy = builds(
     GNNPolicy,
     learning_config         = zen(LearningModel),

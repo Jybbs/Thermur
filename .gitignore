@@ -44,6 +44,7 @@ venv.bak/
 *.swo
 *.bak
 *.old
+outputs/
 
 # pyenv and Python-specific files
 .python-version
