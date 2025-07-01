@@ -5,10 +5,10 @@ This module defines configuration builders for the Control Barrier Function
 and safety filter components. These builders leverage Pydantic validation
 through the zen() wrapper.
 """
-from ..schemas import SafetyModel
-from hydra_zen import builds, zen
-from omegaconf import SI
-from thermur   import ThermalBarrierFunction, SafetyFilter
+from ..schemas       import SafetyModel
+from hydra_zen       import builds, zen
+from omegaconf       import SI
+from thermur.control import ThermalBarrierFunction, SafetyFilter
 
 
 build_thermal_barrier = builds(

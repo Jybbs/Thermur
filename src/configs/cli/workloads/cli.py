@@ -5,8 +5,8 @@ This module defines the configuration for the CLI system, composing all
 necessary schemas and factories to create a Hydra-compatible configuration
 that can be used with hydra-zen's instantiate method.
 """
-from ..factories.cli import *
-from hydra_zen       import make_config, ZenStore
+from ..factories import *
+from hydra_zen   import make_config, ZenStore
 
 cli_config = make_config(
     cli                 = build_cli,

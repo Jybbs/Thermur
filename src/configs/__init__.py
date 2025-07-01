@@ -1,54 +1,17 @@
 """
-Thermur configuration system.
+Thermur configuration system built on Hydra-zen and Pydantic.
 
-This package provides a domain-based organization for all Hydra-zen
-configurations, with each domain (cli, imitation, etc.) containing
-its own schemas, factories, and workloads.
+This package provides a domain-based organization for all configurations, ensuring
+type safety through Pydantic validation and runtime flexibility through Hydra-zen's
+instantiation system. The configuration hierarchy is organized into two main domains:
 
-The main exports are the workload configurations and registration functions
-that are used by the application entry points.
+- CLI: User interface configuration for the command-line tool
+- Imitation: Machine learning configuration for behavioral cloning
+
+Each domain contains schemas (Pydantic models), factories (Hydra-zen builders), and
+workloads (composed configurations). This structure enables clean separation of concerns
+while maintaining a unified configuration interface.
+
+The system supports both static validation at configuration time and dynamic instantiation
+at runtime, providing the best of both worlds for complex ML systems.
 """
-from .cli.schemas.core                import CLIModel, CommandsModel
-from .cli.schemas.explorer            import ExplorerModel
-from .cli.schemas.messages            import HeadersModel, MessagesModel
-from .cli.schemas.system              import SystemModel
-from .cli.schemas.ui                  import ThemeModel, UIModel
-from .cli.workloads.cli               import cli_config, register_cli_configs
-from .imitation.schemas.control       import ControlModel
-from .imitation.schemas.learning      import LearningModel
-from .imitation.schemas.physics       import PhysicsModel
-from .imitation.schemas.safety        import SafetyModel
-from .imitation.schemas.swarm         import SwarmModel
-from .imitation.schemas.specs         import SwarmActionModel, SwarmObservationModel
-from .imitation.schemas.monitoring    import LoggingModel, WandbModel
-from .imitation.schemas.visualization import ColorModel, GlyphModel, GridModel, OpacityModel, VisualizationModel
-from .imitation.workloads.imitation   import register_imitation_configs
-
-
-__all__ = [
-    "CLIModel",
-    "CommandsModel",
-    "ExplorerModel",
-    "HeadersModel",
-    "MessagesModel",
-    "SystemModel",
-    "ThemeModel",
-    "UIModel",
-    "cli_config",
-    "register_cli_configs",
-    "ControlModel",
-    "LearningModel",
-    "PhysicsModel",
-    "SafetyModel",
-    "SwarmModel",
-    "LoggingModel",
-    "WandbModel",
-    "SwarmActionModel",
-    "SwarmObservationModel",
-    "ColorModel",
-    "GlyphModel",
-    "GridModel",
-    "OpacityModel",
-    "VisualizationModel",
-    "register_imitation_configs"
-]
