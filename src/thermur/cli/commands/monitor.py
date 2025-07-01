@@ -6,18 +6,10 @@ opening the Weights & Biases dashboard for a specified project in the
 user's default web browser.
 """
 from time       import sleep
-from typer      import Context, Exit, Option, Typer
+from typer      import Context, Exit, Option
 from webbrowser import open
 
-cmd_monitor = Typer(
-    add_completion           = False,
-    rich_markup_mode         = "rich",
-    no_args_is_help          = True,
-    pretty_exceptions_enable = True,
-)
 
-
-@cmd_monitor.command("monitor")
 def monitor(
     ctx     : Context,
     project : str | None = Option(
