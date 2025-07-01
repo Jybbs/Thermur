@@ -27,21 +27,17 @@ class PhysicsModel(BaseModel, extra="forbid"):
     
     where ê_i are the standard basis vectors in ℝ^d.
     """
-    simulation_step: PositiveFloat = Field(
-        default     = 0.05,
-        description = "Physics simulation timestep Δt in seconds."
-    )
     assets_dir: Path = Field(
         default     = Path("src/thermur/simulation/assets"),
         description = "Directory containing MuJoCo XML model files."
     )
-    bounds_min: list[float] = Field(
-        default     = [0.0, 0.0, 0.0],
-        description = "Minimum coordinates [x_min, y_min, z_min] of workspace."
-    )
     bounds_max: list[float] = Field(
         default     = [50.0, 50.0, 20.0],
         description = "Maximum coordinates [x_max, y_max, z_max] of workspace."
+    )
+    bounds_min: list[float] = Field(
+        default     = [0.0, 0.0, 0.0],
+        description = "Minimum coordinates [x_min, y_min, z_min] of workspace."
     )
     data_source: Path = Field(
         default     = Path("data/environment/sample_field.nc"),
@@ -54,6 +50,10 @@ class PhysicsModel(BaseModel, extra="forbid"):
     fallback_temperature: float = Field(
         default     = 20.0,
         description = "Default temperature T_default when interpolation fails."
+    )
+    simulation_step: PositiveFloat = Field(
+        default     = 0.05,
+        description = "Physics simulation timestep Δt in seconds."
     )
     temperature_variable: str = Field(
         default     = "temperature",

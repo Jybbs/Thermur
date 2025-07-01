@@ -19,7 +19,7 @@ def monitor(
     ),
 ):
     """
-    🪄 Open wandb monitoring dashboard for the specified project.
+    🎨 Open wandb monitoring dashboard for the specified project.
 
     Quickly opens the wandb dashboard in your default browser to monitor
     training progress, view metrics, and analyze experiment results.

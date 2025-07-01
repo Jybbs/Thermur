@@ -37,20 +37,6 @@ class FlockModel(BaseModel, extra="forbid"):
     This metric-based connectivity contrasts with topological neighborhoods used
     in biological flocks (typically 6-7 nearest neighbors regardless of distance).
     """
-    max_temperature: PositiveFloat = Field(
-        default     = 500.0,
-        description = (
-            "Maximum survivable agent temperature T_max in Fahrenheit (°F), "
-            "defining the hard safety boundary h(𝐱) for the CBF."
-        )
-    )
-    thermal_time_constant: PositiveFloat = Field(
-        default     = 5.0,
-        description = (
-            "RC thermal model time constant τ in seconds, characterizing the "
-            "agent's heat dissipation rate."
-        )
-    )
     agent_count: PositiveInt = Field(
         default     = 30,
         gt          = 1,
@@ -64,12 +50,6 @@ class FlockModel(BaseModel, extra="forbid"):
             "connectivity threshold."
         )
     )
-    initial_formation: Literal["cube", "sphere", "random"] = Field(
-        default     = "sphere",
-        description = (
-            "Geometric arrangement of agents at simulation initialization."
-        )
-    )
     formation_scale_factor: PositiveFloat = Field(
         default     = 0.5,
         gt          = 0,
@@ -79,9 +59,29 @@ class FlockModel(BaseModel, extra="forbid"):
             "fraction of communication range, controlling flock density."
         )
     )
+    initial_formation: Literal["cube", "sphere", "random"] = Field(
+        default     = "sphere",
+        description = (
+            "Geometric arrangement of agents at simulation initialization."
+        )
+    )
+    max_temperature: PositiveFloat = Field(
+        default     = 500.0,
+        description = (
+            "Maximum survivable agent temperature T_max in Fahrenheit (°F), "
+            "defining the hard safety boundary h(𝐱) for the CBF."
+        )
+    )
     spatial_dims: Literal[2, 3] = Field(
         default     = 3,
         description = (
             "Number of spatial dimensions d for the simulation workspace ℝ^d."
+        )
+    )
+    thermal_time_constant: PositiveFloat = Field(
+        default     = 5.0,
+        description = (
+            "RC thermal model time constant τ in seconds, characterizing the "
+            "agent's heat dissipation rate."
         )
     )

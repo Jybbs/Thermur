@@ -31,33 +31,17 @@ class LearningModel(BaseModel, extra="forbid"):
     This allows the policy to learn decentralized control while respecting
     the communication topology.
     """
-    device: Literal["cpu", "cuda", "mps"] = Field(
-        default     = "cpu",
-        description = "Compute device for training (CPU, CUDA GPU, or Apple Silicon)."
+    activation: Literal["relu", "silu", "tanh"] = Field(
+        default     = "silu",
+        description = "Nonlinearity σ(·) used in GNN message passing MLPs."
     )
-    learning_rate: PositiveFloat = Field(
-        default     = 3e-4,
-        description = "Learning rate α for the AdamW optimizer."
+    batch_size: PositiveInt = Field(
+        default     = 256,
+        description = "Number of transitions B per training batch."
     )
-    weight_decay: NonNegativeFloat = Field(
-        default     = 1e-5,
-        description = "L2 regularization coefficient λ for weight decay."
-    )
-    seed: int = Field(
-        default     = 42,
-        description = "Random seed for reproducible training runs."
-    )
-    total_frames: PositiveInt = Field(
-        default     = 200_000,
-        description = "Total environment frames T to collect during training."
-    )
-    frames_per_batch: PositiveInt = Field(
-        default     = 1024,
-        description = "Number of frames N_batch to collect per training iteration."
-    )
-    log_interval: PositiveInt = Field(
-        default     = 1000,
-        description = "Frequency (in frames) for logging training metrics."
+    buffer_size: PositiveInt = Field(
+        default     = 50_000,
+        description = "Maximum transitions |𝒟| to store in replay buffer."
     )
     checkpoint_interval: PositiveInt = Field(
         default     = 25_000,
@@ -67,21 +51,13 @@ class LearningModel(BaseModel, extra="forbid"):
         default     = Path("checkpoints"),
         description = "Directory path for saving training checkpoints."
     )
-    buffer_size: PositiveInt = Field(
-        default     = 50_000,
-        description = "Maximum transitions |𝒟| to store in replay buffer."
+    device: Literal["cpu", "cuda", "mps"] = Field(
+        default     = "cpu",
+        description = "Compute device for training (CPU, CUDA GPU, or Apple Silicon)."
     )
-    batch_size: PositiveInt = Field(
-        default     = 256,
-        description = "Number of transitions B per training batch."
-    )
-    prefetch: NonNegativeInt = Field(
-        default     = 8,
-        description = "Number of batches to prefetch for GPU efficiency."
-    )
-    activation: Literal["relu", "silu", "tanh"] = Field(
-        default     = "silu",
-        description = "Nonlinearity σ(·) used in GNN message passing MLPs."
+    frames_per_batch: PositiveInt = Field(
+        default     = 1024,
+        description = "Number of frames N_batch to collect per training iteration."
     )
     hidden_dim: PositiveInt = Field(
         default     = 64,
@@ -94,6 +70,14 @@ class LearningModel(BaseModel, extra="forbid"):
             "[position(3) + velocity(3) + temperature(1) + temp_grad(3) + energy(1)]."
         )
     )
+    learning_rate: PositiveFloat = Field(
+        default     = 3e-4,
+        description = "Learning rate α for the AdamW optimizer."
+    )
+    log_interval: PositiveInt = Field(
+        default     = 1000,
+        description = "Frequency (in frames) for logging training metrics."
+    )
     num_layers: PositiveInt = Field(
         default     = 3,
         description = (
@@ -104,4 +88,20 @@ class LearningModel(BaseModel, extra="forbid"):
     output_dim: PositiveInt = Field(
         default     = 3,
         description = "Dimensionality d_out of output actions (velocity commands)."
+    )
+    prefetch: NonNegativeInt = Field(
+        default     = 8,
+        description = "Number of batches to prefetch for GPU efficiency."
+    )
+    seed: int = Field(
+        default     = 42,
+        description = "Random seed for reproducible training runs."
+    )
+    total_frames: PositiveInt = Field(
+        default     = 200_000,
+        description = "Total environment frames T to collect during training."
+    )
+    weight_decay: NonNegativeFloat = Field(
+        default     = 1e-5,
+        description = "L2 regularization coefficient λ for weight decay."
     )

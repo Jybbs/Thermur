@@ -17,6 +17,13 @@ class SafetyModel(BaseModel, extra="forbid"):
     ensures all control commands respect thermal constraints.
     """
     # Control Barrier Function parameters
+    activation_tolerance: NonNegativeFloat = Field(
+        default     = 5.0,
+        description = (
+            "Temperature buffer δ in Fahrenheit before CBF activation. "
+            "CBF triggers when T > T_max - δ."
+        )
+    )
     cbf_alpha: PositiveFloat = Field(
         default     = 2.5,
         description = (
@@ -24,12 +31,11 @@ class SafetyModel(BaseModel, extra="forbid"):
             "exponential safety convergence: ḣ(x) + α·h(x) ≥ 0."
         )
     )
-    activation_tolerance: NonNegativeFloat = Field(
-        default     = 5.0,
-        description = (
-            "Temperature buffer δ in Fahrenheit before CBF activation. "
-            "CBF triggers when T > T_max - δ."
-        )
+    
+    # Debug and monitoring
+    log_violations: bool = Field(
+        default     = True,
+        description = "Log safety constraint violations to monitor performance."
     )
     
     # QP solver settings
@@ -48,13 +54,7 @@ class SafetyModel(BaseModel, extra="forbid"):
             "'nominal' (pass through), or 'raise' (exception)."
         )
     )
-    
-    # Debug and monitoring
     qp_verbose: bool = Field(
         default     = False,
         description = "Enable verbose QP solver output for debugging."
-    )
-    log_violations: bool = Field(
-        default     = True,
-        description = "Log safety constraint violations to monitor performance."
     )

@@ -46,7 +46,7 @@ class CommandsModel(BaseModel, extra="forbid"):
             {"icon": "🔧", "name": "configure", "desc": "Manage training configurations"},
             {"icon": "📋", "name": "info",      "desc": "Display system and configuration details"},
             {"icon": "✅", "name": "validate",  "desc": "Validate configuration and dependencies"},
-            {"icon": "🪄", "name": "monitor",   "desc": "Monitor training progress and resources"},
+            {"icon": "🎨", "name": "monitor",   "desc": "Monitor training progress and resources"},
         ],
         description = "List of available commands with metadata"
     )
@@ -122,9 +122,9 @@ class TrainingComponentsModel(BaseModel, extra="forbid"):
             ("data_collector",    "data_collector",    "📊 Data Collector"),
             ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
             ("loss_function",     "loss_function",     "📏 Loss Function"),
-            ("optimizer",         "optimizer",         "⚙️  Optimizer"),
-            ("hyperparameters",   "hyperparameters",   "🎛️  Hyperparameters"),
-            ("wandb_config",      "monitoring.wandb",  "🪄 wandb Tracking"),
+            ("optimizer",         "optimizer",         "🔎 Optimizer"),
+            ("hyperparameters",   "hyperparameters",   "📌 Hyperparameters"),
+            ("wandb_config",      "monitoring.wandb",  "🎨 wandb Tracking"),
         ],
         description = "List of (key, config_path, display_name) for training components"
     )
