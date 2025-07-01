@@ -227,7 +227,11 @@ class SystemInspector:
         )
 
     @staticmethod
-    def validate_config_overrides(overrides: list[str] | None, system_config: DictConfig, wandb_config: DictConfig) -> list[str]:
+    def validate_config_overrides(
+        overrides     : list[str] | None, 
+        system_config : DictConfig, 
+        wandb_config  : DictConfig
+    ) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 

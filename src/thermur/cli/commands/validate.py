@@ -102,7 +102,7 @@ class ValidateCommand:
         self.ui.print_section(self.config.sections.system_validation, "thermal")
 
         info = self.system.get_system_info(self.config.wandb_display)
-        table = self.ui.create_system_table(info)
+        table = self.ui.create_system_table(info, self.config.system)
 
         self.ui.console.print(table)
         self.ui.console.print()

@@ -253,16 +253,15 @@ class ThermurUI:
             project : The wandb project name
             url     : Optional URL to the project dashboard
         """
-        icon = self.ui.wandb_icon
         if url and self.ui.wandb_url_placeholder not in url:
             self.console.print(
-                f"[{self.theme.styles['flock']}]{icon} Dashboard: "
+                f"[{self.theme.styles['flock']}]🎨 Dashboard: "
                 f"[link={url}]{url}[/link][/]"
             )
 
         else:
             self.console.print(
-                f"[{self.theme.styles['flock']}]{icon} Project: "
+                f"[{self.theme.styles['flock']}]🎨 Project: "
                 f"[{self.theme.styles['info']}]{project}[/][/]"
             )
 
