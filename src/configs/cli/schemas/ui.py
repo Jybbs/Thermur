@@ -69,10 +69,6 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "accent",
         description = "Default style for section headers"
     )
-    double_width_emojis: set[str] = Field(
-        default     = {'🪽', '🪄'},
-        description = "Emojis that take 2 terminal cells but appear as 1 visually"
-    )
     error_color: str = Field(
         default     = "red",
         description = "Color for errors and failures"
@@ -84,15 +80,15 @@ class UIModel(BaseModel, extra="forbid"):
                 "desc" : "Physics-based heat modeling for drone safety"
             },
             {
-                "name" : "🪽 Flock Coordination",
-                "desc" : "Multi-agent flocking with obstacle avoidance"
+                "name" : "💫 Flock Coordination",
+                "desc" : "Multi-agent flocking with separation and alignment"
             },
             {
                 "name" : "🧠 Imitation Learning",
-                "desc" : "Expert policy cloning with BC and DAgger"
+                "desc" : "Expert policy cloning with behavioral cloning"
             },
             {
-                "name" : "🪄 wandb Integration",
+                "name" : "🎨 wandb Integration",
                 "desc" : "Real-time experiment tracking and visualization"
             },
             {
@@ -331,7 +327,7 @@ class UIModel(BaseModel, extra="forbid"):
                 "style" : "thermal"
             },
             "flock": {
-                "icon"  : "🪽",
+                "icon"  : "💫",
                 "style" : "flock"
             },
             "config": {

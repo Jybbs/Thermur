@@ -42,9 +42,9 @@ class PresetsModel(BaseModel, extra="forbid"):
         default = PresetModel(
             best_for = "Advanced users",
             desc     = "Start from scratch with full control",
-            emoji    = "🎨",
+            emoji    = "🧵",
             name     = "custom",
-            prompt   = "🎨 custom    - Configure everything manually"
+            prompt   = "🧵 custom    - Configure everything manually"
         ),
         description = "Custom configuration preset"
     )
