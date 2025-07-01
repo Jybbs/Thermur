@@ -4,8 +4,6 @@ Hydra-zen factories for CLI configuration components.
 This package provides builders that create Hydra-compatible configurations
 for all CLI-related components.
 """
-from __future__ import annotations
-
 from .cli import *
 
 __all__ = [

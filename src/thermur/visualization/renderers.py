@@ -12,7 +12,6 @@ vectorized operations where possible and PyVista's optimized rendering
 pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
-from __future__                import annotations
 from pyvista                   import Actor, ImageData, PolyData, Plotter
 from torch                     import Tensor
 from typing                    import Optional

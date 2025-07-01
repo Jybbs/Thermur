@@ -4,7 +4,6 @@ Hydra-zen builders for data collection and storage.
 This module provides configuration builders for the data collector and
 experience replay buffer used in the imitation learning pipeline.
 """
-from __future__                  import annotations
 from hydra_zen                   import builds
 from omegaconf                   import SI
 from torchrl.collectors          import SyncDataCollector  

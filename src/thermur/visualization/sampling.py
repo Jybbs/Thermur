@@ -9,7 +9,6 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
-from __future__                import annotations
 from pyvista                   import Axes, ImageData, PolyData
 from torch                     import Tensor
 from typing                    import Any

@@ -4,10 +4,9 @@ Monitoring and logging models.
 This module defines the Pydantic models for application logging
 and experiment tracking parameters.
 """
-from __future__ import annotations
-from pathlib    import Path
-from pydantic   import BaseModel, Field
-from typing     import Literal, Optional
+from pathlib  import Path
+from pydantic import BaseModel, Field
+from typing   import Literal, Optional
 
 
 class LoggingModel(BaseModel, extra="forbid"):

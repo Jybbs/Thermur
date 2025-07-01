@@ -5,9 +5,8 @@ This module defines the data structures for swarm observations and actions,
 providing the definitive shape and dtype specifications for all tensors
 passed between the environment, policy, and replay buffer.
 """
-from __future__ import annotations
-from pydantic   import BaseModel, Field
-from typing     import Literal
+from pydantic import BaseModel, Field
+from typing   import Literal
 
 
 class SwarmActionModel(BaseModel, extra="forbid"):

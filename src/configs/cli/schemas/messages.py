@@ -4,8 +4,6 @@ Message and text configuration schemas for the Thermur CLI.
 This module defines models for all user-facing strings, prompts, status
 messages, and section headers used throughout the CLI interface.
 """
-from __future__ import annotations
-
 from pydantic import BaseModel, Field
 
 

@@ -4,10 +4,8 @@ Imitation learning workload configurations.
 This module contains the top-level workload configurations that compose
 all necessary components for imitation learning training.
 """
-from __future__ import annotations
-from .imitation import imitation_config, register_configs
+from .imitation import register_configs
 
 __all__ = [
-    "imitation_config",
     "register_configs",
 ]

@@ -5,7 +5,6 @@ This module provides the 'monitor' command, a convenient shortcut for
 opening the Weights & Biases dashboard for a specified project in the
 user's default web browser.
 """
-from __future__ import annotations
 from time       import sleep
 from typer      import Context, Exit, Option, Typer
 from webbrowser import open

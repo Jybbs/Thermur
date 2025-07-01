@@ -5,7 +5,6 @@ This module defines configuration builders for the Control Barrier Function
 and safety filter components. These builders leverage Pydantic validation
 through the zen() wrapper.
 """
-from __future__      import annotations
 from ..schemas       import SafetyModel
 from hydra_zen       import builds, zen
 from omegaconf       import SI

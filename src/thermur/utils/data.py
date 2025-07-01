@@ -5,10 +5,9 @@ This module provides a class to abstract away the details of reading and
 interpolating from large, gridded datasets like the NetCDF files produced by
 WRF-Fire.
 """
-from __future__ import annotations
-from numpy      import ndarray, zeros
-from torch      import Tensor
-from xarray     import DataArray, open_dataset
+from numpy  import ndarray, zeros
+from torch  import Tensor
+from xarray import DataArray, open_dataset
 
 import torch
 

@@ -4,10 +4,9 @@ Learning system model.
 This module defines the unified configuration for imitation learning,
 including training hyperparameters, data handling, and network architecture.
 """
-from __future__ import annotations
-from pathlib    import Path
-from pydantic   import BaseModel, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt
-from typing     import Literal
+from pathlib  import Path
+from pydantic import BaseModel, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt
+from typing   import Literal
 
 
 class LearningModel(BaseModel, extra="forbid"):

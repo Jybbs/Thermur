@@ -1,0 +1,4 @@
+- What's going on with `flocking`? There's a weird dataclass in there which is an anti-pattern, and we're building and using `zen` for the same model twice. That definitely needs to be cleaned up.
+- I'm surprised there isn't a more succinct way to import the schemas for type hinting than `configs.imitation.schemas`. We have all those `__all__` statements.
+- The CLI is kind of slow.
+- Do the sub-module and `all` imports really do anything for this project? Are they helping? I'm convinced they aren't.

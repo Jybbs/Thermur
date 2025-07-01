@@ -4,7 +4,6 @@ Pydantic schemas for imitation learning configuration.
 This package contains all type-checked models used in the imitation
 learning domain, organized by functionality.
 """
-from __future__     import annotations
 from .control       import *
 from .learning      import *
 from .monitoring    import *

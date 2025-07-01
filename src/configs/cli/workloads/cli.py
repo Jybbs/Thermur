@@ -5,8 +5,6 @@ This module defines the configuration for the CLI system, composing all
 necessary schemas and factories to create a Hydra-compatible configuration
 that can be used with @hydra.main decorator.
 """
-from __future__ import annotations
-
 from ..factories import *
 from ..schemas   import *
 from hydra_zen   import make_config, ZenStore

@@ -4,7 +4,6 @@ Training preset and tips schemas for the Thermur CLI.
 This module defines models for pre-configured training presets and
 helpful tips displayed to users.
 """
-from __future__ import annotations
 
 from pydantic import BaseModel, Field
 

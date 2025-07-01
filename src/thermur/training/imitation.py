@@ -4,7 +4,6 @@ Imitation learning training loop.
 This module implements behavioral cloning for training a GNN policy
 to mimic expert flocking behavior while respecting thermal constraints.
 """
-from __future__                import annotations
 from configs.imitation.schemas import LearningModel, WandbModel
 from loguru                    import logger
 from pathlib                   import Path

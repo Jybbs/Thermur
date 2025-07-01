@@ -5,8 +5,7 @@ This module provides the 'validate' command, which allows users to check
 their system setup and configuration syntax without initiating a full
 training run.
 """
-from __future__ import annotations
-from typer      import Context, Option, Typer
+from typer import Context, Option, Typer
 
 cmd_validate = Typer(
     add_completion           = False,

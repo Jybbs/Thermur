@@ -8,10 +8,9 @@ its own schemas, factories, and workloads.
 The main exports are the workload configurations and registration functions
 that are used by the application entry points.
 """
-from __future__ import annotations
 from .          import cli, imitation
 from .cli       import cli_config, register_cli_configs
-from .imitation import imitation_config, register_configs
+from .imitation import register_configs
 
 __all__ = [
     # Domains
@@ -23,6 +22,5 @@ __all__ = [
     "register_cli_configs",
     
     # Imitation exports
-    "imitation_config",
     "register_configs",
 ]

@@ -4,9 +4,8 @@ Physics and simulation model.
 This module defines the unified configuration for the physical simulation
 environment, including MuJoCo settings and thermal field interpolation.
 """
-from __future__ import annotations
-from pathlib    import Path
-from pydantic   import BaseModel, Field, PositiveFloat
+from pathlib  import Path
+from pydantic import BaseModel, Field, PositiveFloat
 
 
 class PhysicsModel(BaseModel, extra="forbid"):

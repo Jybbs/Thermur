@@ -4,7 +4,6 @@ Hydra-zen builders for training components.
 This module consolidates configuration builders for the policy network,
 optimizer, and loss function - all core components of the training loop.
 """
-from __future__       import annotations
 from ..schemas        import LearningModel
 from hydra_zen        import builds, zen
 from omegaconf        import SI

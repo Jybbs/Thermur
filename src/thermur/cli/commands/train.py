@@ -5,9 +5,8 @@ This module encapsulates all logic for the 'train' command, including
 system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
-from __future__ import annotations
-from omegaconf  import OmegaConf
-from typer      import Context, Exit, Option, Typer
+from omegaconf import OmegaConf
+from typer     import Context, Exit, Option, Typer
 
 cmd_train = Typer(
     add_completion           = False,

@@ -4,11 +4,17 @@ Loss functions for imitation learning.
 This module provides loss functions used in training policies
 via behavioral cloning.
 """
-from __future__         import annotations
+from tensordict         import TensorDict
+from torch              import Tensor
 from torch.nn           import functional, Module
-from torchrl.data       import TensorDict
 from torchrl.objectives import LossModule
-from typing             import Any
+from typing             import TypedDict
+
+
+class LossDict(TypedDict):
+    """Type definition for loss module output."""
+    loss: Tensor
+    loss_imitation: Tensor
 
 
 class ImitationLoss(LossModule):
@@ -29,7 +35,7 @@ class ImitationLoss(LossModule):
         super().__init__()
         self.policy_network = policy_network
         
-    def forward(self, tensordict: TensorDict) -> dict[str, Any]:
+    def forward(self, tensordict: TensorDict) -> LossDict:
         """
         Compute the imitation loss.
         
