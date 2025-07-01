@@ -86,7 +86,7 @@ class InfoCommand:
         """
         self.ui.print_section(self.config.sections.system_validation, "thermal")
 
-        info  = self.system.get_system_info(self.config)
+        info  = self.system.get_system_info(self.config.wandb_display)
         table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)
