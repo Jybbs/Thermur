@@ -4,11 +4,28 @@ Hydra-zen builders for flock data specifications.
 This module provides factory functions that create torchrl spec objects
 through builder functions that are compatible with Hydra's serialization.
 """
+from ..schemas    import FlockModel
 from hydra_zen    import builds
 from omegaconf    import SI
-from torchrl.data import Composite, TensorSpec
+from torchrl.data import Composite, UnboundedContinuousTensorSpec, BoundedTensorSpec
 
 import torch
+
+
+build_flock = builds(
+    FlockModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.flock",
+        "cls_name" : "FlockBuild"
+    }
+)
+"""
+Builder for flock configuration.
+
+Defines agent properties and flock behavior parameters for
+the multi-agent system.
+"""
 
 
 def create_edge_index_spec(n: int):
@@ -25,18 +42,20 @@ def create_edge_index_spec(n: int):
     Returns:
         TensorSpec for graph edge indices with int64 dtype
     """
-    return TensorSpec(
+    return BoundedTensorSpec(
+        low    = 0,
+        high   = n - 1,
         shape  = (2, n * (n - 1)),
         device = "cpu",
         dtype  = torch.int64,
-    ).to_owned_by(())
+    )
 
 
 def create_float_spec(shape):
     """
     Helper to create float32 TensorSpec with configurable shape.
     """
-    return TensorSpec(
+    return UnboundedContinuousTensorSpec(
         shape = shape,
         dtype = torch.float32
     )
@@ -58,8 +77,7 @@ def create_action_spec(agent_count: int, spatial_dims: int):
         Composite spec for agent actions
     """
     return Composite(
-        shape  = agent_count,
-        action = create_float_spec(spatial_dims),
+        action = create_float_spec((agent_count, spatial_dims)),
     )
 
 
@@ -83,13 +101,12 @@ def create_observation_spec(agent_count: int, spatial_dims: int):
         Composite spec defining the full observation structure
     """
     return Composite(
-        shape            = agent_count,
-        battery          = create_float_spec(1),
+        battery          = create_float_spec((agent_count, 1)),
         edge_index       = create_edge_index_spec(agent_count),
-        position         = create_float_spec(spatial_dims),
-        temperature      = create_float_spec(1),
-        temperature_grad = create_float_spec(spatial_dims),
-        velocity         = create_float_spec(spatial_dims),
+        position         = create_float_spec((agent_count, spatial_dims)),
+        temperature      = create_float_spec((agent_count, 1)),
+        temperature_grad = create_float_spec((agent_count, spatial_dims)),
+        velocity         = create_float_spec((agent_count, spatial_dims)),
     )
 
 

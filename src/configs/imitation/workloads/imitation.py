@@ -11,11 +11,17 @@ imitation_config = make_config(
     data_collector    = build_collector,
     experience_buffer = build_replay_buffer,
     expert_policy     = build_flocking_controller,
+    flock             = build_flock,
+    learning          = build_learning,
     loss_function     = build_loss,
+    logging           = build_logging,
     optimizer         = build_optimizer,
+    physics           = build_physics,
     policy            = build_policy,
     simulation        = build_simulation,
+    training          = build_learning,  # Alias for backward compatibility
     visualizer        = build_visualizer,
+    wandb             = build_wandb,
     defaults          = ["_self_"],
 )
     

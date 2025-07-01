@@ -136,10 +136,7 @@ def create_cli():
     cli = Typer(
         name                     = cfg.cli.app_name,
         help                     = cfg.cli.app_description,
-        add_completion           = False,
         rich_markup_mode         = "rich",
-        no_args_is_help          = True,
-        pretty_exceptions_enable = True,
         context_settings         = {"help_option_names": ["-h", "--help"]},
     )
     

@@ -150,21 +150,19 @@ class TrainCommand:
                 advance     = 20,
                 description = self.config.status.loading_config_sys
             )
-            from configs                        import imitation_config, register_configs
+            from configs.imitation              import imitation_config, register_imitation_configs
             from hydra_zen                      import instantiate, launch
             from hydra_zen.third_party.pydantic import pydantic_parser
-            from thermur                        import (
-                configure_loguru,
-                set_seed,
-                train_imitation_learning
-            )
+            from thermur.utils                  import configure_loguru
+            from thermur.utils                  import set_seed
+            from thermur.training               import train_imitation_learning
 
             progress.update(
                 task,
                 advance     = 30,
                 description = self.config.status.registering_configs
             )
-            register_configs()
+            register_imitation_configs()
 
             progress.update(
                 task,
@@ -350,7 +348,7 @@ class TrainCommand:
             A dictionary of the instantiated training components.
         """
         with self.ui.create_thermal_progress() as progress:
-            component_configs = self.config.training.component_configs
+            component_configs = self.config.training_components.component_configs
             task = progress.add_task(
                 self.config.status.instantiating_components, total=len(component_configs)
             )
@@ -360,7 +358,7 @@ class TrainCommand:
                 progress.update(
                     task,
                     completed   = i,
-                    description = self.config.status.setup_component_tpl.format(
+                    description = self.config.status.setup_component_template.format(
                         display_name=display_name
                     )
                 )
@@ -374,7 +372,7 @@ class TrainCommand:
             progress.update(task, completed=len(component_configs))
 
             # Handle optional visualizer
-            visualizer_key = self.config.training.visualizer_key
+            visualizer_key = self.config.training_components.visualizer_key
             visualizer_cfg = OmegaConf.select(cfg, visualizer_key)
             components['visualizer'] = (
                 instantiate(visualizer_cfg, _parser=pydantic_parser) 
@@ -404,7 +402,7 @@ class TrainCommand:
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[flock]📊 wandb: {status} • {details}[/flock]")
+        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
         self.ui.console.print()
 
     def _run_training(

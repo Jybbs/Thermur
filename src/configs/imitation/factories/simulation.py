@@ -16,10 +16,26 @@ from thermur.simulation import compute_edge_index, SimulationEnv
 from thermur.utils      import EnvironmentDataSource, set_seed
 
 
+build_physics = builds(
+    PhysicsModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.simulation",
+        "cls_name" : "PhysicsBuild"
+    }
+)
+"""
+Builder for physics configuration.
+
+Defines physical simulation parameters and thermal constraints for
+the environment.
+"""
+
+
 build_data_source = builds(
         EnvironmentDataSource,
-        data_path      = SI("${physics.thermal_data_source}"),
-        physics_config = zen(PhysicsModel),
+        data_path      = SI("${physics.data_source}"),
+        physics_config = SI("${physics}"),
         populate_full_signature = True,
     )
 """
@@ -35,18 +51,9 @@ build_simulation = builds(
     compute_edge_index      = compute_edge_index,
     data_source             = build_data_source,
     observation_spec        = build_observation_spec,
+    physics_config          = SI("${physics}"),
+    flock_config            = SI("${flock}"),
     seed_fn                 = set_seed,
-
-    # Physics parameters from schema
-    assets_dir              = SI("${physics.assets_dir}"),
-    simulation_step         = SI("${physics.simulation_step}"),
-
-    # Flock parameters from schema
-    agent_count             = SI("${flock.agent_count}"),
-    communication_range     = SI("${flock.communication_range}"),
-    formation_scale_factor  = SI("${flock.formation_scale_factor}"),
-    initial_formation       = SI("${flock.initial_formation}"),
-    spatial_dims            = SI("${flock.spatial_dims}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.simulation",
