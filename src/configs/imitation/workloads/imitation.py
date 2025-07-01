@@ -19,7 +19,6 @@ imitation_config = make_config(
     physics           = build_physics,
     policy            = build_policy,
     simulation        = build_simulation,
-    training          = build_learning,  # Alias for backward compatibility
     visualizer        = build_visualizer,
     wandb             = build_wandb,
     defaults          = ["_self_"],

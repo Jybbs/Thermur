@@ -234,7 +234,7 @@ class TrainCommand:
 
         # Direct config access - no instantiation needed
         configure_loguru(cfg.logging)
-        set_seed(cfg.training.seed)
+        set_seed(cfg.learning.seed)
 
         components = self._instantiate_training_components(
             cfg             = cfg,
@@ -243,7 +243,7 @@ class TrainCommand:
         )
         
         # Pass configs as validated Pydantic models
-        components["training"]     = cfg.training
+        components["training"]     = cfg.learning
         components["wandb_config"] = cfg.wandb
 
         self.ui.print_message(self.config.messages.components_initialized, "success")
