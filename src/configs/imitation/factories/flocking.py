@@ -7,7 +7,7 @@ These builders leverage Pydantic validation through the zen() wrapper.
 """
 from ..schemas       import ControlModel, SwarmModel
 from hydra_zen       import builds, zen
-from thermur.control import ExpertFlockingController
+from thermur import ExpertFlockingController
 
 
 build_flocking_controller = builds(

@@ -7,8 +7,7 @@ optimizer, and loss function - all core components of the training loop.
 from ..schemas        import LearningModel
 from hydra_zen        import builds, zen
 from omegaconf        import SI
-from thermur.models   import GNNPolicy
-from thermur.training import ImitationLoss
+from thermur import GNNPolicy, ImitationLoss
 from torch.optim      import AdamW
 
 

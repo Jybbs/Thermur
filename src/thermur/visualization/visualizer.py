@@ -16,7 +16,7 @@ from .sampling                 import create_wind_grid
 from pyvista                   import Actor, Plotter
 from tensordict                import TensorDictBase
 from typing                    import Optional
-from configs.imitation.schemas import VisualizationModel
+from configs import VisualizationModel
 
 import pyvista as pv
 

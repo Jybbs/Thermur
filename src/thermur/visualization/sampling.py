@@ -12,7 +12,7 @@ operations and leveraging PyVista's optimized data structures.
 from pyvista                   import Axes, ImageData, PolyData
 from torch                     import Tensor
 from typing                    import Any
-from configs.imitation.schemas import VisualizationModel
+from configs import VisualizationModel
 
 import numpy   as np
 import pyvista as pv

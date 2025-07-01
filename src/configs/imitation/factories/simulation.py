@@ -12,8 +12,7 @@ from ..schemas          import PhysicsModel
 from .swarm             import build_action_spec, build_observation_spec
 from hydra_zen          import builds, zen
 from omegaconf          import SI
-from thermur.simulation import compute_edge_index, SimulationEnv
-from thermur.utils      import EnvironmentDataSource, set_seed
+from thermur import compute_edge_index, SimulationEnv, EnvironmentDataSource, set_seed
 
 
 build_data_source = builds(

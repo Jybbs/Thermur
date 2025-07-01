@@ -4,7 +4,13 @@ Imitation learning configuration workload.
 This module defines the top-level configuration structure for training
 the GNN policy via behavioral cloning from expert demonstrations.
 """
-from ..schemas import *
+from ..schemas.control import ControlModel
+from ..schemas.learning import LearningModel
+from ..schemas.monitoring import LoggingModel, WandbModel
+from ..schemas.physics import PhysicsModel
+from ..schemas.safety import SafetyModel
+from ..schemas.swarm import SwarmModel
+from ..schemas.visualization import VisualizationModel
 from hydra_zen import make_config, zen, ZenStore
 
 
@@ -13,16 +19,11 @@ def register_configs():
     Register all configurations with Hydra's ConfigStore.
     """
     # Import factories here to avoid circular imports
-    from ..factories import (
-        build_collector,
-        build_replay_buffer,
-        build_flocking_controller,
-        build_loss,
-        build_optimizer,
-        build_policy,
-        build_simulation,
-        build_visualizer,
-    )
+    from ..factories.data import build_collector, build_replay_buffer
+    from ..factories.flocking import build_flocking_controller
+    from ..factories.imitation import build_loss, build_optimizer, build_policy
+    from ..factories.simulation import build_simulation
+    from ..factories.visualization import build_visualizer
     
     imitation_config = make_config(
         # Configuration models (validated but not instantiated)

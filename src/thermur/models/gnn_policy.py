@@ -14,7 +14,7 @@ from torch                     import Tensor
 from torch.nn                  import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
 from torch_geometric.data      import Data
 from torch_geometric.nn        import GCNConv
-from configs.imitation.schemas import LearningModel
+from configs import LearningModel
 
 
 class GNNPolicy(Module):

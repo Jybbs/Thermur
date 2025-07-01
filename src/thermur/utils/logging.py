@@ -11,7 +11,7 @@ before the application is properly configured.
 """
 from loguru                    import logger
 from sys                       import stderr
-from configs.imitation.schemas import LoggingModel
+from configs import LoggingModel
 
 logger.remove()
 logger = logger

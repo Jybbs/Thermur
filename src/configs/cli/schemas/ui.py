@@ -4,7 +4,6 @@ UI and theme configuration schemas for the Thermur CLI.
 This module defines models for terminal rendering, styling, and visual
 elements used throughout the CLI interface.
 """
-
 from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
 
 
@@ -18,13 +17,13 @@ class ThemeModel(BaseModel, extra="forbid"):
     """
     fire_gradient: list[str] = Field(
         default = [
-            "#8B0000",  # Dark red
-            "#DC143C",  # Crimson
-            "#FF4500",  # Orange red
-            "#FF8C00",  # Dark orange
-            "#FFD700",  # Gold
-            "#FFFF00",  # Yellow
-            "#FFFACD",  # Lemon chiffon
+            "#8B0000",
+            "#DC143C",
+            "#FF4500",
+            "#FF8C00",
+            "#FFD700",
+            "#FFFF00",
+            "#FFFACD",
         ],
         description = "Color gradient representing thermal transitions"
     )

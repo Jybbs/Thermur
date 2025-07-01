@@ -15,7 +15,13 @@ the main visualizer for updates and cleanup.
 from pyvista                   import Actor, ImageData, PolyData, Plotter
 from torch                     import Tensor
 from typing                    import Optional
-from configs.imitation.schemas import VisualizationModel
+from configs import (
+    VisualizationModel,
+    GlyphModel,
+    ColorModel,
+    OpacityModel,
+    GridModel,
+)
 
 import numpy   as np
 import pyvista as pv
@@ -130,9 +136,9 @@ def _render_trails(
     velocities  : np.ndarray,
     temperature : Optional[np.ndarray],
     colormap    : Optional[str],
-    glyphs      : BaseModel,
-    colors      : BaseModel,
-    opacities   : BaseModel,
+    glyphs      : GlyphModel,
+    colors      : ColorModel,
+    opacities   : OpacityModel,
 ) -> list[Actor]:
     """
     Helper function to render agent motion trails.
@@ -187,8 +193,8 @@ def _render_trails(
 def render_temperature_field(
     plotter   : Plotter,
     temp_grid : ImageData,
-    colors    : BaseModel,
-    opacities : BaseModel,
+    colors    : ColorModel,
+    opacities : OpacityModel,
     min_temp  : Optional[float] = None,
     max_temp  : Optional[float] = None,
 ) -> list[Actor]:
@@ -236,9 +242,9 @@ def render_temperature_field(
 def render_wind_field(
     plotter   : Plotter,
     wind_grid : PolyData,
-    glyphs    : BaseModel,
-    colors    : BaseModel,
-    opacities : BaseModel,
+    glyphs    : GlyphModel,
+    colors    : ColorModel,
+    opacities : OpacityModel,
 ) -> list[Actor]:
     """
     Render the wind field as arrow glyphs on a 3D grid.
@@ -297,9 +303,9 @@ def render_safety_boundary(
     temperature      : Tensor,
     temperature_grad : Tensor,
     max_temperature  : float,
-    grids            : BaseModel,
-    colors           : BaseModel,
-    opacities        : BaseModel,
+    grids            : GridModel,
+    colors           : ColorModel,
+    opacities        : OpacityModel,
 ) -> list[Actor]:
     """
     Render a safety boundary visualization showing the T_max isotherm.
@@ -362,8 +368,8 @@ def render_communication_graph(
     plotter   : Plotter,
     position  : Tensor,
     edge_index: Tensor,
-    colors    : BaseModel,
-    opacities : BaseModel,
+    colors    : ColorModel,
+    opacities : OpacityModel,
 ) -> list[Actor]:
     """
     Render the communication graph as lines between connected agents.

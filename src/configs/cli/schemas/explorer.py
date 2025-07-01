@@ -4,7 +4,6 @@ Configuration explorer schemas for the Thermur CLI.
 This module defines models for the interactive configuration exploration
 tool that allows users to navigate and modify Hydra configurations.
 """
-
 from pydantic import BaseModel, Field, PositiveInt
 
 

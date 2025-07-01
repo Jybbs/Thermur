@@ -8,7 +8,7 @@ parameters validated by the VisualizationModel Pydantic model.
 from ..schemas             import VisualizationModel
 from hydra_zen             import builds, zen
 from omegaconf             import SI
-from thermur.visualization import Visualizer
+from thermur import Visualizer
 
 
 build_visualizer = builds(
