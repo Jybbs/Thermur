@@ -5,9 +5,6 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
-
-import os
-
 from contextlib         import contextmanager
 from functools          import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -18,6 +15,8 @@ from sys                import version_info
 from torch              import cuda, __version__ as torch_version
 from typing             import Iterator
 from wandb              import Api, api
+
+import os
 
 
 class SystemInspector:

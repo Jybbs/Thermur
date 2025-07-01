@@ -5,14 +5,14 @@ This module provides the main CLI interface by discovering and registering
 all available commands from the .commands subpackage. It uses Hydra-zen
 to load and validate the CLI configuration through Pydantic schemas.
 """
-from .commands.configure import cmd_configure
-from .commands.info import cmd_info
-from .commands.monitor import cmd_monitor
-from .commands.train import cmd_train
-from .commands.validate import cmd_validate
-from .helpers.prompts import CLIPrompts
-from .helpers.system import SystemInspector
-from .helpers.ui import ThermurUI
+from .commands.configure            import cmd_configure
+from .commands.info                 import cmd_info
+from .commands.monitor              import cmd_monitor
+from .commands.train                import cmd_train
+from .commands.validate             import cmd_validate
+from .helpers.prompts               import CLIPrompts
+from .helpers.system                import SystemInspector
+from .helpers.ui                    import ThermurUI
 from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
 from configs                        import cli_config

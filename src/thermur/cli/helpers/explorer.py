@@ -6,7 +6,6 @@ interactively browse and edit hydra-zen configuration schemas. The primary
 goal is to offer a guided way to discover available parameters and generate
 valid Hydra override strings for a training run.
 """
-
 from hydra_zen  import get_target
 from omegaconf  import DictConfig
 from pydantic   import BaseModel

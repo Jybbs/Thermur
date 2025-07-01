@@ -10,11 +10,11 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
-from torch                     import Tensor
-from torch.nn                  import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
-from torch_geometric.data      import Data
-from torch_geometric.nn        import GCNConv
-from configs import LearningModel
+from torch                import Tensor
+from torch.nn             import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
+from torch_geometric.data import Data
+from torch_geometric.nn   import GCNConv
+from configs              import LearningModel
 
 
 class GNNPolicy(Module):
