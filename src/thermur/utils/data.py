@@ -5,9 +5,10 @@ This module provides a class to abstract away the details of reading and
 interpolating from large, gridded datasets like the NetCDF files produced by
 WRF-Fire.
 """
-from numpy  import ndarray, zeros
-from torch  import Tensor
-from xarray import DataArray, open_dataset
+from configs.imitation import PhysicsModel
+from numpy             import ndarray, zeros
+from torch             import Tensor
+from xarray            import DataArray, open_dataset
 
 import torch
 
@@ -24,7 +25,7 @@ class EnvironmentDataSource:
     def __init__(
         self, 
         data_path      : str,
-        physics_config : "PhysicsModel"
+        physics_config : PhysicsModel
     ):
         """
         Loads the dataset from the specified path and initializes configuration.

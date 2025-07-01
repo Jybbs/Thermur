@@ -58,7 +58,7 @@ def get_context(ctx: Context) -> AppContext:
 
 def version_callback(value: bool, ctx: Context):
     """
-    Shows version information and system details.
+    Shows version information.
 
     This is an "eager" callback that runs before the main callback. It uses
     the lazy context getter to ensure the AppContext is only created once.
@@ -75,25 +75,9 @@ def version_callback(value: bool, ctx: Context):
     cfg         = app_context.config
     system      = app_context.system
 
-    ui.print_header(cfg.headers.main_title, cfg.headers.main_subtitle)
-
     info = system.get_system_info(cfg.wandb_display)
-    ui.print_config_value("Version", f"v{info['thermur']}", "Thermur package version")
-    ui.print_config_value("Python",  f"v{info['python']}",  "Python runtime version")
-    ui.print_config_value("PyTorch", f"v{info['torch']}",   "Deep learning framework")
-    ui.console.print()
-
-    table = ui.create_system_table(info)
-    ui.console.print(table)
-
-    ui.print_section(cfg.sections.integration_status, style="swarm")
-    status, details = system.check_wandb_status(cfg)
-    ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
-
-    ui.print_section(cfg.sections.quick_start, style="bright_green")
-
-    for example in cfg.commands.examples[:2]:
-        ui.print_command_example(example["desc"], example["command"], example["note"])
+    ui.console.print(f"thermur v{info['thermur']}")
+    ui.console.print(f"Python v{info['python']} • PyTorch v{info['torch']}")
 
     raise Exit()
 
@@ -110,10 +94,10 @@ def main_callback(
     ),
 ):
     """
-    🔥 Thermur: Thermally-constrained drone swarm training toolkit.
+    🔥 Thermur: Thermally-constrained drone flock training toolkit.
 
     A command-line interface for training and managing thermal drone
-    swarm behaviors using imitation learning.
+    flock behaviors using imitation learning.
 
     Use 'thermur <command> --help' for detailed command information.
     """
@@ -123,7 +107,7 @@ def main_callback(
         ui  = app_context.ui
         cfg = app_context.config
 
-        ui.print_header(cfg.headers.main_title, cfg.headers.main_subtitle)
+        ui.print_header(cfg.headers.main_title)
         ui.print_section(cfg.sections.available_commands, "accent")
 
         for cmd_info in cfg.commands.available:
@@ -156,6 +140,7 @@ def create_cli():
         rich_markup_mode         = "rich",
         no_args_is_help          = True,
         pretty_exceptions_enable = True,
+        context_settings         = {"help_option_names": ["-h", "--help"]},
     )
     
     cli.command(name="train")(train)

@@ -1,14 +1,14 @@
 """
-Thermur: Thermally-aware drone swarm control via imitation learning.
+Thermur: Thermally-aware drone flock control via imitation learning.
 
-This package implements a complete system for training autonomous drone swarms
+This package implements a complete system for training autonomous drone flocks
 to navigate wildfire scenarios using graph neural networks and behavioral cloning.
 The architecture consists of several key components:
 
 1. Control: Expert controllers implementing Reynolds flocking rules with thermal
    constraints, providing demonstrations for imitation learning.
 
-2. Models: Graph Neural Network policies that process swarm states as dynamic
+2. Models: Graph Neural Network policies that process flock states as dynamic
    graphs and output control actions.
 
 3. Simulation: MuJoCo-based physics environment modeling drone dynamics and
@@ -17,7 +17,7 @@ The architecture consists of several key components:
 4. Training: Imitation learning algorithms for training policies from expert
    demonstrations using behavioral cloning.
 
-5. Visualization: Real-time 3D rendering of swarm dynamics and thermal fields
+5. Visualization: Real-time 3D rendering of flock dynamics and thermal fields
    for debugging and analysis.
 
 The system is designed for modularity and extensibility, with clean interfaces

@@ -38,7 +38,7 @@ def train(
     ),
 ):
     """
-    🔥 Train the thermal drone swarm using imitation learning.
+    🔥 Train the thermal drone flock using imitation learning.
 
     This command provides a comprehensive training workflow with system
     validation, configuration management, and seamless wandb integration.
@@ -103,10 +103,7 @@ class TrainCommand:
             preset           : The name of the configuration preset to use.
             wandb_project    : The name of the Weights & Biases project for tracking.
         """
-        self.ui.print_header(
-            self.config.headers.train_title,
-            self.config.headers.train_subtitle
-        )
+        self.ui.print_header(self.config.headers.train_title)
 
         if not force:
             self._perform_system_validation()
@@ -256,16 +253,13 @@ class TrainCommand:
 
         self.ui.print_section(self.config.sections.training_started, "thermal")
         self.ui.print_message(self.config.messages.monitoring_dynamics, "thermal")
-        self.ui.print_message(self.config.messages.track_wandb, "swarm")
+        self.ui.print_message(self.config.messages.track_wandb, "flock")
         self.ui.console.print()
 
         train_imitation_learning(**components)
 
         self.ui.console.print()
-        self.ui.print_header(
-            self.config.messages.training_complete_header,
-            self.config.messages.training_complete_sub
-        )
+        self.ui.print_header(self.config.messages.training_complete_header)
 
     def _handle_configuration_issues(
         self,
@@ -404,7 +398,7 @@ class TrainCommand:
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
+        self.ui.console.print(f"[flock]📊 wandb: {status} • {details}[/flock]")
         self.ui.console.print()
 
     def _run_training(

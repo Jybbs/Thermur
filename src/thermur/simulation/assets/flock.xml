@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<mujoco model="swarm">
+<mujoco model="flock">
 
     <option 
         integrator = "RK4"

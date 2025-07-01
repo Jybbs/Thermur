@@ -56,26 +56,16 @@ class InfoCommand:
         self.ui.console.print(features_table)
 
         self.ui.print_section(self.config.sections.config_system, "config")
-        self.ui.print_config_value(
-            "Config Path",
-            "configs/",
-            "Hydra configuration directory"
-        )
-
+        self.ui.print_config_value("Config Path", "configs/", align_width=11)
+        
         preset_fields = set(self.config.presets.__fields__) - {"table_title"}
-        self.ui.print_config_value(
-            "Presets",
-            ", ".join(sorted(preset_fields)),
-            "Available training presets"
-        )
+        self.ui.print_config_value("Presets", ", ".join(sorted(preset_fields)), align_width=11)
+        
+        self.ui.print_config_value("Explorer", "thermur configure", align_width=11)
 
-        self.ui.print_config_value(
-            "Explorer",
-            "thermur configure",
-            "Interactive configuration tool"
-        )
-
-        self.ui.print_training_tips()
+        self.ui.print_section(self.config.sections.quick_start, style="bright_green")
+        for example in self.config.commands.examples:
+            self.ui.print_command_example(example["desc"], example["command"], example["note"])
 
     def _perform_system_validation(self):
         """
@@ -93,5 +83,5 @@ class InfoCommand:
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
+        self.ui.console.print(f"[flock]📊 wandb: {status} • {details}[/flock]")
         self.ui.console.print()

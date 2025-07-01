@@ -124,7 +124,7 @@ class CLIPrompts:
             The final project name for wandb tracking.
         """
         self.ui.console.print()
-        self.ui.print_message("Configure experiment tracking", "swarm")
+        self.ui.print_message("Configure experiment tracking", "flock")
         self.ui.console.print(
             f"[{self.ui.ui.muted_style}]"
             "wandb will track metrics, logs, and model checkpoints"
@@ -318,7 +318,7 @@ class CLIPrompts:
 
         summary_data = [
             ("Configuration", f"[{self.ui.theme.styles['warning']}]{config.get('preset')}[/]"),
-            ("wandb Project", f"[{self.ui.theme.styles['swarm']}]{config.get('wandb_project')}[/]"),
+            ("wandb Project", f"[{self.ui.theme.styles['flock']}]{config.get('wandb_project')}[/]"),
             ("Overrides", f"[{self.ui.theme.styles['drone']}]{num_overrides} custom settings[/]"),
             ("Hardware", gpu_status),
         ]
@@ -330,7 +330,7 @@ class CLIPrompts:
 
         ready_panel = self.ui.create_ready_panel(
             title    = "✅ Ready to Train!",
-            subtitle = "Your thermal swarm is configured and ready to learn"
+            subtitle = "Your thermal flock is configured and ready to learn"
         )
         self.ui.console.print(ready_panel)
         self.ui.console.print()

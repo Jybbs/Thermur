@@ -10,7 +10,7 @@ Key model categories:
 - Learning: Neural network architecture, optimization, and training hyperparameters
 - Safety: Thermal barriers, collision avoidance, and control bounds
 - Monitoring: Logging, metrics, and experiment tracking with Weights & Biases
-- Visualization: Real-time rendering of swarm dynamics and thermal fields
+- Visualization: Real-time rendering of flock dynamics and thermal fields
 """
 from .control       import *
 from .learning      import *
@@ -18,5 +18,5 @@ from .monitoring    import *
 from .physics       import *
 from .safety        import *
 from .specs         import *
-from .swarm         import *
+from .flock         import *
 from .visualization import *

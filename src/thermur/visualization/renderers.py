@@ -34,7 +34,7 @@ def render_agents(
     """
     Render agents as glyphs (spheres or arrows) in the visualization.
     
-    Creates visual representations of each agent in the swarm using either sphere
+    Creates visual representations of each agent in the flock using either sphere
     glyphs (showing position only) or arrow glyphs (showing position and direction).
     Agents can be colored by temperature using the provided colormap, and optional
     motion trails can be drawn to show recent movement patterns.
@@ -198,7 +198,7 @@ def render_temperature_field(
     
     Creates a volume rendering of a temperature field, showing thermal gradients
     throughout the simulation space. This visualization provides insights into
-    the thermal environment that the swarm navigates through, helping to understand
+    the thermal environment that the flock navigates through, helping to understand
     the thermal currents, hot spots, and thermal gradients.
     
     The volume rendering uses PyVista's efficient GPU-accelerated rendering
@@ -306,7 +306,7 @@ def render_safety_boundary(
     Render a safety boundary visualization showing the T_max isotherm.
     
     Creates a semi-transparent isosurface representing the boundary where
-    temperature equals T_max, which is the safety limit for the swarm.
+    temperature equals T_max, which is the safety limit for the flock.
     This visualization helps to verify that the CBF (Control Barrier Function)
     is working correctly by showing the areas that agents should avoid.
     
@@ -369,9 +369,9 @@ def render_communication_graph(
     """
     Render the communication graph as lines between connected agents.
     
-    Visualizes the graph connectivity of the swarm by drawing lines between
+    Visualizes the graph connectivity of the flock by drawing lines between
     agents that are within communication range. This visualization reveals
-    the topology of information flow within the swarm and helps debug
+    the topology of information flow within the flock and helps debug
     connectivity issues or understand emergent behaviors based on communication
     patterns.
     

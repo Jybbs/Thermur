@@ -24,7 +24,7 @@ build_policy = builds(
 """
 Builder for the Graph Neural Network policy.
 
-Creates a permutation-equivariant GNN that processes the swarm graph
+Creates a permutation-equivariant GNN that processes the flock graph
 structure to output nominal control actions u_nom for each agent.
 """
 

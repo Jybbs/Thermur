@@ -3,7 +3,7 @@ Defines the Graph Neural Network (GNN) policy module, π_θ.
 
 This file contains the implementation of the `torch.nn.Module` that serves as
 the agent's brain. The policy, denoted π_θ, is a GNN designed to process the
-swarm's state, which is naturally represented as a dynamic graph. It learns to
+flock's state, which is naturally represented as a dynamic graph. It learns to
 output a nominal velocity command, 𝐮_nom, for each agent.
 
 The architecture is explicitly designed to be configurable and to consume
@@ -82,7 +82,7 @@ class GNNPolicy(Module):
 
         Args:
             data: A `torch_geometric.data.Data` object containing the batched
-                  graph state of the swarm, with `x` (node features) and
+                  graph state of the flock, with `x` (node features) and
                   `edge_index` (connectivity).
 
         Returns:

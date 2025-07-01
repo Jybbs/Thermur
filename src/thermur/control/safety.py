@@ -1,7 +1,7 @@
 """
 Implements the Control Barrier Function (CBF) based safety filter.
 
-This module is responsible for ensuring that the swarm operates within its
+This module is responsible for ensuring that the flock operates within its
 defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
@@ -55,7 +55,7 @@ class ThermalBarrierFunction:
         regions, creating a "force" that pushes agents toward safety.
         
         Args:
-            sd: The current observation data for the swarm containing
+            sd: The current observation data for the flock containing
                 temperature and temperature_grad tensors.
                 
         Returns:
@@ -127,7 +127,7 @@ class SafetyFilter:
         Args:
             barrier      : The ThermalBarrierFunction instance that defines
                           the safety boundary.
-            agent_count  : Number of agents in the swarm
+            agent_count  : Number of agents in the flock
             spatial_dims : Spatial dimensions (2D or 3D)
             cbf_alpha    : CBF constraint parameter α
             safety_config : QP solver configuration model
@@ -160,7 +160,7 @@ class SafetyFilter:
         into the QP matrices `Q`, `p`, `G`, and `h` for the `qpth` solver.
 
         Args:
-            sd        : The current observation data for the swarm containing
+            sd        : The current observation data for the flock containing
                         temperature and temperature_grad tensors.
             u_nominal : The desired control action from the policy network.
 

@@ -1,5 +1,5 @@
 """
-Control algorithms for thermally-aware drone swarms.
+Control algorithms for thermally-aware drone flocks.
 
 This package implements the expert controller that generates demonstrations for
 imitation learning. The core algorithm combines Reynolds flocking rules with

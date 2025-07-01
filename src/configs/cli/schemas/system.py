@@ -49,7 +49,7 @@ class ValidationModel(BaseModel, extra="forbid"):
     """
     System validation requirements and diagnostic messages.
     
-    This model holds validation criteria and messages for thermal swarm
+    This model holds validation criteria and messages for thermal flock
     simulation and training environments.
     """
     all_validations_passed: str = Field(
@@ -123,7 +123,7 @@ class WandbDisplayModel(BaseModel, extra="forbid"):
     )
     example_projects: list[str] = Field(
         default = [
-            "thermal-swarm-v1",
+            "thermal-flock-v1",
             "drone-flocking-experiments",
             "heat-aware-navigation",
             "imitation-learning-tests",

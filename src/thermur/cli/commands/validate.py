@@ -53,10 +53,7 @@ class ValidateCommand:
         Args:
             config_overrides : A list of Hydra configuration overrides to validate.
         """
-        self.ui.print_header(
-            self.config.headers.validate_title,
-            self.config.headers.validate_subtitle
-        )
+        self.ui.print_header(self.config.headers.validate_title)
 
         self._perform_system_validation()
 
@@ -79,7 +76,7 @@ class ValidateCommand:
         else:
             self.ui.print_message(self.config.validation.config_validation_passed, "success")
 
-        self.ui.print_section(self.config.sections.integration_check, "swarm")
+        self.ui.print_section(self.config.sections.integration_check, "flock")
         status, details = self.system.check_wandb_status(self.config)
 
         if "Not" in status:
@@ -111,5 +108,5 @@ class ValidateCommand:
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[swarm]📊 wandb: {status} • {details}[/swarm]")
+        self.ui.console.print(f"[flock]📊 wandb: {status} • {details}[/flock]")
         self.ui.console.print()

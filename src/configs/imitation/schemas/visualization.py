@@ -93,7 +93,7 @@ class GridModel(BaseModel, extra="forbid"):
     """
     padding: PositiveFloat = Field(
         default     = 2.0,
-        description = "Extra space around the swarm's bounding box for grids."
+        description = "Extra space around the flock's bounding box for grids."
     )
     temperature_resolution: tuple[int, int, int] = Field(
         default     = (20, 20, 20),
@@ -148,7 +148,7 @@ class VisualizationModel(BaseModel, extra="forbid"):
     """
     Configures the 3D visualization settings for the simulation.
     
-    Controls rendering of swarm state, thermal conditions, wind fields, and other
+    Controls rendering of flock state, thermal conditions, wind fields, and other
     simulation elements for debugging, assessment, and analysis purposes. Most
     options can be toggled at runtime.
     """
@@ -158,11 +158,11 @@ class VisualizationModel(BaseModel, extra="forbid"):
     )
     show_agents: bool = Field(
         default     = True,
-        description = "Whether to render the swarm agents as 3D glyphs."
+        description = "Whether to render the flock agents as 3D glyphs."
     )
     show_graph: bool = Field(
         default     = True,
-        description = "Whether to visualize the swarm's communication graph connectivity."
+        description = "Whether to visualize the flock's communication graph connectivity."
     )
     show_safety: bool = Field(
         default     = True,

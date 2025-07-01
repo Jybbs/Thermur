@@ -2,7 +2,7 @@
 Defines the core `torchrl` simulation environment for the Thermur project.
 
 This module provides the `SimulationEnv` class, which serves as the primary
-interface for training and evaluating swarm policies. It implements the
+interface for training and evaluating flock policies. It implements the
 `torchrl.EnvBase` API, making it compatible with the broader `torchrl`
 ecosystem of collectors, replay buffers, and trainers.
 
@@ -11,8 +11,8 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from ..utils           import generate_swarm_xml, load_swarm_model
-from configs.imitation import PhysicsModel, SwarmModel
+from ..utils           import generate_flock_xml, load_flock_model
+from configs.imitation import PhysicsModel, FlockModel
 from tensordict        import TensorDict, TensorDictBase
 from torch             import Tensor
 from torchrl.envs      import EnvBase
@@ -27,7 +27,7 @@ class SimulationEnv(EnvBase):
     """
     A thermally-aware multi-agent flocking environment for `torchrl`.
 
-    This environment simulates a swarm of `N` agents navigating a 3D space
+    This environment simulates a flock of `N` agents navigating a 3D space
     characterized by a pre-computed wind and temperature field. Agents must
     learn to move in a way that is legible to an observer while respecting
     strict thermal safety constraints.
@@ -44,7 +44,7 @@ class SimulationEnv(EnvBase):
         data_source        : Any,
         observation_spec   : TensorDictBase,
         physics_config     : PhysicsModel,
-        swarm_config       : SwarmModel,
+        flock_config       : FlockModel,
         seed_fn            : Optional[Callable] = None,
     ):
         """
@@ -56,7 +56,7 @@ class SimulationEnv(EnvBase):
             data_source        : A callable that provides environmental data queries.
             observation_spec   : The observation space specification.
             physics_config     : Physics simulation configuration.
-            swarm_config       : Swarm parameters configuration.
+            flock_config       : Flock parameters configuration.
             seed_fn            : Optional callable for setting random seeds.
         """
         super().__init__(device="cpu")
@@ -65,7 +65,7 @@ class SimulationEnv(EnvBase):
         self.data_source        = data_source
         self.observation_spec   = observation_spec
         self.physics_config     = physics_config
-        self.swarm_config       = swarm_config
+        self.flock_config       = flock_config
         self.seed_fn            = seed_fn
         self.physics_model      = self._initialize_physics()
 
@@ -81,21 +81,21 @@ class SimulationEnv(EnvBase):
             A dictionary containing the MuJoCo model and data instances.
         """
         # Generate XML model with N distinct agent bodies
-        xml_string = generate_swarm_xml(
+        xml_string = generate_flock_xml(
             assets_dir      = self.assets_dir,
             agent_count     = self.agent_count,
             spatial_dims    = self.spatial_dims,
             simulation_step = self.simulation_step
         )
         
-        return load_swarm_model(xml_string)
+        return load_flock_model(xml_string)
 
     def _reset(self, tensordict=None, **kwargs) -> TensorDictBase:
         """
         Resets the environment to an initial state for a new episode.
 
         This method creates an initial `TensorDict` observation by placing agents
-        according to the `initial_formation` specified in the swarm config and
+        according to the `initial_formation` specified in the flock config and
         querying the environmental data at these starting positions.
         
         The supported formation types include:
@@ -108,7 +108,7 @@ class SimulationEnv(EnvBase):
         factor to ensure appropriate initial connectivity between agents.
 
         Returns:
-            A `TensorDict` containing the initial observation of the swarm.
+            A `TensorDict` containing the initial observation of the flock.
         """
         if self.initial_formation == "cube":
             positions = self._generate_cube_formation(self.agent_count, self.spatial_dims)
@@ -121,8 +121,8 @@ class SimulationEnv(EnvBase):
             {
                 "position"         : scaled_positions,
                 "velocity"         : torch.zeros_like(scaled_positions),
-                "temperature"      : torch.zeros(self.swarm_config.agent_count),
-                "temperature_grad" : torch.zeros((self.swarm_config.agent_count, self.swarm_config.spatial_dims)),
+                "temperature"      : torch.zeros(self.flock_config.agent_count),
+                "temperature_grad" : torch.zeros((self.flock_config.agent_count, self.flock_config.spatial_dims)),
                 "edge_index"       : torch.zeros((2, 0), dtype=torch.long),
                 "reward"           : torch.zeros(self.agent_count),
                 "done"             : torch.zeros(1, dtype=torch.bool),

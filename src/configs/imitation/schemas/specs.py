@@ -1,7 +1,7 @@
 """
 Tensor specification models.
 
-This module defines the data structures for swarm observations and actions,
+This module defines the data structures for flock observations and actions,
 providing the definitive shape and dtype specifications for all tensors
 passed between the environment, policy, and replay buffer.
 """
@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 from typing   import Literal
 
 
-class SwarmActionModel(BaseModel, extra="forbid"):
+class FlockActionModel(BaseModel, extra="forbid"):
     """
-    Schema for swarm control actions.
+    Schema for flock control actions.
     
     The action is the desired d-dimensional velocity vector 𝐮 for each
     agent that is output by the policy. This represents the control input
@@ -36,9 +36,9 @@ class SwarmActionModel(BaseModel, extra="forbid"):
     )
 
 
-class SwarmObservationModel(BaseModel, extra="forbid"):
+class FlockObservationModel(BaseModel, extra="forbid"):
     """
-    Schema for swarm observation data.
+    Schema for flock observation data.
     
     An observation consists of agent-specific state vectors and the shared
     graph topology (edge_index). This defines the structure of the agent
@@ -91,7 +91,7 @@ class SwarmObservationModel(BaseModel, extra="forbid"):
         default     = "int64",
         description = (
             "Data type for graph edge indices, using int64 to support large "
-            "swarms."
+            "flocks."
         )
     )
     edge_index_shape: tuple[int, int] = Field(
