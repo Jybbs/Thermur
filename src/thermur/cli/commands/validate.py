@@ -66,7 +66,11 @@ class ValidateCommand:
             self.config.status.validating_config,
             spinner="dots"
         ):
-            issues = self.system.validate_config_overrides(config_overrides, self.config)
+            issues = self.system.validate_config_overrides(
+                config_overrides, 
+                self.config.system,
+                self.config.wandb_display
+            )
 
         if issues:
             self.ui.print_message(self.config.validation.config_issues_found, "warning")

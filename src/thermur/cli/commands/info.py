@@ -62,10 +62,10 @@ class InfoCommand:
             "Hydra configuration directory"
         )
 
-        preset_names = ", ".join(self.config.presets.configs.keys())
+        preset_fields = set(self.config.presets.__fields__) - {"table_title"}
         self.ui.print_config_value(
             "Presets",
-            preset_names,
+            ", ".join(sorted(preset_fields)),
             "Available training presets"
         )
 

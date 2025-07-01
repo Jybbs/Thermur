@@ -101,6 +101,68 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "red",
         description = "Color for errors and failures"
     )
+    features_list: list[dict[str, str]] = Field(
+        default = [
+            {
+                "name"   : "🔥 Thermal Constraints",
+                "desc"   : "Physics-based heat modeling for drone safety",
+                "status" : "✓ Active"
+            },
+            {
+                "name"   : "🐦‍⬛ Swarm Coordination",
+                "desc"   : "Multi-agent flocking with obstacle avoidance",
+                "status" : "✓ Active"
+            },
+            {
+                "name"   : "🧠 Imitation Learning",
+                "desc"   : "Expert policy cloning with BC and DAgger",
+                "status" : "✓ Active"
+            },
+            {
+                "name"   : "📊 wandb Integration",
+                "desc"   : "Real-time experiment tracking and visualization",
+                "status" : "✓ Active"
+            },
+            {
+                "name"   : "🎯 Hydra Configuration",
+                "desc"   : "Modular config system with validation",
+                "status" : "✓ Active"
+            },
+            {
+                "name"   : "📈 Live Visualization",
+                "desc"   : "3D rendering of swarm dynamics",
+                "status" : "✓ Active"
+            },
+        ],
+        description = "List of features to display in the features table"
+    )
+    features_table_columns: list[dict[str, str | int]] = Field(
+        default = [
+            {
+                "header" : "Feature",
+                "style"  : "bright_cyan",
+                "width"  : 25,
+                "align"  : "left"
+            },
+            {
+                "header" : "Description",
+                "style"  : "white",
+                "width"  : 45,
+                "align"  : "left"
+            },
+            {
+                "header" : "Status",
+                "style"  : "bright_green",
+                "width"  : 12,
+                "align"  : "center"
+            },
+        ],
+        description = "Column definitions for features table"
+    )
+    features_table_title: str = Field(
+        default     = "Thermur Features",
+        description = "Title for the features table"
+    )
     filled_char: str = Field(
         default     = "█",
         description = "Character for filled progress bars"
@@ -297,9 +359,38 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "bold bright_cyan",
         description = "Style for table titles"
     )
+    tips_bullet_style: str = Field(
+        default     = "bright_green",
+        description = "Style for tip bullet points"
+    )
+    tips_section_title: str = Field(
+        default     = "Pro Tips",
+        description = "Title for the tips section"
+    )
+    tips_section_style: str = Field(
+        default     = "bright_green",
+        description = "Style for the tips section header"
+    )
     title_text_style: str = Field(
         default     = "bold bright_cyan",
         description = "Style for title text"
+    )
+    training_tips: list[dict[str, str]] = Field(
+        default = [
+            {
+                "desc"    : "Monitor training progress:",
+                "command" : "thermur monitor --project thermur"
+            },
+            {
+                "desc"    : "Resume from checkpoint:",
+                "command" : "thermur train --resume latest"
+            },
+            {
+                "desc"    : "Debug configuration issues:",
+                "command" : "thermur validate --config your.overrides"
+            },
+        ],
+        description = "List of training tips to display"
     )
     unfilled_char: str = Field(
         default     = "░",
@@ -324,4 +415,41 @@ class UIModel(BaseModel, extra="forbid"):
     white_style: str = Field(
         default     = "white",
         description = "Style for white text"
+    )
+    message_types: dict[str, dict[str, str]] = Field(
+        default = {
+            "info": {
+                "icon"  : "ℹ️",
+                "style" : "bright_cyan"
+            },
+            "success": {
+                "icon"  : "✅",
+                "style" : "bright_green"
+            },
+            "warning": {
+                "icon"  : "⚠️",
+                "style" : "yellow"
+            },
+            "error": {
+                "icon"  : "❌",
+                "style" : "bright_red"
+            },
+            "thermal": {
+                "icon"  : "🔥",
+                "style" : "bright_red"
+            },
+            "swarm": {
+                "icon"  : "🐦‍⬛",
+                "style" : "bright_blue"
+            },
+            "config": {
+                "icon"  : "⚙️",
+                "style" : "bright_cyan"
+            },
+            "standard": {
+                "icon"  : "",
+                "style" : "white"
+            },
+        },
+        description = "Message type configurations for print_message"
     )

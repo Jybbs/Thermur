@@ -400,7 +400,10 @@ class ThermurUI:
             
         table = self.create_aligned_table(
             title   = self.ui.system_table_title,
-            columns = [(c["header"], c["style"], c["width"], "left") for c in self.ui.system_table_columns],
+            columns = [
+                (c["header"], c["style"], c["width"], "left") 
+                for c in self.ui.system_table_columns
+            ],
             **settings,
         )
 
@@ -542,7 +545,10 @@ class ThermurUI:
         """
         table = self.create_aligned_table(
             title   = self.ui.features_table_title,
-            columns = self.ui.features_table_columns,
+            columns = [
+                (c["header"], c["style"], c["width"], c.get("align", "left")) 
+                for c in self.ui.features_table_columns
+            ],
         )
         
         for feature in self.ui.features_list:
