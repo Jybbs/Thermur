@@ -6,17 +6,9 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from omegaconf import OmegaConf
-from typer     import Context, Exit, Option, Typer
-
-cmd_train = Typer(
-    add_completion           = False,
-    rich_markup_mode         = "rich",
-    no_args_is_help          = True,
-    pretty_exceptions_enable = True,
-)
+from typer     import Context, Exit, Option
 
 
-@cmd_train.command("train")
 def train(
     ctx: Context,
     config_overrides: list[str] | None = Option(

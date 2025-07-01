@@ -5,17 +5,9 @@ This module provides the 'info' command, which displays a comprehensive
 overview of the system setup, including hardware, software versions,
 platform capabilities, and configuration details.
 """
-from typer import Context, Typer
-
-cmd_info = Typer(
-    add_completion           = False,
-    rich_markup_mode         = "rich",
-    no_args_is_help          = True,
-    pretty_exceptions_enable = True,
-)
+from typer import Context
 
 
-@cmd_info.command("info")
 def info(ctx: Context):
     """
     📊 Display comprehensive system and configuration information.

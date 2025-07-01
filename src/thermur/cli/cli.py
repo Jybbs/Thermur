@@ -159,11 +159,11 @@ def create_cli():
         pretty_exceptions_enable = True,
     )
     
-    cli.add_typer(cmd_train,     name = "train")
-    cli.add_typer(cmd_configure, name = "configure")
-    cli.add_typer(cmd_info,      name = "info")
-    cli.add_typer(cmd_validate,  name = "validate")
-    cli.add_typer(cmd_monitor,   name = "monitor")
+    cli.command(name="train")(train)
+    cli.command(name="configure")(configure)
+    cli.command(name="info")(info)
+    cli.command(name="validate")(validate)
+    cli.command(name="monitor")(monitor)
     
     cli.callback(invoke_without_command=True)(main_callback)
     

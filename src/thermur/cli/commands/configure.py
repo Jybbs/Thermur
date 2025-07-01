@@ -6,17 +6,9 @@ and edit configuration schemas, generating valid Hydra override strings
 for use in other commands like 'train'.
 """
 from ..helpers import ConfigExplorer
-from typer     import Context, Typer
-
-cmd_configure = Typer(
-    add_completion           = False,
-    rich_markup_mode         = "rich",
-    no_args_is_help          = True,
-    pretty_exceptions_enable = True,
-)
+from typer     import Context
 
 
-@cmd_configure.command("configure")
 def configure(ctx: Context):
     """
     🔧 Interactively explore and edit configurations.

@@ -5,17 +5,9 @@ This module provides the 'validate' command, which allows users to check
 their system setup and configuration syntax without initiating a full
 training run.
 """
-from typer import Context, Option, Typer
-
-cmd_validate = Typer(
-    add_completion           = False,
-    rich_markup_mode         = "rich",
-    no_args_is_help          = True,
-    pretty_exceptions_enable = True,
-)
+from typer import Context, Option
 
 
-@cmd_validate.command("validate")
 def validate(
     ctx: Context,
     config_overrides: list[str] | None = Option(
