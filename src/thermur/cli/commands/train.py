@@ -38,7 +38,7 @@ def train(
     ),
 ):
     """
-    🔥 Train the thermal drone flock using imitation learning.
+    🚀 Train the thermal drone flock using imitation learning.
 
     This command provides a comprehensive training workflow with system
     validation, configuration management, and seamless wandb integration.

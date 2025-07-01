@@ -15,7 +15,6 @@ cli_config = make_config(
     explorer_messages   = build_explorer_messages,
     headers             = build_headers,
     messages            = build_messages,
-    message_types       = build_message_types,
     presets             = build_presets,
     prompts             = build_prompts,
     sections            = build_sections,

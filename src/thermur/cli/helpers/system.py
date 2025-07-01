@@ -168,30 +168,30 @@ class SystemInspector:
             A tuple of (status, details) for wandb integration.
         """
         info     = SystemInspector.get_system_info(cfg.wandb_display)
-        messages = cfg.messages
+        wandb_cfg = cfg.wandb_display
 
         if not info["wandb_installed"]:
             return (
-                messages.wandb_status_not_installed,
-                messages.wandb_details_not_installed,
+                wandb_cfg.status_not_installed,
+                wandb_cfg.details_not_installed,
             )
 
         if info["wandb_user"]:
             return (
-                messages.wandb_status_connected,
-                messages.wandb_details_connected.format(user=info["wandb_user"]),
+                wandb_cfg.status_connected,
+                wandb_cfg.details_connected.format(user=info["wandb_user"]),
             )
 
-        api_key_exists = os.environ.get(cfg.wandb_display.api_key_env) or api.api_key
+        api_key_exists = os.environ.get(wandb_cfg.api_key_env) or api.api_key
         if api_key_exists:
             return (
-                messages.wandb_status_api_key,
-                messages.wandb_details_api_key,
+                wandb_cfg.status_api_key,
+                wandb_cfg.details_api_key,
             )
 
         return (
-            messages.wandb_status_not_connected,
-            messages.wandb_details_not_connected,
+            wandb_cfg.status_not_connected,
+            wandb_cfg.details_not_connected,
         )
 
     @staticmethod
