@@ -96,7 +96,6 @@ class SystemInspector:
             return fallback
 
     @staticmethod
-    @lru_cache(maxsize=1)
     def get_system_info(wandb_config: DictConfig) -> dict[str, str | int | float | bool | None]:
         """
         Gather comprehensive system information using platform tools.

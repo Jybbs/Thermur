@@ -211,7 +211,7 @@ class TrainCommand:
             "preset"        : preset or "default",
             "wandb_project" : wandb_project,
             "overrides"     : len(config_overrides or []),
-            "gpu_available" : self.system.get_system_info(self.config)["cuda"],
+            "gpu_available" : self.system.get_system_info(self.config.wandb_display)["cuda"],
         }
 
         if not self.prompts.show_training_summary(summary):
@@ -397,7 +397,7 @@ class TrainCommand:
             self.config.status.checking_reqs,
             spinner = "dots"
         ):
-            info  = self.system.get_system_info(self.config)
+            info  = self.system.get_system_info(self.config.wandb_display)
             table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)
