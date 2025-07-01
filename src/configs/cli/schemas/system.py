@@ -4,7 +4,6 @@ System configuration and validation schemas for the Thermur CLI.
 This module defines models for system requirements, validation messages,
 and integration status tracking.
 """
-
 from pydantic import BaseModel, Field
 
 

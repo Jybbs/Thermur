@@ -8,7 +8,7 @@ via imitation learning to replicate this expert behavior.
 """
 from torch                     import Tensor
 from typing                    import Optional, Protocol, TypedDict
-from configs.imitation.schemas import ControlModel, SwarmModel
+from configs import ControlModel, SwarmModel
 
 import torch
 import torch.nn.functional as F

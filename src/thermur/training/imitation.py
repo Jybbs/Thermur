@@ -4,10 +4,10 @@ Imitation learning training loop.
 This module implements behavioral cloning for training a GNN policy
 to mimic expert flocking behavior while respecting thermal constraints.
 """
-from configs.imitation.schemas import LearningModel, WandbModel
+from configs import LearningModel, WandbModel
 from loguru                    import logger
 from pathlib                   import Path
-from thermur.visualization     import Visualizer
+from thermur.visualization.visualizer import Visualizer
 from torch.nn                  import Module
 from torch.optim               import Optimizer
 from torchrl.collectors        import SyncDataCollector

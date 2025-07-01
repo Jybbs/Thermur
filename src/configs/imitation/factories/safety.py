@@ -8,7 +8,7 @@ through the zen() wrapper.
 from ..schemas       import SafetyModel
 from hydra_zen       import builds, zen
 from omegaconf       import SI
-from thermur.control import ThermalBarrierFunction, SafetyFilter
+from thermur import ThermalBarrierFunction, SafetyFilter
 
 
 build_thermal_barrier = builds(

@@ -8,7 +8,7 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 """
 from qpth.qp                   import QPFunction
 from torch                     import Tensor
-from configs.imitation.schemas import SafetyModel
+from configs import SafetyModel
 
 import torch
 

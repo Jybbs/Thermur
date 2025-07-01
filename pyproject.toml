@@ -31,7 +31,7 @@ dependencies    = [
 ]
 
 [project.scripts]
-thermur = "thermur.cli:main"
+thermur = "thermur.cli.cli:main"
 
 [tool.poetry]
 packages = [

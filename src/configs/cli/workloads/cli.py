@@ -5,8 +5,26 @@ This module defines the configuration for the CLI system, composing all
 necessary schemas and factories to create a Hydra-compatible configuration
 that can be used with @hydra.main decorator.
 """
-from ..factories import *
-from ..schemas   import *
+from ..factories.cli import (
+    build_cli,
+    build_commands,
+    build_explorer,
+    build_explorer_messages,
+    build_headers,
+    build_messages,
+    build_message_types,
+    build_presets,
+    build_prompts,
+    build_sections,
+    build_status,
+    build_system,
+    build_theme,
+    build_tips,
+    build_training_components,
+    build_ui,
+    build_validation,
+    build_wandb_display,
+)
 from hydra_zen   import make_config, ZenStore
 
 
