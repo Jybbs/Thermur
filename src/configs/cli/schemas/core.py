@@ -23,10 +23,6 @@ class CLIModel(BaseModel, extra="forbid"):
         default     = "thermur",
         description = "Application name used by Typer"
     )
-    auto_fix_permissions: bool = Field(
-        default     = True,
-        description = "Automatically fix file permissions when needed"
-    )
     check_updates: bool = Field(
         default     = True,
         description = "Check for Thermur updates on startup"
@@ -34,10 +30,6 @@ class CLIModel(BaseModel, extra="forbid"):
     debug_mode: bool = Field(
         default     = False,
         description = "Enable debug mode with verbose logging"
-    )
-    telemetry_enabled: bool = Field(
-        default     = False,
-        description = "Enable anonymous usage telemetry"
     )
 
 
@@ -51,10 +43,10 @@ class CommandsModel(BaseModel, extra="forbid"):
     available: list[dict[str, str]] = Field(
         default = [
             {"icon": "🚀", "name": "train",     "desc": "Train thermal drone flock behaviors"},
-            {"icon": "⚙️", "name": "configure", "desc": "Manage training configurations"},
-            {"icon": "ℹ️", "name": "info",      "desc": "Display system and configuration details"},
-            {"icon": "✓", "name": "validate",  "desc": "Validate configuration and dependencies"},
-            {"icon": "📊", "name": "monitor",   "desc": "Monitor training progress and resources"},
+            {"icon": "🔧", "name": "configure", "desc": "Manage training configurations"},
+            {"icon": "📋", "name": "info",      "desc": "Display system and configuration details"},
+            {"icon": "✅", "name": "validate",  "desc": "Validate configuration and dependencies"},
+            {"icon": "🪄", "name": "monitor",   "desc": "Monitor training progress and resources"},
         ],
         description = "List of available commands with metadata"
     )
@@ -89,11 +81,6 @@ class CommandsModel(BaseModel, extra="forbid"):
                 "desc"    : "Interactive configuration",
                 "command" : "thermur configure",
                 "note"    : "GUI-style config builder"
-            },
-            {
-                "desc"    : "System information",
-                "command" : "thermur info",
-                "note"    : "View hardware and features"
             },
             {
                 "desc"    : "Train with overrides",
@@ -137,7 +124,7 @@ class TrainingComponentsModel(BaseModel, extra="forbid"):
             ("loss_function",     "loss_function",     "📏 Loss Function"),
             ("optimizer",         "optimizer",         "⚙️  Optimizer"),
             ("hyperparameters",   "hyperparameters",   "🎛️  Hyperparameters"),
-            ("wandb_config",      "monitoring.wandb",  "📊 wandb Tracking"),
+            ("wandb_config",      "monitoring.wandb",  "🪄 wandb Tracking"),
         ],
         description = "List of (key, config_path, display_name) for training components"
     )

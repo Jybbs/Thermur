@@ -10,7 +10,7 @@ from typer import Context
 
 def info(ctx: Context):
     """
-    📊 Display comprehensive system and configuration information.
+    📋 Display comprehensive system and configuration information.
 
     Shows detailed information about the current system setup, including
     hardware capabilities, software versions, and configuration status. This
@@ -63,7 +63,7 @@ class InfoCommand:
         
         self.ui.print_config_value("Explorer", "thermur configure", align_width=11)
 
-        self.ui.print_section(self.config.sections.quick_start, style="bright_green")
+        self.ui.print_section(self.config.sections.common_commands, style="bright_green")
         for example in self.config.commands.examples:
             self.ui.print_command_example(example["desc"], example["command"], example["note"])
 
@@ -77,11 +77,11 @@ class InfoCommand:
         self.ui.print_section(self.config.sections.system_validation, "thermal")
 
         info  = self.system.get_system_info(self.config.wandb_display)
-        table = self.ui.create_system_table(info)
+        table = self.ui.create_system_table(info, self.config.system)
 
         self.ui.console.print(table)
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[flock]📊 wandb: {status} • {details}[/flock]")
+        self.ui.console.print(f"[flock]🪄  wandb: {status} • {details}[/flock]")
         self.ui.console.print()

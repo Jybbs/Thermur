@@ -172,7 +172,7 @@ class ThermurUI:
             note        : Optional note about the command
         """
         self.console.print(
-            f"  [{self.ui.muted_style}]{description}:[/]"
+            f"  [{self.theme.styles['muted']}]{description}:[/]"
         )
         self.console.print(
             f"  [{self.ui.command_style}]$ {command}[/]"
@@ -180,7 +180,7 @@ class ThermurUI:
         
         if note:
             self.console.print(
-                f"  [{self.ui.dim_style}]  {note}[/]"
+                f"  [{self.theme.styles['dim']}]  {note}[/]"
             )
         
         self.console.print()
@@ -212,14 +212,14 @@ class ThermurUI:
         if desc:
             self.console.print(
                 f"  [{self.theme.styles['accent']}]{key_formatted}[/] = "
-                f"[{self.ui.white_style}]{value}[/]  "
+                f"[white]{value}[/]  "
                 f"[{self.theme.styles['dim']}]# {desc}[/]"
             )
 
         else:
             self.console.print(
                 f"  [{self.theme.styles['accent']}]{key_formatted}[/] = "
-                f"[{self.ui.white_style}]{value}[/]"
+                f"[white]{value}[/]"
             )
 
     def print_status_badge(
@@ -263,7 +263,7 @@ class ThermurUI:
         else:
             self.console.print(
                 f"[{self.theme.styles['flock']}]{icon} Project: "
-                f"[{self.ui.cyan_style}]{project}[/][/]"
+                f"[{self.theme.styles['info']}]{project}[/][/]"
             )
 
 
@@ -289,7 +289,7 @@ class ThermurUI:
                 "[{0}]{{task.description}}[/{0}]".format(self.ui.progress_style)
             ),
             progress.BarColumn(
-                bar_width      = self.ui.progress_bar_width,
+                bar_width      = 30,
                 complete_style = self.ui.progress_complete_style,
                 style          = self.ui.progress_style,
             ),
@@ -357,7 +357,11 @@ class ThermurUI:
         
         return table
 
-    def create_system_table(self, system_info: dict) -> Table:
+    def create_system_table(
+        self,
+        system_info   : dict,
+        system_config : DictConfig
+    ) -> Table:
         """
         Create a Rich table with system information.
 
@@ -367,7 +371,8 @@ class ThermurUI:
         status immediately apparent.
 
         Args:
-            system_info: A dictionary of system details from `system.get_system_info()`.
+            system_info   : A dictionary of system details from `system.get_system_info()`.
+            system_config : System configuration containing thresholds.
 
         Returns:
             A formatted Rich table containing system diagnostics.
@@ -379,7 +384,6 @@ class ThermurUI:
                 del settings[param]
             
         table = self.create_aligned_table(
-            title   = self.ui.system_table_title,
             columns = [
                 (c["header"], c["style"], c["width"], "left") 
                 for c in self.ui.system_table_columns
@@ -391,10 +395,15 @@ class ThermurUI:
             logic = self.ui.system_logic[key]
             
             if logic.get("is_resource"):
+                # Get thresholds from system config
+                thresholds = (
+                    system_config.memory_thresholds if key == "memory" 
+                    else system_config.disk_thresholds
+                )
                 progress_bar, details_text = self.format_resource_display(
                     available_gb = system_info.get(logic.get("available"), 0),
                     total_gb     = system_info.get(logic.get("total"), 0),
-                    thresholds   = self.ui.system_checks_thresholds.get(f"{str.upper(key)}_thresholds"),
+                    thresholds   = thresholds,
                 )
                 value = f"{progress_bar}\n{details_text}"
 
@@ -433,7 +442,7 @@ class ThermurUI:
         example_text = "\n".join(
             f"  {self.ui.bullet_char} {item}" for item in items
         )
-        content = f"[{self.ui.cyan_style}]{title}:[/]\n{example_text}"
+        content = f"[{self.theme.styles['info']}]{title}:[/]\n{example_text}"
         return Panel(
             content,
             border_style = self.ui.panel_border_style,
@@ -508,7 +517,7 @@ class ThermurUI:
         style = self.theme.styles['success']
         content = Align.center(
             f"[bold {style}]{title}[/]\n"
-            f"[{self.ui.muted_style}]{subtitle}[/]",
+            f"[{self.theme.styles['muted']}]{subtitle}[/]",
             vertical="middle",
         )
         return Panel(
@@ -528,15 +537,17 @@ class ThermurUI:
             A formatted table with feature information
         """
         table = self.create_aligned_table(
-            title   = self.ui.features_table_title,
             columns = [
                 (c["header"], c["style"], c["width"], c.get("align", "left")) 
                 for c in self.ui.features_table_columns
-            ],
+            ]
         )
         
         for feature in self.ui.features_list:
-            table.add_row(feature["name"], feature["desc"])
+            table.add_row(
+                Text(feature["name"], no_wrap=True),
+                Text(feature["desc"], no_wrap=True)
+            )
         
         return table
 
@@ -561,7 +572,7 @@ class ThermurUI:
             Rich markup string representing the styled progress bar
         """
         if length is None:
-            length = self.ui.system_progress_bar_length
+            length = self.ui.progress_bar_length
             
         return (
             f"[{color}]"

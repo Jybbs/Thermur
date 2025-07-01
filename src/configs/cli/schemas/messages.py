@@ -135,119 +135,6 @@ class MessagesModel(BaseModel, extra="forbid"):
         default     = "wandb not available - install with 'pip install wandb'",
         description = "Message when wandb is not installed"
     )
-    wandb_details_api_key: str = Field(
-        default     = "Run 'wandb login' to connect",
-        description = "Details when API key exists but not logged in"
-    )
-    wandb_details_connected: str = Field(
-        default     = "Logged in as: {user}",
-        description = "Details when wandb is connected"
-    )
-    wandb_details_not_connected: str = Field(
-        default     = "Run 'wandb login' to authenticate",
-        description = "Details when wandb is installed but not connected"
-    )
-    wandb_details_not_installed: str = Field(
-        default     = "Install with: pip install wandb",
-        description = "Details when wandb is not installed"
-    )
-    wandb_status_api_key: str = Field(
-        default     = "[yellow]API key found[/yellow]",
-        description = "Status when API key exists but not logged in"
-    )
-    wandb_status_connected: str = Field(
-        default     = "[green]Connected[/green]",
-        description = "Status when wandb is connected"
-    )
-    wandb_status_not_connected: str = Field(
-        default     = "[red]Not connected[/red]",
-        description = "Status when wandb is installed but not connected"
-    )
-    wandb_status_not_installed: str = Field(
-        default     = "[red]Not installed[/red]",
-        description = "Status when wandb is not installed"
-    )
-
-
-class MessageTypesModel(BaseModel, extra="forbid"):
-    """
-    Message type definitions with icons and styles.
-    
-    Maps message types to their visual representation in the CLI,
-    including icons and color styles for consistent messaging.
-    """
-    config_icon: str = Field(
-        default     = "⚙️",
-        description = "Icon for configuration messages"
-    )
-    config_style: str = Field(
-        default     = "accent",
-        description = "Style for configuration messages"
-    )
-    error_icon: str = Field(
-        default     = "🚨",
-        description = "Icon for error messages"
-    )
-    error_style: str = Field(
-        default     = "error",
-        description = "Style for error messages"
-    )
-    flock_icon: str = Field(
-        default     = "🪽",
-        description = "Icon for flock messages"
-    )
-    flock_style: str = Field(
-        default     = "flock",
-        description = "Style for flock messages"
-    )
-    info_icon: str = Field(
-        default     = "💡",
-        description = "Icon for info messages"
-    )
-    info_style: str = Field(
-        default     = "info",
-        description = "Style for info messages"
-    )
-    step_icon: str = Field(
-        default     = "🔥",
-        description = "Icon for step messages"
-    )
-    step_style: str = Field(
-        default     = "thermal",
-        description = "Style for step messages"
-    )
-    success_icon: str = Field(
-        default     = "✅",
-        description = "Icon for success messages"
-    )
-    success_style: str = Field(
-        default     = "success",
-        description = "Style for success messages"
-    )
-    thermal_icon: str = Field(
-        default     = "🔥",
-        description = "Icon for thermal messages"
-    )
-    thermal_style: str = Field(
-        default     = "thermal",
-        description = "Style for thermal messages"
-    )
-    tip_icon: str = Field(
-        default     = "💭",
-        description = "Icon for tip messages"
-    )
-    tip_style: str = Field(
-        default     = "muted",
-        description = "Style for tip messages"
-    )
-    warning_icon: str = Field(
-        default     = "🌡️",
-        description = "Icon for warning messages"
-    )
-    warning_style: str = Field(
-        default     = "warning",
-        description = "Style for warning messages"
-    )
 
 
 class PromptsModel(BaseModel, extra="forbid"):
@@ -345,9 +232,9 @@ class SectionsModel(BaseModel, extra="forbid"):
         default     = "Integration Status",
         description = "Section title for integration info"
     )
-    quick_start: str = Field(
+    common_commands: str = Field(
         default     = "Common Commands",
-        description = "Section title for quick start guide"
+        description = "Section title for common commands"
     )
     system_validation: str = Field(
         default     = "System Validation",

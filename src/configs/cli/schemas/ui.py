@@ -57,33 +57,9 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "•",
         description = "Character for bullet points"
     )
-    category_emojis: dict[str, str] = Field(
-        default = {
-            "default"         : "⚙️",
-            "environment"     : "🌍",
-            "hyperparameters" : "🎛️",
-            "monitoring"      : "🪄",
-            "policy"          : "🧠",
-            "flock"           : "🪽",
-            "visualization"   : "📈",
-        },
-        description = "Emoji mapping for configuration categories"
-    )
-    check_symbol: str = Field(
-        default     = "✓",
-        description = "Symbol displayed for successful checks"
-    )
     command_style: str = Field(
         default     = "bold accent",
         description = "Style for command text"
-    )
-    cross_symbol: str = Field(
-        default     = "✗",
-        description = "Symbol displayed for failed checks"
-    )
-    cyan_style: str = Field(
-        default     = "bright_cyan",
-        description = "Style for cyan text"
     )
     default_badge_style: str = Field(
         default     = "success",
@@ -92,10 +68,6 @@ class UIModel(BaseModel, extra="forbid"):
     default_section_style: str = Field(
         default     = "accent",
         description = "Default style for section headers"
-    )
-    dim_style: str = Field(
-        default     = "dim italic",
-        description = "Style for dimmed text"
     )
     error_color: str = Field(
         default     = "red",
@@ -108,7 +80,7 @@ class UIModel(BaseModel, extra="forbid"):
                 "desc" : "Physics-based heat modeling for drone safety"
             },
             {
-                "name" : "🪽 Flock Coordination",
+                "name" : "🪽  Flock Coordination",
                 "desc" : "Multi-agent flocking with obstacle avoidance"
             },
             {
@@ -135,7 +107,7 @@ class UIModel(BaseModel, extra="forbid"):
             {
                 "header" : "Feature",
                 "style"  : "bright_cyan",
-                "width"  : 25,
+                "width"  : 35,
                 "align"  : "left"
             },
             {
@@ -147,10 +119,6 @@ class UIModel(BaseModel, extra="forbid"):
         ],
         description = "Column definitions for features table"
     )
-    features_table_title: str = Field(
-        default     = "",
-        description = "Title for the features table"
-    )
     filled_char: str = Field(
         default     = "█",
         description = "Character for filled progress bars"
@@ -158,14 +126,6 @@ class UIModel(BaseModel, extra="forbid"):
     header_text_style: str = Field(
         default     = "bold bright_white",
         description = "Style for header text"
-    )
-    info_symbol: str = Field(
-        default     = "ℹ",
-        description = "Symbol for informational messages"
-    )
-    muted_style: str = Field(
-        default     = "muted",
-        description = "Style for muted text"
     )
     panel_border_style: str = Field(
         default     = "bright_blue",
@@ -183,13 +143,9 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "dodger_blue2",
         description = "Primary color for important elements"
     )
-    progress_bar_default_length: PositiveInt = Field(
+    progress_bar_length: PositiveInt = Field(
         default     = 20,
-        description = "Default length for progress bars"
-    )
-    progress_bar_width: PositiveInt = Field(
-        default     = 30,
-        description = "Width for progress bars"
+        description = "Length for progress bars"
     )
     progress_complete_style: str = Field(
         default     = "bright_red",
@@ -263,10 +219,6 @@ class UIModel(BaseModel, extra="forbid"):
         },
         description = "Settings for system info table"
     )
-    system_table_title: str = Field(
-        default     = "System Information",
-        description = "Title for the system info table"
-    )
     system_components: dict[str, str] = Field(
         default = {
             "python"       : "Python",
@@ -316,17 +268,6 @@ class UIModel(BaseModel, extra="forbid"):
         },
         description = "Logic for formatting system component values"
     )
-    system_checks_thresholds: dict[str, tuple[PositiveInt, PositiveInt]] = Field(
-        default = {
-            "MEMORY_thresholds" : (4, 8),
-            "DISK_thresholds"   : (5, 20),
-        },
-        description = "Warning and critical thresholds for system resources"
-    )
-    system_progress_bar_length: PositiveInt = Field(
-        default     = 20,
-        description = "Length of progress bars in system info display"
-    )
     table_border_style: str = Field(
         default     = "bright_blue",
         description = "Border style for Rich tables"
@@ -355,10 +296,6 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "░",
         description = "Character for unfilled progress bars"
     )
-    wandb_icon: str = Field(
-        default     = "🪄",
-        description = "Icon for wandb-related items"
-    )
     wandb_url_placeholder: str = Field(
         default     = "YOUR_USERNAME",
         description = "Placeholder for wandb URLs"
@@ -367,43 +304,39 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "yellow",
         description = "Color for warnings"
     )
-    warning_symbol: str = Field(
-        default     = "⚠",
-        description = "Symbol for warnings"
-    )
-    white_style: str = Field(
-        default     = "white",
-        description = "Style for white text"
-    )
     message_types: dict[str, dict[str, str]] = Field(
         default = {
             "info": {
                 "icon"  : "ℹ️",
-                "style" : "bright_cyan"
+                "style" : "info"
             },
             "success": {
                 "icon"  : "✅",
-                "style" : "bright_green"
+                "style" : "success"
             },
             "warning": {
                 "icon"  : "⚠️",
-                "style" : "yellow"
+                "style" : "warning"
             },
             "error": {
                 "icon"  : "❌",
-                "style" : "bright_red"
+                "style" : "error"
             },
             "thermal": {
                 "icon"  : "🔥",
-                "style" : "bright_red"
+                "style" : "thermal"
             },
             "flock": {
                 "icon"  : "🪽",
-                "style" : "bright_blue"
+                "style" : "flock"
             },
             "config": {
                 "icon"  : "⚙️",
-                "style" : "bright_cyan"
+                "style" : "accent"
+            },
+            "tip": {
+                "icon"  : "💡",
+                "style" : "muted"
             },
             "standard": {
                 "icon"  : "",
