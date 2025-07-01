@@ -236,8 +236,8 @@ class SectionsModel(BaseModel, extra="forbid"):
         default     = "Integration Status",
         description = "Section title for integration info"
     )
-    system_validation: str = Field(
-        default     = "System Validation",
+    system_information: str = Field(
+        default     = "System Information",
         description = "Section title for system checks"
     )
     training_started: str = Field(

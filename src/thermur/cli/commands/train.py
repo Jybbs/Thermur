@@ -393,7 +393,7 @@ class TrainCommand:
         This helper validates hardware capabilities, software versions, and
         integration status before proceeding with training initialization.
         """
-        self.ui.print_section(self.config.sections.system_validation, "thermal")
+        self.ui.print_section(self.config.sections.system_information, "thermal")
 
         with self.ui.console.status(
             self.config.status.checking_reqs,
