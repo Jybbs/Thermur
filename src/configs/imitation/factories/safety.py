@@ -13,7 +13,7 @@ from thermur.control import ThermalBarrierFunction, SafetyFilter
 
 build_thermal_barrier = builds(
     ThermalBarrierFunction,
-    max_temperature         = SI("${swarm.max_temperature}"),
+    max_temperature         = SI("${flock.max_temperature}"),
     activation_tolerance    = SI("${safety.activation_tolerance}"),
     populate_full_signature = True,
     zen_dataclass           = {
@@ -25,15 +25,15 @@ build_thermal_barrier = builds(
 Builder for thermal Control Barrier Function (CBF).
 
 Creates a thermal barrier that enforces temperature constraints T ≤ T_max for
-all agents in the swarm. The barrier function h(x) = T_max - T(x) defines the
+all agents in the flock. The barrier function h(x) = T_max - T(x) defines the
 safe set, ensuring thermal safety through quadratic program filtering.
 """
 
 build_safety_filter = builds(
     SafetyFilter,
     barrier                 = build_thermal_barrier,
-    agent_count             = SI("${swarm.agent_count}"),
-    spatial_dims            = SI("${swarm.spatial_dims}"),
+    agent_count             = SI("${flock.agent_count}"),
+    spatial_dims            = SI("${flock.spatial_dims}"),
     safety_config           = zen(SafetyModel),
     populate_full_signature = True,
     zen_dataclass           = {

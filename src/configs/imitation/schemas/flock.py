@@ -1,16 +1,16 @@
 """
-Swarm configuration model.
+Flock configuration model.
 
-This module defines the unified configuration for the multi-agent swarm,
+This module defines the unified configuration for the multi-agent flock,
 including physical properties, collective behavior, and spatial settings.
 """
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
-class SwarmModel(BaseModel, extra="forbid"):
+class FlockModel(BaseModel, extra="forbid"):
     """
-    Unified configuration for the thermal drone swarm.
+    Unified configuration for the thermal drone flock.
     
     Combines agent physical properties, collective behavior parameters,
     and spatial settings into a single coherent configuration used across
@@ -54,7 +54,7 @@ class SwarmModel(BaseModel, extra="forbid"):
     agent_count: PositiveInt = Field(
         default     = 30,
         gt          = 1,
-        description = "Number of agents N in the swarm."
+        description = "Number of agents N in the flock."
     )
     communication_range: PositiveFloat = Field(
         default     = 50.0,
@@ -76,7 +76,7 @@ class SwarmModel(BaseModel, extra="forbid"):
         le          = 1,
         description = (
             "Scaling factor γ ∈ (0, 1] applied to initial formations as a "
-            "fraction of communication range, controlling swarm density."
+            "fraction of communication range, controlling flock density."
         )
     )
     spatial_dims: Literal[2, 3] = Field(

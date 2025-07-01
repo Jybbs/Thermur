@@ -13,4 +13,4 @@ and testability across the codebase.
 from .data    import EnvironmentDataSource
 from .logging import configure_loguru
 from .seed    import set_seed
-from .xml     import generate_swarm_xml, load_swarm_model
+from .xml     import generate_flock_xml, load_flock_model

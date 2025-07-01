@@ -15,7 +15,8 @@ class CLIModel(BaseModel, extra="forbid"):
     It serves as the root configuration that gets instantiated by Hydra.
     """
     app_description: str = Field(
-        default     = "🔥 Thermally-constrained drone swarm training toolkit",
+        default     = "🔥 Thermur: Advanced thermal-aware drone flock training using "
+                      "imitation learning, physics-based constraints, and real-time monitoring",
         description = "Application description shown in help text"
     )
     app_name: str = Field(
@@ -49,7 +50,7 @@ class CommandsModel(BaseModel, extra="forbid"):
     """
     available: list[dict[str, str]] = Field(
         default = [
-            {"icon": "🚀", "name": "train",     "desc": "Train thermal drone swarm behaviors"},
+            {"icon": "🚀", "name": "train",     "desc": "Train thermal drone flock behaviors"},
             {"icon": "⚙️", "name": "configure", "desc": "Manage training configurations"},
             {"icon": "ℹ️", "name": "info",      "desc": "Display system and configuration details"},
             {"icon": "✓", "name": "validate",  "desc": "Validate configuration and dependencies"},
@@ -70,9 +71,34 @@ class CommandsModel(BaseModel, extra="forbid"):
                 "note"    : "5 epochs, ideal for testing"
             },
             {
-                "desc"    : "Train with custom learning rate",
-                "command" : "thermur train --config hyperparameters.lr=0.001",
-                "note"    : "Override specific parameters"
+                "desc"    : "Resume from checkpoint",
+                "command" : "thermur train --resume latest",
+                "note"    : "Continue interrupted training"
+            },
+            {
+                "desc"    : "Monitor training progress",
+                "command" : "thermur monitor --project my_project",
+                "note"    : "Real-time wandb dashboard"
+            },
+            {
+                "desc"    : "Validate configuration",
+                "command" : "thermur validate --config hyperparameters.lr=0.001",
+                "note"    : "Check before training"
+            },
+            {
+                "desc"    : "Interactive configuration",
+                "command" : "thermur configure",
+                "note"    : "GUI-style config builder"
+            },
+            {
+                "desc"    : "System information",
+                "command" : "thermur info",
+                "note"    : "View hardware and features"
+            },
+            {
+                "desc"    : "Train with overrides",
+                "command" : "thermur train --config flock.num_drones=20 environment.max_temp=85",
+                "note"    : "Multiple parameters"
             },
         ],
         description = "Example commands for quick start guide"
@@ -82,7 +108,7 @@ class CommandsModel(BaseModel, extra="forbid"):
             "# Override examples:\n"
             "hyperparameters.lr=0.001          # Learning rate\n"
             "hyperparameters.batch_size=64     # Batch size\n"
-            "swarm.num_drones=10               # Number of drones\n"
+            "flock.num_drones=10               # Number of drones\n"
             "environment.max_temp=85.0         # Temperature limit\n"
             "+experiment=my_custom_setup       # Load experiment"
         ),

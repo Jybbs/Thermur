@@ -1,5 +1,5 @@
 """
-Real-time visualization for swarm dynamics and thermal fields.
+Real-time visualization for flock dynamics and thermal fields.
 
 The Visualizer class provides interactive 3D rendering of the simulation state
 using PyVista. Visualization features include:

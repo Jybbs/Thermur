@@ -39,7 +39,9 @@ class ThermurUI:
         self.ui      = ui
         self.console = Console(
             theme     = Theme(theme.styles),
-            highlight = False
+            highlight = False,
+            width     = None,  # Auto-detect width
+            legacy_windows = False,
         )
 
     def format_fire_gradient_text(self, text: str) -> Text:
@@ -68,14 +70,12 @@ class ThermurUI:
     def create_header_panel(
         self,
         title    : str,
-        subtitle : str | None = None,
     ) -> Panel:
         """
         Create a styled header panel with optional fire gradient text.
         
         Args:
             title    : Main header text
-            subtitle : Optional subtitle text
             
         Returns:
             Formatted header panel
@@ -96,26 +96,22 @@ class ThermurUI:
         else:
             title_text.append(title, style=self.ui.title_text_style)
         
-        if subtitle:
-            title_text.append("\n")
-            title_text.append(subtitle, style=self.ui.subtitle_text_style)
-        
         return Panel(
             Align.center(title_text),
             border_style = self.ui.panel_border_style,
             padding      = self.ui.panel_padding,
+            expand       = True,
         )
 
-    def print_header(self, title: str, subtitle: str | None = None):
+    def print_header(self, title: str):
         """
         Print a styled header panel with fire gradient for "Thermur".
         
         Args:
             title    : Main header text
-            subtitle : Optional subtitle text
         """
         self.console.print()
-        panel = self.create_header_panel(title, subtitle)
+        panel = self.create_header_panel(title)
         self.console.print(panel)
         self.console.print()
 
@@ -193,7 +189,8 @@ class ThermurUI:
         self,
         key   : str,
         value : str,
-        desc  : str | None = None
+        desc  : str | None = None,
+        align_width : int = 0
     ):
         """
         Print a configuration key-value pair.
@@ -205,17 +202,23 @@ class ThermurUI:
             key   : Configuration key
             value : Configuration value
             desc  : Optional description
+            align_width : Width to align the key to (for vertical alignment)
         """
+        if align_width:
+            key_formatted = f"{key:<{align_width}}"
+        else:
+            key_formatted = key
+            
         if desc:
             self.console.print(
-                f"  [{self.theme.styles['accent']}]{key}[/] = "
+                f"  [{self.theme.styles['accent']}]{key_formatted}[/] = "
                 f"[{self.ui.white_style}]{value}[/]  "
                 f"[{self.theme.styles['dim']}]# {desc}[/]"
             )
 
         else:
             self.console.print(
-                f"  [{self.theme.styles['accent']}]{key}[/] = "
+                f"  [{self.theme.styles['accent']}]{key_formatted}[/] = "
                 f"[{self.ui.white_style}]{value}[/]"
             )
 
@@ -253,39 +256,16 @@ class ThermurUI:
         icon = self.ui.wandb_icon
         if url and self.ui.wandb_url_placeholder not in url:
             self.console.print(
-                f"[{self.theme.styles['swarm']}]{icon} Dashboard: "
+                f"[{self.theme.styles['flock']}]{icon} Dashboard: "
                 f"[link={url}]{url}[/link][/]"
             )
 
         else:
             self.console.print(
-                f"[{self.theme.styles['swarm']}]{icon} Project: "
+                f"[{self.theme.styles['flock']}]{icon} Project: "
                 f"[{self.ui.cyan_style}]{project}[/][/]"
             )
 
-    def print_training_tips(self):
-        """
-        Print helpful training tips.
-        
-        Shows useful information to help users get the most out of their
-        training runs, using tips from centralized constants.
-        """
-        self.print_section(
-            title = self.ui.tips_section_title, 
-            style = self.ui.tips_section_style
-        )
-        
-        for tip in self.ui.training_tips:
-            self.console.print(
-                f"  [{self.ui.tips_bullet_style}]"
-                f"{self.ui.bullet_char}"
-                f"[/{self.ui.tips_bullet_style}] {tip['desc']}"
-            )
-            self.console.print(
-                f"    [{self.theme.styles['dim']}]{tip['command']}[/]"
-            )
-        
-        self.console.print()
 
     def create_thermal_progress(self) -> progress.Progress:
         """
@@ -416,7 +396,7 @@ class ThermurUI:
                     total_gb     = system_info.get(logic.get("total"), 0),
                     thresholds   = self.ui.system_checks_thresholds.get(f"{str.upper(key)}_thresholds"),
                 )
-                value = f"{progress_bar} {details_text}"
+                value = f"{progress_bar}\n{details_text}"
 
             else:
                 # For non-resource items, format the value using the format string
@@ -424,7 +404,11 @@ class ThermurUI:
                 format_str = logic.get("format", "{}")
                 value      = format_str.format(raw_value) if raw_value is not None else "N/A"
                 
-            table.add_row(Text(title), Text(value))
+            # For resource items, value contains Rich markup that needs to be rendered
+            if logic.get("is_resource"):
+                table.add_row(Text(title), value)
+            else:
+                table.add_row(Text(title), Text(value, no_wrap=True))
 
         return table
 
@@ -552,7 +536,7 @@ class ThermurUI:
         )
         
         for feature in self.ui.features_list:
-            table.add_row(feature["name"], feature["desc"], feature["status"])
+            table.add_row(feature["name"], feature["desc"])
         
         return table
 

@@ -7,7 +7,7 @@ an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
 from .safety           import SafetyFilter
-from configs.imitation import ControlModel, SwarmModel
+from configs.imitation import ControlModel, FlockModel
 from tensordict        import TensorDict
 from torch             import Tensor
 from typing            import Optional
@@ -34,7 +34,7 @@ class ExpertFlockingController:
 
     def __init__(
         self,
-        agent_properties : SwarmModel,
+        agent_properties : FlockModel,
         control_config   : ControlModel,
         safety_filter    : Optional[SafetyFilter] = None
     ):
@@ -58,7 +58,7 @@ class ExpertFlockingController:
 
     def compute_nominal_action(self, sd: TensorDict) -> Tensor:
         """
-        Computes the collective nominal control action for the entire swarm.
+        Computes the collective nominal control action for the entire flock.
 
         This method calculates the weighted sum of forces from all potential
         fields to produce the final velocity command 𝐮_nom. The weights come
@@ -70,7 +70,7 @@ class ExpertFlockingController:
         are satisfied, resulting in a safety-certified action 𝐮*.
 
         Args:
-            sd: The swarm data containing the swarm's current state including
+            sd: The flock data containing the flock's current state including
                 position, velocity, temperature, and edge_index tensors.
 
         Returns:
@@ -148,7 +148,7 @@ class ExpertFlockingController:
             𝐅_coh = 𝐱̄ᵢ - 𝐱ᵢ
             
         The force magnitude increases with distance from the center of mass,
-        creating a tendency for the swarm to maintain cohesion.
+        creating a tendency for the flock to maintain cohesion.
         
         Args:
             position   : Tensor [N, dim] containing agent positions 𝐱
@@ -369,7 +369,7 @@ class ExpertFlockingController:
         
         Args:
             edge_index : Tensor defining the communication graph topology Gₜ = (V, Eₜ)
-            num_agents : The total number of agents N in the swarm
+            num_agents : The total number of agents N in the flock
         """
         if edge_index.numel() > 0:
             self._edge_source, self._edge_target = edge_index

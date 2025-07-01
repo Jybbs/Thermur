@@ -1,7 +1,7 @@
 """
-Neural network architectures for swarm control.
+Neural network architectures for flock control.
 
-The GNN policy π_θ processes the swarm state as a dynamic graph G_t = (V, E_t)
+The GNN policy π_θ processes the flock state as a dynamic graph G_t = (V, E_t)
 where vertices represent agents and edges encode communication links. The 
 architecture consists of:
 

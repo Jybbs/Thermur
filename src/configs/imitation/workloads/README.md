@@ -18,7 +18,7 @@ imitation_config = make_config(
     agent           = builds(AgentModel),
     environment     = builds(EnvironmentModel),
     hyperparameters = builds(HyperparameterModel),
-    swarm           = builds(SwarmModel),
+    flock           = builds(FlockModel),
     
     # Component builders - instantiation recipes
     data_collector    = build_collector,
@@ -36,7 +36,7 @@ imitation_config = make_config(
 ## Key Components
 
 ### Environment & Simulation
-- **SimulationEnv**: MuJoCo-based drone swarm environment
+- **SimulationEnv**: MuJoCo-based drone flock environment
 - **EnvironmentDataSource**: Thermal data loading and interpolation
 - **Edge Index Computation**: Dynamic graph topology based on communication range
 
@@ -54,7 +54,7 @@ imitation_config = make_config(
 ### Monitoring & Visualization
 - **Loguru**: Structured logging with configurable levels
 - **Weights & Biases**: Experiment tracking and metrics
-- **Visualizer**: Real-time swarm behavior rendering
+- **Visualizer**: Real-time flock behavior rendering
 
 ## Usage
 
@@ -93,21 +93,21 @@ Hydra enables flexible configuration overrides via command line:
 # Change learning rate
 thermur train hyperparameters.learning_rate=0.001
 
-# Use different swarm size
-thermur train swarm.agent_count=50
+# Use different flock size
+thermur train flock.agent_count=50
 
 # Change environment parameters
 thermur train environment.simulation_step=0.02
 
 # Load custom experiment
-thermur train +experiment=large_swarm
+thermur train +experiment=large_flock
 ```
 
 ## Configuration Hierarchy
 
 - **Parameter Models**: Define the data (what values to use)
   - `AgentModel`: Drone physical properties
-  - `SwarmModel`: Multi-agent system configuration
+  - `FlockModel`: Multi-agent system configuration
   - `EnvironmentModel`: Simulation settings
   - `HyperparameterModel`: Training parameters
 

@@ -1,5 +1,5 @@
 """
-Hydra-zen builders for swarm data specifications.
+Hydra-zen builders for flock data specifications.
 
 This module provides factory functions that create torchrl spec objects
 through builder functions that are compatible with Hydra's serialization.
@@ -20,7 +20,7 @@ def create_edge_index_spec(n: int):
     in a directed graph, enabling metric-based neighborhood computation.
     
     Args:
-        n: Number of agents in the swarm
+        n: Number of agents in the flock
         
     Returns:
         TensorSpec for graph edge indices with int64 dtype
@@ -44,7 +44,7 @@ def create_float_spec(shape):
 
 def create_action_spec(agent_count: int, spatial_dims: int):
     """
-    Creates the action specification for swarm control.
+    Creates the action specification for flock control.
     
     Defines the action space as nominal velocity commands u_nom ∈ ℝᵈ for each
     agent. These commands are processed by the safety filter before execution
@@ -65,7 +65,7 @@ def create_action_spec(agent_count: int, spatial_dims: int):
 
 def create_observation_spec(agent_count: int, spatial_dims: int):
     """
-    Creates the observation specification for thermal swarm state.
+    Creates the observation specification for thermal flock state.
     
     Defines the complete observation space for each agent:
         - position         : Spatial coordinates x ∈ ℝᵈ
@@ -76,8 +76,8 @@ def create_observation_spec(agent_count: int, spatial_dims: int):
         - edge_index       : Dynamic graph topology for inter-agent communication
         
     Args:
-        agent_count: Number of agents N in the swarm
-        spatial_dims: Dimensionality d of the spatial environment (2D/3D)
+        agent_count  : Number of agents N in the flock
+        spatial_dims : Dimensionality d of the spatial environment (2D/3D)
         
     Returns:
         Composite spec defining the full observation structure
@@ -96,20 +96,20 @@ def create_observation_spec(agent_count: int, spatial_dims: int):
 # Builders that use structured interpolation
 build_action_spec = builds(
     create_action_spec,
-    agent_count  = SI("${swarm.agent_count}"),
-    spatial_dims = SI("${swarm.spatial_dims}"),
+    agent_count  = SI("${flock.agent_count}"),
+    spatial_dims = SI("${flock.spatial_dims}"),
 )
 """
 Builder for the action space specification.
 
-Defines the continuous velocity control space for each agent in the swarm,
+Defines the continuous velocity control space for each agent in the flock,
 compatible with TorchRL's environment interface.
 """
 
 build_observation_spec = builds(
     create_observation_spec,
-    agent_count  = SI("${swarm.agent_count}"),
-    spatial_dims = SI("${swarm.spatial_dims}"),
+    agent_count  = SI("${flock.agent_count}"),
+    spatial_dims = SI("${flock.spatial_dims}"),
 )
 """
 Builder for the observation space specification.

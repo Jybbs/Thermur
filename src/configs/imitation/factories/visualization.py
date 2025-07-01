@@ -14,7 +14,7 @@ from thermur.visualization import Visualizer
 build_visualizer = builds(
     Visualizer,
     visualization_config    = zen(VisualizationModel),
-    max_temperature         = SI("${swarm.max_temperature}"),
+    max_temperature         = SI("${flock.max_temperature}"),
     simulation              = SI("${simulation}"),
     populate_full_signature = True,
     zen_dataclass           = {
@@ -23,7 +23,7 @@ build_visualizer = builds(
     }
 )
 """
-Builder for the swarm visualization system.
+Builder for the flock visualization system.
 
 Provides real-time rendering of agent positions, temperature fields,
 and safety boundaries for monitoring training progress and behavior.

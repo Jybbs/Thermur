@@ -133,12 +133,12 @@ class SystemInspector:
             info["memory_total"]     = 0
 
         try:
-            usage              = disk_usage(".")
-            info["disk_free"]  = usage.free  / 1e9
-            info["disk_total"] = usage.total / 1e9
+            usage                  = disk_usage(".")
+            info["disk_available"] = usage.free  / 1e9
+            info["disk_total"]     = usage.total / 1e9
         except Exception:
-            info["disk_free"]  = 0
-            info["disk_total"] = 0
+            info["disk_available"] = 0
+            info["disk_total"]     = 0
 
         info["wandb_installed"] = SystemInspector._safe_import(attr="__version__", package="wandb") is not None
         info["wandb_user"]      = None

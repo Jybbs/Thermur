@@ -1,5 +1,5 @@
 """
-MuJoCo-based simulation environment for drone swarms.
+MuJoCo-based simulation environment for drone flocks.
 
 This package provides the physics simulation for training and evaluation. The
 environment models N quadrotor agents navigating through thermal fields while

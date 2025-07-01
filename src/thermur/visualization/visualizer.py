@@ -2,8 +2,8 @@
 3D visualization display manager for the Thermur simulation.
 
 This module provides the `Visualizer` class, which serves as the primary interface 
-for creating and updating 3D visualizations of the swarm simulation. It coordinates
-the rendering of swarm agents, thermal fields, wind vectors, safety boundaries,
+for creating and updating 3D visualizations of the flock simulation. It coordinates
+the rendering of flock agents, thermal fields, wind vectors, safety boundaries,
 and communication graphs.
 
 The visualizer manages a PyVista plotter window and handles the lifecycle of
@@ -40,7 +40,7 @@ class Visualizer:
     
     All visualization elements can be toggled at runtime, allowing users to
     focus on specific aspects of the simulation. The rendering uses PyVista's
-    efficient update mechanisms to maintain performance even with large swarms.
+    efficient update mechanisms to maintain performance even with large flocks.
     """
     
     def __init__(
@@ -85,7 +85,7 @@ class Visualizer:
         This method creates the visualization window with the configured size,
         applies the selected theme (dark or light), and sets up appropriate
         lighting for 3D rendering. The camera is positioned to provide a
-        clear initial view of the swarm, with zoom adjusted for typical
+        clear initial view of the flock, with zoom adjusted for typical
         simulation bounds.
         
         The method also initializes the temperature colormap that will be

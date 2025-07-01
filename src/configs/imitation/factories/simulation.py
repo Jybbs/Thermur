@@ -9,7 +9,7 @@ The environment follows dependency injection principles, so all dependencies
 are provided as arguments rather than imported directly.
 """
 from ..schemas          import PhysicsModel
-from .swarm             import build_action_spec, build_observation_spec
+from .flock             import build_action_spec, build_observation_spec
 from hydra_zen          import builds, zen
 from omegaconf          import SI
 from thermur.simulation import compute_edge_index, SimulationEnv
@@ -41,12 +41,12 @@ build_simulation = builds(
     assets_dir              = SI("${physics.assets_dir}"),
     simulation_step         = SI("${physics.simulation_step}"),
 
-    # Swarm parameters from schema
-    agent_count             = SI("${swarm.agent_count}"),
-    communication_range     = SI("${swarm.communication_range}"),
-    formation_scale_factor  = SI("${swarm.formation_scale_factor}"),
-    initial_formation       = SI("${swarm.initial_formation}"),
-    spatial_dims            = SI("${swarm.spatial_dims}"),
+    # Flock parameters from schema
+    agent_count             = SI("${flock.agent_count}"),
+    communication_range     = SI("${flock.communication_range}"),
+    formation_scale_factor  = SI("${flock.formation_scale_factor}"),
+    initial_formation       = SI("${flock.initial_formation}"),
+    spatial_dims            = SI("${flock.spatial_dims}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.simulation",
@@ -56,6 +56,6 @@ build_simulation = builds(
 """
 Builder for the main simulation environment.
 
-Creates a TorchRL-compatible environment managing multi-agent swarm dynamics
+Creates a TorchRL-compatible environment managing multi-agent flock dynamics
 within MuJoCo physics, integrating real-time environmental hazards.
 """

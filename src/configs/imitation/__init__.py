@@ -2,7 +2,7 @@
 Imitation learning configuration domain.
 
 This package structures the configuration for behavioral cloning from expert demonstrations
-in wildfire swarm scenarios. The configuration hierarchy includes:
+in wildfire flock scenarios. The configuration hierarchy includes:
 
 - Control schemas for Reynolds flocking rules with thermal constraints
 - Learning schemas for GNN policy training hyperparameters

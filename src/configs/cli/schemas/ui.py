@@ -38,7 +38,7 @@ class ThemeModel(BaseModel, extra="forbid"):
             "info"      : "bright_cyan",
             "muted"     : "grey70",
             "success"   : "bold bright_green",
-            "swarm"     : "bright_blue",
+            "flock"     : "bright_blue",
             "thermal"   : "bold red",
             "warning"   : "bright_yellow",
         },
@@ -62,9 +62,9 @@ class UIModel(BaseModel, extra="forbid"):
             "default"         : "⚙️",
             "environment"     : "🌍",
             "hyperparameters" : "🎛️",
-            "monitoring"      : "📊",
+            "monitoring"      : "🪄",
             "policy"          : "🧠",
-            "swarm"           : "🐦‍⬛",
+            "flock"           : "🪽",
             "visualization"   : "📈",
         },
         description = "Emoji mapping for configuration categories"
@@ -104,34 +104,28 @@ class UIModel(BaseModel, extra="forbid"):
     features_list: list[dict[str, str]] = Field(
         default = [
             {
-                "name"   : "🔥 Thermal Constraints",
-                "desc"   : "Physics-based heat modeling for drone safety",
-                "status" : "✓ Active"
+                "name" : "🔥 Thermal Constraints",
+                "desc" : "Physics-based heat modeling for drone safety"
             },
             {
-                "name"   : "🐦‍⬛ Swarm Coordination",
-                "desc"   : "Multi-agent flocking with obstacle avoidance",
-                "status" : "✓ Active"
+                "name" : "🪽 Flock Coordination",
+                "desc" : "Multi-agent flocking with obstacle avoidance"
             },
             {
-                "name"   : "🧠 Imitation Learning",
-                "desc"   : "Expert policy cloning with BC and DAgger",
-                "status" : "✓ Active"
+                "name" : "🧠 Imitation Learning",
+                "desc" : "Expert policy cloning with BC and DAgger"
             },
             {
-                "name"   : "📊 wandb Integration",
-                "desc"   : "Real-time experiment tracking and visualization",
-                "status" : "✓ Active"
+                "name" : "🪄  wandb Integration",
+                "desc" : "Real-time experiment tracking and visualization"
             },
             {
-                "name"   : "🎯 Hydra Configuration",
-                "desc"   : "Modular config system with validation",
-                "status" : "✓ Active"
+                "name" : "🎯 Hydra Configuration",
+                "desc" : "Modular config system with validation"
             },
             {
-                "name"   : "📈 Live Visualization",
-                "desc"   : "3D rendering of swarm dynamics",
-                "status" : "✓ Active"
+                "name" : "📈 Live Visualization",
+                "desc" : "3D rendering of flock dynamics"
             },
         ],
         description = "List of features to display in the features table"
@@ -147,20 +141,14 @@ class UIModel(BaseModel, extra="forbid"):
             {
                 "header" : "Description",
                 "style"  : "white",
-                "width"  : 45,
+                "width"  : 60,
                 "align"  : "left"
-            },
-            {
-                "header" : "Status",
-                "style"  : "bright_green",
-                "width"  : 12,
-                "align"  : "center"
             },
         ],
         description = "Column definitions for features table"
     )
     features_table_title: str = Field(
-        default     = "Thermur Features",
+        default     = "",
         description = "Title for the features table"
     )
     filled_char: str = Field(
@@ -261,7 +249,7 @@ class UIModel(BaseModel, extra="forbid"):
             {
                 "header" : "Value",
                 "style"  : "white",
-                "width"  : 40
+                "width"  : 50
             },
         ],
         description = "Column definitions for system info table"
@@ -359,45 +347,16 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "bold bright_cyan",
         description = "Style for table titles"
     )
-    tips_bullet_style: str = Field(
-        default     = "bright_green",
-        description = "Style for tip bullet points"
-    )
-    tips_section_title: str = Field(
-        default     = "Pro Tips",
-        description = "Title for the tips section"
-    )
-    tips_section_style: str = Field(
-        default     = "bright_green",
-        description = "Style for the tips section header"
-    )
     title_text_style: str = Field(
         default     = "bold bright_cyan",
         description = "Style for title text"
-    )
-    training_tips: list[dict[str, str]] = Field(
-        default = [
-            {
-                "desc"    : "Monitor training progress:",
-                "command" : "thermur monitor --project thermur"
-            },
-            {
-                "desc"    : "Resume from checkpoint:",
-                "command" : "thermur train --resume latest"
-            },
-            {
-                "desc"    : "Debug configuration issues:",
-                "command" : "thermur validate --config your.overrides"
-            },
-        ],
-        description = "List of training tips to display"
     )
     unfilled_char: str = Field(
         default     = "░",
         description = "Character for unfilled progress bars"
     )
     wandb_icon: str = Field(
-        default     = "📊",
+        default     = "🪄",
         description = "Icon for wandb-related items"
     )
     wandb_url_placeholder: str = Field(
@@ -438,8 +397,8 @@ class UIModel(BaseModel, extra="forbid"):
                 "icon"  : "🔥",
                 "style" : "bright_red"
             },
-            "swarm": {
-                "icon"  : "🐦‍⬛",
+            "flock": {
+                "icon"  : "🪽",
                 "style" : "bright_blue"
             },
             "config": {

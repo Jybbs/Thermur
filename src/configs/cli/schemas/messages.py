@@ -22,10 +22,6 @@ class HeadersModel(BaseModel, extra="forbid"):
         default     = "Thermur System Information",
         description = "Title for info command header"
     )
-    main_subtitle: str = Field(
-        default     = "Thermal Drone Swarm Training",
-        description = "Subtitle for main welcome screen"
-    )
     main_title: str = Field(
         default     = "Welcome to Thermur",
         description = "Title for main welcome screen"
@@ -39,7 +35,7 @@ class HeadersModel(BaseModel, extra="forbid"):
         description = "Title for monitor command header"
     )
     train_subtitle: str = Field(
-        default     = "Thermally-constrained drone swarm imitation learning",
+        default     = "Thermally-constrained drone flock imitation learning",
         description = "Subtitle for train command header"
     )
     train_title: str = Field(
@@ -96,7 +92,7 @@ class MessagesModel(BaseModel, extra="forbid"):
         description = "Status message during component loading"
     )
     monitoring_dynamics: str = Field(
-        default     = "Monitoring thermal constraints and swarm dynamics",
+        default     = "Monitoring thermal constraints and flock dynamics",
         description = "Message about training monitoring"
     )
     no_config_changes: str = Field(
@@ -104,7 +100,7 @@ class MessagesModel(BaseModel, extra="forbid"):
         description = "Message when no config overrides are generated"
     )
     ready_to_train: str = Field(
-        default     = "Ready to train some thermal swarms? 🔥",
+        default     = "Ready to train some thermal flocks? 🔥",
         description = "Encouraging message to start training"
     )
     skipping_checks: str = Field(
@@ -124,7 +120,7 @@ class MessagesModel(BaseModel, extra="forbid"):
         description = "Header for training completion"
     )
     training_complete_sub: str = Field(
-        default     = "Your thermal swarm has learned to fly",
+        default     = "Your thermal flock has learned to fly",
         description = "Subtitle for training completion"
     )
     training_failed_template: str = Field(
@@ -196,6 +192,14 @@ class MessageTypesModel(BaseModel, extra="forbid"):
         default     = "error",
         description = "Style for error messages"
     )
+    flock_icon: str = Field(
+        default     = "🪽",
+        description = "Icon for flock messages"
+    )
+    flock_style: str = Field(
+        default     = "flock",
+        description = "Style for flock messages"
+    )
     info_icon: str = Field(
         default     = "💡",
         description = "Icon for info messages"
@@ -219,14 +223,6 @@ class MessageTypesModel(BaseModel, extra="forbid"):
     success_style: str = Field(
         default     = "success",
         description = "Style for success messages"
-    )
-    swarm_icon: str = Field(
-        default     = "🐦‍⬛",
-        description = "Icon for swarm messages"
-    )
-    swarm_style: str = Field(
-        default     = "swarm",
-        description = "Style for swarm messages"
     )
     thermal_icon: str = Field(
         default     = "🔥",
@@ -330,7 +326,7 @@ class SectionsModel(BaseModel, extra="forbid"):
         description = "Section title for config system info"
     )
     features: str = Field(
-        default     = "Features & Capabilities",
+        default     = "Features",
         description = "Section title for feature list"
     )
     getting_started: str = Field(
@@ -350,7 +346,7 @@ class SectionsModel(BaseModel, extra="forbid"):
         description = "Section title for integration info"
     )
     quick_start: str = Field(
-        default     = "Quick Start",
+        default     = "Common Commands",
         description = "Section title for quick start guide"
     )
     system_validation: str = Field(
@@ -383,7 +379,7 @@ class StatusModel(BaseModel, extra="forbid"):
         description = "Status text during component instantiation"
     )
     launching_browser: str = Field(
-        default     = "[swarm]Launching browser...[/swarm]",
+        default     = "[flock]Launching browser...[/flock]",
         description = "Status text during browser launch"
     )
     loading_config_sys: str = Field(

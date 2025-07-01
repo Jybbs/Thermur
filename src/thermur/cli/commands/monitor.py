@@ -60,10 +60,7 @@ class MonitorCommand:
         if project is None:
             project = self.config.wandb.default_project
 
-        self.ui.print_header(
-            self.config.headers.monitor_title,
-            self.config.headers.monitor_subtitle_tpl.format(project=project)
-        )
+        self.ui.print_header(self.config.headers.monitor_title)
 
         url = self.system.get_wandb_url(self.config, project)
 
@@ -76,7 +73,7 @@ class MonitorCommand:
 
         self.ui.print_message(
             self.config.messages.browser_launch_tpl.format(project=project),
-            "swarm"
+            "flock"
         )
         self.ui.print_wandb_info(project, url)
         self.ui.console.print()

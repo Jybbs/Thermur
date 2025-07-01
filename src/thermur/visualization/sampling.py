@@ -82,7 +82,7 @@ def create_temperature_grid(
     Create a uniform grid of temperature values from the environment.
     
     Samples the temperature field from the environment data source at regular
-    grid points within a bounding box around the swarm. The resulting UniformGrid
+    grid points within a bounding box around the flock. The resulting UniformGrid
     contains temperature data suitable for volume rendering or isosurface extraction.
     
     Args:
@@ -118,7 +118,7 @@ def create_wind_grid(
     Create a grid of wind vectors from the environment data source.
     
     Samples the wind field from the environment at regular intervals within
-    a bounding box around the swarm. The resulting PolyData contains points
+    a bounding box around the flock. The resulting PolyData contains points
     and vector data suitable for glyph-based visualization of the wind field.
     
     Args:
