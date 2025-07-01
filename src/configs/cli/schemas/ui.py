@@ -127,6 +127,47 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "bold bright_white",
         description = "Style for header text"
     )
+    message_types: dict[str, dict[str, str]] = Field(
+        default = {
+            "info": {
+                "icon"  : "ℹ️",
+                "style" : "info"
+            },
+            "success": {
+                "icon"  : "✅",
+                "style" : "success"
+            },
+            "warning": {
+                "icon"  : "⚠️",
+                "style" : "warning"
+            },
+            "error": {
+                "icon"  : "❌",
+                "style" : "error"
+            },
+            "thermal": {
+                "icon"  : "🔥",
+                "style" : "thermal"
+            },
+            "flock": {
+                "icon"  : "💫",
+                "style" : "flock"
+            },
+            "config": {
+                "icon"  : "🔎",
+                "style" : "accent"
+            },
+            "tip": {
+                "icon"  : "💡",
+                "style" : "muted"
+            },
+            "standard": {
+                "icon"  : "",
+                "style" : "white"
+            },
+        },
+        description = "Message type configurations for print_message"
+    )
     panel_border_style: str = Field(
         default     = "bright_blue",
         description = "Border style for Rich panels"
@@ -195,30 +236,6 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "monokai",
         description = "Theme for syntax highlighting"
     )
-    system_table_columns: list[dict[str, str | int]] = Field(
-        default = [
-            {
-                "header" : "Component",
-                "style"  : "bright_cyan",
-                "width"  : 20
-            },
-            {
-                "header" : "Value",
-                "style"  : "white",
-                "width"  : 50
-            },
-        ],
-        description = "Column definitions for system info table"
-    )
-    system_table_settings: dict[str, str | bool] = Field(
-        default = {
-            "box"          : "MINIMAL",
-            "border_style" : "bright_blue",
-            "title_style"  : "bold bright_cyan",
-            "show_lines"   : True,
-        },
-        description = "Settings for system info table"
-    )
     system_components: dict[str, str] = Field(
         default = {
             "python"       : "Python",
@@ -268,6 +285,30 @@ class UIModel(BaseModel, extra="forbid"):
         },
         description = "Logic for formatting system component values"
     )
+    system_table_columns: list[dict[str, str | int]] = Field(
+        default = [
+            {
+                "header" : "Component",
+                "style"  : "bright_cyan",
+                "width"  : 20
+            },
+            {
+                "header" : "Value",
+                "style"  : "white",
+                "width"  : 50
+            },
+        ],
+        description = "Column definitions for system info table"
+    )
+    system_table_settings: dict[str, str | bool] = Field(
+        default = {
+            "box"          : "MINIMAL",
+            "border_style" : "bright_blue",
+            "title_style"  : "bold bright_cyan",
+            "show_lines"   : True,
+        },
+        description = "Settings for system info table"
+    )
     table_border_style: str = Field(
         default     = "bright_blue",
         description = "Border style for Rich tables"
@@ -303,45 +344,4 @@ class UIModel(BaseModel, extra="forbid"):
     warning_color: str = Field(
         default     = "yellow",
         description = "Color for warnings"
-    )
-    message_types: dict[str, dict[str, str]] = Field(
-        default = {
-            "info": {
-                "icon"  : "ℹ️",
-                "style" : "info"
-            },
-            "success": {
-                "icon"  : "✅",
-                "style" : "success"
-            },
-            "warning": {
-                "icon"  : "⚠️",
-                "style" : "warning"
-            },
-            "error": {
-                "icon"  : "❌",
-                "style" : "error"
-            },
-            "thermal": {
-                "icon"  : "🔥",
-                "style" : "thermal"
-            },
-            "flock": {
-                "icon"  : "💫",
-                "style" : "flock"
-            },
-            "config": {
-                "icon"  : "⚙️",
-                "style" : "accent"
-            },
-            "tip": {
-                "icon"  : "💡",
-                "style" : "muted"
-            },
-            "standard": {
-                "icon"  : "",
-                "style" : "white"
-            },
-        },
-        description = "Message type configurations for print_message"
     )

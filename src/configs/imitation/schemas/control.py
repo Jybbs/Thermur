@@ -30,6 +30,40 @@ class ControlModel(BaseModel, extra="forbid"):
         - Alignment:  U_align = (1/2) · Σ_j∈N(i) ||𝐯_i - 𝐯_j||²
         - Thermal:    U_thermal = 1/(T_max - T_i)
     """
+    epsilon: PositiveFloat = Field(
+        default     = 1e-8,
+        description = (
+            "Numerical stability constant ε for safe division operations."
+        )
+    )
+    gradient_step: PositiveFloat = Field(
+        default     = 0.1,
+        description = (
+            "Finite difference step size δ for estimating temperature "
+            "gradients when analytical gradients are unavailable."
+        )
+    )
+    min_distance: PositiveFloat = Field(
+        default     = 0.1,
+        description = (
+            "Minimum distance ε_dist in meters to prevent division by zero "
+            "in separation force calculations."
+        )
+    )
+    temperature_scaling: PositiveFloat = Field(
+        default     = 1.0,
+        description = (
+            "Scaling factor λ_thermal for thermal force magnitude, allowing "
+            "fine-tuning relative to Reynolds forces."
+        )
+    )
+    w_alignment: NonNegativeFloat = Field(
+        default     = 0.8,
+        description = (
+            "Weight ω_align for velocity alignment. Higher values encourage "
+            "agents to match velocities with their neighbors."
+        )
+    )
     w_cohesion: NonNegativeFloat = Field(
         default     = 1.0,
         description = (
@@ -44,44 +78,10 @@ class ControlModel(BaseModel, extra="forbid"):
             "repulsion between nearby agents to avoid collisions."
         )
     )
-    w_alignment: NonNegativeFloat = Field(
-        default     = 0.8,
-        description = (
-            "Weight ω_align for velocity alignment. Higher values encourage "
-            "agents to match velocities with their neighbors."
-        )
-    )
     w_thermal: NonNegativeFloat = Field(
         default     = 2.0,
         description = (
             "Weight ω_thermal for thermal avoidance. Higher values create "
             "stronger repulsion from high-temperature regions."
-        )
-    )
-    min_distance: PositiveFloat = Field(
-        default     = 0.1,
-        description = (
-            "Minimum distance ε_dist in meters to prevent division by zero "
-            "in separation force calculations."
-        )
-    )
-    epsilon: PositiveFloat = Field(
-        default     = 1e-8,
-        description = (
-            "Numerical stability constant ε for safe division operations."
-        )
-    )
-    gradient_step: PositiveFloat = Field(
-        default     = 0.1,
-        description = (
-            "Finite difference step size δ for estimating temperature "
-            "gradients when analytical gradients are unavailable."
-        )
-    )
-    temperature_scaling: PositiveFloat = Field(
-        default     = 1.0,
-        description = (
-            "Scaling factor λ_thermal for thermal force magnitude, allowing "
-            "fine-tuning relative to Reynolds forces."
         )
     )

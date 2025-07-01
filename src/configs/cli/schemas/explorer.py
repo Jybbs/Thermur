@@ -7,51 +7,6 @@ tool that allows users to navigate and modify Hydra configurations.
 from pydantic import BaseModel, Field, PositiveInt
 
 
-class ExplorerModel(BaseModel, extra="forbid"):
-    """
-    Configures the interactive configuration explorer.
-    
-    This model defines the behavior of the configuration exploration tool,
-    which allows users to navigate and modify Hydra configurations interactively.
-    It includes display options, navigation settings, and field rendering rules.
-    """
-    enable_search: bool = Field(
-        default     = True,
-        description = "Whether to enable search functionality in explorer"
-    )
-    expand_depth: PositiveInt = Field(
-        default     = 2,
-        description = "Initial expansion depth for nested configurations"
-    )
-    indent_size: PositiveInt = Field(
-        default     = 2,
-        description = "Number of spaces for each indentation level"
-    )
-    max_description_length: PositiveInt = Field(
-        default     = 80,
-        description = "Maximum characters to display for field descriptions"
-    )
-    show_defaults: bool = Field(
-        default     = True,
-        description = "Whether to display default values in the explorer"
-    )
-    show_types: bool = Field(
-        default     = True,
-        description = "Whether to display field types in the explorer"
-    )
-    type_colors: dict[str, str] = Field(
-        default = {
-            "bool"  : "magenta",
-            "dict"  : "blue",
-            "float" : "cyan", 
-            "int"   : "cyan",
-            "list"  : "green",
-            "str"   : "yellow"
-        },
-        description = "Color mapping for different field types"
-    )
-
-
 class ExplorerMessagesModel(BaseModel, extra="forbid"):
     """
     Messages specific to the configuration explorer functionality.
@@ -134,4 +89,49 @@ class ExplorerMessagesModel(BaseModel, extra="forbid"):
     workload_component_name: str = Field(
         default     = "Workload",
         description = "Name for workload components"
+    )
+
+
+class ExplorerModel(BaseModel, extra="forbid"):
+    """
+    Configures the interactive configuration explorer.
+    
+    This model defines the behavior of the configuration exploration tool,
+    which allows users to navigate and modify Hydra configurations interactively.
+    It includes display options, navigation settings, and field rendering rules.
+    """
+    enable_search: bool = Field(
+        default     = True,
+        description = "Whether to enable search functionality in explorer"
+    )
+    expand_depth: PositiveInt = Field(
+        default     = 2,
+        description = "Initial expansion depth for nested configurations"
+    )
+    indent_size: PositiveInt = Field(
+        default     = 2,
+        description = "Number of spaces for each indentation level"
+    )
+    max_description_length: PositiveInt = Field(
+        default     = 80,
+        description = "Maximum characters to display for field descriptions"
+    )
+    show_defaults: bool = Field(
+        default     = True,
+        description = "Whether to display default values in the explorer"
+    )
+    show_types: bool = Field(
+        default     = True,
+        description = "Whether to display field types in the explorer"
+    )
+    type_colors: dict[str, str] = Field(
+        default = {
+            "bool"  : "magenta",
+            "dict"  : "blue",
+            "float" : "cyan", 
+            "int"   : "cyan",
+            "list"  : "green",
+            "str"   : "yellow"
+        },
+        description = "Color mapping for different field types"
     )

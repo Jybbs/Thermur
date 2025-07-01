@@ -64,10 +64,30 @@ class FlockObservationModel(BaseModel, extra="forbid"):
             "0 (depleted) to 1 (full)."
         )
     )
+    edge_index_dtype: Literal["int64"] = Field(
+        default     = "int64",
+        description = (
+            "Data type for graph edge indices, using int64 to support large "
+            "flocks."
+        )
+    )
+    edge_index_shape: tuple[int, int] = Field(
+        description = (
+            "Shape (2, E) for COO-format edge indices where E ≤ N(N-1) "
+            "is the number of edges in the communication graph."
+        )
+    )
     position_shape: tuple[int, int] = Field(
         description = (
             "Shape (N, d) for agent positions in world "
             "coordinates."
+        )
+    )
+    state_dtype: Literal["float32"] = Field(
+        default     = "float32",
+        description = (
+            "Data type for all state tensors, balancing precision with memory "
+            "efficiency."
         )
     )
     temperature_grad_shape: tuple[int, int] = Field(
@@ -85,25 +105,5 @@ class FlockObservationModel(BaseModel, extra="forbid"):
     velocity_shape: tuple[int, int] = Field(
         description = (
             "Shape (N, d) for agent velocity vectors in m/s."
-        )
-    )
-    edge_index_dtype: Literal["int64"] = Field(
-        default     = "int64",
-        description = (
-            "Data type for graph edge indices, using int64 to support large "
-            "flocks."
-        )
-    )
-    edge_index_shape: tuple[int, int] = Field(
-        description = (
-            "Shape (2, E) for COO-format edge indices where E ≤ N(N-1) "
-            "is the number of edges in the communication graph."
-        )
-    )
-    state_dtype: Literal["float32"] = Field(
-        default     = "float32",
-        description = (
-            "Data type for all state tensors, balancing precision with memory "
-            "efficiency."
         )
     )

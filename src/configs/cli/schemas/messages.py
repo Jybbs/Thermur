@@ -200,6 +200,10 @@ class SectionsModel(BaseModel, extra="forbid"):
         default     = "Building Training Components",
         description = "Section title during component creation"
     )
+    common_commands: str = Field(
+        default     = "Common Commands",
+        description = "Section title for common commands"
+    )
     config_check: str = Field(
         default     = "Configuration Check",
         description = "Section title for configuration validation"
@@ -231,10 +235,6 @@ class SectionsModel(BaseModel, extra="forbid"):
     integration_status: str = Field(
         default     = "Integration Status",
         description = "Section title for integration info"
-    )
-    common_commands: str = Field(
-        default     = "Common Commands",
-        description = "Section title for common commands"
     )
     system_validation: str = Field(
         default     = "System Validation",
