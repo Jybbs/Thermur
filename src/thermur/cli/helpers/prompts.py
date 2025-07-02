@@ -25,149 +25,26 @@ class CLIPrompts:
     from both the UI rendering and the core application orchestration.
     """
     def __init__(
-        self, 
-        cli      : DictConfig,
-        messages : DictConfig,
-        presets  : DictConfig,
-        prompts  : DictConfig,
-        ui       : Any
+        self,
+        cfg : DictConfig,
+        ui  : Any
     ):
         """
         Initializes the prompt orchestrator.
 
         Args:
-            cli      : CLI configuration containing command-related settings.
-            messages : Messages configuration containing message templates.
-            presets  : Presets configuration containing training preset definitions.
-            prompts  : Prompts configuration containing prompts-related settings.
-            ui       : An initialized `ThermurUI` object for rendering components.
+            cfg : The full configuration object containing all subsections.
+            ui  : An initialized `ThermurUI` object for rendering components.
         """
-        self.cli      = cli
-        self.messages = messages
-        self.presets  = presets
-        self.prompts  = prompts
+        self.cfg      = cfg
+        self.cli      = cfg.cli
+        self.messages = cfg.messages
+        self.presets  = cfg.presets
+        self.prompts  = cfg.prompts
         self.ui       = ui
         self.thermal_style = questionary.Style.from_dict(
             dict(self.prompts.questionary_style)
         )
-
-    def select_configuration_preset(self) -> str | None:
-        """
-        Prompts the user to select a high-level configuration preset.
-
-        This function first displays a descriptive table of available presets,
-        then presents an interactive list. This initial choice allows users to
-        quickly start with sensible defaults for different use cases without
-        needing to configure every detail manually.
-
-        Returns:
-            The string name of the selected preset (e.g., "standard"), or None if
-            the user explicitly chooses the "custom" configuration option.
-        """
-        self.ui.print_minor_section("Configuration Presets")
-
-        table = self.ui.create_aligned_table(
-            columns = self.prompts.presets_table_columns,
-            title   = "Available Presets"
-        )
-
-        preset_cfgs = self.presets.presets
-        for name, config in preset_cfgs.items():
-            display_name = f"{config['emoji']} {config['name']}"
-            if name == "custom":
-                row_style = f"[grey70]"
-                table.add_row(
-                    f"{row_style}{display_name}[/]",
-                    f"{row_style}{config['desc']}[/]",
-                    f"{row_style}{config['best_for']}[/]",
-                )
-            else:
-                table.add_row(display_name, config['desc'], config['best_for'])
-
-        self.ui.console.print(table)
-        self.ui.console.print()
-
-        choices = [
-            questionary.Choice(
-                title = preset_cfgs[name]['emoji'], 
-                value = name
-            )
-            for name in list(self.presets.presets.keys())
-        ]
-        choices.extend([
-            questionary.Separator(),
-            questionary.Choice(
-                title = preset_cfgs['custom']['emoji'],
-                value = None
-            ),
-        ])
-
-        chosen_emoji = questionary.select(
-            choices = choices,
-            message = "Which configuration preset would you like to use?",
-            style   = self.thermal_style
-        ).ask()
-
-        # Map emoji back to preset name
-        if chosen_emoji:
-            # Find which preset has this emoji
-            chosen_preset = None
-            for name, config in preset_cfgs.items():
-                if config['emoji'] == chosen_emoji:
-                    chosen_preset = name
-                    break
-            
-            self.ui.print_message(
-                message  = f"Selected preset: [bright_cyan]{chosen_emoji}[/bright_cyan]",
-                msg_type = "success"
-            )
-        else:
-            chosen_preset = None
-            self.ui.print_message(
-                message  = "Custom configuration selected - full control mode",
-                msg_type = "info"
-            )
-
-        return chosen_preset
-
-    def ask_wandb_project_name(self, default_project: str = "thermur") -> str:
-        """
-        Guides the user in setting a Weights & Biases project name for tracking.
-
-        This prompt explains the purpose of wandb before allowing the user
-        to enter their project name.
-
-        Args:
-            default_project: The default project name to suggest.
-
-        Returns:
-            The final project name for wandb tracking.
-        """
-        self.ui.console.print()
-        self.ui.print_message(
-            message  = "Configure experiment tracking",
-            msg_type = "flock"
-        )
-        self.ui.console.print(
-            f"[grey70]"
-            "wandb will track metrics, logs, and model checkpoints"
-            "[/grey70]"
-        )
-        self.ui.console.print()
-
-
-        project_name = questionary.text(
-            default     = default_project,
-            instruction = "(press Enter for default)",
-            message     = "Enter wandb project name:",
-            style       = self.thermal_style
-        ).ask()
-
-        self.ui.print_message(
-            message  = f"Project name: [bright_cyan]{project_name}[/bright_cyan]",
-            msg_type = "success"
-        )
-        return project_name
 
     def ask_for_config_overrides(self) -> list[str]:
         """
@@ -231,7 +108,45 @@ class CLIPrompts:
             )
 
         return overrides
+    
+    def ask_wandb_project_name(self, default_project: str = "thermur") -> str:
+        """
+        Guides the user in setting a Weights & Biases project name for tracking.
 
+        This prompt explains the purpose of wandb before allowing the user
+        to enter their project name.
+
+        Args:
+            default_project: The default project name to suggest.
+
+        Returns:
+            The final project name for wandb tracking.
+        """
+        self.ui.console.print()
+        self.ui.print_message(
+            message  = "Configure experiment tracking",
+            msg_type = "flock"
+        )
+        self.ui.console.print(
+            f"[grey70]"
+            "wandb will track metrics, logs, and model checkpoints"
+            "[/grey70]"
+        )
+        self.ui.console.print()
+
+
+        project_name = questionary.text(
+            default     = default_project,
+            instruction = "(press Enter for default)",
+            message     = "Enter wandb project name:",
+            style       = self.thermal_style
+        ).ask()
+
+        self.ui.print_message(
+            message  = f"Project name: [bright_cyan]{project_name}[/bright_cyan]",
+            msg_type = "success"
+        )
+        return project_name
 
     def confirm_system_override(self, issues: list[str]) -> bool:
         """
@@ -262,6 +177,86 @@ class CLIPrompts:
             default = False,
             prompt  = f"[{warning_style}]Do you want to proceed anyway?[/]"
         )
+    
+    def select_configuration_preset(self) -> str | None:
+        """
+        Prompts the user to select a high-level configuration preset.
+
+        This function first displays a descriptive table of available presets,
+        then presents an interactive list. This initial choice allows users to
+        quickly start with sensible defaults for different use cases without
+        needing to configure every detail manually.
+
+        Returns:
+            The string name of the selected preset (e.g., "standard"), or None if
+            the user explicitly chooses the "custom" configuration option.
+        """
+        self.ui.print_minor_section("Configuration Presets")
+
+        table = self.ui.create_aligned_table(
+            columns = self.prompts.presets_table_columns,
+            title   = "Available Presets"
+        )
+
+        preset_cfgs = self.presets.presets
+        for name, config in preset_cfgs.items():
+            display_name = f"{config['emoji']} {config['name']}"
+            if name == "custom":
+                row_style = f"[grey70]"
+                table.add_row(
+                    f"{row_style}{display_name}[/]",
+                    f"{row_style}{config['desc']}[/]",
+                    f"{row_style}{config['best_for']}[/]",
+                )
+            else:
+                table.add_row(display_name, config['desc'], config['best_for'])
+
+        self.ui.console.print(table)
+        self.ui.console.print()
+
+        choices = [
+            questionary.Choice(
+                title = preset_cfgs[name]['emoji'], 
+                value = name
+            )
+            for name in list(self.presets.presets.keys())
+            if name != 'custom'
+        ]
+        choices.extend([
+            questionary.Separator(),
+            questionary.Choice(
+                title = preset_cfgs['custom']['emoji'],
+                value = None
+            ),
+        ])
+
+        chosen_emoji = questionary.select(
+            choices = choices,
+            message = "Which configuration preset would you like to use?",
+            style   = self.thermal_style
+        ).ask()
+
+        # Map emoji back to preset name
+        if chosen_emoji:
+            # Find which preset has this emoji
+            chosen_preset = None
+            for name, config in preset_cfgs.items():
+                if config['emoji'] == chosen_emoji:
+                    chosen_preset = name
+                    break
+            
+            self.ui.print_message(
+                message  = f"Selected preset: [bright_cyan]{chosen_emoji}[/bright_cyan]",
+                msg_type = "success"
+            )
+        else:
+            chosen_preset = None
+            self.ui.print_message(
+                message  = "Custom configuration selected - full control mode",
+                msg_type = "info"
+            )
+
+        return chosen_preset
 
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
@@ -286,8 +281,7 @@ class CLIPrompts:
                 ("Setting", "bright_cyan",  20, "left"),
                 ("Value",   "bright_white", 40, "left")
             ],
-            show_edge = False,
-            title     = ""
+            show_edge = False
         )
 
         num_overrides = config.get('overrides', 0)

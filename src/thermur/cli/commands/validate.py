@@ -55,7 +55,7 @@ class ValidateCommand:
         """
         self.ui.print_major_section("System Information")
 
-        info = self.system.get_system_info(self.cfg.wandb_integration)
+        info = self.system.get_system_info()
         self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 
@@ -80,9 +80,7 @@ class ValidateCommand:
             spinner = "dots"
         ):
             issues = self.system.validate_config_overrides(
-                messages          = self.cfg.messages,
-                overrides         = config_overrides,
-                wandb_integration = self.cfg.wandb_integration
+                overrides = config_overrides
             )
 
         if issues:

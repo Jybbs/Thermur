@@ -52,46 +52,6 @@ class ExpertFlockingController:
         self.safety_filter    = safety_filter
         self._reset_shared_state()
 
-    def compute_nominal_action(self, flock: TensorDict) -> Tensor:
-        """
-        Computes the collective nominal control action for the entire flock.
-
-        This method calculates the weighted sum of forces from all potential
-        fields to produce the final velocity command 𝐮_nom. The weights come
-        from the `control` config, balancing the influence of each behavioral 
-        component.
-        
-        If a safety_filter is provided, the nominal control action is passed
-        through a Control Barrier Function to ensure thermal safety constraints
-        are satisfied, resulting in a safety-certified action 𝐮*.
-
-        Args:
-            flock: The flock data containing the flock's current state including
-                   position, velocity, temperature, and edge_index tensors.
-
-        Returns:
-            A tensor of velocity commands for all agents.
-        """
-        self._reset_shared_state()
-        self._update_graph_state(flock["edge_index"], flock["position"].size(0))
-
-        # Compute the nominal control based on Reynolds rules and thermal potential
-        u_nominal = (
-            self.control.w_cohesion   * self._compute_cohesion(flock["position"])   +
-            self.control.w_separation * self._compute_separation(flock["position"]) +
-            self.control.w_alignment  * self._compute_alignment(flock["velocity"])  +
-            self.control.w_thermal    * self._compute_thermal(
-                grad_temp   = flock.get("temperature_grad", None),
-                position    = flock["position"],
-                temperature = flock["temperature"]
-            )
-        )
-        
-        if self.safety_filter is not None:
-            return self.safety_filter.filter(flock, u_nominal)
-        
-        return u_nominal
-
     def _compute_alignment(self, velocity: Tensor) -> Tensor:
         """
         Calculates the alignment force vector for each agent.
@@ -215,22 +175,7 @@ class ExpertFlockingController:
         )
 
         return separation
-
-    def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
-        """
-        Ensures temperature tensor is 1D by squeezing if it's [N, 1].
-        
-        Args:
-            temperature: Tensor [N] or [N, 1] containing temperatures
-            
-        Returns:
-            Tensor [N] with any singleton dimensions removed
-        """
-        if temperature.dim() > 1 and temperature.size(1) == 1:
-            return temperature.squeeze(1)
-        
-        return temperature
-
+    
     def _compute_thermal(
         self,
         position    : Tensor,
@@ -281,6 +226,21 @@ class ExpertFlockingController:
 
         # Force points away from high temperatures
         return -gradient * magnitude.unsqueeze(1)
+
+    def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
+        """
+        Ensures temperature tensor is 1D by squeezing if it's [N, 1].
+        
+        Args:
+            temperature: Tensor [N] or [N, 1] containing temperatures
+            
+        Returns:
+            Tensor [N] with any singleton dimensions removed
+        """
+        if temperature.dim() > 1 and temperature.size(1) == 1:
+            return temperature.squeeze(1)
+        
+        return temperature
 
     def _estimate_temperature_gradient(
         self,
@@ -421,3 +381,43 @@ class ExpertFlockingController:
             other = self.agent_properties.max_temperature
         )
         return vertical * norm_temp.unsqueeze(1)
+    
+    def compute_nominal_action(self, flock: TensorDict) -> Tensor:
+        """
+        Computes the collective nominal control action for the entire flock.
+
+        This method calculates the weighted sum of forces from all potential
+        fields to produce the final velocity command 𝐮_nom. The weights come
+        from the `control` config, balancing the influence of each behavioral 
+        component.
+        
+        If a safety_filter is provided, the nominal control action is passed
+        through a Control Barrier Function to ensure thermal safety constraints
+        are satisfied, resulting in a safety-certified action 𝐮*.
+
+        Args:
+            flock: The flock data containing the flock's current state including
+                   position, velocity, temperature, and edge_index tensors.
+
+        Returns:
+            A tensor of velocity commands for all agents.
+        """
+        self._reset_shared_state()
+        self._update_graph_state(flock["edge_index"], flock["position"].size(0))
+
+        # Compute the nominal control based on Reynolds rules and thermal potential
+        u_nominal = (
+            self.control.w_cohesion   * self._compute_cohesion(flock["position"])   +
+            self.control.w_separation * self._compute_separation(flock["position"]) +
+            self.control.w_alignment  * self._compute_alignment(flock["velocity"])  +
+            self.control.w_thermal    * self._compute_thermal(
+                grad_temp   = flock.get("temperature_grad", None),
+                position    = flock["position"],
+                temperature = flock["temperature"]
+            )
+        )
+        
+        if self.safety_filter is not None:
+            return self.safety_filter.filter(flock, u_nominal)
+        
+        return u_nominal

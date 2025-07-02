@@ -31,15 +31,9 @@ class AppContext:
         Initialize the application context with the loaded configuration.
         """
         self.cfg     = cfg
-        self.system  = SystemInspector()
+        self.system  = SystemInspector(cfg)
         self.ui      = ThermurUI(self.cfg.display)
-        self.prompts = CLIPrompts(
-            cli      = self.cfg.cli,
-            messages = self.cfg.messages,
-            presets  = self.cfg.presets,
-            prompts  = self.cfg.prompts,
-            ui       = self.ui
-        )
+        self.prompts = CLIPrompts(self.cfg, self.ui)
 
 
 class ThermurCLI:
@@ -167,7 +161,7 @@ class ThermurCLI:
         system      = app_context.system
         ui          = app_context.ui
 
-        info = system.get_system_info(cfg.wandb_integration)
+        info = system.get_system_info()
         ui.console.print(f"thermur v{info['thermur']}")
         ui.console.print(f"Python v{info['python']} • PyTorch v{info['torch']}")
 

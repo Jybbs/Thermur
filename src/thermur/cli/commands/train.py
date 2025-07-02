@@ -159,7 +159,7 @@ class TrainCommand:
             preset           : The selected configuration preset.
             wandb_project    : The configured wandb project name.
         """
-        gpu = self.system.get_system_info(self.cfg.wandb_integration)["cuda"]
+        gpu = self.system.get_system_info()["cuda"]
         if preset:
             preset_display = (
                 self.cfg.presets.presets
@@ -297,10 +297,7 @@ class TrainCommand:
 
         self.ui.print_wandb_info(
             project = wandb_project, 
-            url     = self.system.get_wandb_url(
-                project           = wandb_project,
-                wandb_integration = self.cfg.wandb_integration
-            )
+            url = self.system.get_wandb_url(wandb_project)
         )
         self.ui.console.print()
 
@@ -396,7 +393,7 @@ class TrainCommand:
             status  = self.cfg.messages.status["checking_reqs"],
             spinner = "dots"
         ):
-            info = self.system.get_system_info(self.cfg.wandb_integration)
+            info = self.system.get_system_info()
 
         self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
@@ -514,9 +511,7 @@ class TrainCommand:
 
         if not force:
             issues = self.system.validate_config_overrides(
-                messages          = self.cfg.messages,
-                overrides         = config_overrides,
-                wandb_integration = self.cfg.wandb_integration
+                overrides = config_overrides
             )
             if issues:
                 self._handle_configuration_issues(

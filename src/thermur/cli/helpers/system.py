@@ -18,17 +18,27 @@ import os
 
 class SystemInspector:
     """
-    Provides static methods for system diagnostics and resource validation.
+    Provides methods for system diagnostics and resource validation.
 
-    This class acts as a stateless utility for querying the host environment.
-    Its methods are static because they do not depend on any instance-specific
-    state. For methods that require access to configuration values (e.g., for
-    validation rules or API keys), DictConfig objects are passed in as
-    parameters, adhering to a dependency injection pattern without requiring
-    an instance of the class.
+    This class manages system inspection with access to configuration,
+    reducing the need to pass configuration objects to every method call.
     """
-    @staticmethod
+    
+    def __init__(self, cfg: DictConfig = None):
+        """
+        Initialize the system inspector with optional configuration.
+        
+        Args:
+            cfg: The configuration object. If provided, commonly used
+                 sections are extracted for easier access.
+        """
+        self.cfg = cfg
+        if cfg:
+            self.messages          = cfg.messages
+            self.wandb_integration = cfg.wandb_integration
+
     def _safe_import(
+        self,
         attr    : str,
         package : str
     ) -> str | None:
@@ -48,8 +58,8 @@ class SystemInspector:
         except (ImportError, AttributeError):
             return None
 
-    @staticmethod
     def _safe_version(
+        self,
         package  : str,
         fallback : str = None
     ) -> str | None:
@@ -68,31 +78,75 @@ class SystemInspector:
         
         except PackageNotFoundError:
             return fallback
+        
+    def check_wandb_status(self, cfg: DictConfig = None) -> tuple[str, str]:
+        """
+        Check wandb installation and login status.
 
-    @staticmethod
+        Args:
+            cfg: Full configuration object. If None, uses the instance's cfg.
+
+        Returns:
+            A tuple of (status, details) for wandb integration.
+        """
+        if cfg is None:
+            cfg = self.cfg
+            
+        info      = self.get_system_info(cfg.wandb_integration)
+        wandb_cfg = cfg.wandb_integration
+
+        if not info["wandb_installed"]:
+            return (
+                "[red]❌ Not Installed[/red]",
+                "[yellow]Run 'poetry install'[/yellow]",
+            )
+
+        if info["wandb_user"]:
+            return (
+                "[green]✅ Connected[/green]",
+                f"[cyan]@{info['wandb_user']}[/cyan]",
+            )
+
+        api_key_exists = os.environ.get(wandb_cfg.api_key_env) or api.api_key
+        if api_key_exists:
+            return (
+                "[green]✅ API Key Set[/green]",
+                "[white]Ready to track[/white]",
+            )
+
+        return (
+            "[yellow]⚠️  Not Connected[/yellow]",
+            "[yellow]Run 'wandb login'[/yellow]",
+        )
+
     def get_system_info(
-        wandb_integration: DictConfig
+        self,
+        wandb_integration : DictConfig | None = None
     ) -> dict[str, str | int | float | bool | None]:
         """
         Gather comprehensive system information using platform tools.
 
         Args:
-            wandb_integration: Wandb-related configuration from DictConfig.
+            wandb_integration: Wandb-related configuration. If None, uses
+                               the instance's wandb_integration.
 
         Returns:
             A dictionary containing system details.
         """
+        if wandb_integration is None:
+            wandb_integration = self.wandb_integration
+            
         cuda_available = cuda.is_available()
         info = {
             "cuda"                : cuda_available,
             "device_count"        : cuda.device_count() if cuda_available else 0,
-            "mujoco"              : SystemInspector._safe_import(
+            "mujoco"              : self._safe_import(
                 attr="__version__", package="mujoco"
             ),
             "platform"            : platform(),
             "python"              : python_version(),
             "python_version_info" : version_info,
-            "thermur"             : SystemInspector._safe_version(
+            "thermur"             : self._safe_version(
                 package="thermur", fallback="dev"
             ),
             "torch"               : torch_version,
@@ -121,7 +175,7 @@ class SystemInspector:
             info["disk_available"] = 0
             info["disk_total"]     = 0
 
-        info["wandb_installed"] = SystemInspector._safe_import(
+        info["wandb_installed"] = self._safe_import(
             attr="__version__", package="wandb"
         ) is not None
         info["wandb_user"]      = None
@@ -138,48 +192,10 @@ class SystemInspector:
 
         return info
 
-    @staticmethod
-    def check_wandb_status(cfg: DictConfig) -> tuple[str, str]:
-        """
-        Check wandb installation and login status.
-
-        Args:
-            cfg: Full configuration object.
-
-        Returns:
-            A tuple of (status, details) for wandb integration.
-        """
-        info      = SystemInspector.get_system_info(cfg.wandb_integration)
-        wandb_cfg = cfg.wandb_integration
-
-        if not info["wandb_installed"]:
-            return (
-                "[red]❌ Not Installed[/red]",
-                "[yellow]Run 'poetry install'[/yellow]",
-            )
-
-        if info["wandb_user"]:
-            return (
-                "[green]✅ Connected[/green]",
-                f"[cyan]@{info['wandb_user']}[/cyan]",
-            )
-
-        api_key_exists = os.environ.get(wandb_cfg.api_key_env) or api.api_key
-        if api_key_exists:
-            return (
-                "[green]✅ API Key Set[/green]",
-                "[white]Ready to track[/white]",
-            )
-
-        return (
-            "[yellow]⚠️  Not Connected[/yellow]",
-            "[yellow]Run 'wandb login'[/yellow]",
-        )
-
-    @staticmethod
     def get_wandb_url(
+        self,
         project           : str,
-        wandb_integration : DictConfig
+        wandb_integration : DictConfig | None = None
     ) -> str | None:
         """
         Generate wandb project URL if possible.
@@ -192,7 +208,10 @@ class SystemInspector:
         Returns:
             The URL to the wandb project dashboard, or None if not available.
         """
-        info = SystemInspector.get_system_info(wandb_integration)
+        if wandb_integration is None:
+            wandb_integration = self.wandb_integration
+            
+        info = self.get_system_info(wandb_integration)
 
         if not info["wandb_installed"]:
             return None
@@ -202,19 +221,19 @@ class SystemInspector:
         
         return None
 
-    @staticmethod
     def validate_config_overrides(
-        messages          : DictConfig,
+        self,
         overrides         : list[str] | None,
-        wandb_integration : DictConfig
+        messages          : DictConfig | None = None,
+        wandb_integration : DictConfig | None = None
     ) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
         Args:
-            messages          : Messages configuration from DictConfig.
             overrides         : A list of configuration overrides to validate.
-            wandb_integration : Wandb configuration from DictConfig.
+            messages          : Messages configuration. If None, uses instance's messages.
+            wandb_integration : Wandb configuration. If None, uses instance's wandb_integration.
 
         Returns:
             A list of validation issues found; empty if all are valid.
@@ -234,7 +253,12 @@ class SystemInspector:
             if key_is_invalid:
                 issues.append(f"{messages.validation['invalid_override_key']}: {o}")
 
-        if not SystemInspector.get_system_info(wandb_integration)["cuda"]:
+        if messages is None:
+            messages = self.messages
+        if wandb_integration is None:
+            wandb_integration = self.wandb_integration
+            
+        if not self.get_system_info(wandb_integration)["cuda"]:
             issues.append(messages.validation['gpu_unavailable'])
 
         return issues

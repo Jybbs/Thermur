@@ -20,8 +20,8 @@ import torch
 
 
 def compute_grid_bounds(
-    position    : Tensor,
-    grid_config : VisualizationModel,
+    grid     : VisualizationModel,
+    position : Tensor,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute the bounding box for a grid based on agent positions.
@@ -32,14 +32,14 @@ def compute_grid_bounds(
     
     Args:
         position    : Agent positions tensor of shape [N, 3]
-        grid_config : Configuration for grid parameters including padding
+        grid : Configuration for grid parameters including padding
         
     Returns:
         Tuple of (min_bounds, max_bounds) as numpy arrays of shape [3]
     """
     positions  = position.detach().cpu().numpy()
-    min_bounds = positions.min(axis=0) - grid_config.padding
-    max_bounds = positions.max(axis=0) + grid_config.padding
+    min_bounds = positions.min(axis=0) - grid.padding
+    max_bounds = positions.max(axis=0) + grid.padding
     return min_bounds, max_bounds
 
 
@@ -75,8 +75,8 @@ def create_coordinate_axes(
 
 def create_temperature_grid(
     environment : Any,
+    grid        : VisualizationModel,
     position    : Tensor,
-    grid_config : VisualizationModel,
 ) -> ImageData:
     """
     Create a uniform grid of temperature values from the environment.
@@ -87,17 +87,17 @@ def create_temperature_grid(
     
     Args:
         environment : The simulation environment with thermal data source
+        grid        : Configuration for grid resolution and padding
         position    : Agent positions tensor of shape [N, 3]
-        grid_config : Configuration for grid resolution and padding
         
     Returns:
         PyVista UniformGrid with temperature scalar field data
     """
-    min_bounds, max_bounds = compute_grid_bounds(position, grid_config)
+    min_bounds, max_bounds = compute_grid_bounds(position, grid)
     
-    resolution = np.array(grid_config.temperature_resolution)
+    resolution = np.array(grid.temperature_resolution)
     grid       = pv.ImageData(
-        dimensions = grid_config.temperature_resolution,
+        dimensions = grid.temperature_resolution,
         spacing    = (max_bounds - min_bounds) / (resolution - 1),
         origin     = min_bounds
     )
@@ -110,9 +110,9 @@ def create_temperature_grid(
 
 
 def create_wind_grid(
-    simulation  : Any,
-    position    : Tensor,
-    grid_config : VisualizationModel,
+    grid       : VisualizationModel,
+    position   : Tensor,
+    simulation : Any,
 ) -> PolyData:
     """
     Create a grid of wind vectors from the environment data source.
@@ -122,20 +122,20 @@ def create_wind_grid(
     and vector data suitable for glyph-based visualization of the wind field.
     
     Args:
-        simulation  : The simulation environment with wind data source
-        position    : Agent positions tensor of shape [N, 3]
-        grid_config : Configuration for grid resolution and padding
+        grid       : Configuration for grid resolution and padding
+        position   : Agent positions tensor of shape [N, 3]
+        simulation : The simulation environment with wind data source
         
     Returns:
         PyVista PolyData with wind vector field data at each grid point
     """
-    min_bounds, max_bounds = compute_grid_bounds(position, grid_config)
-    resolution = grid_config.wind_resolution
+    min_bounds, max_bounds = compute_grid_bounds(position, grid)
+    resolution = grid.wind_resolution
     
     spacing_grid = pv.ImageData(
         dimensions = (resolution, resolution, resolution),
-        spacing    = (max_bounds - min_bounds) / (resolution - 1),
         origin     = min_bounds,
+        spacing    = (max_bounds - min_bounds) / (resolution - 1)
     )
     
     wind_grid                  = pv.PolyData(spacing_grid.points)
