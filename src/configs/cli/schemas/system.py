@@ -15,10 +15,6 @@ class SystemModel(BaseModel, extra="forbid"):
     and important file paths used by the CLI. It ensures compatibility and
     helps with system validation during startup.
     """
-    claude_md_filename: str = Field(
-        default     = "CLAUDE.md",
-        description = "Name of the Claude AI context file"
-    )
     config_search_paths: list[str] = Field(
         default     = ["configs", "src/configs"],
         description = "Paths to search for Hydra configuration files"

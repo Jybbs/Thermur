@@ -98,8 +98,8 @@ class ThermurUI:
         
         return Panel(
             Align.center(title_text),
-            border_style = self.ui.panel_border_style,
-            padding      = self.ui.panel_padding,
+            border_style = "bright_blue",
+            padding      = (1, 3),
             expand       = True,
         )
 
@@ -175,7 +175,7 @@ class ThermurUI:
             f"  [{self.theme.styles['muted']}]{description}:[/]"
         )
         self.console.print(
-            f"  [{self.ui.command_style}]$ {command}[/]"
+            f"  [bold accent]$ {command}[/]"
         )
         
         if note:
@@ -294,10 +294,10 @@ class ThermurUI:
             ),
 
             progress.TaskProgressColumn(),
-            self.ui.bullet_char,
+            "•",
 
             progress.TimeElapsedColumn(),
-            self.ui.bullet_char,
+            "•",
 
             progress.MofNCompleteColumn(),
             console   = self.console,
@@ -439,12 +439,12 @@ class ThermurUI:
             A configured Panel object.
         """
         example_text = "\n".join(
-            f"  {self.ui.bullet_char} {item}" for item in items
+            f"  • {item}" for item in items
         )
         content = f"[{self.theme.styles['info']}]{title}:[/]\n{example_text}"
         return Panel(
             content,
-            border_style = self.ui.panel_border_style,
+            border_style = "bright_blue",
             padding      = (0, 2),
         )
 
@@ -464,7 +464,7 @@ class ThermurUI:
         """
         return Panel(
             title        = title,
-            border_style = self.ui.panel_border_style,
+            border_style = "bright_blue",
             padding      = (1, 2),
             renderable   = Syntax(
                 code         = code,
@@ -495,7 +495,7 @@ class ThermurUI:
             padding      = (1, 2),
             renderable   = (
                 f"[bold {style}]{title}[/]\n\n" +
-                "\n".join(f"{self.ui.bullet_char} {i}" for i in issues)
+                "\n".join(f"• {i}" for i in issues)
             )
         )
 
@@ -522,7 +522,7 @@ class ThermurUI:
         return Panel(
             content, 
             border_style = style, 
-            padding      = self.ui.panel_padding
+            padding      = (1, 3)
         )
 
     def create_feature_table(self):

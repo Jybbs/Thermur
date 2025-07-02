@@ -53,14 +53,6 @@ class UIModel(BaseModel, extra="forbid"):
     Defines static configuration for all Rich-rendered components, such
     as padding, border styles, colors, and character sets.
     """
-    bullet_char: str = Field(
-        default     = "•",
-        description = "Character for bullet points"
-    )
-    command_style: str = Field(
-        default     = "bold accent",
-        description = "Style for command text"
-    )
     default_badge_style: str = Field(
         default     = "success",
         description = "Default style for badges"
@@ -68,10 +60,6 @@ class UIModel(BaseModel, extra="forbid"):
     default_section_style: str = Field(
         default     = "accent",
         description = "Default style for section headers"
-    )
-    error_color: str = Field(
-        default     = "red",
-        description = "Color for errors and failures"
     )
     features_list: list[dict[str, str]] = Field(
         default = [
@@ -168,17 +156,9 @@ class UIModel(BaseModel, extra="forbid"):
         },
         description = "Message type configurations for print_message"
     )
-    panel_border_style: str = Field(
-        default     = "bright_blue",
-        description = "Border style for Rich panels"
-    )
     panel_box: str = Field(
         default     = "ROUNDED",
         description = "Box type for Rich panels"
-    )
-    panel_padding: tuple[PositiveInt, PositiveInt] = Field(
-        default     = (1, 3),
-        description = "Padding for Rich panels (vertical, horizontal)"
     )
     primary_color: str = Field(
         default     = "dodger_blue2",
@@ -227,10 +207,6 @@ class UIModel(BaseModel, extra="forbid"):
     subtitle_text_style: str = Field(
         default     = "muted italic",
         description = "Style for subtitle text"
-    )
-    success_color: str = Field(
-        default     = "green",
-        description = "Color for success messages"
     )
     syntax_theme: str = Field(
         default     = "monokai",
@@ -340,8 +316,4 @@ class UIModel(BaseModel, extra="forbid"):
     wandb_url_placeholder: str = Field(
         default     = "YOUR_USERNAME",
         description = "Placeholder for wandb URLs"
-    )
-    warning_color: str = Field(
-        default     = "yellow",
-        description = "Color for warnings"
     )

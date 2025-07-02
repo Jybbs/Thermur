@@ -19,7 +19,6 @@ cli_config = make_config(
     status              = build_status,
     system              = build_system,
     theme               = build_theme,
-    tips                = build_tips,
     training_components = build_training_components,
     ui                  = build_ui,
     validation          = build_validation,

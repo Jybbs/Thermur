@@ -33,7 +33,7 @@ class AppContext:
         self.config  = cfg
         self.ui      = ThermurUI(cfg.theme, cfg.ui)
         self.system  = SystemInspector()
-        self.prompts = CLIPrompts(self.ui, cfg.prompts, cfg.messages)
+        self.prompts = CLIPrompts(self.ui, cfg.prompts, cfg.messages, cfg.commands)
 
 
 def get_context(ctx: Context) -> AppContext:
