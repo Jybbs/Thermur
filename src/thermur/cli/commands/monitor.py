@@ -42,8 +42,8 @@ class MonitorCommand:
             ctx: The Typer context, which holds the shared AppContext object
                  containing UI, system, and other core components.
         """
-        self.config = ctx.obj.config
-        self.msgs   = self.config.messages
+        self.cfg    = ctx.obj.cfg
+        self.msgs   = self.cfg.messages
         self.system = ctx.obj.system
         self.ui     = ctx.obj.ui
 
@@ -58,18 +58,17 @@ class MonitorCommand:
             project: The wandb project name to open, or None to use the default.
         """
         if project is None:
-            project = self.config.wandb_integration.default_project
+            project = self.cfg.wandb_integration.default_project
 
         self.ui.print_header("wandb Monitoring")
 
         url = self.system.get_wandb_url(
             project           = project,
-            ui_config         = self.config.display,
-            wandb_integration = self.config.wandb_integration
+            wandb_integration = self.cfg.wandb_integration
         )
 
         if not url:
-            info = self.system.get_system_info(self.config.wandb_integration)
+            info = self.system.get_system_info(self.cfg.wandb_integration)
             if not info["wandb_installed"]:
                 self.ui.print_message(
                     message  = "wandb is not installed in your Poetry environment",

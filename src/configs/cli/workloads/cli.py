@@ -9,8 +9,8 @@ from ..factories import *
 from hydra_zen   import make_config, ZenStore
 
 
-cli_config = make_config(
-    cli_config          = build_cli_config,
+cli_cfg = make_config(
+    cli                 = build_cli,
     display             = build_display,
     messages            = build_messages,
     presets             = build_presets,
@@ -20,13 +20,13 @@ cli_config = make_config(
 )
 
 
-def register_cli_configs():
+def register_cli_cfgs():
     """
     Register CLI configurations with Hydra's ConfigStore.
     
     This function adds the CLI configuration to Hydra's global ConfigStore
     for potential use in Hydra-based workflows. However, the Thermur CLI
-    itself directly instantiates cli_config using hydra_zen.instantiate(),
+    itself directly instantiates `cli_cfg` using hydra_zen.instantiate(),
     allowing for immediate configuration loading without Hydra's runtime 
     overhead.
     
@@ -36,7 +36,7 @@ def register_cli_configs():
     store = ZenStore(overwrite_ok=True)
     
     store(
-        cli_config,
+        cli_cfg,
         group   = "config",
         name    = "cli",
         package = "_global_"

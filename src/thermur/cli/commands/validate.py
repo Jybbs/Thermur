@@ -42,7 +42,7 @@ class ValidateCommand:
             ctx: The Typer context, which holds the shared AppContext object
                  containing UI, system, and other core components.
         """
-        self.config = ctx.obj.config
+        self.cfg    = ctx.obj.cfg
         self.system = ctx.obj.system
         self.ui     = ctx.obj.ui
 
@@ -55,11 +55,11 @@ class ValidateCommand:
         """
         self.ui.print_major_section("System Information")
 
-        info = self.system.get_system_info(self.config.wandb_integration)
+        info = self.system.get_system_info(self.cfg.wandb_integration)
         self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 
-        status, details = self.system.check_wandb_status(self.config)
+        status, details = self.system.check_wandb_status(self.cfg)
         self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
         self.ui.console.print()
 
@@ -76,30 +76,30 @@ class ValidateCommand:
         self.ui.print_major_section("Configuration Check")
 
         with self.ui.console.status(
-            self.config.messages.status["validating_config"],
+            self.cfg.messages.status["validating_config"],
             spinner = "dots"
         ):
             issues = self.system.validate_config_overrides(
-                messages          = self.config.messages,
+                messages          = self.cfg.messages,
                 overrides         = config_overrides,
-                wandb_integration = self.config.wandb_integration
+                wandb_integration = self.cfg.wandb_integration
             )
 
         if issues:
             self.ui.print_message(
-                message  = self.config.messages.validation["config_issues"], 
+                message  = self.cfg.messages.validation["config_issues"], 
                 msg_type = "warning"
             )
             for issue in issues:
                 self.ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
         else:
             self.ui.print_message(
-                message  = self.config.messages.validation["config_passed"],
+                message  = self.cfg.messages.validation["config_passed"],
                 msg_type = "success"
             )
 
         self.ui.print_major_section("Integration Check")
-        status, details = self.system.check_wandb_status(self.config)
+        status, details = self.system.check_wandb_status(self.cfg)
 
         if "Not" in status:
             self.ui.print_message(f"wandb: {details}", "warning")
@@ -109,19 +109,19 @@ class ValidateCommand:
         self.ui.console.print()
         if issues or "Not" in status:
             self.ui.print_message(
-                message  = self.config.messages.validation["with_warnings"],
+                message  = self.cfg.messages.validation["with_warnings"],
                 msg_type = "warning"
             )
             self.ui.print_message(
-                message  = self.config.messages.validation["review_issues"],
+                message  = self.cfg.messages.validation["review_issues"],
                 msg_type = "tip"
             )
         else:
             self.ui.print_message(
-                message  = self.config.messages.validation["all_passed"],
+                message  = self.cfg.messages.validation["all_passed"],
                 msg_type = "success"
             )
             self.ui.print_message(
-                message  = self.config.messages.validation["system_ready"],
+                message  = self.cfg.messages.validation["system_ready"],
                 msg_type = "success"
             )

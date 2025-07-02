@@ -10,7 +10,7 @@ from omegaconf          import DictConfig
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
-from torch              import cuda, __version__ as torch_version
+from torch              import __version__ as torch_version, cuda
 from wandb              import Api, api
 
 import os
@@ -30,7 +30,7 @@ class SystemInspector:
     @staticmethod
     def _safe_import(
         attr    : str,
-        package : str,
+        package : str
     ) -> str | None:
         """
         Get a package attribute, handling import errors gracefully.
@@ -51,7 +51,7 @@ class SystemInspector:
     @staticmethod
     def _safe_version(
         package  : str,
-        fallback : str = None,
+        fallback : str = None
     ) -> str | None:
         """
         Get a package version, handling errors gracefully.
@@ -178,17 +178,16 @@ class SystemInspector:
 
     @staticmethod
     def get_wandb_url(
-        wandb_integration : DictConfig, 
-        ui_config         : DictConfig, 
-        project           : str = "thermur"
+        project           : str,
+        wandb_integration : DictConfig
     ) -> str | None:
         """
         Generate wandb project URL if possible.
 
         Args:
-            wandb_integration : Wandb configuration from DictConfig.
-            ui_config         : UI configuration from DictConfig.
             project           : The name of the wandb project.
+
+            wandb_integration : Wandb configuration from DictConfig.
 
         Returns:
             The URL to the wandb project dashboard, or None if not available.
@@ -201,21 +200,20 @@ class SystemInspector:
         if info["wandb_user"]:
             return f"https://wandb.ai/{info['wandb_user']}/{project}"
         
-        # Not authenticated - no URL available
         return None
 
     @staticmethod
     def validate_config_overrides(
-        overrides         : list[str] | None, 
-        messages          : DictConfig, 
+        messages          : DictConfig,
+        overrides         : list[str] | None,
         wandb_integration : DictConfig
     ) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
         Args:
-            overrides         : A list of configuration overrides to validate.
             messages          : Messages configuration from DictConfig.
+            overrides         : A list of configuration overrides to validate.
             wandb_integration : Wandb configuration from DictConfig.
 
         Returns:

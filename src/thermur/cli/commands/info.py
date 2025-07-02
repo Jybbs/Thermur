@@ -36,7 +36,7 @@ class InfoCommand:
             ctx: The Typer context, which holds the shared AppContext object
                  containing UI, system, and other core components.
         """
-        self.config = ctx.obj.config
+        self.cfg    = ctx.obj.cfg
         self.system = ctx.obj.system
         self.ui     = ctx.obj.ui
 
@@ -49,11 +49,11 @@ class InfoCommand:
         """
         self.ui.print_major_section("System Information")
 
-        info = self.system.get_system_info(self.config.wandb_integration)
+        info = self.system.get_system_info(self.cfg.wandb_integration)
         self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 
-        status, details = self.system.check_wandb_status(self.config)
+        status, details = self.system.check_wandb_status(self.cfg)
         self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
         self.ui.console.print()
 
@@ -75,7 +75,7 @@ class InfoCommand:
             value       = "configs/"
         )
         
-        preset_names = list(self.config.presets.presets.keys())
+        preset_names = list(self.cfg.presets.presets.keys())
         self.ui.print_config_value(
             align_width = 11,
             key         = "Presets",
@@ -84,7 +84,7 @@ class InfoCommand:
         
 
         self.ui.print_major_section("Common Commands")
-        for example in self.config.cli_config.commands_examples:
+        for example in self.cfg.cli.commands_examples:
             self.ui.print_command_example(
                 command     = example["command"],
                 description = example["desc"],

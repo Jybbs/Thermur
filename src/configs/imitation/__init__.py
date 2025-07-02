@@ -15,4 +15,4 @@ avoidance. The GNN policy π_θ learns to approximate this expert behavior throu
 supervised learning on collected trajectories.
 """
 from .schemas   import *
-from .workloads import imitation_config, register_imitation_configs
+from .workloads import imitation_cfg, register_imitation_cfgs

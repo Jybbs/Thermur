@@ -8,7 +8,7 @@ in the project.
 from ..schemas import *
 from hydra_zen import builds
 
-build_cli_config        = builds(CLIConfigModel)
+build_cli               = builds(CLIModel)
 build_display           = builds(DisplayModel)
 build_messages          = builds(MessagesModel)
 build_presets           = builds(PresetsModel)

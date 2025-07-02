@@ -7,14 +7,14 @@ to load and validate the CLI configuration through Pydantic schemas.
 """
 from .commands                      import *
 from .helpers                       import *
-from configs.cli                    import cli_config
+from configs.cli                    import cli_cfg
 from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
 from typer                          import Context, Exit, Option, Typer
 
 cfg = instantiate(
     _parser = pydantic_parser,
-    config  = cli_config
+    config  = cli_cfg
 )
 
 
@@ -30,14 +30,14 @@ class AppContext:
         """
         Initialize the application context with the loaded configuration.
         """
-        self.config  = cfg
+        self.cfg     = cfg
         self.system  = SystemInspector()
-        self.ui      = ThermurUI(cfg.display)
+        self.ui      = ThermurUI(self.cfg.display)
         self.prompts = CLIPrompts(
-            cli_cfg  = cfg.cli_config,
-            messages = cfg.messages,
-            presets  = cfg.presets,
-            prompts  = cfg.prompts,
+            cli      = self.cfg.cli_cfg,
+            messages = self.cfg.messages,
+            presets  = self.cfg.presets,
+            prompts  = self.cfg.prompts,
             ui       = self.ui
         )
 
@@ -63,8 +63,8 @@ class ThermurCLI:
         """
         cli = Typer(
             context_settings = {"help_option_names": ["-h", "--help"]},
-            help             = self.cfg.cli_config.app_description,
-            name             = self.cfg.cli_config.app_name,
+            help             = self.cfg.cli.app_description,
+            name             = self.cfg.cli.app_name,
             rich_markup_mode = "rich"
         )
         
@@ -118,24 +118,24 @@ class ThermurCLI:
         if version:
             self._version_callback(version, ctx)
         
-        app_context = self._get_context(ctx = ctx)
+        app_context = self._get_context(ctx)
 
         if ctx.invoked_subcommand is None:
             cfg = app_context.config
             ui  = app_context.ui
 
-            ui.print_header(title = "Welcome to Thermur")
-            ui.print_section(title = "Available Commands", style = "accent")
+            ui.print_header("Welcome to Thermur")
+            ui.print_section("Available Commands", "accent")
 
-            for cmd_info in cfg.cli_config.commands_available:
+            for cmd_info in cfg.cli.commands_available:
                 ui.console.print(
                     f"  {cmd_info['icon']} [bold accent]{cmd_info['name']:10}"
                     f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
                 )
 
-            ui.print_section(title = "Getting Started", style = "bright_green")
+            ui.print_section("Getting Started", "bright_green")
 
-            for example in cfg.cli_config.commands_examples:
+            for example in cfg.cli.commands_examples:
                 ui.print_command_example(
                     command     = example["command"],
                     description = example["desc"],
@@ -162,7 +162,7 @@ class ThermurCLI:
         if not value:
             return
 
-        app_context = self._get_context(ctx = ctx)
+        app_context = self._get_context(ctx)
         cfg         = app_context.config
         system      = app_context.system
         ui          = app_context.ui

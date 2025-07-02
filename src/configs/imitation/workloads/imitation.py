@@ -7,7 +7,7 @@ the GNN policy via behavioral cloning from expert demonstrations.
 from ..factories import *
 from hydra_zen   import make_config, ZenStore
 
-imitation_config = make_config(
+imitation_cfg = make_config(
     controller        = build_controller,
     data_collector    = build_data_collector,
     environment       = build_environment,
@@ -25,7 +25,7 @@ imitation_config = make_config(
 )
     
 
-def register_imitation_configs():
+def register_imitation_cfgs():
     """
     Register imitation learning configurations with Hydra's ConfigStore.
     
@@ -42,7 +42,7 @@ def register_imitation_configs():
     store = ZenStore(overwrite_ok=True)
     
     store(
-        imitation_config, 
+        imitation_cfg, 
         group   = "config", 
         name    = "train", 
         package = "_global_"
