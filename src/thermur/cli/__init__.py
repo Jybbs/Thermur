@@ -10,6 +10,6 @@ flocks. Commands are organized into subcommands for different workflows:
 
 The CLI uses lazy imports to maintain fast startup times for simple commands.
 """
-from .cli      import AppContext, create_cli, main
+from .cli      import AppContext, ThermurCLI, main
 from .commands import *
 from .helpers  import *
