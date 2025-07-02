@@ -24,7 +24,7 @@ def monitor(
     training progress, view metrics, and analyze experiment results.
     """
     command = MonitorCommand(ctx)
-    command.run(project=project)
+    command.run(project)
 
 
 class MonitorCommand:
@@ -62,13 +62,10 @@ class MonitorCommand:
 
         self.ui.print_header("wandb Monitoring")
 
-        url = self.system.get_wandb_url(
-            project           = project,
-            wandb_integration = self.cfg.wandb_integration
-        )
+        url = self.system.get_wandb_url(project)
 
         if not url:
-            info = self.system.get_system_info(self.cfg.wandb_integration)
+            info = self.system.get_system_info()
             if not info["wandb_installed"]:
                 self.ui.print_message(
                     message  = "wandb is not installed in your Poetry environment",

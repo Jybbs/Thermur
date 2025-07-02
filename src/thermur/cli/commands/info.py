@@ -49,7 +49,7 @@ class InfoCommand:
         """
         self.ui.print_major_section("System Information")
 
-        info = self.system.get_system_info(self.cfg.wandb_integration)
+        info = self.system.get_system_info()
         self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 

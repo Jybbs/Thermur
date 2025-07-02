@@ -45,9 +45,9 @@ class Visualizer:
     
     def __init__(
         self,
-        visualization_config : VisualizationModel,
-        max_temperature      : float,
-        simulation           : Optional[object] = None,
+        max_temperature : float,
+        visualization   : VisualizationModel,
+        simulation      : Optional[object] = None,
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -58,21 +58,21 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            visualization_config : Consolidated visualization configuration model
-            max_temperature      : Maximum safe temperature (T_max) for safety visualization
-            simulation           : Optional simulation reference for accessing environment data
+            max_temperature : Maximum safe temperature (T_max) for safety visualization
+            visualization   : Consolidated visualization configuration model
+            simulation      : Optional simulation reference for accessing environment data
         """
         # Store configuration models
-        self.config          = visualization_config
+        self.config          = visualization
         self.max_temperature = max_temperature
         self.simulation      = simulation
         
         # Extract nested configurations for easier access
-        self.visualization = visualization_config
-        self.colors        = visualization_config.colors
-        self.glyphs        = visualization_config.glyphs
-        self.grids         = visualization_config.grids
-        self.opacity       = visualization_config.opacity
+        self.visualization = visualization
+        self.colors        = visualization.colors
+        self.glyphs        = visualization.glyphs
+        self.grids         = visualization.grids
+        self.opacity       = visualization.opacity
         
         # Initialize rendering state
         self._plotter       : Optional[Plotter]      = None
@@ -175,9 +175,9 @@ class Visualizer:
         # Render wind field vectors if enabled
         if self.visualization.show_wind:
             wind_grid = create_wind_grid(
-                simulation  = self.simulation,
-                position    = position,
-                grid_config = self.grids,
+                grid       = self.grids,
+                position   = position,
+                simulation = self.simulation,
             )
             self._wind_actors = render_wind_field(
                 plotter   = self._plotter,
