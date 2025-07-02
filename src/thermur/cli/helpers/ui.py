@@ -27,20 +27,18 @@ class ThermurUI:
     application. It is instantiated once and passed to components that need to
     render output.
     """
-    def __init__(self, theme: DictConfig, ui: DictConfig):
+    def __init__(self, display: DictConfig):
         """
         Initializes the ThermurUI with a configured Rich console.
 
         Args:
-            theme : Theme configuration containing colors and styles.
-            ui    : UI configuration containing display settings.
+            display : Display configuration containing theme and UI settings.
         """
-        self.theme   = theme
-        self.ui      = ui
+        self.display = display
         self.console = Console(
-            theme     = Theme(theme.styles),
-            highlight = False,
-            width     = None,  # Auto-detect width
+            theme          = Theme(display.styles),
+            highlight      = False,
+            width          = None,
             legacy_windows = False,
         )
 
@@ -59,7 +57,7 @@ class ThermurUI:
             Rich Text object with fire gradient colors applied per character
         """
         formatted_text = Text()
-        fire_colors    = [f"bold {c}" for c in self.theme.fire_gradient]
+        fire_colors    = [f"bold {c}" for c in self.display.fire_gradient]
         
         for i, char in enumerate(text):
             color_index = i % len(fire_colors)
@@ -81,8 +79,6 @@ class ThermurUI:
             Formatted header panel
         """
         title_text = Text()
-        
-        # Apply fire gradient to "Thermur" if present
         if "Thermur" in title:
             parts = title.split("Thermur", 1)
             
@@ -94,11 +90,11 @@ class ThermurUI:
             if parts[1]:
                 title_text.append(parts[1], style="bold bright_white")
         else:
-            title_text.append(title, style="bold bright_cyan")
+            title_text.append(title, style="bold bright_white")
         
         return Panel(
             Align.center(title_text),
-            border_style = "bright_blue",
+            border_style = self.display.styles['thermal'],
             padding      = (1, 3),
             expand       = True,
         )
@@ -131,7 +127,58 @@ class ThermurUI:
             style : Style to apply to the rule
         """
         self.console.print()
-        self.console.print(Rule(f" {title} ", style=style))
+        self.console.print(Rule(title, style=style, align="center"))
+        self.console.print()
+    
+    def print_major_section(
+        self,
+        title : str,
+        style : str = "bright_cyan"
+    ):
+        """
+        Print a major section divider with enhanced styling.
+        
+        Creates a prominent visual separator for major sections with
+        bold formatting and double lines.
+        
+        Args:
+            title : Section title
+            style : Style to apply to the rule (default: bright_cyan)
+        """
+        self.console.print()
+        self.console.print(
+            Rule(
+                title      = f"[bold]{title}[/bold]", 
+                style      = style, 
+                characters = "═", 
+                align      = "center"
+            )
+        )
+        self.console.print()
+    
+    def print_minor_section(
+        self,
+        title : str,
+        style : str = "grey70"
+    ):
+        """
+        Print a minor section divider with subtle styling.
+        
+        Creates a subtle visual separator for subsections within major sections.
+        
+        Args:
+            title : Section title  
+            style : Style to apply to the rule (default: grey70)
+        """
+        self.console.print()
+        self.console.print(
+            Rule(
+                title      = title, 
+                style      = style, 
+                characters = "─", 
+                align      = "center"
+            )
+        )
         self.console.print()
 
     def print_message(self, message: str, msg_type: str = "info"):
@@ -145,9 +192,9 @@ class ThermurUI:
             message  : The message text to display
             msg_type : Type of message (info, warning, error, etc.)
         """
-        config = self.ui.message_types.get(
+        config = self.display.message_types.get(
             msg_type, 
-            self.ui.message_types["info"]
+            self.display.message_types["info"]
         )
         
         self.console.print(
@@ -172,7 +219,7 @@ class ThermurUI:
             note        : Optional note about the command
         """
         self.console.print(
-            f"  [{self.theme.styles['muted']}]{description}:[/]"
+            f"  [{self.display.styles['muted']}]{description}:[/]"
         )
         self.console.print(
             f"  [bold accent]$ {command}[/]"
@@ -180,7 +227,7 @@ class ThermurUI:
         
         if note:
             self.console.print(
-                f"  [{self.theme.styles['dim']}]  {note}[/]"
+                f"  [{self.display.styles['dim']}]  {note}[/]"
             )
         
         self.console.print()
@@ -199,9 +246,9 @@ class ThermurUI:
         improved readability.
         
         Args:
-            key   : Configuration key
-            value : Configuration value
-            desc  : Optional description
+            key         : Configuration key
+            value       : Configuration value
+            desc        : Optional description
             align_width : Width to align the key to (for vertical alignment)
         """
         if align_width:
@@ -211,14 +258,14 @@ class ThermurUI:
             
         if desc:
             self.console.print(
-                f"  [{self.theme.styles['accent']}]{key_formatted}[/] = "
+                f"  [{self.display.styles['accent']}]{key_formatted}[/] = "
                 f"[white]{value}[/]  "
-                f"[{self.theme.styles['dim']}]# {desc}[/]"
+                f"[{self.display.styles['dim']}]# {desc}[/]"
             )
 
         else:
             self.console.print(
-                f"  [{self.theme.styles['accent']}]{key_formatted}[/] = "
+                f"  [{self.display.styles['accent']}]{key_formatted}[/] = "
                 f"[white]{value}[/]"
             )
 
@@ -255,14 +302,14 @@ class ThermurUI:
         """
         if url:
             self.console.print(
-                f"[{self.theme.styles['flock']}]🎨 Dashboard: "
+                f"[{self.display.styles['flock']}]🎨 Dashboard: "
                 f"[link={url}]{url}[/link][/]"
             )
 
         else:
             self.console.print(
-                f"[{self.theme.styles['flock']}]🎨 Project: "
-                f"[{self.theme.styles['info']}]{project}[/][/]"
+                f"[{self.display.styles['flock']}]🎨 Project: "
+                f"[{self.display.styles['info']}]{project}[/][/]"
             )
 
 
@@ -281,16 +328,16 @@ class ThermurUI:
 
             progress.SpinnerColumn(
                 spinner_name = "dots",
-                style        = self.ui.progress_style,
+                style        = self.display.progress_style,
             ),
 
             progress.TextColumn(
-                "[{0}]{{task.description}}[/{0}]".format(self.ui.progress_style)
+                "[{0}]{{task.description}}[/{0}]".format(self.display.progress_style)
             ),
             progress.BarColumn(
                 bar_width      = 30,
                 complete_style = "bright_red",
-                style          = self.ui.progress_style,
+                style          = self.display.progress_style,
             ),
 
             progress.TaskProgressColumn(),
@@ -333,13 +380,16 @@ class ThermurUI:
         """
         if border_style is None:
             border_style = "bright_blue"
+        
+        # Extract box from kwargs if present to avoid conflict
+        box_style = kwargs.pop('box', getattr(box, "MINIMAL", box.MINIMAL))
             
         table = Table(
             title        = title,
             title_style  = "bold bright_cyan",
             header_style = "bold bright_blue",
             border_style = border_style,
-            box          = getattr(box, "MINIMAL", box.MINIMAL),
+            box          = box_style,
             show_edge    = show_edge,
             padding      = (0, 1),
             expand       = expand,
@@ -375,7 +425,7 @@ class ThermurUI:
         Returns:
             A formatted Rich table containing system diagnostics.
         """
-        settings = dict(self.ui.system_table_settings)
+        settings = dict(self.display.system_table_settings)
         # Remove parameters that are handled by create_aligned_table itself
         for param in ['box', 'title_style', 'border_style']:
             if param in settings:
@@ -384,13 +434,13 @@ class ThermurUI:
         table = self.create_aligned_table(
             columns = [
                 (c["header"], c["style"], c["width"], "left") 
-                for c in self.ui.system_table_columns
+                for c in self.display.system_table_columns
             ],
             **settings,
         )
 
-        for key, title in self.ui.system_components.items():
-            logic = self.ui.system_logic[key]
+        for key, title in self.display.system_components.items():
+            logic = self.display.system_logic[key]
             
             if logic.get("is_resource"):
                 # Get thresholds
@@ -406,16 +456,26 @@ class ThermurUI:
                 # For non-resource items, format the value using the format string
                 raw_value  = system_info.get(logic.get("key", key))
                 format_str = logic.get("format", "{}")
-                value      = (
-                    format_str.format(raw_value) 
-                    if raw_value is not None else "N/A"
-                )
                 
-            # For resource items, value contains Rich markup that needs to be rendered
-            if logic.get("is_resource"):
-                table.add_row(Text(title), value)
-            else:
-                table.add_row(Text(title), Text(value, no_wrap=True))
+                if key == "cuda":
+                    if raw_value:
+                        value = Text("✅ Available", style="bold green")
+                    else:
+                        value = Text("Not Available", style="bold yellow")
+
+                elif key == "gpu":
+                    if raw_value and raw_value != "N/A":
+                        value = Text(str(raw_value), style="bold green")
+                    else:
+                        value = Text("Not Detected", style="dim")
+
+                else:
+                    if raw_value is not None:
+                        value = Text(format_str.format(raw_value), no_wrap=True)
+                    else:
+                        value = Text("Not Available", style="dim")
+                
+            table.add_row(Text(title), value)
 
         return table
 
@@ -440,7 +500,7 @@ class ThermurUI:
         example_text = "\n".join(
             f"  • {item}" for item in items
         )
-        content = f"[{self.theme.styles['info']}]{title}:[/]\n{example_text}"
+        content = f"[{self.display.styles['info']}]{title}:[/]\n{example_text}"
         return Panel(
             content,
             border_style = "bright_blue",
@@ -487,7 +547,7 @@ class ThermurUI:
         Returns:
             A configured Panel object with warning styling.
         """
-        style = self.theme.styles['warning']
+        style = self.display.styles['warning']
 
         return Panel(
             border_style = style, 
@@ -506,16 +566,16 @@ class ThermurUI:
         long-running process like model training.
         
         Args:
-            title    : The main title for the panel (e.g., "Ready to Train!").
+            title    : The main title for the panel (e.g., "Ready to train!").
             subtitle : The subtitle text to display below the title.
             
         Returns:
             A configured Panel object with success styling.
         """
-        style   = self.theme.styles['success']
-        content = Align.center(
+        style   = self.display.styles['success']
+        content = Align.left(
             f"[bold {style}]{title}[/]\n"
-            f"[{self.theme.styles['muted']}]{subtitle}[/]",
+            f"[{self.display.styles['muted']}]{subtitle}[/]",
             vertical="middle",
         )
         return Panel(
@@ -524,30 +584,6 @@ class ThermurUI:
             padding      = (1, 3)
         )
 
-    def create_feature_table(self):
-        """
-        Create a table showcasing Thermur features.
-        
-        Uses the centralized table creation utility with consistent
-        styling and the feature list from constants.
-        
-        Returns:
-            A formatted table with feature information
-        """
-        table = self.create_aligned_table(
-            columns = [
-                (c["header"], c["style"], c["width"], c.get("align", "left")) 
-                for c in self.ui.features_table_columns
-            ]
-        )
-        
-        for feature in self.ui.features_list:
-            table.add_row(
-                Text(feature["name"], no_wrap=True),
-                Text(feature["desc"], no_wrap=True)
-            )
-        
-        return table
 
     def create_progress_bar(
         self,
@@ -570,14 +606,14 @@ class ThermurUI:
             Rich markup string representing the styled progress bar
         """
         if length is None:
-            length = self.ui.progress_bar_length
+            length = self.display.progress_bar_length
             
         return (
             f"[{color}]"
             f"{'█' * int(used_fraction * length)}"
-            f"[/{color}][{self.ui.progress_unfilled_color}]"
+            f"[/{color}][{self.display.progress_unfilled_color}]"
             f"{'░' * (length - int(used_fraction * length))}"
-            f"[/{self.ui.progress_unfilled_color}]"
+            f"[/{self.display.progress_unfilled_color}]"
         )
 
     def format_resource_display(
@@ -613,7 +649,7 @@ class ThermurUI:
         )
         
         progress_bar = self.create_progress_bar(color, used_fraction)
-        details_text = self.ui.resource_details_template.format(
+        details_text = self.display.resource_details_template.format(
             available_gb, unit, total_gb, unit
         )
         

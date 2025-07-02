@@ -54,31 +54,30 @@ class ValidateCommand:
             config_overrides : A list of Hydra configuration overrides to validate.
         """
         self.ui.print_header("System Validation")
-
         self._perform_system_validation()
 
-        self.ui.print_section("Configuration Check", "config")
+        self.ui.print_major_section("Configuration Check")
 
         with self.ui.console.status(
-            self.config.status.validating_config,
-            spinner="dots"
+            self.config.messages.status["validating_config"],
+            spinner = "dots"
         ):
             issues = self.system.validate_config_overrides(
                 config_overrides, 
-                self.config.system,
-                self.config.wandb_display
+                self.config.messages,
+                self.config.wandb_integration
             )
 
         if issues:
-            self.ui.print_message(self.config.validation.config_issues_found, "warning")
+            self.ui.print_message(self.config.messages.validation["config_issues"], "warning")
             for issue in issues:
                 self.ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
         else:
             self.ui.print_message(
-                self.config.validation.config_validation_passed, "success"
+                self.config.messages.validation["config_passed"], "success"
             )
 
-        self.ui.print_section("Integration Check", "flock")
+        self.ui.print_major_section("Integration Check")
         status, details = self.system.check_wandb_status(self.config)
 
         if "Not" in status:
@@ -89,14 +88,21 @@ class ValidateCommand:
         self.ui.console.print()
         if issues or "Not" in status:
             self.ui.print_message(
-                self.config.validation.validation_with_warnings, "warning"
+                self.config.messages.validation["with_warnings"], 
+                "warning"
             )
-            self.ui.print_message(self.config.validation.review_issues_tip, "tip")
+            self.ui.print_message(
+                self.config.messages.validation["review_issues"], 
+                "tip")
         else:
             self.ui.print_message(
-                self.config.validation.all_validations_passed, "success"
+                self.config.messages.validation["all_passed"], 
+                "success"
             )
-            self.ui.print_message(self.config.validation.system_ready, "success")
+            self.ui.print_message(
+                self.config.messages.validation["system_ready"], 
+                "success"
+            )
 
     def _perform_system_validation(self):
         """
@@ -105,12 +111,10 @@ class ValidateCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_section("System Information", "thermal")
+        self.ui.print_major_section("System Information")
 
-        info = self.system.get_system_info(self.config.wandb_display)
-        table = self.ui.create_system_table(info)
-
-        self.ui.console.print(table)
+        info = self.system.get_system_info(self.config.wandb_integration)
+        self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)

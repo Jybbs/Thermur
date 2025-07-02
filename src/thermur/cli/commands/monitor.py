@@ -58,19 +58,18 @@ class MonitorCommand:
             project : The wandb project name to open, or None to use the default.
         """
         if project is None:
-            project = self.config.wandb_display.default_project
+            project = self.config.wandb_integration.default_project
 
         self.ui.print_header("wandb Monitoring")
 
         url = self.system.get_wandb_url(
-            wandb_config = self.config.wandb_display, 
-            ui_config    = self.config.ui, 
-            project      = project
+            wandb_integration = self.config.wandb_integration, 
+            ui_config         = self.config.display, 
+            project           = project
         )
 
         if not url:
-            # Check if wandb is installed to provide a better error message
-            info = self.system.get_system_info(self.config.wandb_display)
+            info = self.system.get_system_info(self.config.wandb_integration)
             if not info["wandb_installed"]:
                 self.ui.print_message(
                     message  = "wandb is not installed in your Poetry environment",
@@ -101,7 +100,7 @@ class MonitorCommand:
 
         try:
             with self.ui.console.status(
-                self.config.status.launching_browser,
+                self.msgs.status["launching_browser"],
                 spinner="dots"
             ):
                 open(url)

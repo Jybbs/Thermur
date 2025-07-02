@@ -31,9 +31,15 @@ class AppContext:
         Initialize the application context with the loaded configuration.
         """
         self.config  = cfg
-        self.ui      = ThermurUI(cfg.theme, cfg.ui)
+        self.ui      = ThermurUI(cfg.display)
         self.system  = SystemInspector()
-        self.prompts = CLIPrompts(self.ui, cfg.prompts, cfg.messages, cfg.commands)
+        self.prompts = CLIPrompts(
+            self.ui, 
+            cfg.prompts, 
+            cfg.messages, 
+            cfg.cli_config, 
+            cfg.presets
+        )
 
 
 def get_context(ctx: Context) -> AppContext:
@@ -75,7 +81,7 @@ def version_callback(value: bool, ctx: Context):
     cfg         = app_context.config
     system      = app_context.system
 
-    info = system.get_system_info(cfg.wandb_display)
+    info = system.get_system_info(cfg.wandb_integration)
     ui.console.print(f"thermur v{info['thermur']}")
     ui.console.print(f"Python v{info['python']} • PyTorch v{info['torch']}")
 
@@ -110,7 +116,7 @@ def main_callback(
         ui.print_header("Welcome to Thermur")
         ui.print_section("Available Commands", "accent")
 
-        for cmd_info in cfg.commands.available:
+        for cmd_info in cfg.cli_config.commands_available:
             ui.console.print(
                 f"  {cmd_info['icon']} [bold accent]{cmd_info['name']:10}"
                 f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
@@ -118,7 +124,7 @@ def main_callback(
 
         ui.print_section("Getting Started", "bright_green")
 
-        for example in cfg.commands.examples:
+        for example in cfg.cli_config.commands_examples:
             ui.print_command_example(
                 example["desc"],
                 example["command"],
@@ -134,8 +140,8 @@ def create_cli():
     Create and configure the Typer CLI application.
     """
     cli = Typer(
-        name                     = cfg.cli.app_name,
-        help                     = cfg.cli.app_description,
+        name                     = cfg.cli_config.app_name,
+        help                     = cfg.cli_config.app_description,
         rich_markup_mode         = "rich",
         context_settings         = {"help_option_names": ["-h", "--help"]},
     )
