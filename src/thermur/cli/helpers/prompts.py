@@ -48,7 +48,7 @@ class CLIPrompts:
         self.prompts  = prompts
         self.ui       = ui
         self.thermal_style = questionary.Style.from_dict(
-            styles = dict(self.prompts.questionary_style)
+            dict(self.prompts.questionary_style)
         )
 
     def select_configuration_preset(self) -> str | None:
@@ -92,7 +92,7 @@ class CLIPrompts:
                 title = preset_cfgs[name]['emoji'], 
                 value = name
             )
-            for name in list(self.config.presets.presets.keys())
+            for name in list(self.presets.presets.keys())
         ]
         choices.extend([
             questionary.Separator(),

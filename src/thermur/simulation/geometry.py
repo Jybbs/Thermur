@@ -23,8 +23,7 @@ def compute_edge_index(pos: Tensor, r: float) -> Tensor:
         An `edge_index` tensor of shape (2, num_edges), suitable for a
         `torch_geometric.data.Data` object.
     """
-    dist_matrix = cdist(pos, pos, p=2.0)
-    adj         = (dist_matrix < r) & (dist_matrix > 0)
-    edge_index  = nonzero(adj, as_tuple=False).t().contiguous()
-
-    return edge_index
+    return nonzero(
+        input    = (cdist(pos, pos) < r) & (cdist(pos, pos) > 0), 
+        as_tuple = False
+    ).t().contiguous()

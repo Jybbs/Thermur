@@ -37,44 +37,50 @@ class GNNPolicy(Module):
     3.  Decoder: A final MLP that maps the agent's processed hidden state
         back to a tangible control action (a 3D velocity vector).
     """
-    def __init__(
-        self, 
-        learning_config : LearningModel
-    ):
+    def __init__(self, learning: LearningModel):
         """
         Initializes the GNN policy network.
 
         Args:
-            learning_config: A learning configuration instance containing
-                             architectural hyperparameters like hidden dimension,
-                             number of layers, activation function, and I/O dimensions.
+            learning: A learning configuration instance containing architectural 
+                      hyperparameters like hidden dimension, number of layers, 
+                      activation function, and I/O dimensions.
         """
         super().__init__()
-        self.learning_config = learning_config
+        self.learning = learning
         
-        # Extract dimensions from config
-        in_dim  = learning_config.input_dim
-        out_dim = learning_config.output_dim
+        in_dim  = learning.input_dim
+        out_dim = learning.output_dim
 
         # Maps raw node features [𝐩, 𝐯, T, ∇T, E] to the hidden dimension.
-        self.encoder = Linear(in_dim, learning_config.hidden_dim)
+        self.encoder = Linear(in_dim, learning.hidden_dim)
 
         # A stack of GNN layers and recurrent cells for state updates.
         self.convs = ModuleList()
         self.grus  = ModuleList()
-        for _ in range(learning_config.num_layers):
-            self.convs.append(GCNConv(learning_config.hidden_dim, learning_config.hidden_dim))
-            self.grus.append(GRUCell(learning_config.hidden_dim, learning_config.hidden_dim))
+        for _ in range(learning.num_layers):
+            self.convs.append(
+                GCNConv(
+                    in_channels  = learning.hidden_dim, 
+                    out_channels = learning.hidden_dim
+                )
+            )
+            self.grus.append(
+                GRUCell(
+                    input_size  = learning.hidden_dim, 
+                    hidden_size = learning.hidden_dim
+                )
+            )
 
         # Maps the final hidden state to a nominal action vector 𝐮_nom.
-        self.decoder = Linear(learning_config.hidden_dim, out_dim)
+        self.decoder = Linear(learning.hidden_dim, out_dim)
 
         # --- Activation Function ---
         self.activation = {
             "relu" : ReLU, 
             "silu" : SiLU, 
             "tanh" : Tanh
-        }[learning_config.activation]()
+        }[learning.activation]()
 
     def forward(self, data: Data) -> Tensor:
         """

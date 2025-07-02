@@ -12,29 +12,29 @@ from typer     import Context, Exit, Option
 def train(
     ctx              : Context,
     config_overrides : list[str] | None = Option(
-        default     = None,
-        help        = "Hydra configuration overrides",
-        param_decls = ["--config", "-c"]
+        None,
+        "--config", "-c",
+        help = "Hydra configuration overrides"
     ),
     force            : bool = Option(
-        default     = False,
-        help        = "Skip system checks and warnings",
-        param_decls = ["--force", "-f"]
+        False,
+        "--force", "-f",
+        help = "Skip system checks and warnings"
     ),
     interactive      : bool = Option(
-        default     = True,
-        help        = "Enable interactive configuration prompts",
-        param_decls = ["--interactive/--no-interactive", "-i/-n"]
+        True,
+        "--interactive/--no-interactive", "-i/-n",
+        help = "Enable interactive configuration prompts"
     ),
     preset           : str | None = Option(
-        default     = None,
-        help        = "Configuration preset (quick, standard, large, debug)",
-        param_decls = ["--preset", "-p"]
+        None,
+        "--preset", "-p",
+        help = "Configuration preset (quick, standard, large, debug)"
     ),
     wandb_project    : str | None = Option(
-        default     = None,
-        help        = "wandb project name for experiment tracking",
-        param_decls = ["--wandb-project", "-w"]
+        None,
+        "--wandb-project", "-w",
+        help = "wandb project name for experiment tracking"
     )
 ):
     """

@@ -10,4 +10,4 @@ The configuration system leverages Pydantic for validation and Hydra-zen for
 instantiation, ensuring type safety and runtime flexibility.
 """
 from .schemas   import *
-from .workloads import cli_config, register_cli_configs
+from .workloads import cli_cfg, register_cli_cfgs

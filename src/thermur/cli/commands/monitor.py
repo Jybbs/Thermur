@@ -12,9 +12,9 @@ from webbrowser import open
 def monitor(
     ctx     : Context,
     project : str | None = Option(
-        default     = None,
-        help        = "wandb project name to monitor. Defaults to 'thermur'.",
-        param_decls = ["--project", "-p"]
+        None,
+        "--project", "-p",
+        help = "wandb project name to monitor. Defaults to 'thermur'."
     )
 ):
     """

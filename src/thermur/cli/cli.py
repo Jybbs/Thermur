@@ -34,7 +34,7 @@ class AppContext:
         self.system  = SystemInspector()
         self.ui      = ThermurUI(self.cfg.display)
         self.prompts = CLIPrompts(
-            cli      = self.cfg.cli_cfg,
+            cli      = self.cfg.cli,
             messages = self.cfg.messages,
             presets  = self.cfg.presets,
             prompts  = self.cfg.prompts,
@@ -100,11 +100,11 @@ class ThermurCLI:
         self,
         ctx     : Context,
         version : bool | None = Option(
-            callback    = None,
-            default     = None,
-            help        = "Show version and system information",
-            is_eager    = True,
-            param_decls = ["--version", "-v"]
+            None,
+            "--version", "-v",
+            callback = None,
+            help     = "Show version and system information",
+            is_eager = True
         )
     ):
         """
@@ -121,7 +121,7 @@ class ThermurCLI:
         app_context = self._get_context(ctx)
 
         if ctx.invoked_subcommand is None:
-            cfg = app_context.config
+            cfg = app_context.cfg
             ui  = app_context.ui
 
             ui.print_header("Welcome to Thermur")
@@ -163,7 +163,7 @@ class ThermurCLI:
             return
 
         app_context = self._get_context(ctx)
-        cfg         = app_context.config
+        cfg         = app_context.cfg
         system      = app_context.system
         ui          = app_context.ui
 
