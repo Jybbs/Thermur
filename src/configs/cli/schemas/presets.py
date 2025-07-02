@@ -88,8 +88,3 @@ class PresetsModel(BaseModel, extra="forbid"):
         ),
         description = "Standard configuration preset"
     )
-    table_title: str = Field(
-        default     = "Available Presets",
-        description = "Title for presets table display"
-    )
-

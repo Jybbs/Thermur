@@ -103,7 +103,7 @@ class TrainCommand:
             preset           : The name of the configuration preset to use.
             wandb_project    : The name of the Weights & Biases project for tracking.
         """
-        self.ui.print_header(self.config.headers.train_title)
+        self.ui.print_header("Thermur Training System")
 
         if not force:
             self._perform_system_validation()
@@ -210,7 +210,9 @@ class TrainCommand:
             "preset"        : preset or "default",
             "wandb_project" : wandb_project,
             "overrides"     : len(config_overrides or []),
-            "gpu_available" : self.system.get_system_info(self.config.wandb_display)["cuda"],
+            "gpu_available" : self.system.get_system_info(
+                self.config.wandb_display
+            )["cuda"],
         }
 
         if not self.prompts.show_training_summary(summary):
@@ -234,7 +236,7 @@ class TrainCommand:
         configure_loguru         = imports["configure_loguru"]
         set_seed                 = imports["set_seed"]
         train_imitation_learning = imports["train_imitation_learning"]
-        self.ui.print_section(self.config.sections.building_components, "accent")
+        self.ui.print_section("Preparing Training Environment", "accent")
         self.ui.console.print()
 
         configure_loguru(cfg.logging)
@@ -253,7 +255,7 @@ class TrainCommand:
         self.ui.print_message(self.config.messages.components_initialized, "success")
         self.ui.console.print()
 
-        self.ui.print_section(self.config.sections.training_started, "thermal")
+        self.ui.print_section("Training Started", "thermal")
         self.ui.print_message(self.config.messages.monitoring_dynamics, "thermal")
         self.ui.print_message(self.config.messages.track_wandb, "flock")
         self.ui.console.print()
@@ -261,7 +263,7 @@ class TrainCommand:
         train_imitation_learning(**components)
 
         self.ui.console.print()
-        self.ui.print_header(self.config.messages.training_complete_header)
+        self.ui.print_header("Training Complete 🎉")
 
     def _handle_configuration_issues(
         self,
@@ -281,7 +283,9 @@ class TrainCommand:
         """
         if interactive:
             if not self.prompts.confirm_system_override(issues):
-                self.ui.print_message(self.config.messages.training_cancelled, "warning")
+                self.ui.print_message(
+                    self.config.messages.training_cancelled, "warning"
+                )
                 raise Exit()
         else:
             self.ui.print_message(self.config.validation.config_fail_msg, "error")
@@ -308,7 +312,7 @@ class TrainCommand:
             preset           : The selected configuration preset.
             wandb_project    : The configured wandb project name.
         """
-        self.ui.print_section(self.config.sections.init_training, "flock")
+        self.ui.print_section("Initializing Training", "flock")
 
         self.ui.print_wandb_info(
             project = wandb_project, 
@@ -327,7 +331,10 @@ class TrainCommand:
             self.ui.print_message(self.config.messages.training_interrupted, "warning")
             raise Exit()
         except Exception as e:
-            self.ui.print_message(self.config.messages.training_failed_template.format(e=e), "error")
+            self.ui.print_message(
+                self.config.messages.training_failed_template.format(e=e),
+                "error"
+            )
             raise Exit(1)
 
     def _instantiate_training_components(
@@ -354,7 +361,8 @@ class TrainCommand:
         with self.ui.create_thermal_progress() as progress:
             component_configs = self.config.training_components.component_configs
             task = progress.add_task(
-                self.config.status.instantiating_components, total=len(component_configs)
+                self.config.status.instantiating_components,
+                total=len(component_configs)
             )
 
             components = {}
@@ -376,8 +384,7 @@ class TrainCommand:
             progress.update(task, completed=len(component_configs))
 
             # Handle optional visualizer
-            visualizer_key = self.config.training_components.visualizer_key
-            visualizer_cfg = OmegaConf.select(cfg, visualizer_key)
+            visualizer_cfg = OmegaConf.select(cfg, "visualizer")
             components['visualizer'] = (
                 instantiate(visualizer_cfg, _parser=pydantic_parser) 
                 if visualizer_cfg is not None 
@@ -393,14 +400,14 @@ class TrainCommand:
         This helper validates hardware capabilities, software versions, and
         integration status before proceeding with training initialization.
         """
-        self.ui.print_section(self.config.sections.system_information, "thermal")
+        self.ui.print_section("System Information", "thermal")
 
         with self.ui.console.status(
             self.config.status.checking_reqs,
             spinner = "dots"
         ):
             info  = self.system.get_system_info(self.config.wandb_display)
-            table = self.ui.create_system_table(info, self.config.system)
+            table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)
         self.ui.console.print()
@@ -482,7 +489,7 @@ class TrainCommand:
         Returns:
             A tuple containing the final (preset, wandb_project, config_overrides).
         """
-        self.ui.print_section(self.config.sections.config_setup, "accent")
+        self.ui.print_section("Configuration Setup", "accent")
 
         preset = (
             self.prompts.select_configuration_preset() 
@@ -502,7 +509,9 @@ class TrainCommand:
             )
 
         wandb_project = (
-            self.prompts.ask_wandb_project_name() 
+            self.prompts.ask_wandb_project_name(
+                default_project=self.config.wandb_display.default_project
+            ) 
             if interactive and not wandb_project
             else wandb_project or self.config.wandb_display.default_project
         )

@@ -107,8 +107,8 @@ def main_callback(
         ui  = app_context.ui
         cfg = app_context.config
 
-        ui.print_header(cfg.headers.main_title)
-        ui.print_section(cfg.sections.available_commands, "accent")
+        ui.print_header("Welcome to Thermur")
+        ui.print_section("Available Commands", "accent")
 
         for cmd_info in cfg.commands.available:
             ui.console.print(
@@ -116,7 +116,7 @@ def main_callback(
                 f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
             )
 
-        ui.print_section(cfg.sections.getting_started, "bright_green")
+        ui.print_section("Getting Started", "bright_green")
 
         for example in cfg.commands.examples:
             ui.print_command_example(

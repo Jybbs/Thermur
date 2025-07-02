@@ -65,7 +65,7 @@ class CLIPrompts:
         self.ui.print_section("Configuration Presets", style="accent")
 
         table = self.ui.create_aligned_table(
-            title   = self.prompts.presets_table_title,
+            title   = "Available Presets",
             columns = self.prompts.presets_table_columns,
         )
 
@@ -115,13 +115,15 @@ class CLIPrompts:
 
         return chosen_preset
 
-    def ask_wandb_project_name(self) -> str:
+    def ask_wandb_project_name(self, default_project: str = "thermur") -> str:
         """
         Guides the user in setting a Weights & Biases project name for tracking.
 
-        This prompt explains the purpose of wandb and provides relevant examples
-        to help the user choose a suitable project name. It falls back to a
-        sensible default if no input is given.
+        This prompt explains the purpose of wandb before allowing the user
+        to enter their project name.
+
+        Args:
+            default_project : The default project name to suggest.
 
         Returns:
             The final project name for wandb tracking.
@@ -135,16 +137,10 @@ class CLIPrompts:
         )
         self.ui.console.print()
 
-        examples = self.ui.create_examples_panel(
-            items = self.prompts.wandb_example_projects,
-            title = "Examples"
-        )
-        self.ui.console.print(examples)
-        self.ui.console.print()
 
         project_name = questionary.text(
             "Enter wandb project name:",
-            default     = self.prompts.wandb_default_project,
+            default     = default_project,
             style       = self.thermal_style,
             instruction = "(press Enter for default)",
         ).ask()
@@ -210,7 +206,9 @@ class CLIPrompts:
 
         if overrides:
             self.ui.console.print()
-            self.ui.print_message(f"Added {len(overrides)} configuration override(s)", "success")
+            self.ui.print_message(
+                f"Added {len(overrides)} configuration override(s)", "success"
+            )
 
         return overrides
 
@@ -235,7 +233,9 @@ class CLIPrompts:
         overrides = []
 
         while True:
-            field_to_edit = self.ui.console.input("[bold]Field to edit: [/bold]").strip()
+            field_to_edit = self.ui.console.input(
+                "[bold]Field to edit: [/bold]"
+            ).strip()
 
             if not field_to_edit:
                 break
@@ -320,14 +320,29 @@ class CLIPrompts:
             box       = None,
         )
 
-        gpu_status   = "🎮 GPU Acceleration" if config.get("gpu_available") else "💻 CPU Mode"
+        gpu_status = (
+            "🎮 GPU Acceleration" if config.get("gpu_available") 
+            else "💻 CPU Mode"
+        )
         num_overrides = config.get('overrides', 0)
 
         summary_data = [
-            ("Configuration", f"[{self.ui.theme.styles['warning']}]{config.get('preset')}[/]"),
-            ("wandb Project", f"[{self.ui.theme.styles['flock']}]{config.get('wandb_project')}[/]"),
-            ("Overrides", f"[{self.ui.theme.styles['drone']}]{num_overrides} custom settings[/]"),
-            ("Hardware", gpu_status),
+            (
+                "Configuration",
+                f"[{self.ui.theme.styles['warning']}]{config.get('preset')}[/]"
+            ),
+            (
+                "wandb Project",
+                f"[{self.ui.theme.styles['flock']}]{config.get('wandb_project')}[/]"
+            ),
+            (
+                "Overrides", 
+                f"[{self.ui.theme.styles['drone']}]{num_overrides} custom settings[/]"
+            ),
+            (
+                "Hardware", 
+                gpu_status
+            ),
         ]
         for key, value in summary_data:
             table.add_row(key, value)

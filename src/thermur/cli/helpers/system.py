@@ -5,14 +5,12 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
-from contextlib         import contextmanager
 from importlib.metadata import PackageNotFoundError, version
 from omegaconf          import DictConfig
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
 from torch              import cuda, __version__ as torch_version
-from typing             import Iterator
 from wandb              import Api, api
 
 import os
@@ -49,29 +47,6 @@ class SystemInspector:
         
         except (ImportError, AttributeError):
             return None
-    
-    @staticmethod
-    @contextmanager
-    def _temporary_env(var_name: str, value: str) -> Iterator[None]:
-        """
-        Context manager for temporarily setting an environment variable.
-        
-        Args:
-            var_name : Name of the environment variable
-            value    : Temporary value to set
-            
-        Yields:
-            None during the context
-        """
-        old_value = os.environ.get(var_name)
-        os.environ[var_name] = value
-        try:
-            yield
-        finally:
-            if old_value is not None:
-                os.environ[var_name] = old_value
-            else:
-                os.environ.pop(var_name, None)
 
     @staticmethod
     def _safe_version(
@@ -95,7 +70,9 @@ class SystemInspector:
             return fallback
 
     @staticmethod
-    def get_system_info(wandb_config: DictConfig) -> dict[str, str | int | float | bool | None]:
+    def get_system_info(
+        wandb_config: DictConfig
+    ) -> dict[str, str | int | float | bool | None]:
         """
         Gather comprehensive system information using platform tools.
 
@@ -109,11 +86,15 @@ class SystemInspector:
         info = {
             "cuda"                : cuda_available,
             "device_count"        : cuda.device_count() if cuda_available else 0,
-            "mujoco"              : SystemInspector._safe_import(attr="__version__", package="mujoco"),
+            "mujoco"              : SystemInspector._safe_import(
+                attr="__version__", package="mujoco"
+            ),
             "platform"            : platform(),
             "python"              : python_version(),
             "python_version_info" : version_info,
-            "thermur"             : SystemInspector._safe_version(package="thermur", fallback="dev"),
+            "thermur"             : SystemInspector._safe_version(
+                package="thermur", fallback="dev"
+            ),
             "torch"               : torch_version,
         }
 
@@ -140,19 +121,20 @@ class SystemInspector:
             info["disk_available"] = 0
             info["disk_total"]     = 0
 
-        info["wandb_installed"] = SystemInspector._safe_import(attr="__version__", package="wandb") is not None
+        info["wandb_installed"] = SystemInspector._safe_import(
+            attr="__version__", package="wandb"
+        ) is not None
         info["wandb_user"]      = None
         api_key_exists          = False
         if info["wandb_installed"]:
             api_key_exists = os.environ.get(wandb_config.api_key_env) or api.api_key
 
         if api_key_exists:
-            with SystemInspector._temporary_env(wandb_config.mode_env, "offline"):
-                try:
-                    user               = Api().viewer
-                    info["wandb_user"] = user.get("username") if user else None
-                except Exception:
-                    info["wandb_user"] = None
+            try:
+                user = Api().viewer
+                info["wandb_user"] = user.get("username") if user else None
+            except Exception:
+                info["wandb_user"] = None
 
         return info
 
@@ -172,26 +154,26 @@ class SystemInspector:
 
         if not info["wandb_installed"]:
             return (
-                wandb_cfg.status_not_installed,
-                wandb_cfg.details_not_installed,
+                "[red]❌ Not Installed[/red]",
+                "[yellow]Run 'poetry install'[/yellow]",
             )
 
         if info["wandb_user"]:
             return (
-                wandb_cfg.status_connected,
-                wandb_cfg.details_connected.format(user=info["wandb_user"]),
+                "[green]✅ Connected[/green]",
+                f"[cyan]@{info['wandb_user']}[/cyan]",
             )
 
         api_key_exists = os.environ.get(wandb_cfg.api_key_env) or api.api_key
         if api_key_exists:
             return (
-                wandb_cfg.status_api_key,
-                wandb_cfg.details_api_key,
+                "[green]✅ API Key Set[/green]",
+                "[white]Ready to track[/white]",
             )
 
         return (
-            wandb_cfg.status_not_connected,
-            wandb_cfg.details_not_connected,
+            "[yellow]⚠️  Not Connected[/yellow]",
+            "[yellow]Run 'wandb login'[/yellow]",
         )
 
     @staticmethod
@@ -218,13 +200,9 @@ class SystemInspector:
 
         if info["wandb_user"]:
             return f"https://wandb.ai/{info['wandb_user']}/{project}"
-
-        entity = os.environ.get(wandb_config.entity_env)
-        return (
-            f"https://wandb.ai/{entity}/{project}"
-            if entity
-            else f"https://wandb.ai/{ui_config.wandb_url_placeholder}/{project}"
-        )
+        
+        # Not authenticated - no URL available
+        return None
 
     @staticmethod
     def validate_config_overrides(

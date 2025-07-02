@@ -60,7 +60,7 @@ class MonitorCommand:
         if project is None:
             project = self.config.wandb_display.default_project
 
-        self.ui.print_header(self.config.headers.monitor_title)
+        self.ui.print_header("wandb Monitoring")
 
         url = self.system.get_wandb_url(
             wandb_config = self.config.wandb_display, 
@@ -69,10 +69,27 @@ class MonitorCommand:
         )
 
         if not url:
-            self.ui.print_message(
-                message  = self.msgs.wandb_unavailable,
-                msg_type = "error"
-            )
+            # Check if wandb is installed to provide a better error message
+            info = self.system.get_system_info(self.config.wandb_display)
+            if not info["wandb_installed"]:
+                self.ui.print_message(
+                    message  = "wandb is not installed in your Poetry environment",
+                    msg_type = "error"
+                )
+                self.ui.print_message(
+                    message  = "Run 'poetry install' to install all dependencies",
+                    msg_type = "info"
+                )
+            else:
+                # wandb is installed but user is not authenticated
+                self.ui.print_message(
+                    message  = self.msgs.wandb_unavailable,
+                    msg_type = "error"
+                )
+                self.ui.print_message(
+                    message  = "Run 'wandb login' to authenticate",
+                    msg_type = "info"
+                )
             raise Exit(1)
 
         self.ui.print_message(

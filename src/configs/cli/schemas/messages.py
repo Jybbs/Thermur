@@ -7,51 +7,6 @@ messages, and section headers used throughout the CLI interface.
 from pydantic import BaseModel, Field
 
 
-class HeadersModel(BaseModel, extra="forbid"):
-    """
-    Titles and subtitles for different CLI sections.
-    
-    These constants are used to create the main styled panels that introduce
-    a command's function to the user.
-    """
-    config_gen_title: str = Field(
-        default     = "Generated Configuration Overrides",
-        description = "Title for generated config overrides display"
-    )
-    info_title: str = Field(
-        default     = "Thermur System Information",
-        description = "Title for info command header"
-    )
-    main_title: str = Field(
-        default     = "Welcome to Thermur",
-        description = "Title for main welcome screen"
-    )
-    monitor_subtitle_template: str = Field(
-        default     = "Project: {project}",
-        description = "Subtitle template for monitor command"
-    )
-    monitor_title: str = Field(
-        default     = "wandb Monitoring",
-        description = "Title for monitor command header"
-    )
-    train_subtitle: str = Field(
-        default     = "Thermally-constrained drone flock imitation learning",
-        description = "Subtitle for train command header"
-    )
-    train_title: str = Field(
-        default     = "Thermur Training System",
-        description = "Title for train command header"
-    )
-    validate_subtitle: str = Field(
-        default     = "Pre-flight checks for training",
-        description = "Subtitle for validate command header"
-    )
-    validate_title: str = Field(
-        default     = "System Validation",
-        description = "Title for validate command header"
-    )
-
-
 class MessagesModel(BaseModel, extra="forbid"):
     """
     Message text and templates for CLI output.
@@ -103,10 +58,6 @@ class MessagesModel(BaseModel, extra="forbid"):
         default     = "Training cancelled by user.",
         description = "Message when user cancels training"
     )
-    training_complete_header: str = Field(
-        default     = "Training Complete! 🎉",
-        description = "Header for training completion"
-    )
     training_complete_sub: str = Field(
         default     = "Your thermal flock has learned to fly",
         description = "Subtitle for training completion"
@@ -120,8 +71,8 @@ class MessagesModel(BaseModel, extra="forbid"):
         description = "Message when training is interrupted"
     )
     wandb_unavailable: str = Field(
-        default     = "wandb not available - install with 'pip install wandb'",
-        description = "Message when wandb is not installed"
+        default     = "wandb monitoring not available - please authenticate first",
+        description = "Message when wandb is not available"
     )
 
 
@@ -170,63 +121,6 @@ class PromptsModel(BaseModel, extra="forbid"):
     workload_selection_prompt: str = Field(
         default     = "Select a workload configuration:",
         description = "Prompt shown when user needs to select a workload"
-    )
-
-
-class SectionsModel(BaseModel, extra="forbid"):
-    """
-    Titles for different content sections printed to the console.
-    
-    These are used to create styled horizontal rules that visually break up
-    the content of a command's output.
-    """
-    available_commands: str = Field(
-        default     = "Available Commands",
-        description = "Section title for command list"
-    )
-    building_components: str = Field(
-        default     = "Preparing Training Environment",
-        description = "Section title during component creation"
-    )
-    config_check: str = Field(
-        default     = "Configuration Check",
-        description = "Section title for configuration validation"
-    )
-    config_setup: str = Field(
-        default     = "Configuration Setup",
-        description = "Section title for config setup phase"
-    )
-    config_system: str = Field(
-        default     = "Configuration System",
-        description = "Section title for config system info"
-    )
-    features: str = Field(
-        default     = "Features",
-        description = "Section title for feature list"
-    )
-    getting_started: str = Field(
-        default     = "Getting Started",
-        description = "Section title for getting started guide"
-    )
-    init_training: str = Field(
-        default     = "Initializing Training",
-        description = "Section title when starting training"
-    )
-    integration_check: str = Field(
-        default     = "Integration Check",
-        description = "Section title for integration validation"
-    )
-    integration_status: str = Field(
-        default     = "Integration Status",
-        description = "Section title for integration info"
-    )
-    system_information: str = Field(
-        default     = "System Information",
-        description = "Section title for system checks"
-    )
-    training_started: str = Field(
-        default     = "Training Started",
-        description = "Section title when training begins"
     )
 
 

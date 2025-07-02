@@ -87,14 +87,14 @@ class ThermurUI:
             parts = title.split("Thermur", 1)
             
             if parts[0]:
-                title_text.append(parts[0], style=self.ui.header_text_style)
+                title_text.append(parts[0], style="bold bright_white")
             
             title_text.append_text(self.format_fire_gradient_text("Thermur"))
             
             if parts[1]:
-                title_text.append(parts[1], style=self.ui.header_text_style)
+                title_text.append(parts[1], style="bold bright_white")
         else:
-            title_text.append(title, style=self.ui.title_text_style)
+            title_text.append(title, style="bold bright_cyan")
         
         return Panel(
             Align.center(title_text),
@@ -253,7 +253,7 @@ class ThermurUI:
             project : The wandb project name
             url     : Optional URL to the project dashboard
         """
-        if url and self.ui.wandb_url_placeholder not in url:
+        if url:
             self.console.print(
                 f"[{self.theme.styles['flock']}]🎨 Dashboard: "
                 f"[link={url}]{url}[/link][/]"
@@ -280,7 +280,7 @@ class ThermurUI:
         return progress.Progress(
 
             progress.SpinnerColumn(
-                spinner_name = self.ui.progress_spinner,
+                spinner_name = "dots",
                 style        = self.ui.progress_style,
             ),
 
@@ -289,7 +289,7 @@ class ThermurUI:
             ),
             progress.BarColumn(
                 bar_width      = 30,
-                complete_style = self.ui.progress_complete_style,
+                complete_style = "bright_red",
                 style          = self.ui.progress_style,
             ),
 
@@ -332,16 +332,16 @@ class ThermurUI:
             Configured Table instance ready for content population
         """
         if border_style is None:
-            border_style = self.ui.table_border_style
+            border_style = "bright_blue"
             
         table = Table(
             title        = title,
-            title_style  = self.ui.table_title_style,
-            header_style = self.ui.table_header_style,
+            title_style  = "bold bright_cyan",
+            header_style = "bold bright_blue",
             border_style = border_style,
-            box          = getattr(box, self.ui.table_box, box.MINIMAL),
+            box          = getattr(box, "MINIMAL", box.MINIMAL),
             show_edge    = show_edge,
-            padding      = self.ui.table_padding,
+            padding      = (0, 1),
             expand       = expand,
             **kwargs,
         )
@@ -358,8 +358,7 @@ class ThermurUI:
 
     def create_system_table(
         self,
-        system_info   : dict,
-        system_config : DictConfig
+        system_info : dict
     ) -> Table:
         """
         Create a Rich table with system information.
@@ -370,8 +369,8 @@ class ThermurUI:
         status immediately apparent.
 
         Args:
-            system_info   : A dictionary of system details from `system.get_system_info()`.
-            system_config : System configuration containing thresholds.
+            system_info : A dictionary of system details from 
+                          `system.get_system_info()`.
 
         Returns:
             A formatted Rich table containing system diagnostics.
@@ -394,11 +393,8 @@ class ThermurUI:
             logic = self.ui.system_logic[key]
             
             if logic.get("is_resource"):
-                # Get thresholds from system config
-                thresholds = (
-                    system_config.memory_thresholds if key == "memory" 
-                    else system_config.disk_thresholds
-                )
+                # Get thresholds
+                thresholds = (4, 8) if key == "memory" else (5, 20)
                 progress_bar, details_text = self.format_resource_display(
                     available_gb = system_info.get(logic.get("available"), 0),
                     total_gb     = system_info.get(logic.get("total"), 0),
@@ -410,7 +406,10 @@ class ThermurUI:
                 # For non-resource items, format the value using the format string
                 raw_value  = system_info.get(logic.get("key", key))
                 format_str = logic.get("format", "{}")
-                value      = format_str.format(raw_value) if raw_value is not None else "N/A"
+                value      = (
+                    format_str.format(raw_value) 
+                    if raw_value is not None else "N/A"
+                )
                 
             # For resource items, value contains Rich markup that needs to be rendered
             if logic.get("is_resource"):
@@ -469,7 +468,7 @@ class ThermurUI:
             renderable   = Syntax(
                 code         = code,
                 lexer        = "yaml",
-                theme        = self.ui.syntax_theme,
+                theme        = "monokai",
                 line_numbers = False,
             ),
         )
@@ -575,9 +574,9 @@ class ThermurUI:
             
         return (
             f"[{color}]"
-            f"{self.ui.filled_char * int(used_fraction * length)}"
+            f"{'█' * int(used_fraction * length)}"
             f"[/{color}][{self.ui.progress_unfilled_color}]"
-            f"{self.ui.unfilled_char * (length - int(used_fraction * length))}"
+            f"{'░' * (length - int(used_fraction * length))}"
             f"[/{self.ui.progress_unfilled_color}]"
         )
 
@@ -608,9 +607,9 @@ class ThermurUI:
         low_thresh, med_thresh = thresholds
         
         color = (
-            self.ui.resource_color_critical if available_gb < low_thresh else
-            self.ui.resource_color_warning  if available_gb < med_thresh else
-            self.ui.resource_color_good
+            "red"     if available_gb < low_thresh else
+            "yellow"  if available_gb < med_thresh else
+            "bright_green"
         )
         
         progress_bar = self.create_progress_bar(color, used_fraction)

@@ -107,18 +107,10 @@ class UIModel(BaseModel, extra="forbid"):
         ],
         description = "Column definitions for features table"
     )
-    filled_char: str = Field(
-        default     = "█",
-        description = "Character for filled progress bars"
-    )
-    header_text_style: str = Field(
-        default     = "bold bright_white",
-        description = "Style for header text"
-    )
     message_types: dict[str, dict[str, str]] = Field(
         default = {
             "info": {
-                "icon"  : "ℹ️",
+                "icon"  : "ℹ️ ",
                 "style" : "info"
             },
             "success": {
@@ -156,25 +148,9 @@ class UIModel(BaseModel, extra="forbid"):
         },
         description = "Message type configurations for print_message"
     )
-    panel_box: str = Field(
-        default     = "ROUNDED",
-        description = "Box type for Rich panels"
-    )
-    primary_color: str = Field(
-        default     = "dodger_blue2",
-        description = "Primary color for important elements"
-    )
     progress_bar_length: PositiveInt = Field(
         default     = 20,
         description = "Length for progress bars"
-    )
-    progress_complete_style: str = Field(
-        default     = "bright_red",
-        description = "Style for completed progress"
-    )
-    progress_spinner: str = Field(
-        default     = "dots",
-        description = "Spinner type for progress indicators"
     )
     progress_style: str = Field(
         default     = "thermal",
@@ -184,33 +160,9 @@ class UIModel(BaseModel, extra="forbid"):
         default     = "grey30",
         description = "Color for unfilled progress"
     )
-    resource_color_critical: str = Field(
-        default     = "red",
-        description = "Color for critical resource status"
-    )
-    resource_color_good: str = Field(
-        default     = "bright_green",
-        description = "Color for good resource status"
-    )
-    resource_color_warning: str = Field(
-        default     = "yellow",
-        description = "Color for warning resource status"
-    )
     resource_details_template: str = Field(
         default     = "[white]{:.1f}{} free of {:.1f}{}[/]",
         description = "Template for resource details display"
-    )
-    secondary_color: str = Field(
-        default     = "grey70",
-        description = "Secondary color for less prominent text"
-    )
-    subtitle_text_style: str = Field(
-        default     = "muted italic",
-        description = "Style for subtitle text"
-    )
-    syntax_theme: str = Field(
-        default     = "monokai",
-        description = "Theme for syntax highlighting"
     )
     system_components: dict[str, str] = Field(
         default = {
@@ -284,36 +236,4 @@ class UIModel(BaseModel, extra="forbid"):
             "show_lines"   : True,
         },
         description = "Settings for system info table"
-    )
-    table_border_style: str = Field(
-        default     = "bright_blue",
-        description = "Border style for Rich tables"
-    )
-    table_box: str = Field(
-        default     = "MINIMAL",
-        description = "Box type for Rich tables"
-    )
-    table_header_style: str = Field(
-        default     = "bold bright_blue",
-        description = "Style for table headers"
-    )
-    table_padding: tuple[NonNegativeInt, PositiveInt] = Field(
-        default     = (0, 1),
-        description = "Padding for Rich tables (vertical, horizontal)"
-    )
-    table_title_style: str = Field(
-        default     = "bold bright_cyan",
-        description = "Style for table titles"
-    )
-    title_text_style: str = Field(
-        default     = "bold bright_cyan",
-        description = "Style for title text"
-    )
-    unfilled_char: str = Field(
-        default     = "░",
-        description = "Character for unfilled progress bars"
-    )
-    wandb_url_placeholder: str = Field(
-        default     = "YOUR_USERNAME",
-        description = "Placeholder for wandb URLs"
     )
