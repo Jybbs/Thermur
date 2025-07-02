@@ -9,11 +9,11 @@ from typer import Context, Option
 
 
 def validate(
-    ctx: Context,
-    config_overrides: list[str] | None = Option(
-        None,
-        "--config", "-c",
-        help="Configuration overrides to validate"
+    ctx              : Context,
+    config_overrides : list[str] | None = Option(
+        default     = None,
+        param_decls = ["--config", "-c"],
+        help        = "Configuration overrides to validate"
     ),
 ):
     """
@@ -24,7 +24,7 @@ def validate(
     a full report of any potential issues.
     """
     command = ValidateCommand(ctx)
-    command.run(config_overrides=config_overrides)
+    command.run(config_overrides)
 
 
 class ValidateCommand:
@@ -39,12 +39,29 @@ class ValidateCommand:
         Initializes the command with shared context components.
 
         Args:
-            ctx: The Typer context, which holds the shared AppContext object
-                 containing UI, system, and other core components.
+            ctx : The Typer context, which holds the shared AppContext object
+                  containing UI, system, and other core components.
         """
         self.config = ctx.obj.config
         self.system = ctx.obj.system
         self.ui     = ctx.obj.ui
+
+    def _perform_system_validation(self):
+        """
+        Performs comprehensive system validation checks.
+
+        This helper validates hardware capabilities, software versions, and
+        integration status, displaying the results in a formatted table.
+        """
+        self.ui.print_major_section("System Information")
+
+        info = self.system.get_system_info(self.config.wandb_integration)
+        self.ui.console.print(self.ui.create_system_table(info))
+        self.ui.console.print()
+
+        status, details = self.system.check_wandb_status(self.config)
+        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
+        self.ui.console.print()
 
     def run(self, config_overrides: list[str] | None):
         """
@@ -63,9 +80,9 @@ class ValidateCommand:
             spinner = "dots"
         ):
             issues = self.system.validate_config_overrides(
-                config_overrides, 
-                self.config.messages,
-                self.config.wandb_integration
+                messages          = self.config.messages,
+                overrides         = config_overrides,
+                wandb_integration = self.config.wandb_integration
             )
 
         if issues:
@@ -74,7 +91,8 @@ class ValidateCommand:
                 self.ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
         else:
             self.ui.print_message(
-                self.config.messages.validation["config_passed"], "success"
+                message  = self.config.messages.validation["config_passed"],
+                msg_type = "success"
             )
 
         self.ui.print_major_section("Integration Check")
@@ -88,35 +106,19 @@ class ValidateCommand:
         self.ui.console.print()
         if issues or "Not" in status:
             self.ui.print_message(
-                self.config.messages.validation["with_warnings"], 
-                "warning"
+                message  = self.config.messages.validation["with_warnings"],
+                msg_type = "warning"
             )
             self.ui.print_message(
-                self.config.messages.validation["review_issues"], 
-                "tip")
+                message  = self.config.messages.validation["review_issues"],
+                msg_type = "tip"
+            )
         else:
             self.ui.print_message(
-                self.config.messages.validation["all_passed"], 
-                "success"
+                message  = self.config.messages.validation["all_passed"],
+                msg_type = "success"
             )
             self.ui.print_message(
-                self.config.messages.validation["system_ready"], 
-                "success"
+                message  = self.config.messages.validation["system_ready"],
+                msg_type = "success"
             )
-
-    def _perform_system_validation(self):
-        """
-        Performs comprehensive system validation checks.
-
-        This helper validates hardware capabilities, software versions, and
-        integration status, displaying the results in a formatted table.
-        """
-        self.ui.print_major_section("System Information")
-
-        info = self.system.get_system_info(self.config.wandb_integration)
-        self.ui.console.print(self.ui.create_system_table(info))
-        self.ui.console.print()
-
-        status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
-        self.ui.console.print()

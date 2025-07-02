@@ -43,8 +43,8 @@ def register_imitation_configs():
     
     store(
         imitation_config, 
-        name    = "train", 
         group   = "config", 
+        name    = "train", 
         package = "_global_"
     )
     

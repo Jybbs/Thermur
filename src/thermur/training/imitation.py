@@ -12,8 +12,6 @@ from torch.nn           import Module
 from torch.optim        import Optimizer
 from torchrl.collectors import SyncDataCollector
 from torchrl.data       import TensorDictReplayBuffer
-from torchrl.envs       import EnvBase
-from torchrl.modules    import SafeModule
 from torchrl.objectives import LossModule
 from tqdm               import tqdm
 
@@ -23,8 +21,8 @@ import wandb as wb
 
 def cleanup_resources(
     data_collector : SyncDataCollector,
-    visualizer     : Visualizer | None,
-    pbar           : tqdm
+    pbar           : tqdm,
+    visualizer     : Visualizer | None
 ):
     """
     Clean up resources used during training.
@@ -34,8 +32,8 @@ def cleanup_resources(
     
     Args:
         data_collector : The experience collector to shut down
-        visualizer     : The visualization module instance or None
         pbar           : The progress bar to close
+        visualizer     : The visualization module instance or None
     """
     data_collector.shutdown()
     pbar.close()
@@ -60,21 +58,21 @@ def initialize_wandb(
     """
     if wandb.mode != "disabled":
         wb.init(
-            project = wandb.project,
-            entity  = wandb.entity,
-            mode    = wandb.mode,
             config  = {
                 "learning" : learning.model_dump(),
                 "wandb"    : wandb.model_dump(),
-            }
+            },
+            entity  = wandb.entity,
+            mode    = wandb.mode,
+            project = wandb.project
         )
         logger.info("Weights & Biases initialized for experiment tracking.")
 
 
 def save_checkpoint(
-    policy      : Module,
-    optimizer   : Optimizer, 
     frame_count : int,
+    optimizer   : Optimizer,
+    policy      : Module,
     save_path   : str,
     is_final    : bool = False
 ):
@@ -87,9 +85,9 @@ def save_checkpoint(
     exist.
 
     Args:
-        policy      : The policy network to save
-        optimizer   : The optimizer state to save
         frame_count : Current training frame count
+        optimizer   : The optimizer state to save
+        policy      : The policy network to save
         save_path   : Directory to save checkpoints
         is_final    : Whether this is the final checkpoint
     """
@@ -100,20 +98,18 @@ def save_checkpoint(
     full_path = save_dir / filename
     
     torch.save(
-        {
+        f   = full_path,
+        obj = {
             'frame'                : frame_count,
             'model_state_dict'     : policy.state_dict(),
             'optimizer_state_dict' : optimizer.state_dict(),
-        }, 
-        full_path
+        }
     )
     logger.info(f"Checkpoint saved to {full_path}")
 
 
 def train_imitation_learning(
-    controller        : SafeModule,
     data_collector    : SyncDataCollector,
-    environment       : EnvBase,
     experience_buffer : TensorDictReplayBuffer,
     learning          : LearningModel,
     loss              : LossModule,
@@ -133,9 +129,7 @@ def train_imitation_learning(
     where π_θ is the learned policy and π* is the expert controller.
     
     Args:
-        controller        : Expert controller providing demonstrations
         data_collector    : Manages environment interaction loop
-        environment       : Simulation environment for data collection
         experience_buffer : Stores and samples demonstration data
         learning          : Training hyperparameters and settings
         loss              : Behavioral cloning loss module
@@ -145,8 +139,6 @@ def train_imitation_learning(
         visualizer        : Optional 3D visualization module
     """
     device = torch.device(learning.device)
-    
-    # Initialize experiment tracking
     initialize_wandb(learning, wandb)
     
     logger.info(f"Starting training for {learning.total_frames} frames.")
@@ -158,10 +150,12 @@ def train_imitation_learning(
         current_frames = data.numel()
         total_frames  += current_frames
         
-        # Update visualization if enabled
         if visualizer is not None:
             latest_observation = data[-1].get("next")
-            update_visualization(visualizer, latest_observation)
+            update_visualization(
+                latest_observation = latest_observation,
+                visualizer         = visualizer
+            )
         
         pbar.update(current_frames)
         
@@ -179,32 +173,33 @@ def train_imitation_learning(
                     wb.log({"train/loss": loss.item()}, step=total_frames)
                 pbar.set_description(f"Loss: {loss.item():.4f}")
         
-        # Save checkpoint if needed
         if total_frames % learning.checkpoint_interval == 0:
             save_checkpoint(
-                policy, 
-                optimizer, 
-                total_frames, 
-                learning.checkpoint_path
+                frame_count = total_frames,
+                optimizer   = optimizer,
+                policy      = policy,
+                save_path   = learning.checkpoint_path
             )
     
-    # Clean up resources
-    cleanup_resources(data_collector, visualizer, pbar)
+    cleanup_resources(
+        data_collector = data_collector,
+        pbar           = pbar,
+        visualizer     = visualizer
+    )
     
-    # Save final checkpoint
     save_checkpoint(
-        policy, 
-        optimizer, 
-        total_frames, 
-        learning.checkpoint_path, 
-        is_final=True
+        frame_count = total_frames,
+        optimizer   = optimizer,
+        policy      = policy,
+        save_path   = learning.checkpoint_path,
+        is_final    = True
     )
     logger.info("Training finished successfully.")
 
 
 def update_visualization(
-    visualizer         : Visualizer,
-    latest_observation : dict[str, any]
+    latest_observation : dict[str, any],
+    visualizer         : Visualizer
 ):
     """
     Update the visualization with the latest observation.
@@ -214,8 +209,8 @@ def update_visualization(
     a visualizer is provided.
     
     Args:
-        visualizer         : The visualization module instance
         latest_observation : The most recent observation from the environment
+        visualizer         : The visualization module instance
     """
     if visualizer is not None:
         visualizer.update(latest_observation)
