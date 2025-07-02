@@ -9,17 +9,12 @@ from ..factories import *
 from hydra_zen   import make_config, ZenStore
 
 cli_config = make_config(
-    cli                 = build_cli,
-    commands            = build_commands,
+    cli_config          = build_cli_config,
+    display             = build_display,
     messages            = build_messages,
     presets             = build_presets,
     prompts             = build_prompts,
-    status              = build_status,
-    theme               = build_theme,
-    training_components = build_training_components,
-    ui                  = build_ui,
-    validation          = build_validation,
-    wandb_display       = build_wandb_display,
+    wandb_integration   = build_wandb_integration,
     defaults            = ["_self_"],
 )
 

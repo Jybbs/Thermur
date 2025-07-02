@@ -1,64 +1,56 @@
 """
-Core configuration schemas for the Thermur CLI.
+Application configuration schemas for the Thermur CLI.
 
-This module defines the main CLI configuration model and command-related
-schemas that control the overall behavior of the command-line interface.
+This module defines the core application configuration and metadata, including
+command definitions, training components, and integration settings.
 """
 from pydantic import BaseModel, Field
 
 
-class CLIModel(BaseModel, extra="forbid"):
+class CLIConfigModel(BaseModel, extra="forbid"):
     """
-    Main configuration model for the Thermur CLI.
+    Main CLI configuration and metadata.
     
-    This model defines global settings that affect the entire CLI application.
-    It serves as the root configuration that gets instantiated by Hydra.
+    This model consolidates all core application settings, command definitions,
+    and component configurations into a single cohesive structure. It serves
+    as the primary configuration object for the CLI application.
     """
     app_description: str = Field(
         default     = "🔥 Thermur: Advanced thermal-aware drone flock training "
                       "using imitation learning, physics-based constraints, and "
                       "real-time monitoring",
-        description = "Application description shown in help text"
+        description = "Application description shown in help text."
     )
     app_name: str = Field(
         default     = "thermur",
-        description = "Application name used by Typer"
+        description = "Application name used by Typer."
     )
-
-
-class CommandsModel(BaseModel, extra="forbid"):
-    """
-    Defines available CLI commands and their metadata.
-    
-    This model centralizes command definitions used to generate help text
-    and documentation. Each command has an icon, name, and description.
-    """
-    available: list[dict[str, str]] = Field(
+    commands_available: list[dict[str, str]] = Field(
         default = [
             {
-                "icon": "🚀",
-                "name": "train",
-                "desc": "Train thermal drone flock behaviors"
+                "icon" : "🚀",
+                "name" : "train",
+                "desc" : "Train thermal drone flock behaviors"
             },
             {
-                "icon": "📋",
-                "name": "info",
-                "desc": "Display system and configuration details"
+                "icon" : "📋",
+                "name" : "info",
+                "desc" : "Display system and configuration details"
             },
             {
-                "icon": "✅",
-                "name": "validate",
-                "desc": "Validate configuration and dependencies"
+                "icon" : "✅",
+                "name" : "validate",
+                "desc" : "Validate configuration and dependencies"
             },
             {
-                "icon": "🎨",
-                "name": "monitor",
-                "desc": "Monitor training progress and resources"
+                "icon" : "🎨",
+                "name" : "monitor",
+                "desc" : "Monitor training progress and resources"
             },
         ],
-        description = "List of available commands with metadata"
+        description = "List of available commands with metadata."
     )
-    examples: list[dict[str, str]] = Field(
+    commands_examples: list[dict[str, str]] = Field(
         default = [
             {
                 "desc"    : "Start interactive training",
@@ -88,11 +80,11 @@ class CommandsModel(BaseModel, extra="forbid"):
             {
                 "desc"    : "Train with overrides",
                 "command" : "thermur train --config flock.num_drones=20 "
-                           "environment.max_temp=85",
+                            "environment.max_temp=85",
                 "note"    : "Multiple parameters"
             },
         ],
-        description = "Example commands for quick start guide"
+        description = "Example commands for quick start guide."
     )
     override_syntax_help: str = Field(
         default = (
@@ -103,18 +95,9 @@ class CommandsModel(BaseModel, extra="forbid"):
             "environment.max_temp=85.0         # Temperature limit\n"
             "+experiment=my_custom_setup       # Load experiment"
         ),
-        description = "Help text for configuration override syntax"
+        description = "Help text for configuration override syntax."
     )
-
-
-class TrainingComponentsModel(BaseModel, extra="forbid"):
-    """
-    Training component configuration mapping.
-    
-    Maps component names to their configuration paths and display names,
-    used during the training initialization process.
-    """
-    component_configs: list[tuple[str, str, str]] = Field(
+    training_component_configs: list[tuple[str, str, str]] = Field(
         default = [
             ("environment",       "environment",       "🌍 Environment"),
             ("controller",        "controller",        "🎓 Controller"),
@@ -126,5 +109,26 @@ class TrainingComponentsModel(BaseModel, extra="forbid"):
             ("hyperparameters",   "hyperparameters",   "📌 Hyperparameters"),
             ("wandb",             "wandb",             "🎨 wandb Tracking"),
         ],
-        description = "List of (key, config_path, display_name) for training components"
+        description = (
+            "List of (key, config_path, display_name) tuples for training "
+            "component initialization."
+        )
+    )
+
+
+class WandbIntegrationModel(BaseModel, extra="forbid"):
+    """
+    Weights & Biases integration configuration.
+    
+    This model centralizes environment variable keys and display settings
+    for wandb integration in the CLI. It manages both the API authentication
+    and project defaults.
+    """
+    api_key_env: str = Field(
+        default     = "WANDB_API_KEY",
+        description = "Environment variable for wandb API key."
+    )
+    default_project: str = Field(
+        default     = "thermur",
+        description = "Default project name for wandb tracking."
     )

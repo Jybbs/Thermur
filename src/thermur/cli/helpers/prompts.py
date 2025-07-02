@@ -27,24 +27,27 @@ class CLIPrompts:
     """
     def __init__(
         self, 
-        ui       : Any,
-        prompts  : DictConfig,
-        messages : DictConfig,
-        commands : DictConfig
+        ui         : Any,
+        prompts    : DictConfig,
+        messages   : DictConfig,
+        cli_config : DictConfig,
+        presets    : DictConfig
     ):
         """
         Initializes the prompt orchestrator.
 
         Args:
-            ui       : An initialized `ThermurUI` object for rendering components.
-            prompts  : Prompts configuration containing prompts-related settings.
-            messages : Messages configuration containing message templates.
-            commands : Commands configuration containing command-related settings.
+            ui         : An initialized `ThermurUI` object for rendering components.
+            prompts    : Prompts configuration containing prompts-related settings.
+            messages   : Messages configuration containing message templates.
+            cli_config : CLI configuration containing command-related settings.
+            presets    : Presets configuration containing training preset definitions.
         """
         self.ui            = ui
         self.prompts       = prompts
         self.messages      = messages
-        self.commands      = commands
+        self.cli_config    = cli_config
+        self.presets       = presets
         self.thermal_style = questionary.Style.from_dict(
             dict(self.prompts.questionary_style)
         )
@@ -62,52 +65,62 @@ class CLIPrompts:
             The string name of the selected preset (e.g., "standard"), or None if
             the user explicitly chooses the "custom" configuration option.
         """
-        self.ui.print_section("Configuration Presets", style="accent")
+        self.ui.print_minor_section("Configuration Presets")
 
         table = self.ui.create_aligned_table(
             title   = "Available Presets",
             columns = self.prompts.presets_table_columns,
         )
 
-        preset_configs = self.prompts.preset_configs
+        preset_configs = self.presets.presets
         for name, config in preset_configs.items():
+            display_name = f"{config['emoji']} {config['name']}"
             if name == "custom":
                 row_style = f"[grey70]"
                 table.add_row(
-                    f"{row_style}{config['name']}[/]",
+                    f"{row_style}{display_name}[/]",
                     f"{row_style}{config['desc']}[/]",
                     f"{row_style}{config['best_for']}[/]",
                 )
             else:
-                table.add_row(config['name'], config['desc'], config['best_for'])
+                table.add_row(display_name, config['desc'], config['best_for'])
 
         self.ui.console.print(table)
         self.ui.console.print()
 
         choices = [
-            questionary.Choice(config['prompt'], value=config['name'])
-            for name, config in preset_configs.items() if name != "custom"
+            questionary.Choice(preset_configs[name]['emoji'], value=name)
+            for name in ['quick', 'standard', 'large', 'debug']
         ]
         choices.extend([
             questionary.Separator(),
             questionary.Choice(
-                title = preset_configs['custom']['prompt'],
+                title = preset_configs['custom']['emoji'],
                 value = None
             ),
         ])
 
-        chosen_preset = questionary.select(
+        chosen_emoji = questionary.select(
             "Which configuration preset would you like to use?",
             choices = choices,
             style   = self.thermal_style,
         ).ask()
 
-        if chosen_preset:
+        # Map emoji back to preset name
+        if chosen_emoji:
+            # Find which preset has this emoji
+            chosen_preset = None
+            for name, config in preset_configs.items():
+                if config['emoji'] == chosen_emoji:
+                    chosen_preset = name
+                    break
+            
             self.ui.print_message(
-                f"Selected preset: [bright_cyan]{chosen_preset}[/bright_cyan]",
+                f"Selected preset: [bright_cyan]{chosen_emoji}[/bright_cyan]",
                 msg_type="success"
             )
         else:
+            chosen_preset = None
             self.ui.print_message(
                 "Custom configuration selected - full control mode",
                 msg_type="info"
@@ -162,10 +175,10 @@ class CLIPrompts:
             A list of configuration override strings, which may be empty.
         """
         self.ui.console.print()
-        self.ui.print_section("Advanced Configuration", "config")
+        self.ui.print_minor_section("Advanced Configuration")
 
         syntax_panel = self.ui.create_syntax_panel(
-            code  = self.commands.override_syntax_help,
+            code  = self.cli_config.override_syntax_help,
             title = "Configuration Override Syntax",
         )
         self.ui.console.print(syntax_panel)
@@ -199,7 +212,7 @@ class CLIPrompts:
                 break
 
             overrides.append(override)
-            success_style = self.ui.theme.styles['success']
+            success_style = self.ui.display.styles['success']
             self.ui.console.print(
                 f"  [{success_style}]✓[/] Added: [bright_cyan]{override}[/bright_cyan]"
             )
@@ -288,7 +301,7 @@ class CLIPrompts:
         self.ui.console.print(warning_panel)
         self.ui.console.print()
 
-        warning_style = self.ui.theme.styles['warning']
+        warning_style = self.ui.display.styles['warning']
         return Confirm.ask(
             f"[{warning_style}]Do you want to proceed anyway?[/]",
             console = self.ui.console,
@@ -310,7 +323,7 @@ class CLIPrompts:
             True if the user confirms to start training, False otherwise.
         """
         self.ui.console.print()
-        self.ui.print_section("Training Configuration Summary", "thermal")
+        self.ui.print_minor_section("Training Configuration Summary")
 
         table = self.ui.create_aligned_table(
             title     = "",
@@ -329,15 +342,15 @@ class CLIPrompts:
         summary_data = [
             (
                 "Configuration",
-                f"[{self.ui.theme.styles['warning']}]{config.get('preset')}[/]"
+                f"[{self.ui.display.styles['warning']}]{config.get('preset')}[/]"
             ),
             (
                 "wandb Project",
-                f"[{self.ui.theme.styles['flock']}]{config.get('wandb_project')}[/]"
+                f"[{self.ui.display.styles['flock']}]{config.get('wandb_project')}[/]"
             ),
             (
                 "Overrides", 
-                f"[{self.ui.theme.styles['drone']}]{num_overrides} custom settings[/]"
+                f"[{self.ui.display.styles['drone']}]{num_overrides} custom settings[/]"
             ),
             (
                 "Hardware", 
@@ -351,15 +364,14 @@ class CLIPrompts:
         self.ui.console.print()
 
         ready_panel = self.ui.create_ready_panel(
-            title    = "✅ Ready to Train!",
-            subtitle = "Your thermal flock is configured and ready to learn"
+            title    = "✅ Ready to train!",
+            subtitle = "Your thermal flock is configured and ready to fly."
         )
         self.ui.console.print(ready_panel)
         self.ui.console.print()
 
-        success_style = self.ui.theme.styles['success']
         return Confirm.ask(
-            f"[{success_style}]Start training with this configuration?[/]",
+            "[bold bright_green]Start training with this configuration?[/]",
             console = self.ui.console,
             default = True,
         )
@@ -475,11 +487,13 @@ class CLIPrompts:
                 return current_val
 
         if new_val != current_val:
-            success_style = self.ui.theme.styles['success']
-            self.ui.print_message(f"Updated {field_name}: "
-                             f"[bright_cyan]{current_val}[/bright_cyan] → "
-                             f"[{success_style}]{new_val}[/]",
-                             "success")
+            success_style = self.ui.display.styles['success']
+            self.ui.print_message(
+                f"Updated {field_name}: "
+                f"[bright_cyan]{current_val}[/bright_cyan] → "
+                f"[{success_style}]{new_val}[/]",
+                "success"
+            )
         else:
             self.ui.print_message("Value unchanged", "info")
 

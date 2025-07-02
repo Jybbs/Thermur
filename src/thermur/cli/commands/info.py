@@ -51,30 +51,23 @@ class InfoCommand:
 
         self._perform_system_validation()
 
-        self.ui.print_section("Features", "accent")
-        features_table = self.ui.create_feature_table()
-        self.ui.console.print(features_table)
-
-        self.ui.print_section("Configuration System", "config")
+        self.ui.print_major_section("Configuration System")
         self.ui.print_config_value(
             "Config Path", 
             "configs/", 
             align_width = 11
         )
         
-        preset_fields = set(self.config.presets.__fields__)
+        preset_names = list(self.config.presets.presets.keys())
         self.ui.print_config_value(
             key         = "Presets", 
-            value       = ", ".join(sorted(preset_fields)), 
+            value       = ", ".join(sorted(preset_names)), 
             align_width = 11
         )
         
 
-        self.ui.print_section(
-            title = "Common Commands", 
-            style = "bright_green"
-        )
-        for example in self.config.commands.examples:
+        self.ui.print_major_section("Common Commands")
+        for example in self.config.cli_config.commands_examples:
             self.ui.print_command_example(
                 description = example["desc"], 
                 command     = example["command"], 
@@ -88,9 +81,9 @@ class InfoCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_section("System Information", "thermal")
+        self.ui.print_major_section("System Information")
 
-        info  = self.system.get_system_info(self.config.wandb_display)
+        info  = self.system.get_system_info(self.config.wandb_integration)
         table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)

@@ -71,13 +71,13 @@ class SystemInspector:
 
     @staticmethod
     def get_system_info(
-        wandb_config: DictConfig
+        wandb_integration: DictConfig
     ) -> dict[str, str | int | float | bool | None]:
         """
         Gather comprehensive system information using platform tools.
 
         Args:
-            wandb_config: Wandb-related configuration from DictConfig.
+            wandb_integration: Wandb-related configuration from DictConfig.
 
         Returns:
             A dictionary containing system details.
@@ -127,7 +127,7 @@ class SystemInspector:
         info["wandb_user"]      = None
         api_key_exists          = False
         if info["wandb_installed"]:
-            api_key_exists = os.environ.get(wandb_config.api_key_env) or api.api_key
+            api_key_exists = os.environ.get(wandb_integration.api_key_env) or api.api_key
 
         if api_key_exists:
             try:
@@ -149,8 +149,8 @@ class SystemInspector:
         Returns:
             A tuple of (status, details) for wandb integration.
         """
-        info     = SystemInspector.get_system_info(cfg.wandb_display)
-        wandb_cfg = cfg.wandb_display
+        info      = SystemInspector.get_system_info(cfg.wandb_integration)
+        wandb_cfg = cfg.wandb_integration
 
         if not info["wandb_installed"]:
             return (
@@ -178,22 +178,22 @@ class SystemInspector:
 
     @staticmethod
     def get_wandb_url(
-        wandb_config : DictConfig, 
-        ui_config    : DictConfig, 
-        project      : str = "thermur"
+        wandb_integration : DictConfig, 
+        ui_config         : DictConfig, 
+        project           : str = "thermur"
     ) -> str | None:
         """
         Generate wandb project URL if possible.
 
         Args:
-            wandb_config : Wandb configuration from DictConfig.
-            ui_config    : UI configuration from DictConfig.
-            project      : The name of the wandb project.
+            wandb_integration : Wandb configuration from DictConfig.
+            ui_config         : UI configuration from DictConfig.
+            project           : The name of the wandb project.
 
         Returns:
             The URL to the wandb project dashboard, or None if not available.
         """
-        info = SystemInspector.get_system_info(wandb_config)
+        info = SystemInspector.get_system_info(wandb_integration)
 
         if not info["wandb_installed"]:
             return None
@@ -206,17 +206,17 @@ class SystemInspector:
 
     @staticmethod
     def validate_config_overrides(
-        overrides     : list[str] | None, 
-        system_config : DictConfig, 
-        wandb_config  : DictConfig
+        overrides         : list[str] | None, 
+        messages          : DictConfig, 
+        wandb_integration : DictConfig
     ) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
         Args:
-            overrides     : A list of configuration overrides to validate.
-            system_config : System configuration from DictConfig.
-            wandb_config  : Wandb configuration from DictConfig.
+            overrides         : A list of configuration overrides to validate.
+            messages          : Messages configuration from DictConfig.
+            wandb_integration : Wandb configuration from DictConfig.
 
         Returns:
             A list of validation issues found; empty if all are valid.
@@ -227,16 +227,16 @@ class SystemInspector:
         issues = []
         for o in overrides:
             if "=" not in o:
-                issues.append(f"{system_config.invalid_override_format}: {o}")
+                issues.append(f"{messages.validation['invalid_override_format']}: {o}")
                 continue
 
             key            = o.split("=")[0]
             sanitized_key  = key.lstrip("+").replace(".", "").replace("_", "")
             key_is_invalid = not sanitized_key.isalnum()
             if key_is_invalid:
-                issues.append(f"{system_config.invalid_override_key}: {o}")
+                issues.append(f"{messages.validation['invalid_override_key']}: {o}")
 
-        if not SystemInspector.get_system_info(wandb_config)["cuda"]:
-            issues.append(system_config.gpu_unavailable)
+        if not SystemInspector.get_system_info(wandb_integration)["cuda"]:
+            issues.append(messages.validation['gpu_unavailable'])
 
         return issues
