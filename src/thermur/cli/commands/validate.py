@@ -11,9 +11,9 @@ from typer import Context, Option
 def validate(
     ctx              : Context,
     config_overrides : list[str] | None = Option(
-        default     = None,
-        param_decls = ["--config", "-c"],
-        help        = "Configuration overrides to validate"
+        None,
+        "--config", "-c",
+        help = "Configuration overrides to validate"
     ),
 ):
     """
