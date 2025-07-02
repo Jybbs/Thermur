@@ -8,6 +8,7 @@ that can be used with hydra-zen's instantiate method.
 from ..factories import *
 from hydra_zen   import make_config, ZenStore
 
+
 cli_config = make_config(
     cli_config          = build_cli_config,
     display             = build_display,
@@ -36,8 +37,8 @@ def register_cli_configs():
     
     store(
         cli_config,
-        name    = "cli",
         group   = "config",
+        name    = "cli",
         package = "_global_"
     )
     

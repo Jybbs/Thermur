@@ -33,12 +33,29 @@ class InfoCommand:
         Initializes the command with shared context components.
 
         Args:
-            ctx: The Typer context, which holds the shared AppContext object
-                 containing UI, system, and other core components.
+            ctx : The Typer context, which holds the shared AppContext object
+                  containing UI, system, and other core components.
         """
         self.config = ctx.obj.config
         self.system = ctx.obj.system
         self.ui     = ctx.obj.ui
+
+    def _perform_system_validation(self):
+        """
+        Performs comprehensive system validation checks.
+
+        This helper validates hardware capabilities, software versions, and
+        integration status, displaying the results in a formatted table.
+        """
+        self.ui.print_major_section("System Information")
+
+        info = self.system.get_system_info(self.config.wandb_integration)
+        self.ui.console.print(self.ui.create_system_table(info))
+        self.ui.console.print()
+
+        status, details = self.system.check_wandb_status(self.config)
+        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
+        self.ui.console.print()
 
     def run(self):
         """
@@ -53,42 +70,23 @@ class InfoCommand:
 
         self.ui.print_major_section("Configuration System")
         self.ui.print_config_value(
-            "Config Path", 
-            "configs/", 
-            align_width = 11
+            align_width = 11,
+            key         = "Config Path",
+            value       = "configs/"
         )
         
         preset_names = list(self.config.presets.presets.keys())
         self.ui.print_config_value(
-            key         = "Presets", 
-            value       = ", ".join(sorted(preset_names)), 
-            align_width = 11
+            align_width = 11,
+            key         = "Presets",
+            value       = ", ".join(sorted(preset_names))
         )
         
 
         self.ui.print_major_section("Common Commands")
         for example in self.config.cli_config.commands_examples:
             self.ui.print_command_example(
-                description = example["desc"], 
-                command     = example["command"], 
+                command     = example["command"],
+                description = example["desc"],
                 note        = example["note"]
             )
-
-    def _perform_system_validation(self):
-        """
-        Performs comprehensive system validation checks.
-
-        This helper validates hardware capabilities, software versions, and
-        integration status, displaying the results in a formatted table.
-        """
-        self.ui.print_major_section("System Information")
-
-        info  = self.system.get_system_info(self.config.wandb_integration)
-        table = self.ui.create_system_table(info)
-
-        self.ui.console.print(table)
-        self.ui.console.print()
-
-        status, details = self.system.check_wandb_status(self.config)
-        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
-        self.ui.console.print()
