@@ -43,7 +43,6 @@ class CommandsModel(BaseModel, extra="forbid"):
     available: list[dict[str, str]] = Field(
         default = [
             {"icon": "🚀", "name": "train",     "desc": "Train thermal drone flock behaviors"},
-            {"icon": "🔧", "name": "configure", "desc": "Manage training configurations"},
             {"icon": "📋", "name": "info",      "desc": "Display system and configuration details"},
             {"icon": "✅", "name": "validate",  "desc": "Validate configuration and dependencies"},
             {"icon": "🎨", "name": "monitor",   "desc": "Monitor training progress and resources"},
@@ -76,11 +75,6 @@ class CommandsModel(BaseModel, extra="forbid"):
                 "desc"    : "Validate configuration",
                 "command" : "thermur validate --config hyperparameters.lr=0.001",
                 "note"    : "Check before training"
-            },
-            {
-                "desc"    : "Interactive configuration",
-                "command" : "thermur configure",
-                "note"    : "GUI-style config builder"
             },
             {
                 "desc"    : "Train with overrides",

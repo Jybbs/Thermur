@@ -69,11 +69,6 @@ class InfoCommand:
             align_width = 11
         )
         
-        self.ui.print_config_value(
-            key         = "Explorer", 
-            value       = "thermur configure", 
-            align_width = 11
-        )
 
         self.ui.print_section(
             title = self.config.sections.common_commands, 

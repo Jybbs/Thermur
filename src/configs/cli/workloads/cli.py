@@ -11,8 +11,6 @@ from hydra_zen   import make_config, ZenStore
 cli_config = make_config(
     cli                 = build_cli,
     commands            = build_commands,
-    explorer            = build_explorer,
-    explorer_messages   = build_explorer_messages,
     headers             = build_headers,
     messages            = build_messages,
     presets             = build_presets,

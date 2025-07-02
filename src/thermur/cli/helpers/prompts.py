@@ -69,7 +69,7 @@ class CLIPrompts:
         preset_configs = self.prompts.preset_configs
         for name, config in preset_configs.items():
             if name == "custom":
-                row_style = f"[{self.ui.ui.muted_style}]"
+                row_style = f"[grey70]"
                 table.add_row(
                     f"{row_style}{config['name']}[/]",
                     f"{row_style}{config['desc']}[/]",
@@ -101,7 +101,7 @@ class CLIPrompts:
 
         if chosen_preset:
             self.ui.print_message(
-                f"Selected preset: [{self.ui.ui.cyan_style}]{chosen_preset}[/]",
+                f"Selected preset: [bright_cyan]{chosen_preset}[/bright_cyan]",
                 msg_type="success"
             )
         else:
@@ -126,9 +126,9 @@ class CLIPrompts:
         self.ui.console.print()
         self.ui.print_message("Configure experiment tracking", "flock")
         self.ui.console.print(
-            f"[{self.ui.ui.muted_style}]"
+            f"[grey70]"
             "wandb will track metrics, logs, and model checkpoints"
-            "[/]"
+            "[/grey70]"
         )
         self.ui.console.print()
 
@@ -147,7 +147,7 @@ class CLIPrompts:
         ).ask()
 
         self.ui.print_message(
-            f"Project name: [{self.ui.ui.cyan_style}]{project_name}[/]", "success"
+            f"Project name: [bright_cyan]{project_name}[/bright_cyan]", "success"
         )
         return project_name
 
@@ -183,9 +183,9 @@ class CLIPrompts:
 
         self.ui.console.print()
         self.ui.console.print(
-            f"[{self.ui.ui.muted_style}]"
+            f"[grey70]"
             "Enter overrides one at a time (empty line to finish):"
-            "[/]"
+            "[/grey70]"
         )
 
         overrides = []
@@ -201,8 +201,7 @@ class CLIPrompts:
 
             overrides.append(override)
             success_style = self.ui.theme.styles['success']
-            cyan_style    = self.ui.ui.cyan_style
-            self.ui.console.print(f"  [{success_style}]✓[/] Added: [{cyan_style}]{override}[/]")
+            self.ui.console.print(f"  [{success_style}]✓[/] Added: [bright_cyan]{override}[/bright_cyan]")
 
         if overrides:
             self.ui.console.print()
@@ -369,7 +368,7 @@ class CLIPrompts:
             categories[category].append(cfg)
 
         choices = []
-        emojis  = self.ui.ui.category_emojis
+        emojis  = {"standard": "", "custom": "✨", "advanced": "🔧"}
         for category, items in sorted(categories.items()):
             if category != "main":
                 choices.append(questionary.Separator(f"── {category.title()} ──"))
@@ -416,17 +415,17 @@ class CLIPrompts:
         """
         self.ui.console.print()
 
-        content = (f"[{self.ui.ui.title_text_style}]{field_name}[/]\n"
-                   f"[{self.ui.ui.muted_style}]Type: {field_type}[/]\n"
-                   f"[{self.ui.ui.muted_style}]Current: "
-                   f"[{self.ui.ui.white_style}]{current_val}[/][/]")
+        content = (f"[bold bright_cyan]{field_name}[/bold bright_cyan]\n"
+                   f"[grey70]Type: {field_type}[/grey70]\n"
+                   f"[grey70]Current: "
+                   f"[white]{current_val}[/white][/grey70]")
 
         if description:
-            content += f"\n[{self.ui.ui.subtitle_text_style}]{description}[/]"
+            content += f"\n[muted italic]{description}[/muted italic]"
 
         info_panel = Panel(
             content,
-            border_style = self.ui.ui.panel_border_style,
+            border_style = "bright_blue",
             padding      = (1, 2),
         )
         self.ui.console.print(info_panel)
@@ -446,20 +445,16 @@ class CLIPrompts:
             try:
                 if new_val_str is None:
                     return current_val
-                if field_type == "int":
-                    new_val = int(new_val_str)
-                elif field_type == "float":
-                    new_val = float(new_val_str)
-                else:
-                    new_val = new_val_str
-            except (ValueError, TypeError):
-                self.ui.print_message(f"Invalid {field_type} value. Keeping original.", "error")
+                    
+                new_val = self._convert_value(new_val_str, field_type)
+            except (ValueError, TypeError) as e:
+                self.ui.print_message(f"Invalid {field_type} value: {e}. Keeping original.", "error")
                 return current_val
 
         if new_val != current_val:
             success_style = self.ui.theme.styles['success']
             self.ui.print_message(f"Updated {field_name}: "
-                             f"[{self.ui.ui.cyan_style}]{current_val}[/] → "
+                             f"[bright_cyan]{current_val}[/bright_cyan] → "
                              f"[{success_style}]{new_val}[/]",
                              "success")
         else:
@@ -525,34 +520,91 @@ class CLIPrompts:
         Returns:
             The string `name` of the selected component, or None if the user goes back.
         """
-        self.ui.print_section(title, "config")
-
         choices = []
         for name, desc in options:
-            choice_text = f"[{self.ui.ui.cyan_style}]{name}[/]"
-
-            if desc:
-                desc_limit = 50
-                if len(desc) > desc_limit:
-                    desc = desc[:desc_limit - 3] + "..."
-                choice_text += f" - [{self.ui.ui.muted_style}]{desc}[/]"
-
-            choices.append(questionary.Choice(choice_text, value=name))
-
+            # Truncate description if too long
+            if len(desc) > 70:
+                desc = desc[:67] + "..."
+            choices.append(questionary.Choice(f"{name} - {desc}", value=name))
+        
         choices.extend([
             questionary.Separator(),
-            questionary.Choice("↩️  Back", value=None)
+            questionary.Choice("↩️  Back to previous menu", value=None)
         ])
-
+        
         selected = questionary.select(
-            "Select component to explore:",
+            title,
             choices = choices,
             style   = self.thermal_style,
         ).ask()
-
+        
         if selected:
             self.ui.print_message(
-                f"Selected: [{self.ui.ui.cyan_style}]{selected}[/]", "success"
+                f"Selected: [bright_cyan]{selected}[/bright_cyan]", "success"
             )
-
+        
         return selected
+    
+    # Removed select_config_with_table - no longer needed
+    
+    def _convert_value(self, value_str: str, field_type: str) -> Any:
+        """
+        Convert a string value to the appropriate type.
+        
+        Args:
+            value_str: The string value to convert
+            field_type: The target type as a string
+            
+        Returns:
+            The converted value
+        """
+        if field_type == "int":
+            return int(value_str)
+        elif field_type == "float":
+            return float(value_str)
+        elif field_type == "bool":
+            return value_str.lower() in ("true", "yes", "1", "on")
+        elif field_type.startswith("list"):
+            # Handle list types like list[str], list[int], etc.
+            import json
+            try:
+                # Try JSON parsing first
+                val = json.loads(value_str)
+                if isinstance(val, list):
+                    return val
+            except:
+                # Fall back to comma-separated values
+                items = [item.strip() for item in value_str.split(",")]
+                # Try to infer item type from field_type
+                if "[int]" in field_type:
+                    return [int(item) for item in items]
+                elif "[float]" in field_type:
+                    return [float(item) for item in items]
+                else:
+                    return items
+        elif field_type.startswith("dict"):
+            import json
+            return json.loads(value_str)
+        elif field_type.startswith("tuple"):
+            import json
+            val = json.loads(value_str)
+            return tuple(val) if isinstance(val, list) else val
+        elif field_type == "Path":
+            from pathlib import Path
+            return Path(value_str)
+        else:
+            # Default to string
+            return value_str
+    
+    def confirm_training_start(self) -> bool:
+        """
+        Ask user to confirm starting training with current configuration.
+        
+        Returns:
+            True if user confirms, False otherwise.
+        """
+        return questionary.confirm(
+            self.messages.ready_to_train,
+            default=True,
+            style=self.thermal_style
+        ).ask()

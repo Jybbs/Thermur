@@ -124,10 +124,6 @@ class TipsModel(BaseModel, extra="forbid"):
                 "command" : "thermur monitor --project my-experiment",
             },
             {
-                "desc"    : "Explore configurations",
-                "command" : "thermur configure",
-            },
-            {
                 "desc"    : "Override any parameter",
                 "command" : "thermur train --config hyperparameters.lr=0.001",
             },

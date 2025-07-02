@@ -11,9 +11,7 @@ options. Each model corresponds to a specific aspect of the CLI experience:
 All models use `extra="forbid"` to prevent configuration typos from going unnoticed.
 """
 from .core     import *
-from .explorer import *
 from .messages import *
 from .presets  import *
-from .system   import *
 from .system   import *
 from .ui       import *
