@@ -7,7 +7,7 @@ command definitions, training components, and integration settings.
 from pydantic import BaseModel, Field
 
 
-class CLIConfigModel(BaseModel, extra="forbid"):
+class CLIModel(BaseModel, extra="forbid"):
     """
     Main CLI configuration and metadata.
     

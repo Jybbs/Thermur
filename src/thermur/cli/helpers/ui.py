@@ -6,7 +6,7 @@ built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
 from omegaconf    import DictConfig
-from rich         import progress, box
+from rich         import box, progress
 from rich.align   import Align
 from rich.console import Console
 from rich.panel   import Panel
@@ -203,8 +203,8 @@ class ThermurUI:
 
     def print_command_example(
         self,
-        description : str,
         command     : str,
+        description : str,
         note        : str | None = None
     ):
         """
@@ -214,8 +214,8 @@ class ThermurUI:
         understand how to use the CLI effectively.
         
         Args:
-            description : What the command does
             command     : The actual command to run
+            description : What the command does
             note        : Optional note about the command
         """
         self.console.print(
@@ -234,10 +234,10 @@ class ThermurUI:
 
     def print_config_value(
         self,
-        key   : str,
-        value : str,
-        desc  : str | None = None,
-        align_width : int = 0
+        align_width : int,
+        key         : str,
+        value       : str,
+        desc        : str | None = None
     ):
         """
         Print a configuration key-value pair.
@@ -246,10 +246,10 @@ class ThermurUI:
         improved readability.
         
         Args:
+            align_width : Width to align the key to (for vertical alignment)
             key         : Configuration key
             value       : Configuration value
             desc        : Optional description
-            align_width : Width to align the key to (for vertical alignment)
         """
         if align_width:
             key_formatted = f"{key:<{align_width}}"
@@ -332,7 +332,7 @@ class ThermurUI:
             ),
 
             progress.TextColumn(
-                "[{0}]{{task.description}}[/{0}]".format(self.display.progress_style)
+                text_format = "[{0}]{{task.description}}[/{0}]".format(self.display.progress_style)
             ),
             progress.BarColumn(
                 bar_width      = 30,
@@ -354,11 +354,11 @@ class ThermurUI:
 
     def create_aligned_table(
         self,
+        border_style : str | None,
         columns      : list[tuple[str, str, int, str]],
-        title        : str = "",
-        border_style : str = None,
-        show_edge    : bool = False,
-        expand       : bool = False,
+        expand       : bool,
+        show_edge    : bool,
+        title        : str,
         **kwargs
     ) -> Table:
         """
@@ -368,11 +368,11 @@ class ThermurUI:
         ensuring visual consistency across all CLI components.
         
         Args:
-            columns      : List of (title, style, width, align) tuples
-            title        : Table title displayed at the top
             border_style : Rich style string for table borders
-            show_edge    : Whether to display table edge borders
+            columns      : List of (title, style, width, align) tuples
             expand       : Whether to expand table to full terminal width
+            show_edge    : Whether to display table edge borders
+            title        : Table title displayed at the top
             **kwargs     : Additional keyword arguments for Rich Table
             
         Returns:
@@ -574,9 +574,9 @@ class ThermurUI:
         """
         style   = self.display.styles['success']
         content = Align.left(
-            f"[bold {style}]{title}[/]\n"
-            f"[{self.display.styles['muted']}]{subtitle}[/]",
-            vertical="middle",
+            renderable = f"[bold {style}]{title}[/]\n"
+                         f"[{self.display.styles['muted']}]{subtitle}[/]",
+            vertical   = "middle"
         )
         return Panel(
             content, 
@@ -588,8 +588,8 @@ class ThermurUI:
     def create_progress_bar(
         self,
         color         : str,
-        used_fraction : float,
-        length        : int = None,
+        length        : int | None,
+        used_fraction : float
     ) -> str:
         """
         Create a string-based progress bar using Rich markup for resource display.
@@ -599,8 +599,8 @@ class ThermurUI:
         
         Args:
             color         : Rich color name for the filled portion of the bar
-            used_fraction : Utilization ratio from 0.0 (empty) to 1.0 (full)
             length        : Total character width of the progress bar
+            used_fraction : Utilization ratio from 0.0 (empty) to 1.0 (full)
             
         Returns:
             Rich markup string representing the styled progress bar

@@ -8,7 +8,6 @@ DictConfig objects for all static text and configuration.
 """
 from omegaconf   import DictConfig
 from rich.align  import Align
-from rich.panel  import Panel
 from rich.prompt import Confirm
 from typing      import Any
 
@@ -27,7 +26,7 @@ class CLIPrompts:
     """
     def __init__(
         self, 
-        cli_cfg  : DictConfig,
+        cli      : DictConfig,
         messages : DictConfig,
         presets  : DictConfig,
         prompts  : DictConfig,
@@ -37,13 +36,13 @@ class CLIPrompts:
         Initializes the prompt orchestrator.
 
         Args:
-            cli_cfg  : CLI configuration containing command-related settings.
+            cli      : CLI configuration containing command-related settings.
             messages : Messages configuration containing message templates.
             presets  : Presets configuration containing training preset definitions.
             prompts  : Prompts configuration containing prompts-related settings.
             ui       : An initialized `ThermurUI` object for rendering components.
         """
-        self.cli_cfg  = cli_cfg
+        self.cli      = cli
         self.messages = messages
         self.presets  = presets
         self.prompts  = prompts
@@ -68,12 +67,12 @@ class CLIPrompts:
         self.ui.print_minor_section("Configuration Presets")
 
         table = self.ui.create_aligned_table(
-            title   = "Available Presets",
             columns = self.prompts.presets_table_columns,
+            title   = "Available Presets"
         )
 
-        preset_configs = self.presets.presets
-        for name, config in preset_configs.items():
+        preset_cfgs = self.presets.presets
+        for name, config in preset_cfgs.items():
             display_name = f"{config['emoji']} {config['name']}"
             if name == "custom":
                 row_style = f"[grey70]"
@@ -89,20 +88,23 @@ class CLIPrompts:
         self.ui.console.print()
 
         choices = [
-            questionary.Choice(preset_configs[name]['emoji'], value=name)
-            for name in ['quick', 'standard', 'large', 'debug']
+            questionary.Choice(
+                title = preset_cfgs[name]['emoji'], 
+                value = name
+            )
+            for name in list(self.config.presets.presets.keys())
         ]
         choices.extend([
             questionary.Separator(),
             questionary.Choice(
-                title = preset_configs['custom']['emoji'],
+                title = preset_cfgs['custom']['emoji'],
                 value = None
             ),
         ])
 
         chosen_emoji = questionary.select(
-            message = "Which configuration preset would you like to use?",
             choices = choices,
+            message = "Which configuration preset would you like to use?",
             style   = self.thermal_style
         ).ask()
 
@@ -110,7 +112,7 @@ class CLIPrompts:
         if chosen_emoji:
             # Find which preset has this emoji
             chosen_preset = None
-            for name, config in preset_configs.items():
+            for name, config in preset_cfgs.items():
                 if config['emoji'] == chosen_emoji:
                     chosen_preset = name
                     break
@@ -136,7 +138,7 @@ class CLIPrompts:
         to enter their project name.
 
         Args:
-            default_project : The default project name to suggest.
+            default_project: The default project name to suggest.
 
         Returns:
             The final project name for wandb tracking.
@@ -155,9 +157,9 @@ class CLIPrompts:
 
 
         project_name = questionary.text(
-            message     = "Enter wandb project name:",
             default     = default_project,
             instruction = "(press Enter for default)",
+            message     = "Enter wandb project name:",
             style       = self.thermal_style
         ).ask()
 
@@ -182,15 +184,15 @@ class CLIPrompts:
         self.ui.print_minor_section("Advanced Configuration")
 
         syntax_panel = self.ui.create_syntax_panel(
-            code  = self.cli_cfg.override_syntax_help,
+            code  = self.cli.override_syntax_help,
             title = "Configuration Override Syntax",
         )
         self.ui.console.print(syntax_panel)
         self.ui.console.print()
 
         add_overrides = questionary.confirm(
-            message = "Would you like to add configuration overrides?",
             default = False,
+            message = "Would you like to add configuration overrides?",
             style   = self.thermal_style
         ).ask()
 
@@ -207,8 +209,8 @@ class CLIPrompts:
         overrides = []
         while True:
             override = questionary.text(
-                message     = "Override:",
                 instruction = "(e.g., hyperparameters.lr=0.001)",
+                message     = "Override:",
                 style       = self.thermal_style
             ).ask()
 
@@ -248,17 +250,17 @@ class CLIPrompts:
         self.ui.console.print()
 
         warning_panel = self.ui.create_warning_panel(
-            title  = "⚠️  Configuration Issues Detected",
-            issues = issues
+            issues = issues,
+            title  = "⚠️  Configuration Issues Detected"
         )
         self.ui.console.print(warning_panel)
         self.ui.console.print()
 
         warning_style = self.ui.display.styles['warning']
         return Confirm.ask(
-            f"[{warning_style}]Do you want to proceed anyway?[/]",
             console = self.ui.console,
             default = False,
+            prompt  = f"[{warning_style}]Do you want to proceed anyway?[/]"
         )
 
     def show_training_summary(self, config: dict[str, Any]) -> bool:
@@ -279,27 +281,24 @@ class CLIPrompts:
         self.ui.print_minor_section("Training Configuration Summary")
 
         table = self.ui.create_aligned_table(
-            title     = "",
-            columns   = [("Setting", "bright_cyan", 20, "left"),
-                         ("Value", "bright_white", 40, "left")],
-            show_edge = False,
             box       = None,
+            columns   = [
+                ("Setting", "bright_cyan",  20, "left"),
+                ("Value",   "bright_white", 40, "left")
+            ],
+            show_edge = False,
+            title     = ""
         )
 
-        gpu_status = (
-            "🎮 GPU Acceleration" if config.get("gpu_available") 
-            else "💻 CPU Mode"
-        )
         num_overrides = config.get('overrides', 0)
-
-        summary_data = [
+        summary_data  = [
             (
                 "Configuration",
                 f"[{self.ui.display.styles['warning']}]{config.get('preset')}[/]"
             ),
             (
                 "Hardware", 
-                gpu_status
+                "🎮 GPU Acceleration" if config.get("gpu_available") else "💻 CPU Mode"
             ),
             (
                 "Overrides", 
@@ -317,8 +316,8 @@ class CLIPrompts:
         self.ui.console.print()
 
         ready_panel = self.ui.create_ready_panel(
-            title    = "✅ Ready to train!",
-            subtitle = "Your thermal flock is configured and ready to fly."
+            subtitle = "Your thermal flock is configured and ready to fly.",
+            title    = "✅ Ready to train!"
         )
         self.ui.console.print(ready_panel)
         self.ui.console.print()
@@ -326,9 +325,5 @@ class CLIPrompts:
         return Confirm.ask(
             "[bold bright_green]Start training with this configuration?[/]",
             console = self.ui.console,
-            default = True,
+            default = True
         )
-
-
-
-

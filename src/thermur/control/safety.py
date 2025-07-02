@@ -31,22 +31,22 @@ class ThermalBarrierFunction:
     
     def __init__(
         self,
-        max_temperature      : float,
-        activation_tolerance : float
+        activation_tolerance : float,
+        max_temperature      : float
     ):
         """
         Initializes the thermal barrier function.
         
         Args:
-            max_temperature      : Maximum safe temperature T_max for agents
             activation_tolerance : Threshold for determining CBF activation
+            max_temperature      : Maximum safe temperature T_max for agents
         """
-        self.max_temperature      = max_temperature
-        self.activation_tolerance = activation_tolerance
         self.activation_count     = 0
+        self.activation_tolerance = activation_tolerance
+        self.max_temperature      = max_temperature
         self.total_queries        = 0
     
-    def evaluate(self, sd: TensorDict) -> tuple[Tensor, Tensor]:
+    def evaluate(self, flock: TensorDict) -> tuple[Tensor, Tensor]:
         """
         Computes the barrier function h(𝐬) and its gradient ∇h(𝐬).
         
@@ -55,22 +55,22 @@ class ThermalBarrierFunction:
         regions, creating a "force" that pushes agents toward safety.
         
         Args:
-            sd: The current observation data for the flock containing
-                temperature and temperature_grad tensors.
+            flock: The current observation data for the flock containing
+                   temperature and temperature_grad tensors.
                 
         Returns:
             A tuple containing (h_values, h_grads).
         """
-        temperature = sd["temperature"]
-        if "temperature_grad" in sd:
-            temp_grad = sd["temperature_grad"]
+        temperature = flock["temperature"]
+        if "temperature_grad" in flock:
+            temp_grad = flock["temperature_grad"]
 
         else:
             # Fall back to gradient from agent position if not provided
             temp_grad = None
             
-        h_values = self.max_temperature - temperature
         h_grads  = -temp_grad if temp_grad is not None else None
+        h_values = self.max_temperature - temperature
         
         return h_values, h_grads
         
@@ -80,10 +80,10 @@ class ThermalBarrierFunction:
         
         Args:
             is_active: Boolean tensor indicating which agents had the CBF
-                      actively modify their control input.
+                       actively modify their control input.
         """
-        self.total_queries    += is_active.shape[0]
         self.activation_count += is_active.sum().item()
+        self.total_queries    += is_active.shape[0]
             
     def get_activation_rate(self) -> float:
         """
@@ -112,11 +112,11 @@ class SafetyFilter:
 
     def __init__(
         self, 
-        barrier       : ThermalBarrierFunction,
-        agent_count   : int,
-        spatial_dims  : int,
-        cbf_alpha     : float,
-        safety_config : SafetyModel
+        agent_count  : int,
+        barrier      : ThermalBarrierFunction,
+        cbf_alpha    : float,
+        safety       : SafetyModel,
+        spatial_dims : int,
     ):
         """
         Initializes the safety filter with its required configurations.
@@ -125,18 +125,18 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            barrier      : The ThermalBarrierFunction instance that defines
-                          the safety boundary.
             agent_count  : Number of agents in the flock
-            spatial_dims : Spatial dimensions (2D or 3D)
+            barrier      : The ThermalBarrierFunction instance that defines
+                           the safety boundary.
             cbf_alpha    : CBF constraint parameter α
-            safety_config : QP solver configuration model
+            safety       : QP solver configuration model
+            spatial_dims : Spatial dimensions (2D or 3D)
         """
         self.barrier       = barrier
         self.agent_count   = agent_count
         self.spatial_dims  = spatial_dims
         self.cbf_alpha     = cbf_alpha
-        self.safety_config = safety_config
+        self.safety = safety
         self.Q             = torch.eye(
             n      = spatial_dims,
             dtype  = torch.float32,
@@ -145,7 +145,7 @@ class SafetyFilter:
 
     def filter(
         self, 
-        sd        : TensorDict, 
+        flock        : TensorDict, 
         u_nominal : Tensor
     ) -> Tensor:
         """
@@ -160,21 +160,21 @@ class SafetyFilter:
         into the QP matrices `Q`, `p`, `G`, and `h` for the `qpth` solver.
 
         Args:
-            sd        : The current observation data for the flock containing
+            flock        : The current observation data for the flock containing
                         temperature and temperature_grad tensors.
             u_nominal : The desired control action from the policy network.
 
         Returns:
             The batch of safe control actions `u*`.
         """
-        h_values, h_grads = self.barrier.evaluate(sd)
+        h_values, h_grads = self.barrier.evaluate(flock)
         agent_count       = self.agent_count
         device            = u_nominal.device
 
         # Instantiate the QP solver with its configuration.
         solver = QPFunction(
-            eps     = self.safety_config.qp_eps,
-            maxIter = self.safety_config.qp_max_iter,
+            eps     = self.safety.qp_eps,
+            maxIter = self.safety.qp_max_iter,
         )
 
         try:
@@ -195,7 +195,7 @@ class SafetyFilter:
             self.barrier.log_activation(is_active)
 
         except Exception as e:
-            if self.safety_config.qp_on_failure == "nominal":
+            if self.safety.qp_on_failure == "nominal":
                 return u_nominal
             
             else:
