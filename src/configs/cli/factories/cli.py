@@ -10,13 +10,10 @@ from hydra_zen import builds
 
 build_cli                 = builds(CLIModel)
 build_commands            = builds(CommandsModel)  
-build_headers             = builds(HeadersModel)
 build_messages            = builds(MessagesModel)
 build_presets             = builds(PresetsModel)
 build_prompts             = builds(PromptsModel)
-build_sections            = builds(SectionsModel)
 build_status              = builds(StatusModel)
-build_system              = builds(SystemModel)
 build_theme               = builds(ThemeModel)
 build_training_components = builds(TrainingComponentsModel)
 build_ui                  = builds(UIModel)

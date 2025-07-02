@@ -53,11 +53,11 @@ class ValidateCommand:
         Args:
             config_overrides : A list of Hydra configuration overrides to validate.
         """
-        self.ui.print_header(self.config.headers.validate_title)
+        self.ui.print_header("System Validation")
 
         self._perform_system_validation()
 
-        self.ui.print_section(self.config.sections.config_check, "config")
+        self.ui.print_section("Configuration Check", "config")
 
         with self.ui.console.status(
             self.config.status.validating_config,
@@ -74,9 +74,11 @@ class ValidateCommand:
             for issue in issues:
                 self.ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
         else:
-            self.ui.print_message(self.config.validation.config_validation_passed, "success")
+            self.ui.print_message(
+                self.config.validation.config_validation_passed, "success"
+            )
 
-        self.ui.print_section(self.config.sections.integration_check, "flock")
+        self.ui.print_section("Integration Check", "flock")
         status, details = self.system.check_wandb_status(self.config)
 
         if "Not" in status:
@@ -86,10 +88,14 @@ class ValidateCommand:
 
         self.ui.console.print()
         if issues or "Not" in status:
-            self.ui.print_message(self.config.validation.validation_with_warnings, "warning")
+            self.ui.print_message(
+                self.config.validation.validation_with_warnings, "warning"
+            )
             self.ui.print_message(self.config.validation.review_issues_tip, "tip")
         else:
-            self.ui.print_message(self.config.validation.all_validations_passed, "success")
+            self.ui.print_message(
+                self.config.validation.all_validations_passed, "success"
+            )
             self.ui.print_message(self.config.validation.system_ready, "success")
 
     def _perform_system_validation(self):
@@ -99,10 +105,10 @@ class ValidateCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_section(self.config.sections.system_information, "thermal")
+        self.ui.print_section("System Information", "thermal")
 
         info = self.system.get_system_info(self.config.wandb_display)
-        table = self.ui.create_system_table(info, self.config.system)
+        table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)
         self.ui.console.print()

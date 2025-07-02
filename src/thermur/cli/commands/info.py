@@ -47,22 +47,22 @@ class InfoCommand:
         This method orchestrates the process of printing headers, validating
         the system, and displaying tables of features and configurations.
         """
-        self.ui.print_header(self.config.headers.info_title)
+        self.ui.print_header("Thermur System Information")
 
         self._perform_system_validation()
 
-        self.ui.print_section(self.config.sections.features, "accent")
+        self.ui.print_section("Features", "accent")
         features_table = self.ui.create_feature_table()
         self.ui.console.print(features_table)
 
-        self.ui.print_section(self.config.sections.config_system, "config")
+        self.ui.print_section("Configuration System", "config")
         self.ui.print_config_value(
             "Config Path", 
             "configs/", 
             align_width = 11
         )
         
-        preset_fields = set(self.config.presets.__fields__) - {"table_title"}
+        preset_fields = set(self.config.presets.__fields__)
         self.ui.print_config_value(
             key         = "Presets", 
             value       = ", ".join(sorted(preset_fields)), 
@@ -88,10 +88,10 @@ class InfoCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_section(self.config.sections.system_information, "thermal")
+        self.ui.print_section("System Information", "thermal")
 
         info  = self.system.get_system_info(self.config.wandb_display)
-        table = self.ui.create_system_table(info, self.config.system)
+        table = self.ui.create_system_table(info)
 
         self.ui.console.print(table)
         self.ui.console.print()

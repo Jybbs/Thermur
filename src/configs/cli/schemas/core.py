@@ -128,7 +128,3 @@ class TrainingComponentsModel(BaseModel, extra="forbid"):
         ],
         description = "List of (key, config_path, display_name) for training components"
     )
-    visualizer_key: str = Field(
-        default     = "visualizer",
-        description = "Configuration key for the visualizer component"
-    )

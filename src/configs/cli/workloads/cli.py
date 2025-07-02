@@ -11,13 +11,10 @@ from hydra_zen   import make_config, ZenStore
 cli_config = make_config(
     cli                 = build_cli,
     commands            = build_commands,
-    headers             = build_headers,
     messages            = build_messages,
     presets             = build_presets,
     prompts             = build_prompts,
-    sections            = build_sections,
     status              = build_status,
-    system              = build_system,
     theme               = build_theme,
     training_components = build_training_components,
     ui                  = build_ui,
