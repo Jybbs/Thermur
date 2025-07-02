@@ -33,8 +33,8 @@ class InfoCommand:
         Initializes the command with shared context components.
 
         Args:
-            ctx : The Typer context, which holds the shared AppContext object
-                  containing UI, system, and other core components.
+            ctx: The Typer context, which holds the shared AppContext object
+                 containing UI, system, and other core components.
         """
         self.config = ctx.obj.config
         self.system = ctx.obj.system

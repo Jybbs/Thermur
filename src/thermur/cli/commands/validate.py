@@ -39,8 +39,8 @@ class ValidateCommand:
         Initializes the command with shared context components.
 
         Args:
-            ctx : The Typer context, which holds the shared AppContext object
-                  containing UI, system, and other core components.
+            ctx: The Typer context, which holds the shared AppContext object
+                 containing UI, system, and other core components.
         """
         self.config = ctx.obj.config
         self.system = ctx.obj.system
@@ -68,7 +68,7 @@ class ValidateCommand:
         Executes the main validation workflow.
 
         Args:
-            config_overrides : A list of Hydra configuration overrides to validate.
+            config_overrides: A list of Hydra configuration overrides to validate.
         """
         self.ui.print_header("System Validation")
         self._perform_system_validation()
@@ -86,7 +86,10 @@ class ValidateCommand:
             )
 
         if issues:
-            self.ui.print_message(self.config.messages.validation["config_issues"], "warning")
+            self.ui.print_message(
+                message  = self.config.messages.validation["config_issues"], 
+                msg_type = "warning"
+            )
             for issue in issues:
                 self.ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
         else:

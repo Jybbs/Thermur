@@ -12,10 +12,10 @@ from webbrowser import open
 def monitor(
     ctx     : Context,
     project : str | None = Option(
-        None,
-        "--project", "-p",
-        help="wandb project name to monitor. Defaults to 'thermur'."
-    ),
+        default     = None,
+        help        = "wandb project name to monitor. Defaults to 'thermur'.",
+        param_decls = ["--project", "-p"]
+    )
 ):
     """
     🎨 Open wandb monitoring dashboard for the specified project.
@@ -55,7 +55,7 @@ class MonitorCommand:
         URL, and attempts to open it in the system's default web browser.
 
         Args:
-            project : The wandb project name to open, or None to use the default.
+            project: The wandb project name to open, or None to use the default.
         """
         if project is None:
             project = self.config.wandb_integration.default_project
@@ -63,9 +63,9 @@ class MonitorCommand:
         self.ui.print_header("wandb Monitoring")
 
         url = self.system.get_wandb_url(
-            wandb_integration = self.config.wandb_integration, 
-            ui_config         = self.config.display, 
-            project           = project
+            project           = project,
+            ui_config         = self.config.display,
+            wandb_integration = self.config.wandb_integration
         )
 
         if not url:
@@ -100,8 +100,8 @@ class MonitorCommand:
 
         try:
             with self.ui.console.status(
-                self.msgs.status["launching_browser"],
-                spinner="dots"
+                status  = self.msgs.status["launching_browser"],
+                spinner = "dots"
             ):
                 open(url)
 

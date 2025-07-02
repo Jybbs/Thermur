@@ -10,32 +10,32 @@ from typer     import Context, Exit, Option
 
 
 def train(
-    ctx: Context,
-    config_overrides: list[str] | None = Option(
-        None,
-        "--config", "-c",
-        help="Hydra configuration overrides"
+    ctx              : Context,
+    config_overrides : list[str] | None = Option(
+        default     = None,
+        help        = "Hydra configuration overrides",
+        param_decls = ["--config", "-c"]
     ),
-    force: bool = Option(
-        False,
-        "--force", "-f",
-        help="Skip system checks and warnings"
+    force            : bool = Option(
+        default     = False,
+        help        = "Skip system checks and warnings",
+        param_decls = ["--force", "-f"]
     ),
-    interactive: bool = Option(
-        True,
-        "--interactive/--no-interactive", "-i/-n",
-        help="Enable interactive configuration prompts"
+    interactive      : bool = Option(
+        default     = True,
+        help        = "Enable interactive configuration prompts",
+        param_decls = ["--interactive/--no-interactive", "-i/-n"]
     ),
-    preset: str | None = Option(
-        None,
-        "--preset", "-p",
-        help="Configuration preset (quick, standard, large, debug)"
+    preset           : str | None = Option(
+        default     = None,
+        help        = "Configuration preset (quick, standard, large, debug)",
+        param_decls = ["--preset", "-p"]
     ),
-    wandb_project: str | None = Option(
-        None,
-        "--wandb-project", "-w",
-        help="wandb project name for experiment tracking"
-    ),
+    wandb_project    : str | None = Option(
+        default     = None,
+        help        = "wandb project name for experiment tracking",
+        param_decls = ["--wandb-project", "-w"]
+    )
 ):
     """
     🚀 Train the thermal drone flock using imitation learning.
@@ -56,7 +56,7 @@ def train(
         force            = force,
         interactive      = interactive,
         preset           = preset,
-        wandb_project    = wandb_project,
+        wandb_project    = wandb_project
     )
 
 
@@ -81,56 +81,6 @@ class TrainCommand:
         self.system  = ctx.obj.system
         self.ui      = ctx.obj.ui
 
-    def run(
-        self,
-        config_overrides : list[str] | None,
-        force            : bool,
-        interactive      : bool,
-        preset           : str | None,
-        wandb_project    : str | None,
-    ):
-        """
-        Executes the main training workflow from start to finish.
-
-        This method orchestrates the entire training process, including
-        validation, configuration, user confirmation, and the final
-        launch of the core training logic.
-
-        Args:
-            config_overrides : A list of Hydra configuration overrides.
-            force            : If True, skips system validation checks.
-            interactive      : If True, enables interactive prompts for configuration.
-            preset           : The name of the configuration preset to use.
-            wandb_project    : The name of the Weights & Biases project for tracking.
-        """
-        self.ui.print_header("Thermur Training System")
-
-        if not force:
-            self._perform_system_validation()
-        else:
-            self.ui.print_message(self.config.messages.skipping_checks, "warning")
-
-        preset, wandb_project, config_overrides = self._setup_configuration(
-            config_overrides = config_overrides,
-            force            = force,
-            interactive      = interactive,
-            preset           = preset,
-            wandb_project    = wandb_project,
-        )
-
-        if interactive:
-            self._confirm_training_setup(
-                config_overrides = config_overrides,
-                preset           = preset,
-                wandb_project    = wandb_project
-            )
-
-        self._initiate_training(
-            config_overrides = config_overrides,
-            preset           = preset,
-            wandb_project    = wandb_project
-        )
-
     def _prepare_training_imports(self):
         """
         Lazily imports heavy dependencies for training.
@@ -144,14 +94,14 @@ class TrainCommand:
         """
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
-                self.config.messages.status["init_modules"], 
-                total = 100
+                description = self.config.messages.status["init_modules"],
+                total       = 100
             )
 
             progress.update(
-                task,
                 advance     = 20,
-                description = self.config.messages.status["loading_config_sys"]
+                description = self.config.messages.status["loading_config_sys"],
+                task_id     = task
             )
             from configs.imitation              import imitation_config, register_imitation_configs
             from hydra_zen                      import instantiate, launch
@@ -161,32 +111,32 @@ class TrainCommand:
             from thermur.training               import train_imitation_learning
 
             progress.update(
-                task,
                 advance     = 30,
-                description = self.config.messages.status["registering_configs"]
+                description = self.config.messages.status["registering_configs"],
+                task_id     = task
             )
             register_imitation_configs()
 
             progress.update(
-                task,
                 advance     = 50,
-                description = self.config.messages.status["preparing_hydra"]
+                description = self.config.messages.status["preparing_hydra"],
+                task_id     = task
             )
 
             imports = {
+                "configure_loguru"         : configure_loguru,
                 "imitation_config"         : imitation_config,
                 "instantiate"              : instantiate,
                 "launch"                   : launch,
                 "pydantic_parser"          : pydantic_parser,
-                "configure_loguru"         : configure_loguru,
                 "set_seed"                 : set_seed,
-                "train_imitation_learning" : train_imitation_learning,
+                "train_imitation_learning" : train_imitation_learning
             }
 
             progress.update(
-                task, 
-                completed   = 100, 
-                description = self.config.messages.status["ready_to_train"]
+                completed   = 100,
+                description = self.config.messages.status["ready_to_train"],
+                task_id     = task
             )
 
         return imports
@@ -210,21 +160,27 @@ class TrainCommand:
             wandb_project    : The configured wandb project name.
         """
         gpu = self.system.get_system_info(self.config.wandb_integration)["cuda"]
-        # Get emoji for display
         if preset:
-            preset_display = self.config.presets.presets.get(preset, {}).get('emoji', preset)
+            preset_display = (
+                self.config.presets.presets
+                    .get(preset, {})
+                    .get('emoji', preset)
+            )
         else:
             preset_display = "🧵"  # Custom preset emoji
             
         if not self.prompts.show_training_summary(
             {
+                "gpu_available" : gpu,
+                "overrides"     : len(config_overrides or []),
                 "preset"        : preset_display,
                 "wandb_project" : wandb_project,
-                "overrides"     : len(config_overrides or []),
-                "gpu_available" : gpu,
             }
         ):
-            self.ui.print_message(self.config.messages.training_cancelled, "warning")
+            self.ui.print_message(
+                message  = self.config.messages.training_cancelled,
+                msg_type = "warning"
+            )
             raise Exit()
 
     def _execute_training_workflow(self, cfg):
@@ -236,12 +192,12 @@ class TrainCommand:
         before starting the main training loop.
 
         Args:
-            cfg : The resolved Hydra configuration object.
+            cfg: The resolved Hydra configuration object.
         """
+        configure_loguru         = imports["configure_loguru"]
         imports                  = self._training_imports
         instantiate              = imports["instantiate"]
         pydantic_parser          = imports["pydantic_parser"]
-        configure_loguru         = imports["configure_loguru"]
         set_seed                 = imports["set_seed"]
         train_imitation_learning = imports["train_imitation_learning"]
 
@@ -261,18 +217,27 @@ class TrainCommand:
         components["learning"] = cfg.learning
         components["wandb"]    = cfg.wandb
 
-        self.ui.print_message(self.config.messages.components_initialized, "success")
+        self.ui.print_message(
+            message  = self.config.messages.components_initialized,
+            msg_type = "success"
+        )
         self.ui.console.print()
 
         self.ui.print_major_section("Training Started")
-        self.ui.print_message(self.config.messages.monitoring_dynamics, "thermal")
-        self.ui.print_message(self.config.messages.track_wandb, "flock")
+        self.ui.print_message(
+            message  = self.config.messages.monitoring_dynamics,
+            msg_type = "thermal"
+        )
+        self.ui.print_message(
+            message  = self.config.messages.track_wandb,
+            msg_type = "flock"
+        )
         self.ui.console.print()
 
         train_imitation_learning(**components)
 
         self.ui.console.print()
-        self.ui.print_header("Training Complete 🎉")
+        self.ui.print_header(title = "Training Complete 🎉")
 
     def _handle_configuration_issues(
         self,
@@ -293,19 +258,20 @@ class TrainCommand:
         if interactive:
             if not self.prompts.confirm_system_override(issues):
                 self.ui.print_message(
-                    self.config.messages.training_cancelled, "warning"
+                    message  = self.config.messages.training_cancelled,
+                    msg_type = "warning"
                 )
                 raise Exit()
         else:
             self.ui.print_message(
-                self.config.messages.validation["config_fail"], 
-                "error"
+                message  = self.config.messages.validation["config_fail"],
+                msg_type = "error"
             )
             for issue in issues:
                 self.ui.console.print(f"  • {issue}")
             self.ui.print_message(
-                self.config.messages.validation["force_override"], 
-                "info"
+                message  = self.config.messages.validation["force_override"],
+                msg_type = "info"
             )
             raise Exit(1)
 
@@ -332,23 +298,29 @@ class TrainCommand:
         self.ui.print_wandb_info(
             project = wandb_project, 
             url     = self.system.get_wandb_url(
-                wandb_integration = self.config.wandb_integration, 
-                ui_config         = self.config.display, 
-                project           = wandb_project
+                project           = wandb_project,
+                ui_config         = self.config.display,
+                wandb_integration = self.config.wandb_integration
             )
         )
         self.ui.console.print()
 
         try:
-            self._run_training(config_overrides, preset, wandb_project)
+            self._run_training(
+                config_overrides = config_overrides,
+                preset           = preset
+            )
         except KeyboardInterrupt:
             self.ui.console.print()
-            self.ui.print_message(self.config.messages.training_interrupted, "warning")
+            self.ui.print_message(
+                message  = self.config.messages.training_interrupted,
+                msg_type = "warning"
+            )
             raise Exit()
         except Exception as e:
             self.ui.print_message(
-                self.config.messages.training_failed_template.format(e=e),
-                "error"
+                message  = self.config.messages.training_failed_template.format(e=e),
+                msg_type = "error"
             )
             raise Exit(1)
 
@@ -376,32 +348,36 @@ class TrainCommand:
         with self.ui.create_thermal_progress() as progress:
             component_configs = self.config.cli_config.training_component_configs
             task = progress.add_task(
-                self.config.messages.status["instantiating_components"],
-                total=len(component_configs)
+                description = self.config.messages.status["instantiating_components"],
+                total       = len(component_configs)
             )
 
             components = {}
             for i, (key, config_path, display_name) in enumerate(component_configs):
-                desc = self.config.messages.status["setup_component_template"] \
-                    .format(display_name=display_name)
                 progress.update(
-                    task,
+                    task_id     = task,
                     completed   = i,
-                    description = desc
+                    description = (
+                        self.config.messages.status["setup_component_template"]
+                            .format(display_name=display_name)
+                    )
                 )
                 config_obj = OmegaConf.select(cfg, config_path)
                 
                 if config_obj is None:
                     raise ValueError(f"Configuration path '{config_path}' not found")
 
-                components[key] = instantiate(config_obj, _parser=pydantic_parser)
+                components[key] = instantiate(config_obj, pydantic_parser)
 
-            progress.update(task, completed=len(component_configs))
+            progress.update(
+                task_id   = task, 
+                completed = len(component_configs)
+            )
 
             # Handle optional visualizer
             visualizer_cfg = OmegaConf.select(cfg, "visualizer")
             components['visualizer'] = (
-                instantiate(visualizer_cfg, _parser=pydantic_parser) 
+                instantiate(visualizer_cfg, pydantic_parser) 
                 if visualizer_cfg is not None 
                 else None
             )
@@ -418,13 +394,12 @@ class TrainCommand:
         self.ui.print_major_section("System Information")
 
         with self.ui.console.status(
-            self.config.messages.status["checking_reqs"],
+            status  = self.config.messages.status["checking_reqs"],
             spinner = "dots"
         ):
-            info  = self.system.get_system_info(self.config.wandb_integration)
-            table = self.ui.create_system_table(info)
+            info = self.system.get_system_info(self.config.wandb_integration)
 
-        self.ui.console.print(table)
+        self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 
         status, details = self.system.check_wandb_status(self.config)
@@ -434,8 +409,7 @@ class TrainCommand:
     def _run_training(
         self,
         config_overrides : list[str] | None,
-        preset           : str | None,
-        wandb_project    : str,
+        preset           : str | None
     ):
         """
         Executes the training workflow using hydra_zen.launch.
@@ -449,35 +423,33 @@ class TrainCommand:
             preset           : The configuration preset to use.
             wandb_project    : The wandb project name.
         """
-        self.ui.print_message(self.config.messages.loading_components, "info")
+        self.ui.print_message(
+            message  = self.config.messages.loading_components,
+            msg_type = "info"
+        )
 
         imports = self._prepare_training_imports()
-
         self.ui.console.print()
 
         overrides = []
-        # Only add preset override if it's a valid preset name (not None or custom)
-        valid_presets = ['quick', 'standard', 'large', 'debug']
-        if preset and preset in valid_presets:
+        if preset in list(self.config.presets.presets.keys()):
             overrides.append(f"+preset={preset}")
         if config_overrides:
             overrides.extend(config_overrides)
 
-        # Create a wrapper function that passes imports via closure
         def training_task(cfg):
             self._training_imports = imports
             return self._execute_training_workflow(cfg)
 
         job = imports["launch"](
             config                 = imports["imitation_config"],
-            task_function          = training_task,
-            overrides              = overrides,
             config_name            = "train",
+            overrides              = overrides,
+            task_function          = training_task,
             version_base           = None,
             with_log_configuration = False,
         )
 
-        # Check job status
         if job.status.name != "COMPLETED":
             raise RuntimeError(f"Training job failed with status: {job.status}")
 
@@ -515,24 +487,26 @@ class TrainCommand:
         )
 
         if preset:
-            # Get the emoji for display
-            preset_emoji = self.config.presets.presets.get(preset, {}).get('emoji', preset)
+            preset_emoji = (
+                self.config.presets.presets
+                    .get(preset, {})
+                    .get('emoji', preset)
+            )
             self.ui.print_message(
-                f"Using preset: [bright_cyan]{preset_emoji}[/bright_cyan]",
-                "config"
+                message  = f"Using preset: [bright_cyan]{preset_emoji}[/bright_cyan]",
+                msg_type = "config"
             )
         elif not interactive:
             self.ui.print_message(
-                "Using default configuration",
-                "config"
+                message  = "Using default configuration",
+                msg_type = "config"
             )
 
-        wandb_project = (
-            self.prompts.ask_wandb_project_name(
-                default_project=self.config.wandb_integration.default_project
-            ) 
+        default_project = self.config.wandb_integration.default_project
+        wandb_project   = (
+            self.prompts.ask_wandb_project_name(default_project) 
             if interactive and not wandb_project
-            else wandb_project or self.config.wandb_integration.default_project
+            else wandb_project or default_project
         )
 
         if interactive and not config_overrides:
@@ -546,6 +520,62 @@ class TrainCommand:
                 wandb_integration = self.config.wandb_integration
             )
             if issues:
-                self._handle_configuration_issues(interactive, issues)
+                self._handle_configuration_issues(
+                    interactive = interactive,
+                    issues      = issues
+                )
 
         return preset, wandb_project, config_overrides
+    
+    def run(
+        self,
+        config_overrides : list[str] | None,
+        force            : bool,
+        interactive      : bool,
+        preset           : str | None,
+        wandb_project    : str | None,
+    ):
+        """
+        Executes the main training workflow from start to finish.
+
+        This method orchestrates the entire training process, including
+        validation, configuration, user confirmation, and the final
+        launch of the core training logic.
+
+        Args:
+            config_overrides : A list of Hydra configuration overrides.
+            force            : If True, skips system validation checks.
+            interactive      : If True, enables interactive prompts for configuration.
+            preset           : The name of the configuration preset to use.
+            wandb_project    : The name of the Weights & Biases project for tracking.
+        """
+        self.ui.print_header(title = "Thermur Training System")
+
+        if not force:
+            self._perform_system_validation()
+        else:
+            self.ui.print_message(
+                message  = self.config.messages.skipping_checks,
+                msg_type = "warning"
+            )
+
+        preset, wandb_project, config_overrides = self._setup_configuration(
+            config_overrides = config_overrides,
+            force            = force,
+            interactive      = interactive,
+            preset           = preset,
+            wandb_project    = wandb_project,
+        )
+
+        if interactive:
+            self._confirm_training_setup(
+                config_overrides = config_overrides,
+                preset           = preset,
+                wandb_project    = wandb_project
+            )
+
+        self._initiate_training(
+            config_overrides = config_overrides,
+            preset           = preset,
+            wandb_project    = wandb_project
+        )
