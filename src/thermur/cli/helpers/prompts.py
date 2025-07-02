@@ -27,9 +27,10 @@ class CLIPrompts:
     """
     def __init__(
         self, 
-        ui: Any,  # Should be ThermurUI type when available
-        prompts: DictConfig,
-        messages: DictConfig
+        ui       : Any,
+        prompts  : DictConfig,
+        messages : DictConfig,
+        commands : DictConfig
     ):
         """
         Initializes the prompt orchestrator.
@@ -38,10 +39,12 @@ class CLIPrompts:
             ui       : An initialized `ThermurUI` object for rendering components.
             prompts  : Prompts configuration containing prompts-related settings.
             messages : Messages configuration containing message templates.
+            commands : Commands configuration containing command-related settings.
         """
         self.ui            = ui
         self.prompts       = prompts
         self.messages      = messages
+        self.commands      = commands
         self.thermal_style = questionary.Style.from_dict(
             dict(self.prompts.questionary_style)
         )
@@ -166,8 +169,8 @@ class CLIPrompts:
         self.ui.print_section("Advanced Configuration", "config")
 
         syntax_panel = self.ui.create_syntax_panel(
-            code  = self.prompts.override_syntax_help,
-            title = self.prompts.override_syntax_title,
+            code  = self.commands.override_syntax_help,
+            title = "Configuration Override Syntax",
         )
         self.ui.console.print(syntax_panel)
         self.ui.console.print()
@@ -201,7 +204,9 @@ class CLIPrompts:
 
             overrides.append(override)
             success_style = self.ui.theme.styles['success']
-            self.ui.console.print(f"  [{success_style}]✓[/] Added: [bright_cyan]{override}[/bright_cyan]")
+            self.ui.console.print(
+                f"  [{success_style}]✓[/] Added: [bright_cyan]{override}[/bright_cyan]"
+            )
 
         if overrides:
             self.ui.console.print()
@@ -251,7 +256,10 @@ class CLIPrompts:
             )
 
             if new_value is not None and str(new_value) != str(current_val):
-                override_str = f"{prefix}.{name}={new_value}" if prefix else f"{name}={new_value}"
+                override_str = (
+                    f"{prefix}.{name}={new_value}" 
+                    if prefix else f"{name}={new_value}"
+                )
                 overrides.append(override_str)
                 self.ui.print_message(f"Added override: {override_str}", "success")
 

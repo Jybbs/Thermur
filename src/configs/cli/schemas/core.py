@@ -15,21 +15,14 @@ class CLIModel(BaseModel, extra="forbid"):
     It serves as the root configuration that gets instantiated by Hydra.
     """
     app_description: str = Field(
-        default     = "🔥 Thermur: Advanced thermal-aware drone flock training using "
-                      "imitation learning, physics-based constraints, and real-time monitoring",
+        default     = "🔥 Thermur: Advanced thermal-aware drone flock training "
+                      "using imitation learning, physics-based constraints, and "
+                      "real-time monitoring",
         description = "Application description shown in help text"
     )
     app_name: str = Field(
         default     = "thermur",
         description = "Application name used by Typer"
-    )
-    check_updates: bool = Field(
-        default     = True,
-        description = "Check for Thermur updates on startup"
-    )
-    debug_mode: bool = Field(
-        default     = False,
-        description = "Enable debug mode with verbose logging"
     )
 
 
@@ -42,10 +35,26 @@ class CommandsModel(BaseModel, extra="forbid"):
     """
     available: list[dict[str, str]] = Field(
         default = [
-            {"icon": "🚀", "name": "train",     "desc": "Train thermal drone flock behaviors"},
-            {"icon": "📋", "name": "info",      "desc": "Display system and configuration details"},
-            {"icon": "✅", "name": "validate",  "desc": "Validate configuration and dependencies"},
-            {"icon": "🎨", "name": "monitor",   "desc": "Monitor training progress and resources"},
+            {
+                "icon": "🚀",
+                "name": "train",
+                "desc": "Train thermal drone flock behaviors"
+            },
+            {
+                "icon": "📋",
+                "name": "info",
+                "desc": "Display system and configuration details"
+            },
+            {
+                "icon": "✅",
+                "name": "validate",
+                "desc": "Validate configuration and dependencies"
+            },
+            {
+                "icon": "🎨",
+                "name": "monitor",
+                "desc": "Monitor training progress and resources"
+            },
         ],
         description = "List of available commands with metadata"
     )
@@ -78,7 +87,8 @@ class CommandsModel(BaseModel, extra="forbid"):
             },
             {
                 "desc"    : "Train with overrides",
-                "command" : "thermur train --config flock.num_drones=20 environment.max_temp=85",
+                "command" : "thermur train --config flock.num_drones=20 "
+                           "environment.max_temp=85",
                 "note"    : "Multiple parameters"
             },
         ],
@@ -94,10 +104,6 @@ class CommandsModel(BaseModel, extra="forbid"):
             "+experiment=my_custom_setup       # Load experiment"
         ),
         description = "Help text for configuration override syntax"
-    )
-    override_syntax_title: str = Field(
-        default     = "Configuration Override Syntax",
-        description = "Title for override syntax help section"
     )
 
 

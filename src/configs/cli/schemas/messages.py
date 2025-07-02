@@ -79,14 +79,6 @@ class MessagesModel(BaseModel, extra="forbid"):
         default     = "All components initialized successfully!",
         description = "Message after successful component initialization"
     )
-    config_gen_add_cmd: str = Field(
-        default     = "Add these to your training command:",
-        description = "Instructions for using generated overrides"
-    )
-    config_gen_use_ind: str = Field(
-        default     = "Or use them individually:",
-        description = "Alternative instructions for overrides"
-    )
     loading_components: str = Field(
         default     = "Loading training components...",
         description = "Status message during component loading"
@@ -94,10 +86,6 @@ class MessagesModel(BaseModel, extra="forbid"):
     monitoring_dynamics: str = Field(
         default     = "Monitoring thermal constraints and flock dynamics",
         description = "Message about training monitoring"
-    )
-    no_config_changes: str = Field(
-        default     = "No configuration changes made.",
-        description = "Message when no config overrides are generated"
     )
     ready_to_train: str = Field(
         default     = "Ready to train some thermal flocks? 🔥",
@@ -199,10 +187,6 @@ class SectionsModel(BaseModel, extra="forbid"):
     building_components: str = Field(
         default     = "Preparing Training Environment",
         description = "Section title during component creation"
-    )
-    common_commands: str = Field(
-        default     = "Common Commands",
-        description = "Section title for common commands"
     )
     config_check: str = Field(
         default     = "Configuration Check",

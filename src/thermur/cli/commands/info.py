@@ -71,7 +71,7 @@ class InfoCommand:
         
 
         self.ui.print_section(
-            title = self.config.sections.common_commands, 
+            title = "Common Commands", 
             style = "bright_green"
         )
         for example in self.config.commands.examples:
