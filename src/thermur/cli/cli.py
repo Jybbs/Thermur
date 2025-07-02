@@ -141,7 +141,6 @@ def create_cli():
     )
     
     cli.command(name="train")(train)
-    cli.command(name="configure")(configure)
     cli.command(name="info")(info)
     cli.command(name="validate")(validate)
     cli.command(name="monitor")(monitor)

@@ -10,8 +10,6 @@ from hydra_zen import builds
 
 build_cli                 = builds(CLIModel)
 build_commands            = builds(CommandsModel)  
-build_explorer            = builds(ExplorerModel)
-build_explorer_messages   = builds(ExplorerMessagesModel)
 build_headers             = builds(HeadersModel)
 build_messages            = builds(MessagesModel)
 build_presets             = builds(PresetsModel)
