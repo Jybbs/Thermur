@@ -3,13 +3,14 @@ Defines the Graph Neural Network (GNN) policy module, π_θ.
 
 This file contains the implementation of the `torch.nn.Module` that serves as
 the agent's brain. The policy, denoted π_θ, is a GNN designed to process the
-swarm's state, which is naturally represented as a dynamic graph. It learns to
+flock's state, which is naturally represented as a dynamic graph. It learns to
 output a nominal velocity command, 𝐮_nom, for each agent.
 
 The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
+from configs.imitation    import LearningModel
 from torch                import Tensor
 from torch.nn             import GRUCell, Linear, Module, ModuleList, ReLU, SiLU, Tanh
 from torch_geometric.data import Data
@@ -36,44 +37,50 @@ class GNNPolicy(Module):
     3.  Decoder: A final MLP that maps the agent's processed hidden state
         back to a tangible control action (a 3D velocity vector).
     """
-    def __init__(
-        self, 
-        config
-    ):
+    def __init__(self, learning: LearningModel):
         """
         Initializes the GNN policy network.
 
         Args:
-            config: A GNN configuration instance (from hydra instantiation)
-                   containing architectural hyperparameters like hidden dimension,
-                   number of layers, activation function, and I/O dimensions.
+            learning: A learning configuration instance containing architectural 
+                      hyperparameters like hidden dimension, number of layers, 
+                      activation function, and I/O dimensions.
         """
         super().__init__()
-        self.config = config
+        self.learning = learning
         
-        # Extract dimensions from config
-        in_dim  = config.input_dim
-        out_dim = config.output_dim
+        in_dim  = learning.input_dim
+        out_dim = learning.output_dim
 
         # Maps raw node features [𝐩, 𝐯, T, ∇T, E] to the hidden dimension.
-        self.encoder = Linear(in_dim, config.hidden_dim)
+        self.encoder = Linear(in_dim, learning.hidden_dim)
 
         # A stack of GNN layers and recurrent cells for state updates.
         self.convs = ModuleList()
         self.grus  = ModuleList()
-        for _ in range(config.num_layers):
-            self.convs.append(GCNConv(config.hidden_dim, config.hidden_dim))
-            self.grus.append(GRUCell(config.hidden_dim, config.hidden_dim))
+        for _ in range(learning.num_layers):
+            self.convs.append(
+                GCNConv(
+                    in_channels  = learning.hidden_dim, 
+                    out_channels = learning.hidden_dim
+                )
+            )
+            self.grus.append(
+                GRUCell(
+                    input_size  = learning.hidden_dim, 
+                    hidden_size = learning.hidden_dim
+                )
+            )
 
         # Maps the final hidden state to a nominal action vector 𝐮_nom.
-        self.decoder = Linear(config.hidden_dim, out_dim)
+        self.decoder = Linear(learning.hidden_dim, out_dim)
 
         # --- Activation Function ---
         self.activation = {
             "relu" : ReLU, 
             "silu" : SiLU, 
             "tanh" : Tanh
-        }[config.activation]()
+        }[learning.activation]()
 
     def forward(self, data: Data) -> Tensor:
         """
@@ -81,7 +88,7 @@ class GNNPolicy(Module):
 
         Args:
             data: A `torch_geometric.data.Data` object containing the batched
-                  graph state of the swarm, with `x` (node features) and
+                  graph state of the flock, with `x` (node features) and
                   `edge_index` (connectivity).
 
         Returns:

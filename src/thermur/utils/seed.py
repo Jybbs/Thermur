@@ -24,7 +24,7 @@ def set_seed(seed: int):
         cuda.manual_seed_all(seed)
 
         # The following are needed for full determinism with CUDA
-        backends.cudnn.deterministic = True
         backends.cudnn.benchmark     = False
+        backends.cudnn.deterministic = True
 
     logger.info(f"Global random seed set to {seed}.")

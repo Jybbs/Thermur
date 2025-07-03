@@ -9,14 +9,15 @@ rotation policies.
 At import time, Loguru's default handler is removed to prevent any logging
 before the application is properly configured.
 """
-from loguru import logger
-from sys    import stderr
+from configs.imitation import LoggingModel
+from loguru            import logger
+from sys               import stderr
 
 logger.remove()
 logger = logger
 
 
-def configure_loguru(config):
+def configure_loguru(cfg: LoggingModel):
     """
     Configures the global logger based on the provided settings.
 
@@ -29,24 +30,24 @@ def configure_loguru(config):
                rotation, and retention.
     """
     logger.add(
-        sink     = stderr,
-        level    = config.level,
-        colorize = config.colorize,
+        colorize = cfg.colorize,
         format   = (
             "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</> | "
             "<level>{level: <8}</> | "
             "<cyan>{name}</>:<cyan>{function}</>:<cyan>{line}</> - "
             "<level>{message}</>"
-        )
+        ),
+        level    = cfg.level,
+        sink     = stderr
     )
 
-    if config.file_path:
-        logger.info(f"File logging enabled. Writing logs to {config.file_path}")
+    if cfg.file_path:
+        logger.info(f"File logging enabled. Writing logs to {cfg.file_path}")
         logger.add(
-            sink      = config.file_path,
-            level     = config.level,
-            rotation  = config.rotation,
-            retention = config.retention,
-            enqueue   = config.enqueue,
-            diagnose  = config.diagnose
+            diagnose  = cfg.diagnose,
+            enqueue   = cfg.enqueue,
+            level     = cfg.level,
+            retention = cfg.retention,
+            rotation  = cfg.rotation,
+            sink      = cfg.file_path
         )

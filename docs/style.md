@@ -93,7 +93,7 @@ Defines the Graph Neural Network (GNN) policy module, π_θ.
 
 This file contains the implementation of the `torch.nn.Module` that serves as
 the agent's brain. The policy, denoted π_θ, is a GNN designed to process the
-swarm's state, which is naturally represented as a dynamic graph. It learns to
+flock's state, which is naturally represented as a dynamic graph. It learns to
 output a nominal velocity command, 𝐮_nom, for each agent.
 
 The architecture is explicitly designed to be configurable and to consume
@@ -194,11 +194,11 @@ from typing       import Callable, Optional
 ```python
 # ✅ Clear, descriptive variable names and efficient structure
 observation_dict    = self.observation_spec.zero()
-formation           = self.config.swarm.initial_formation
-agent_count         = self.config.swarm.agent_count
-spatial_dims        = self.config.swarm.spatial_dims
-communication_range = self.config.swarm.communication_range
-formation_scale     = self.config.swarm.formation_scale_factor
+formation           = self.config.flock.initial_formation
+agent_count         = self.config.flock.agent_count
+spatial_dims        = self.config.flock.spatial_dims
+communication_range = self.config.flock.communication_range
+formation_scale     = self.config.flock.formation_scale_factor
 
 # ✅ Only create intermediate variables when they add clarity or are reused
 rel_pos  = position[self._edge_source] - position[self._edge_target]
@@ -216,8 +216,8 @@ distance = torch.clamp(distance, min=self.flocking_params.min_distance)
 # ✅ Proper alignment in various contexts
 # Variable declaration alignment
 observation_dict    = self.observation_spec.zero()
-formation           = self.config.swarm.initial_formation
-agent_count         = self.config.swarm.agent_count
+formation           = self.config.flock.initial_formation
+agent_count         = self.config.flock.agent_count
 
 # Dictionary alignment
 return {
@@ -272,9 +272,9 @@ else:
 
 ```python
 # ✅ Well-structured Pydantic model
-class SwarmModel(BaseModel, extra="forbid"):
+class FlockModel(BaseModel, extra="forbid"):
     """
-    Configures the collective properties and initial state of the agent swarm.
+    Configures the collective properties and initial state of the agent flock.
 
     These parameters define the scale of the multi-agent system and the rules
     for local interaction. The `communication_range` is particularly critical
@@ -285,7 +285,7 @@ class SwarmModel(BaseModel, extra="forbid"):
     agent_count: int = Field(
         default     = 30,
         gt          = 1,
-        description = "The number of agents (N) in the swarm."
+        description = "The number of agents (N) in the flock."
     )
     communication_range: float = Field(
         default     = 50.0,
@@ -300,7 +300,7 @@ class SwarmModel(BaseModel, extra="forbid"):
         gt          = 0,
         description = (
             "Scaling factor applied to initial agent formations, as a fraction "
-            "of the communication range. Controls the density of the swarm."
+            "of the communication range. Controls the density of the flock."
         )
     )
 ```
@@ -339,7 +339,7 @@ build_environment = builds(
 
 ```python
 # ✅ Correct path handling
-model_path = self.config.environment.assets_dir / "swarm.xml"
+model_path = self.config.environment.assets_dir / "flock.xml"
 model = mujoco.MjModel.from_xml_path(model_path.as_posix())
 ```
 
@@ -356,7 +356,7 @@ model = mujoco.MjModel.from_xml_path(model_path.as_posix())
 - For signatures with 3+, place parameters on individual lines with aligned type hints
 - Remember that `self` counts as a parameter when determining format
 - Use built-in type annotations in Python 3.13 directly rather than importing from the typing module
-    - e.g. Use `list`, `dict`, `any`; not `List`, `Dict`, `Any`
+    - e.g. Use `list`, `dict`; not `List`, `Dict`
 
 ```python
 # ✅ Correct single-line signature (standalone function with 2 parameters)
@@ -629,7 +629,7 @@ def train():
     Example:
         thermur train
         thermur train hyperparameters.learning_rate=0.001
-        thermur train +experiment=large_swarm
+        thermur train +experiment=large_flock
     """
     # Lazy imports to keep CLI startup fast
     from configs                        import register_configs, imitation_config
@@ -652,7 +652,7 @@ def train():
 
 ```xml
 <!-- ✅ Well-structured, aligned XML -->
-<mujoco model="swarm">
+<mujoco model="flock">
     <option 
         integrator = "RK4"
         timestep   = "0.05"
@@ -785,7 +785,7 @@ def _update_graph_state(self, edge_index: Tensor, num_agents: int):
     
     Args:
         edge_index : Tensor defining the communication graph topology Gₜ = (V, Eₜ)
-        num_agents : The total number of agents N in the swarm
+        num_agents : The total number of agents N in the flock
     """
     # Implementation follows...
 ```
@@ -812,8 +812,8 @@ Example:
 ```
 feat(simulation): implement physics initialization and agent formation logic
 
-- Create MuJoCo XML model for drone swarm with dynamic physics configuration
+- Create MuJoCo XML model for drone flock with dynamic physics configuration
 - Add assets_dir field to EnvironmentModel for configurable simulation assets path
-- Add formation_scale_factor to SwarmModel to control initial swarm density
+- Add formation_scale_factor to FlockModel to control initial flock density
 
 Resolves: #5 (partially - step logic still to be implemented)
