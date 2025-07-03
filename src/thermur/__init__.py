@@ -1,43 +1,25 @@
 """
-The Thermur package: Core business logic and functionality.
+Thermur: Thermally-aware drone flock control via imitation learning.
 
-This package provides a clean API for accessing all major components of the
-Thermur system for imitation learning training.
+This package implements a complete system for training autonomous drone flocks
+to navigate wildfire scenarios using graph neural networks and behavioral cloning.
+The architecture consists of several key components:
+
+1. Control: Expert controllers implementing Reynolds flocking rules with thermal
+   constraints, providing demonstrations for imitation learning.
+
+2. Models: Graph Neural Network policies that process flock states as dynamic
+   graphs and output control actions.
+
+3. Simulation: MuJoCo-based physics environment modeling drone dynamics and
+   thermal field interactions.
+
+4. Training: Imitation learning algorithms for training policies from expert
+   demonstrations using behavioral cloning.
+
+5. Visualization: Real-time 3D rendering of flock dynamics and thermal fields
+   for debugging and analysis.
+
+The system is designed for modularity and extensibility, with clean interfaces
+between components and comprehensive configuration management through Hydra-zen.
 """
-from .cli        import app
-from .control    import ExpertFlockingController, SafetyFilter, ThermalBarrierFunction
-from .models     import GNNPolicy
-from .simulation import SimulationEnv, compute_edge_index
-from .training   import train_imitation_learning, save_checkpoint, ImitationLoss
-from .utils      import *
-
-__all__ = [
-
-    # CLI components
-    "app",
-
-    # Control components
-    "ExpertFlockingController",
-    "SafetyFilter",
-    "ThermalBarrierFunction",
-
-    # Models
-    "GNNPolicy",
-
-    # Simulation components
-    "SimulationEnv",
-    "compute_edge_index",
-
-    # Training
-    "train_imitation_learning",
-    "save_checkpoint",
-    "ImitationLoss",
-
-    # Utilities
-    "EnvironmentDataSource",
-    "configure_loguru",
-    "generate_swarm_xml",
-    "load_swarm_model",
-    "set_seed",
-
-]

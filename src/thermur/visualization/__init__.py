@@ -1,29 +1,16 @@
 """
-Visualization system for the Thermur simulation environment.
+Real-time visualization for flock dynamics and thermal fields.
 
-This package provides 3D visualization capabilities for the swarm simulation,
-enabling real-time visualization of agent motion, thermal conditions, wind fields,
-safety constraints, and communication topologies. It serves as a critical tool
-for debugging, qualitative assessment, and insight generation.
+The Visualizer class provides interactive 3D rendering of the simulation state
+using PyVista. Visualization features include:
+
+- Agent trajectories with velocity vectors
+- Temperature field as a volumetric heatmap
+- Communication graph edges showing network topology
+- Safety regions and thermal barriers
+- Configurable camera views and rendering styles
+
+The visualization system supports both real-time display during training and
+offline rendering of saved trajectories for analysis.
 """
-from .renderers  import *
-from .sampling   import *
 from .visualizer import Visualizer
-
-__all__ = [
-    # Main visualization interface
-    "Visualizer",
-
-    # Rendering functions
-    "render_agents",
-    "render_communication_graph",
-    "render_safety_boundary",
-    "render_temperature_field",
-    "render_wind_field",
-
-    # Sampling utilities
-    "compute_grid_bounds",
-    "create_coordinate_axes",
-    "create_temperature_grid",
-    "create_wind_grid",
-]

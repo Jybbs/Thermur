@@ -5,7 +5,7 @@ build-backend = "poetry.core.masonry.api"
 [project]
 name            = "thermur"
 version         = "0.1.0"
-description     = "Thermally-constrained flocking and color-mapping for wildfire swarms."
+description     = "Thermally-constrained flocking and color-mapping for wildfires."
 authors         = [{ name = "James Parkington", email = "pongs.acreage.0o@icloud.com" }]
 readme          = "README.md"
 requires-python = "~3.13"
@@ -20,6 +20,7 @@ dependencies    = [
     "pyarrow",
     "pyvista",
     "qpth",
+    "questionary",
     "rich",
     "torch",
     "torch-geometric",
@@ -30,7 +31,10 @@ dependencies    = [
 ]
 
 [project.scripts]
-thermur = "src.thermur.cli.app:app"
+thermur = "thermur.cli.cli:main"
 
 [tool.poetry]
-packages = [{ include = "src" }]
+packages = [
+    { include = "thermur", from = "src" },
+    { include = "configs", from = "src" }
+]

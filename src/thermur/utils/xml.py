@@ -3,43 +3,41 @@ MuJoCo XML generation utilities for the Thermur project.
 
 This module provides functions for dynamically generating and loading MuJoCo
 models with varying numbers of agents, enabling true multi-agent physics
-simulation for swarm environments.
+simulation for flock environments.
 """
-import mujoco as mj
-
 from pathlib import Path
 
+import mujoco as mj
 
-def generate_swarm_xml(
-    assets_dir      : Path,
+
+def generate_flock_xml(
     agent_count     : int,
-    spatial_dims    : int,
-    simulation_step : float
+    assets_dir      : Path,
+    simulation_step : float,
+    spatial_dims    : int
 ) -> str:
     """
     Dynamically generates a MuJoCo XML model with N distinct drone bodies.
     
     This function creates a complete XML model by:
-    1. Reading the swarm.xml template
+    1. Reading the flock.xml template
     2. Reading the drone.xml template for each agent
     3. Replacing template variables with appropriate values for each agent
-    4. Inserting all N drone bodies and their actuators into the swarm model
+    4. Inserting all N drone bodies and their actuators into the flock model
     
     Args:
-        assets_dir      : Path to the directory containing XML templates
         agent_count     : Number of agent bodies to generate
-        spatial_dims    : Number of spatial dimensions (2 or 3)
+        assets_dir      : Path to the directory containing XML templates
         simulation_step : Physics simulation timestep in seconds
+        spatial_dims    : Number of spatial dimensions (2 or 3)
     
     Returns:
         A string containing the complete MuJoCo XML model
     """
-    # Read template files
-    swarm_template = (assets_dir / "swarm.xml").read_text()
     drone_template = (assets_dir / "drone.xml").read_text()
-    
-    drone_bodies  = []
-    actuator_defs = []
+    flock_template = (assets_dir / "flock.xml").read_text()
+    actuator_defs  = []
+    drone_bodies   = []
     
     for i in range(agent_count):
         # Create a slight offset for each drone to prevent initial collisions
@@ -77,14 +75,14 @@ def generate_swarm_xml(
             name        = "drone_{i}_vel_{axis_name}"
         />""")
     
-    swarm_xml = swarm_template.replace("$TIMESTEP$", str(simulation_step))
-    swarm_xml = swarm_xml.replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
-    swarm_xml = swarm_xml.replace("<!-- ACTUATORS -->", "\n".join(actuator_defs))
+    flock_xml = flock_template.replace("$TIMESTEP$", str(simulation_step))
+    flock_xml = flock_xml.replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
+    flock_xml = flock_xml.replace("<!-- ACTUATORS -->", "\n".join(actuator_defs))
     
-    return swarm_xml
+    return flock_xml
 
 
-def load_swarm_model(xml_string: str) -> dict:
+def load_flock_model(xml_string: str) -> dict:
     """
     Loads a MuJoCo model from the provided XML string.
     
@@ -100,4 +98,7 @@ def load_swarm_model(xml_string: str) -> dict:
     model = mj.MjModel.from_xml_string(xml_string)
     data  = mj.MjData(model)
     
-    return {"model": model, "data": data}
+    return {
+        "data"  : data,
+        "model" : model
+    }

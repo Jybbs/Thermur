@@ -2,8 +2,8 @@
 3D visualization display manager for the Thermur simulation.
 
 This module provides the `Visualizer` class, which serves as the primary interface 
-for creating and updating 3D visualizations of the swarm simulation. It coordinates
-the rendering of swarm agents, thermal fields, wind vectors, safety boundaries,
+for creating and updating 3D visualizations of the flock simulation. It coordinates
+the rendering of flock agents, thermal fields, wind vectors, safety boundaries,
 and communication graphs.
 
 The visualizer manages a PyVista plotter window and handles the lifecycle of
@@ -11,20 +11,14 @@ various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
 both light and dark themes.
 """
+from .renderers        import Renderer
+from .sampling         import GridSampler
+from configs.imitation import VisualizationModel
+from pyvista           import Actor, Plotter
+from tensordict        import TensorDictBase
+from typing            import Optional
+
 import pyvista as pv
-
-from pydantic   import BaseModel
-from pyvista    import Actor, Plotter
-from tensordict import TensorDictBase
-from typing     import Optional
-
-from .renderers  import (
-    render_agents,
-    render_communication_graph,
-    render_safety_boundary, 
-    render_wind_field
-)
-from .sampling import create_wind_grid
 
 
 class Visualizer:
@@ -46,18 +40,14 @@ class Visualizer:
     
     All visualization elements can be toggled at runtime, allowing users to
     focus on specific aspects of the simulation. The rendering uses PyVista's
-    efficient update mechanisms to maintain performance even with large swarms.
+    efficient update mechanisms to maintain performance even with large flocks.
     """
     
     def __init__(
         self,
-        colors          : BaseModel,
-        glyphs          : BaseModel,
-        grids           : BaseModel,
-        opacity         : BaseModel,
-        visualization   : BaseModel,
         max_temperature : float,
-        simulation      : Optional[object] = None,
+        simulation      : Optional[object],
+        visualization   : VisualizationModel
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -68,22 +58,21 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            colors          : Color configuration model for visualization elements
-            glyphs          : Glyph configuration model for agent representation
-            grids           : Grid configuration model for sampling parameters
-            opacity         : Opacity configuration model for transparency settings
-            visualization   : Main visualization configuration with feature toggles
             max_temperature : Maximum safe temperature (T_max) for safety visualization
             simulation      : Optional simulation reference for accessing environment data
+            visualization   : Consolidated visualization configuration model
         """
         # Store configuration models
-        self.colors          = colors
-        self.glyphs          = glyphs
-        self.grids           = grids
-        self.opacity         = opacity
-        self.visualization   = visualization
+        self.config          = visualization
         self.max_temperature = max_temperature
         self.simulation      = simulation
+        self.visualization   = visualization
+        
+        # Extract nested configurations for easier access
+        self.colors        = visualization.colors
+        self.glyphs        = visualization.glyphs
+        self.grids         = visualization.grids
+        self.opacity       = visualization.opacity
         
         # Initialize rendering state
         self._plotter       : Optional[Plotter]      = None
@@ -92,6 +81,10 @@ class Visualizer:
         self._safety_actors : Optional[list[Actor]]  = None
         self._graph_actors  : Optional[list[Actor]]  = None
         self._colormap      : Optional[str]          = None
+        
+        # Initialize the grid sampler and renderer
+        self._grid_sampler = GridSampler(self.grids)
+        self._renderer     = Renderer(self.colors, self.glyphs, self.opacity)
         
         # Initialize the plotter
         self._initialize_plotter()
@@ -103,7 +96,7 @@ class Visualizer:
         This method creates the visualization window with the configured size,
         applies the selected theme (dark or light), and sets up appropriate
         lighting for 3D rendering. The camera is positioned to provide a
-        clear initial view of the swarm, with zoom adjusted for typical
+        clear initial view of the flock, with zoom adjusted for typical
         simulation bounds.
         
         The method also initializes the temperature colormap that will be
@@ -116,10 +109,10 @@ class Visualizer:
         pv.global_theme.load_theme(theme)
         
         self._plotter = Plotter(
-            window_size = self.visualization.window_size,
-            title       = self.visualization.window_title,
             lighting    = "three lights",
             off_screen  = False,
+            title       = self.visualization.window_title,
+            window_size = self.visualization.window_size
         )
         
         # Set up initial view
@@ -129,7 +122,7 @@ class Visualizer:
         # Use colormap from configuration
         self._colormap = self.colors.colormap
 
-    def update(self, observation: TensorDictBase) -> None:
+    def update(self, observation: TensorDictBase):
         """
         Update the visualization with new simulation data.
         
@@ -146,21 +139,21 @@ class Visualizer:
         
         Args:
             observation: Current simulation state containing:
-                        - position: Agent positions (N, 3)
-                        - velocity: Agent velocities (N, 3) 
-                        - temperature: Agent temperatures (N, 1)
-                        - temperature_grad: Temperature gradients (N, 3)
-                        - edge_index: Communication graph edges (2, E)
+                - edge_index       : Communication graph edges (2, E)
+                - position         : Agent positions (N, 3)
+                - temperature      : Agent temperatures (N, 1)
+                - temperature_grad : Temperature gradients (N, 3)
+                - velocity         : Agent velocities (N, 3) 
         """
         if self._plotter is None:
             self._initialize_plotter()
         
         # Extract tensor data from observation
+        edge_index       = observation.get("edge_index")
         position         = observation.get("position")
-        velocity         = observation.get("velocity")
         temperature      = observation.get("temperature")
         temperature_grad = observation.get("temperature_grad")
-        edge_index       = observation.get("edge_index")
+        velocity         = observation.get("velocity")
         
         # Skip if window was closed
         if self._plotter.ren_win is None:
@@ -171,54 +164,42 @@ class Visualizer:
         # Render agent glyphs if enabled
         if self.visualization.show_agents:
             colormap = self._colormap if self.visualization.show_thermal else None
-            self._agent_actors = render_agents(
+            self._agent_actors = self._renderer.add_agents(
+                colormap    = colormap,
                 plotter     = self._plotter,
                 position    = position,
-                velocity    = velocity,
-                temperature = temperature,
-                colormap    = colormap,
-                glyphs      = self.glyphs,
-                colors      = self.colors,
-                opacities   = self.opacity,
                 show_trails = self.visualization.show_trails,
+                temperature = temperature,
+                velocity    = velocity
             )
         
         # Render wind field vectors if enabled
         if self.visualization.show_wind:
-            wind_grid = create_wind_grid(
-                simulation  = self.simulation,
-                position    = position,
-                grid_config = self.grids,
+            wind_grid = self._grid_sampler.create_wind_grid(
+                position   = position,
+                simulation = self.simulation
             )
-            self._wind_actors = render_wind_field(
+            self._wind_actors = self._renderer.add_wind_vectors(
                 plotter   = self._plotter,
-                wind_grid = wind_grid,
-                glyphs    = self.glyphs,
-                colors    = self.colors,
-                opacities = self.opacity,
+                wind_grid = wind_grid
             )
         
         # Render thermal safety boundary if enabled
         if self.visualization.show_safety and self.simulation is not None:
-            self._safety_actors = render_safety_boundary(
+            self._safety_actors = self._renderer.add_safety_boundary(
+                grids            = self.grids,
+                max_temperature  = self.max_temperature,
                 plotter          = self._plotter,
                 position         = position,
-                temperature      = temperature,
-                temperature_grad = temperature_grad,
-                max_temperature  = self.max_temperature,
-                grids            = self.grids,
-                colors           = self.colors,
-                opacities        = self.opacity,
+                temperature      = temperature
             )
         
         # Render communication graph edges if enabled
         if self.visualization.show_graph:
-            self._graph_actors = render_communication_graph(
-                plotter    = self._plotter,
-                position   = position,
+            self._graph_actors = self._renderer.add_communication_graph(
                 edge_index = edge_index,
-                colors     = self.colors,
-                opacities  = self.opacity,
+                plotter    = self._plotter,
+                position   = position
             )
     
     def render(self):
@@ -248,12 +229,12 @@ class Visualizer:
         
         Args:
             feature : Name of the feature to toggle. Valid options:
-                     'agents'   - Agent glyphs (spheres or arrows)
-                     'graph'    - Communication graph edges
-                     'safety'   - Thermal safety boundary (T_max isosurface)
-                     'thermal'  - Temperature-based agent coloring
-                     'wind'     - Wind field vector arrows
-                     'trails'   - Agent motion trails
+                     'agents'  - Agent glyphs (spheres or arrows)
+                     'graph'   - Communication graph edges
+                     'safety'  - Thermal safety boundary (T_max isosurface)
+                     'thermal' - Temperature-based agent coloring
+                     'trails'  - Agent motion trails
+                     'wind'    - Wind field vector arrows
             show    : Explicit visibility state. If None, toggles current state.
                      If True, enables the feature. If False, disables it.
         

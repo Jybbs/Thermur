@@ -12,6 +12,7 @@ build/
 
 # Class materials
 requirements.pdf
+notes.md
 
 # macOS
 .DS_Store
@@ -32,8 +33,9 @@ ENV/
 env.bak/
 venv.bak/
 
-# VS Code
+# VS Code & extensions
 .vscode/
+.claude/
 
 # Logs and temporary files
 *.log
@@ -42,6 +44,8 @@ venv.bak/
 *.swo
 *.bak
 *.old
+outputs/
+logs/
 
 # pyenv and Python-specific files
 .python-version
