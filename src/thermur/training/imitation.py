@@ -115,8 +115,8 @@ def train_imitation_learning(
     loss              : LossModule,
     optimizer         : Optimizer,
     policy            : Module,
-    wandb             : WandbModel,
-    visualizer        : Visualizer | None = None,
+    visualizer        : Visualizer | None,
+    wandb             : WandbModel
 ):
     """
     Train a policy via imitation learning (behavioral cloning).
@@ -135,8 +135,8 @@ def train_imitation_learning(
         loss              : Behavioral cloning loss module
         optimizer         : Gradient-based optimizer
         policy            : GNN policy network to train
-        wandb             : Experiment tracking configuration
         visualizer        : Optional 3D visualization module
+        wandb             : Experiment tracking configuration
     """
     device = torch.device(learning.device)
     initialize_wandb(learning, wandb)
@@ -178,7 +178,8 @@ def train_imitation_learning(
                 frame_count = total_frames,
                 optimizer   = optimizer,
                 policy      = policy,
-                save_path   = learning.checkpoint_path
+                save_path   = learning.checkpoint_path,
+                is_final    = False
             )
     
     cleanup_resources(
@@ -189,10 +190,10 @@ def train_imitation_learning(
     
     save_checkpoint(
         frame_count = total_frames,
+        is_final    = True,
         optimizer   = optimizer,
         policy      = policy,
-        save_path   = learning.checkpoint_path,
-        is_final    = True
+        save_path   = learning.checkpoint_path
     )
     logger.info("Training finished successfully.")
 
