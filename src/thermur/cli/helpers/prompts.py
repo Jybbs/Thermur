@@ -134,7 +134,6 @@ class CLIPrompts:
         )
         self.ui.console.print()
 
-
         project_name = questionary.text(
             default     = default_project,
             instruction = "(press Enter for default)",
@@ -238,7 +237,6 @@ class CLIPrompts:
 
         # Map emoji back to preset name
         if chosen_emoji:
-            # Find which preset has this emoji
             chosen_preset = None
             for name, config in preset_cfgs.items():
                 if config['emoji'] == chosen_emoji:
