@@ -32,83 +32,158 @@ class SystemInspector:
             cfg: The configuration object. If provided, commonly used
                  sections are extracted for easier access.
         """
-        self.cfg = cfg
-        if cfg:
-            self.messages          = cfg.messages
-            self.wandb_integration = cfg.wandb_integration
+        self.cfg               = cfg
+        self.messages          = getattr(cfg, 'messages', None)
+        self.wandb_integration = getattr(cfg, 'wandb_integration', None)
+        self._wandb_status     = None
 
-    def _safe_import(
-        self,
-        attr    : str,
-        package : str
-    ) -> str | None:
+    def _get_cuda_info(self) -> dict[str, any]:
         """
-        Get a package attribute, handling import errors gracefully.
-
-        Args:
-            attr    : The attribute to retrieve from the package.
-            package : The name of the package to import.
-
+        Gather CUDA-related system information.
+        
         Returns:
-            The attribute's value, or None if import/access fails.
+            Dictionary containing CUDA availability, device count, GPU name,
+            memory, and CUDA version if available.
+        """
+        if not cuda.is_available():
+            return {"cuda": False, "device_count": 0}
+        
+        props = cuda.get_device_properties(0)
+        return {
+            "cuda"         : True,
+            "cuda_version" : cuda.version.cuda,
+            "device_count" : cuda.device_count(),
+            "gpu_memory"   : f"{props.total_memory / 1e9:.1f}GB",
+            "gpu_name"     : cuda.get_device_name(0),
+        }
+
+    def _get_disk_info(self) -> dict[str, float]:
+        """
+        Gather disk usage information for the current directory.
+        
+        Returns:
+            Dictionary with disk_available and disk_total in GB.
+            Returns zeros if disk information cannot be retrieved.
         """
         try:
-            return getattr(__import__(package), attr)
-        
-        except (ImportError, AttributeError):
-            return None
+            usage = disk_usage(".")
+            return {
+                "disk_available" : usage.free  / 1e9,
+                "disk_total"     : usage.total / 1e9,
+            }
+        except Exception:
+            return {"disk_available": 0, "disk_total": 0}
 
-    def _safe_version(
-        self,
-        package  : str,
-        fallback : str = None
-    ) -> str | None:
+    def _get_memory_info(self) -> dict[str, float]:
         """
-        Get a package version, handling errors gracefully.
-
-        Args:
-            package  : The name of the package to check.
-            fallback : The value to return if the package is not found.
-
+        Gather system memory information using psutil.
+        
         Returns:
-            The package version string, or the fallback value.
+            Dictionary with memory_available and memory_total in GB.
+            Returns zeros if psutil is not installed.
         """
         try:
-            return version(package)
-        
-        except PackageNotFoundError:
-            return fallback
-        
-    def check_wandb_status(self, cfg: DictConfig = None) -> tuple[str, str]:
-        """
-        Check wandb installation and login status.
+            from psutil import virtual_memory
+            mem = virtual_memory()
+            return {
+                "memory_available" : mem.available / 1e9,
+                "memory_total"     : mem.total     / 1e9,
+            }
+        except ImportError:
+            return {"memory_available": 0, "memory_total": 0}
 
+    def _get_package_version(
+        self, 
+        package_name : str, 
+        default      : str = None
+    ) -> str | None:
+        """
+        Get version of an installed package.
+        
         Args:
-            cfg: Full configuration object. If None, uses the instance's cfg.
-
-        Returns:
-            A tuple of (status, details) for wandb integration.
-        """
-        if cfg is None:
-            cfg = self.cfg
+            package_name : Name of the package to check.
+            default      : Default value if package is not found.
             
-        info      = self.get_system_info(cfg.wandb_integration)
-        wandb_cfg = cfg.wandb_integration
+        Returns:
+            Version string or default value.
+        """
+        try:
+            module = __import__(package_name)
+            return getattr(module, '__version__', None)
+        
+        except ImportError:
+            try:
+                return version(package_name)
+            except PackageNotFoundError:
+                return default
 
-        if not info["wandb_installed"]:
+    def _get_wandb_status(self) -> dict[str, any]:
+        """
+        Get comprehensive wandb status information.
+        
+        Checks installation, API key presence, and user authentication
+        in a single pass. Results are cached for efficiency.
+        
+        Returns:
+            Dictionary with keys:
+            - installed : bool
+            - api_key   : str | None
+            - username  : str | None
+        """
+        if self._wandb_status is not None:
+            return self._wandb_status
+            
+        status = {
+            "installed" : False,
+            "api_key"   : None,
+            "username"  : None,
+        }
+        
+        try:
+            __import__('wandb')
+            status["installed"] = True
+        except ImportError:
+            self._wandb_status = status
+            return status
+            
+        status["api_key"] = (
+            os.environ.get(self.wandb_integration.api_key_env) or 
+            api.api_key
+        )
+        
+        if status["api_key"]:
+            try:
+                user = Api().viewer
+                status["username"] = user.get("username") if user else None
+            except Exception:
+                pass
+                
+        self._wandb_status = status
+        return status
+
+    def check_wandb_status(self) -> tuple[str, str]:
+        """
+        Check wandb installation and authentication status.
+
+        Returns:
+            Tuple of (status_message, details_message) with Rich markup
+            indicating the current wandb state and any required actions.
+        """
+        status = self._get_wandb_status()
+        
+        if not status["installed"]:
             return (
                 "[red]❌ Not Installed[/red]",
                 "[yellow]Run 'poetry install'[/yellow]",
             )
 
-        if info["wandb_user"]:
+        if status["username"]:
             return (
                 "[green]✅ Connected[/green]",
-                f"[cyan]@{info['wandb_user']}[/cyan]",
+                f"[cyan]@{status['username']}[/cyan]",
             )
 
-        api_key_exists = os.environ.get(wandb_cfg.api_key_env) or api.api_key
-        if api_key_exists:
+        if status["api_key"]:
             return (
                 "[green]✅ API Key Set[/green]",
                 "[white]Ready to track[/white]",
@@ -119,146 +194,88 @@ class SystemInspector:
             "[yellow]Run 'wandb login'[/yellow]",
         )
 
-    def get_system_info(
-        self,
-        wandb_integration : DictConfig | None = None
-    ) -> dict[str, str | int | float | bool | None]:
+    def get_system_info(self) -> dict[str, any]:
         """
-        Gather comprehensive system information using platform tools.
+        Gather comprehensive system information.
 
-        Args:
-            wandb_integration: Wandb-related configuration. If None, uses
-                               the instance's wandb_integration.
+        Collects information about installed packages, hardware capabilities,
+        and system resources. This includes Python version, PyTorch details,
+        CUDA availability, memory, and disk usage.
 
         Returns:
-            A dictionary containing system details.
+            Dictionary containing all system information with keys:
+            - Package versions : mujoco, thermur, torch, wandb_installed
+            - System info      : platform, python, python_version_info
+            - Hardware         : cuda info, memory stats, disk usage
+            - wandb_user if authenticated
         """
-        if wandb_integration is None:
-            wandb_integration = self.wandb_integration
-            
-        cuda_available = cuda.is_available()
+        wandb_status = self._get_wandb_status()
+        
         info = {
-            "cuda"                : cuda_available,
-            "device_count"        : cuda.device_count() if cuda_available else 0,
-            "mujoco"              : self._safe_import(
-                attr="__version__", package="mujoco"
-            ),
+            "mujoco"              : self._get_package_version("mujoco"),
             "platform"            : platform(),
             "python"              : python_version(),
             "python_version_info" : version_info,
-            "thermur"             : self._safe_version(
-                package="thermur", fallback="dev"
-            ),
+            "thermur"             : self._get_package_version("thermur", "dev"),
             "torch"               : torch_version,
+            "wandb_installed"     : wandb_status["installed"],
+            "wandb_user"          : wandb_status["username"],
         }
-
-        if cuda_available:
-            props                = cuda.get_device_properties(0)
-            info["cuda_version"] = cuda.version.cuda
-            info["gpu_memory"]   = f"{props.total_memory / 1e9:.1f}GB"
-            info["gpu_name"]     = cuda.get_device_name(0)
-
-        try:
-            from psutil import virtual_memory
-            mem                      = virtual_memory()
-            info["memory_available"] = mem.available / 1e9
-            info["memory_total"]     = mem.total     / 1e9
-        except ImportError:
-            info["memory_available"] = 0
-            info["memory_total"]     = 0
-
-        try:
-            usage                  = disk_usage(".")
-            info["disk_available"] = usage.free  / 1e9
-            info["disk_total"]     = usage.total / 1e9
-        except Exception:
-            info["disk_available"] = 0
-            info["disk_total"]     = 0
-
-        info["wandb_installed"] = self._safe_import(
-            attr="__version__", package="wandb"
-        ) is not None
-        info["wandb_user"]      = None
-        api_key_exists          = False
-        if info["wandb_installed"]:
-            api_key_exists = os.environ.get(wandb_integration.api_key_env) or api.api_key
-
-        if api_key_exists:
-            try:
-                user = Api().viewer
-                info["wandb_user"] = user.get("username") if user else None
-            except Exception:
-                info["wandb_user"] = None
-
+        
+        info.update(self._get_cuda_info())
+        info.update(self._get_memory_info())
+        info.update(self._get_disk_info())
+        
         return info
 
-    def get_wandb_url(
-        self,
-        project           : str,
-        wandb_integration : DictConfig | None = None
-    ) -> str | None:
+    def get_wandb_url(self, project: str) -> str | None:
         """
-        Generate wandb project URL if possible.
+        Generate wandb project URL if user is authenticated.
 
         Args:
-            project           : The name of the wandb project.
-
-            wandb_integration : Wandb configuration from DictConfig.
+            project: The wandb project name.
 
         Returns:
-            The URL to the wandb project dashboard, or None if not available.
+            Full URL to the wandb project dashboard if authenticated,
+            None otherwise.
         """
-        if wandb_integration is None:
-            wandb_integration = self.wandb_integration
-            
-        info = self.get_system_info(wandb_integration)
+        username = self._get_wandb_status()["username"]
+        return f"https://wandb.ai/{username}/{project}" if username else None
 
-        if not info["wandb_installed"]:
-            return None
-
-        if info["wandb_user"]:
-            return f"https://wandb.ai/{info['wandb_user']}/{project}"
-        
-        return None
-
-    def validate_config_overrides(
-        self,
-        overrides         : list[str] | None,
-        messages          : DictConfig | None = None,
-        wandb_integration : DictConfig | None = None
-    ) -> list[str]:
+    def validate_config_overrides(self, overrides: list[str] | None) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
+        Checks that each override follows the pattern key=value and that
+        keys contain only valid characters. Also validates system requirements
+        like GPU availability.
+
         Args:
-            overrides         : A list of configuration overrides to validate.
-            messages          : Messages configuration. If None, uses instance's messages.
-            wandb_integration : Wandb configuration. If None, uses instance's wandb_integration.
+            overrides: List of Hydra overrides in key=value format.
 
         Returns:
-            A list of validation issues found; empty if all are valid.
+            List of validation error messages. Empty list indicates all
+            overrides are valid.
         """
         if not overrides:
             return []
 
         issues = []
+        
         for o in overrides:
             if "=" not in o:
-                issues.append(f"{messages.validation['invalid_override_format']}: {o}")
+                issues.append(
+                    f"{self.messages.validation['invalid_override_format']}: {o}"
+                )
                 continue
 
-            key            = o.split("=")[0]
-            sanitized_key  = key.lstrip("+").replace(".", "").replace("_", "")
-            key_is_invalid = not sanitized_key.isalnum()
-            if key_is_invalid:
-                issues.append(f"{messages.validation['invalid_override_key']}: {o}")
-
-        if messages is None:
-            messages = self.messages
-        if wandb_integration is None:
-            wandb_integration = self.wandb_integration
-            
-        if not self.get_system_info(wandb_integration)["cuda"]:
-            issues.append(messages.validation['gpu_unavailable'])
+            key = o.split("=")[0].lstrip("+").replace(".", "").replace("_", "")
+            if not key.isalnum():
+                issues.append(
+                    f"{self.messages.validation['invalid_override_key']}: {o}"
+                )
+        
+        if not cuda.is_available():
+            issues.append(self.messages.validation['gpu_unavailable'])
 
         return issues
