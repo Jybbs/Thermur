@@ -31,10 +31,10 @@ safe set, ensuring thermal safety through quadratic program filtering.
 
 build_safety_filter = builds(
     SafetyFilter,
-    barrier                 = build_thermal_barrier,
     agent_count             = SI("${flock.agent_count}"),
+    barrier                 = build_thermal_barrier,
+    safety                  = zen(SafetyModel),
     spatial_dims            = SI("${flock.spatial_dims}"),
-    safety_config           = zen(SafetyModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.safety",

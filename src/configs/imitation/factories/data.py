@@ -13,10 +13,10 @@ from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplace
 
 build_data_collector = builds(
     SyncDataCollector,
-    create_env_fn           = SI("${environment}"),
     device                  = SI("${learning.device}"),
-    policy                  = SI("${controller}"),
     frames_per_batch        = SI("${learning.frames_per_batch}"),
+    policy                  = SI("${controller}"),
+    simulation              = SI("${simulation}"),
     total_frames            = SI("${learning.total_frames}"),
     populate_full_signature = False,
     zen_dataclass           = {

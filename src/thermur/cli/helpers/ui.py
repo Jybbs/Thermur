@@ -308,9 +308,11 @@ class ThermurUI:
                 text_format = "[{0}]{{task.description}}[/{0}]".format(self.display.progress_style)
             ),
             progress.BarColumn(
-                bar_width      = 30,
-                complete_style = "bright_red",
-                style          = self.display.progress_style,
+                bar_width        = self.display.progress_bar_length,
+                complete_style   = self.display.progress_style,
+                finished_style   = self.display.progress_style,
+                pulse_style      = self.display.progress_style,
+                style            = self.display.progress_unfilled_color,
             ),
 
             progress.TaskProgressColumn(),

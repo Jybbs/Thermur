@@ -13,9 +13,9 @@ from thermur.visualization import Visualizer
 
 build_visualizer = builds(
     Visualizer,
-    visualization_config    = zen(VisualizationModel),
     max_temperature         = SI("${flock.max_temperature}"),
     simulation              = SI("${simulation}"),
+    visualization           = zen(VisualizationModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.visualization",

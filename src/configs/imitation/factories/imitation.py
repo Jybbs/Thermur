@@ -14,7 +14,7 @@ from torch.optim      import AdamW
 
 build_policy = builds(
     GNNPolicy,
-    learning_config         = zen(LearningModel),
+    learning                = zen(LearningModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.imitation",
@@ -31,8 +31,8 @@ structure to output nominal control actions u_nom for each agent.
 
 build_optimizer = builds(
     AdamW,
-    params                  = SI("${policy}"),
     lr                      = SI("${learning.learning_rate}"),
+    params                  = SI("${policy}"),
     weight_decay            = SI("${learning.weight_decay}"),
     populate_full_signature = False,
     zen_partial             = True,

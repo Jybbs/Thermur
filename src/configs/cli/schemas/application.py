@@ -99,15 +99,13 @@ class CLIModel(BaseModel, extra="forbid"):
     )
     training_component_configs: list[tuple[str, str, str]] = Field(
         default = [
-            ("environment",       "environment",       "🌍 Environment"),
+            ("simulation",        "simulation",        "🌍 Simulation"),
             ("controller",        "controller",        "🎓 Controller"),
             ("policy",            "policy",            "🧠 Learning Policy"),
             ("data_collector",    "data_collector",    "📊 Data Collector"),
             ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
             ("loss",              "loss",              "📏 Loss Function"),
             ("optimizer",         "optimizer",         "🔎 Optimizer"),
-            ("hyperparameters",   "hyperparameters",   "📌 Hyperparameters"),
-            ("wandb",             "wandb",             "🎨 wandb Tracking"),
         ],
         description = (
             "List of (key, config_path, display_name) tuples for training "
