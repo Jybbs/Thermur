@@ -97,38 +97,9 @@ class ThermurUI:
         
         return table
 
-    def create_examples_panel(
-        self,
-        items : list[str],
-        title : str = "Examples"
-    ) -> Panel:
-        """
-        Constructs a Rich Panel to consistently display a list of examples.
-        
-        This method is used to show users potential inputs or options, such
-        as example project names, in a visually distinct and standardized way.
-        
-        Args:
-            items : A list of strings to display as bullet points.
-            title : The title for the examples list.
-            
-        Returns:
-            A configured Panel object.
-        """
-        example_text = "\n".join(
-            f"  • {item}" for item in items
-        )
-        content = f"[{self.display.styles['info']}]{title}:[/]\n{example_text}"
-        return Panel(
-            content,
-            border_style = "bright_blue",
-            padding      = (0, 2),
-        )
-
     def create_header_panel(
         self,
-        title    : str,
-        subtitle : str | None = None
+        title : str
     ) -> Panel:
         """
         Create a styled header panel with fire gradient for "Thermur".
@@ -137,8 +108,7 @@ class ThermurUI:
         for the word "Thermur" using the signature fire gradient effect.
         
         Args:
-            title    : Main header text
-            subtitle : Optional subtitle
+            title: Main header text
             
         Returns:
             Formatted header panel
@@ -442,50 +412,7 @@ class ThermurUI:
         
         return progress_bar, details_text
 
-    @staticmethod
-    def get_component_description(component: any) -> str:
-        """
-        Generate a concise, one-line description for a configuration component.
-        
-        Args:
-            component: The configuration component to describe.
-            
-        Returns:
-            A human-readable description string.
-        """
-        from hydra_zen import get_target
 
-        if doc := getattr(component, "__doc__", None):
-            return doc.strip().split("\n")[0]
-        
-        if hasattr(component, "_target_"):
-            if target_obj := get_target(component):
-                return f"{target_obj.__module__}.{target_obj.__name__}"
-        
-        return f"Configuration object ({type(component).__name__})"
-
-    @staticmethod
-    def get_field_type_string(field_type: any) -> str:
-        """
-        Get a readable type string for a Pydantic model field.
-
-        Args:
-            field_type: The type annotation to inspect.
-
-        Returns:
-            A human-readable type string (e.g., "int", "list[str]").
-        """
-        from typing import get_args, get_origin
-        
-        if origin := get_origin(field_type):
-            args = get_args(field_type)
-            if not args:
-                return origin.__name__
-            
-            inner_types = ", ".join(ThermurUI.get_field_type_string(arg) for arg in args)
-            return f"{origin.__name__}[{inner_types}]"
-        
-        return getattr(field_type, "__name__", str(field_type))
 
     def print_command_example(
         self,
@@ -657,25 +584,6 @@ class ThermurUI:
         self.console.print(Rule(title, style=style, align="center"))
         self.console.print()
 
-    def print_status_badge(
-        self,
-        label  : str,
-        status : str,
-        style  : str
-    ):
-        """
-        Print a status badge.
-        
-        Creates a compact status indicator for various system states
-        with consistent formatting.
-        
-        Args:
-            label  : Badge label
-            status : Status text
-            style  : Style to apply
-        """
-        badge = f"[{style}][ {label}: {status} ][/{style}]"
-        self.console.print(badge)
 
     def print_wandb_info(self, project: str, url: str | None = None):
         """
@@ -700,20 +608,3 @@ class ThermurUI:
                 f"[{self.display.styles['info']}]{project}[/][/]"
             )
 
-    def status(self, message: str, spinner: str = "dots"):
-        """
-        Create a status context with a spinner.
-        
-        Wraps console.status with a default spinner.
-        
-        Args:
-            message : The status message to display.
-            spinner : The spinner style (defaults to "dots").
-            
-        Returns:
-            A context manager for the status display.
-        """
-        return self.console.status(
-            status  = message, 
-            spinner = spinner
-        )
