@@ -395,7 +395,7 @@ class ThermurUI:
             Rich Text object with character-by-character gradient styling
         """
         gradient_text = Text()
-        colors = self.display.thermal_gradient_colors
+        colors        = self.display.fire_gradient
         
         for i, char in enumerate(text):
             color = colors[i % len(colors)]

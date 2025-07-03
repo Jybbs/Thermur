@@ -108,14 +108,9 @@ class SystemInspector:
             Version string or default value.
         """
         try:
-            module = __import__(package_name)
-            return getattr(module, '__version__', None)
-        
-        except ImportError:
-            try:
-                return version(package_name)
-            except PackageNotFoundError:
-                return default
+            return version(package_name)
+        except PackageNotFoundError:
+            return default
 
     def _get_wandb_status(self) -> dict[str, any]:
         """
