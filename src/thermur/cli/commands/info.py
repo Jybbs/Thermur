@@ -53,7 +53,7 @@ class InfoCommand:
         self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 
-        status, details = self.system.check_wandb_status(self.cfg)
+        status, details = self.system.check_wandb_status()
         self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
         self.ui.console.print()
 
