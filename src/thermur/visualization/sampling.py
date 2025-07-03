@@ -12,135 +12,166 @@ operations and leveraging PyVista's optimized data structures.
 from configs.imitation import VisualizationModel
 from pyvista           import Axes, ImageData, PolyData
 from torch             import Tensor
-from typing            import Any
+from typing            import Any, Optional
 
 import numpy   as np
 import pyvista as pv
 import torch
 
 
-def compute_grid_bounds(
-    grid     : VisualizationModel,
-    position : Tensor,
-) -> tuple[np.ndarray, np.ndarray]:
+class GridSampler:
     """
-    Compute the bounding box for a grid based on agent positions.
+    Manages spatial sampling of simulation data for visualization.
     
-    Calculates the minimum and maximum coordinates for a bounding box around
-    the agent positions, with padding to ensure the entire simulation
-    domain of interest is captured for visualization.
+    This class provides methods for creating grid-based representations of
+    continuous simulation data. It handles the discretization of thermal fields,
+    wind vectors, and other spatially-distributed data into formats suitable
+    for 3D rendering with PyVista.
     
-    Args:
-        position    : Agent positions tensor of shape [N, 3]
-        grid : Configuration for grid parameters including padding
+    The sampler uses efficient vectorized operations to handle large-scale
+    simulations while maintaining performance.
+    """
+    
+    def __init__(self, grid_config: Optional[VisualizationModel] = None):
+        """
+        Initialize the grid sampler with configuration.
         
-    Returns:
-        Tuple of (min_bounds, max_bounds) as numpy arrays of shape [3]
-    """
-    positions  = position.detach().cpu().numpy()
-    min_bounds = positions.min(axis=0) - grid.padding
-    max_bounds = positions.max(axis=0) + grid.padding
-    return min_bounds, max_bounds
-
-
-def create_coordinate_axes(
-    labels : tuple[str, str, str] = ("X", "Y", "Z"),
-    origin : tuple[float, float, float] = (0, 0, 0),
-    scale  : float = 1.0,
-) -> Axes:
-    """
-    Create coordinate axes for orientation reference.
+        Args:
+            grid_config: Visualization configuration containing grid parameters.
+                         Can be set later if not provided during initialization.
+        """
+        self.grid_config = grid_config
     
-    Creates XYZ coordinate axes for the visualization to provide spatial 
-    reference and orientation. The axes are centered at the specified origin
-    and scaled according to the scale parameter. This helps orient viewers
-    in 3D space and provides a sense of scale to the visualization.
-    
-    Args:
-        labels : Labels for each axis (X, Y, Z)
-        origin : Origin point for the axes in 3D space
-        scale  : Size scaling factor for the axes
+    def compute_grid_bounds(
+        self,
+        position : Tensor,
+        padding  : Optional[float] = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Compute the bounding box for a grid based on agent positions.
         
-    Returns:
-        PyVista axes object configured for the coordinate reference
-    """
-    return pv.Axes(
-        show_actor  = True,
-        actor_scale = scale,
-        x_label     = labels[0],
-        y_label     = labels[1],
-        z_label     = labels[2],
-    )
-
-
-def create_temperature_grid(
-    environment : Any,
-    grid        : VisualizationModel,
-    position    : Tensor,
-) -> ImageData:
-    """
-    Create a uniform grid of temperature values from the environment.
-    
-    Samples the temperature field from the environment data source at regular
-    grid points within a bounding box around the flock. The resulting UniformGrid
-    contains temperature data suitable for volume rendering or isosurface extraction.
-    
-    Args:
-        environment : The simulation environment with thermal data source
-        grid        : Configuration for grid resolution and padding
-        position    : Agent positions tensor of shape [N, 3]
+        Calculates the minimum and maximum coordinates for a bounding box around
+        the agent positions, with padding to ensure the entire simulation
+        domain of interest is captured for visualization.
         
-    Returns:
-        PyVista UniformGrid with temperature scalar field data
-    """
-    min_bounds, max_bounds = compute_grid_bounds(position, grid)
+        Args:
+            position : Agent positions tensor of shape [N, 3]
+            padding  : Override padding value. If None, uses grid_config.padding
+            
+        Returns:
+            Tuple of (min_bounds, max_bounds) as numpy arrays of shape [3]
+        """
+        if padding is None:
+            if self.grid_config is None:
+                raise ValueError("No padding specified and no grid_config set")
+            padding = self.grid_config.padding
+            
+        positions  = position.detach().cpu().numpy()
+        min_bounds = positions.min(axis=0) - padding
+        max_bounds = positions.max(axis=0) + padding
+        return min_bounds, max_bounds
     
-    resolution = np.array(grid.temperature_resolution)
-    grid       = pv.ImageData(
-        dimensions = grid.temperature_resolution,
-        spacing    = (max_bounds - min_bounds) / (resolution - 1),
-        origin     = min_bounds
-    )
-    
-    grid_tensor         = torch.from_numpy(grid.points).float()
-    temps, _            = environment.data_source.query_thermal(grid_tensor)
-    grid["temperature"] = temps.cpu().numpy().ravel()
-    
-    return grid
-
-
-def create_wind_grid(
-    grid       : VisualizationModel,
-    position   : Tensor,
-    simulation : Any,
-) -> PolyData:
-    """
-    Create a grid of wind vectors from the environment data source.
-    
-    Samples the wind field from the environment at regular intervals within
-    a bounding box around the flock. The resulting PolyData contains points
-    and vector data suitable for glyph-based visualization of the wind field.
-    
-    Args:
-        grid       : Configuration for grid resolution and padding
-        position   : Agent positions tensor of shape [N, 3]
-        simulation : The simulation environment with wind data source
+    def create_coordinate_axes(
+        self,
+        labels : tuple[str, str, str] = ("X", "Y", "Z"),
+        origin : tuple[float, float, float] = (0, 0, 0),
+        scale  : float = 1.0
+    ) -> Axes:
+        """
+        Create coordinate axes for orientation reference.
         
-    Returns:
-        PyVista PolyData with wind vector field data at each grid point
-    """
-    min_bounds, max_bounds = compute_grid_bounds(position, grid)
-    resolution = grid.wind_resolution
+        Creates XYZ coordinate axes for the visualization to provide spatial 
+        reference and orientation. The axes are centered at the specified origin
+        and scaled according to the scale parameter. This helps orient viewers
+        in 3D space and provides a sense of scale to the visualization.
+        
+        Args:
+            labels : Labels for each axis (X, Y, Z)
+            origin : Origin point for the axes in 3D space
+            scale  : Size scaling factor for the axes
+            
+        Returns:
+            PyVista axes object configured for the coordinate reference
+        """
+        return pv.Axes(
+            actor_scale = scale,
+            show_actor  = True,
+            x_label     = labels[0],
+            y_label     = labels[1],
+            z_label     = labels[2]
+        )
     
-    spacing_grid = pv.ImageData(
-        dimensions = (resolution, resolution, resolution),
-        origin     = min_bounds,
-        spacing    = (max_bounds - min_bounds) / (resolution - 1)
-    )
+    def create_temperature_grid(
+        self,
+        environment : Any,
+        position    : Tensor
+    ) -> ImageData:
+        """
+        Create a uniform grid of temperature values from the environment.
+        
+        Samples the temperature field from the environment data source at regular
+        grid points within a bounding box around the flock. The resulting UniformGrid
+        contains temperature data suitable for volume rendering or isosurface extraction.
+        
+        Args:
+            environment : The simulation environment with thermal data source
+            position    : Agent positions tensor of shape [N, 3]
+            
+        Returns:
+            PyVista UniformGrid with temperature scalar field data
+        """
+        if self.grid_config is None:
+            raise ValueError("Grid configuration not set")
+            
+        min_bounds, max_bounds = self.compute_grid_bounds(position)
+        
+        resolution = np.array(self.grid_config.temperature_resolution)
+        grid       = pv.ImageData(
+            dimensions = self.grid_config.temperature_resolution,
+            origin     = min_bounds,
+            spacing    = (max_bounds - min_bounds) / (resolution - 1)
+        )
+        
+        grid_tensor         = torch.from_numpy(grid.points).float()
+        temps, _            = environment.data_source.query_thermal(grid_tensor)
+        grid["temperature"] = temps.cpu().numpy().ravel()
+        
+        return grid
     
-    wind_grid                  = pv.PolyData(spacing_grid.points)
-    grid_tensor                = torch.from_numpy(wind_grid.points).float()
-    wind_vectors               = simulation.data_source.query_wind(grid_tensor)
-    wind_grid["wind_velocity"] = wind_vectors.cpu().numpy()
-    
-    return wind_grid
+    def create_wind_grid(
+        self,
+        position   : Tensor,
+        simulation : Any
+    ) -> PolyData:
+        """
+        Create a grid of wind vectors from the environment data source.
+        
+        Samples the wind field from the environment at regular intervals within
+        a bounding box around the flock. The resulting PolyData contains points
+        and vector data suitable for glyph-based visualization of the wind field.
+        
+        Args:
+            position   : Agent positions tensor of shape [N, 3]
+            simulation : The simulation environment with wind data source
+            
+        Returns:
+            PyVista PolyData with wind vector field data at each grid point
+        """
+        if self.grid_config is None:
+            raise ValueError("Grid configuration not set")
+            
+        min_bounds, max_bounds = self.compute_grid_bounds(position)
+        resolution = self.grid_config.wind_resolution
+        
+        spacing_grid = pv.ImageData(
+            dimensions = (resolution, resolution, resolution),
+            origin     = min_bounds,
+            spacing    = (max_bounds - min_bounds) / (resolution - 1)
+        )
+        
+        wind_grid                  = pv.PolyData(spacing_grid.points)
+        grid_tensor                = torch.from_numpy(wind_grid.points).float()
+        wind_vectors               = simulation.data_source.query_wind(grid_tensor)
+        wind_grid["wind_velocity"] = wind_vectors.cpu().numpy()
+        
+        return wind_grid
