@@ -13,7 +13,7 @@ from thermur.control import ExpertFlockingController
 build_controller = builds(
     ExpertFlockingController,
     agent_properties        = zen(FlockModel),
-    control_config          = zen(ControlModel),
+    control                 = zen(ControlModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.flocking",

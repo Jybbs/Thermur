@@ -10,7 +10,6 @@ from hydra_zen   import make_config, ZenStore
 imitation_cfg = make_config(
     controller        = build_controller,
     data_collector    = build_data_collector,
-    environment       = build_environment,
     experience_buffer = build_experience_buffer,
     flock             = build_flock,
     learning          = build_learning,
@@ -19,6 +18,7 @@ imitation_cfg = make_config(
     optimizer         = build_optimizer,
     physics           = build_physics,
     policy            = build_policy,
+    simulation        = build_simulation,
     visualizer        = build_visualizer,
     wandb             = build_wandb,
     defaults          = ["_self_"],

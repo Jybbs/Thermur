@@ -140,7 +140,6 @@ class MessagesModel(BaseModel, extra="forbid"):
     status indicators, and validation feedback. Messages are organized by category
     for easier maintenance while maintaining a flat access pattern for performance.
     """
-    # Browser-related messages
     browser_fail_template: str = Field(
         default     = "Failed to open browser: {e}",
         description = "Error message when browser launch fails."
@@ -160,11 +159,21 @@ class MessagesModel(BaseModel, extra="forbid"):
         default     = "Dashboard opened in your default browser!",
         description = "Success message after browser launch."
     )
-    
-    # Training messages
     components_initialized: str = Field(
         default     = "All components initialized successfully!",
         description = "Message after successful component initialization."
+    )
+    dry_run_complete: str = Field(
+        default     = "Dry run complete. Configuration validated successfully.",
+        description = "Completion message for dry-run mode."
+    )
+    dry_run_config_display: str = Field(
+        default     = "Final configuration that would be used:",
+        description = "Message before showing dry-run configuration."
+    )
+    dry_run_header: str = Field(
+        default     = "[bold yellow]DRY RUN MODE[/bold yellow] - No training will occur",
+        description = "Header message for dry-run mode."
     )
     loading_components: str = Field(
         default     = "Loading training components...",

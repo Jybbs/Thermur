@@ -59,8 +59,8 @@ class Visualizer:
         
         Args:
             max_temperature : Maximum safe temperature (T_max) for safety visualization
-            visualization   : Consolidated visualization configuration model
             simulation      : Optional simulation reference for accessing environment data
+            visualization   : Consolidated visualization configuration model
         """
         # Store configuration models
         self.config          = visualization
@@ -229,12 +229,12 @@ class Visualizer:
         
         Args:
             feature : Name of the feature to toggle. Valid options:
-                     'agents'   - Agent glyphs (spheres or arrows)
-                     'graph'    - Communication graph edges
-                     'safety'   - Thermal safety boundary (T_max isosurface)
-                     'thermal'  - Temperature-based agent coloring
-                     'trails'   - Agent motion trails
-                     'wind'     - Wind field vector arrows
+                     'agents'  - Agent glyphs (spheres or arrows)
+                     'graph'   - Communication graph edges
+                     'safety'  - Thermal safety boundary (T_max isosurface)
+                     'thermal' - Temperature-based agent coloring
+                     'trails'  - Agent motion trails
+                     'wind'    - Wind field vector arrows
             show    : Explicit visibility state. If None, toggles current state.
                      If True, enables the feature. If False, disables it.
         
