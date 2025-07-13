@@ -86,6 +86,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             'gpu'      : '💎 GPU',
             'memory'   : '💾 Memory',
             'disk'     : '💿 Disk',
+            'dataset'  : '📥 Dataset',
         },
         description = "System component display names with icons."
     )
@@ -107,6 +108,11 @@ class DisplayModel(BaseModel, extra="forbid"):
                 'is_resource' : True, 
                 'available'   : 'disk_available', 
                 'total'       : 'disk_total'
+            },
+            'dataset'    : {
+                'key'    : 'dataset_size',
+                'format' : '{:.1f} GB ({} files)',
+                'count'  : 'dataset_count'
             },
         },
         description = "Logic for formatting system component values."

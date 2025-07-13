@@ -28,7 +28,7 @@ class CLIModel(BaseModel, extra="forbid"):
     commands_available: list[dict[str, str]] = Field(
         default = [
             {
-                "icon" : "💾",
+                "icon" : "📥",
                 "name" : "download",
                 "desc" : "Download WRF-Fire simulation datasets"
             },
