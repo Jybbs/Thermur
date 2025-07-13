@@ -12,8 +12,9 @@ from ..schemas          import PhysicsModel
 from .flock             import build_action_spec, build_observation_spec
 from hydra_zen          import builds, zen
 from omegaconf          import SI
+from thermur.data       import WRFDataSource
 from thermur.simulation import compute_edge_index, SimulationEnv
-from thermur.utils      import EnvironmentDataSource, set_seed
+from thermur.utils      import set_seed
 
 
 build_physics = builds(
@@ -33,9 +34,10 @@ the environment.
 
 
 build_data_source = builds(
-        EnvironmentDataSource,
+        WRFDataSource,
         data_path               = SI("${physics.data_source}"),
         physics                 = SI("${physics}"),
+        wrf_data                = SI("${wrf_data}"),
         populate_full_signature = True,
     )
 """

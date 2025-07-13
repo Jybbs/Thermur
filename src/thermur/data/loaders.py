@@ -1,26 +1,36 @@
 """
-Utilities for loading and querying environmental data.
+WRF-Fire data loading and querying utilities.
 
-This module provides a class to abstract away the details of reading and
-interpolating from large, gridded datasets like the NetCDF files produced by
-WRF-Fire.
+This module provides a comprehensive data loader for WRF-Fire NetCDF outputs,
+handling temperature, wind, and fire-specific variables with efficient 
+interpolation and gradient computation.
 """
 from configs.imitation import PhysicsModel, WRFDataModel
 from numpy             import ndarray, zeros
 from torch             import Tensor
-from xarray            import DataArray, open_dataset
+from xarray            import open_dataset
 
 import torch
 
 
-class EnvironmentDataSource:
+class WRFDataSource:
     """
-    A wrapper for environmental data providing efficient queries.
+    Loader for WRF-Fire NetCDF datasets with efficient field queries.
     
-    This class loads and caches NetCDF datasets, providing vectorized methods to
-    sample the continuous temperature field at arbitrary agent positions. It handles
-    coordinate transformations between the simulation space and the dataset's
-    coordinate system, and calculates temperature gradients using finite differences.
+    This class loads and caches WRF-Fire output files, providing vectorized 
+    methods to sample temperature, wind, and fire fields at arbitrary agent 
+    positions. It handles:
+    
+    - Coordinate transformations between simulation and dataset spaces
+    - Temperature gradient computation using finite differences
+    - WRF perturbation temperature conversion (T + 300K)
+    - Staggered grid interpolation for wind components
+    - Fire-specific variables like ground heat flux
+    
+    WRF uses an Arakawa C-grid where velocity components are staggered:
+    - U is defined at west/east cell faces (west_east_stag dimension)
+    - V is defined at south/north cell faces (south_north_stag dimension)  
+    - W is defined at top/bottom cell faces (bottom_top_stag dimension)
     """
     def __init__(
         self, 
@@ -32,9 +42,9 @@ class EnvironmentDataSource:
         Loads the dataset from the specified path and initializes configuration.
         
         Args:
-            data_path : Path to the NetCDF dataset file
-            physics   : Physics configuration model with thermal interpolation settings
-            wrf_data  : WRF data configuration for wind variables
+            data_path : Path to the WRF-Fire NetCDF dataset file
+            physics   : Physics configuration model with interpolation settings
+            wrf_data  : WRF data configuration for variable names
         """
         self.dataset    = open_dataset(data_path, cache=True)
         self.coord_vars = list(self.dataset.coords)
@@ -42,9 +52,9 @@ class EnvironmentDataSource:
         self.wrf_data   = wrf_data
         
         self.temp_var = physics.temperature_variable
-        self.u_var    = self.wrf_data.u_wind_variable
-        self.v_var    = self.wrf_data.v_wind_variable
-        self.w_var    = self.wrf_data.w_wind_variable
+        self.u_var    = wrf_data.u_wind_variable
+        self.v_var    = wrf_data.v_wind_variable
+        self.w_var    = wrf_data.w_wind_variable
 
     def _calculate_gradient(
         self, 
@@ -74,14 +84,13 @@ class EnvironmentDataSource:
         epsilon         = self.physics.epsilon
         num_agents, dim = positions.shape
         gradients       = zeros((num_agents, dim))
-        axes            = ['x', 'y', 'z']
         dim_names       = [
             self.physics.x_dimension, 
             self.physics.y_dimension, 
             self.physics.z_dimension
         ]
         
-        for i in range(min(dim, len(axes))):
+        for i in range(min(dim, 3)):
             dim_name = dim_names[i]
             if dim_name not in self.coord_vars:
                 continue
@@ -107,9 +116,9 @@ class EnvironmentDataSource:
         """
         Processes NaN values resulting from out-of-bounds interpolation.
         
-        This method identifies points where interpolation failed (typically because the
-        agent position was outside the dataset domain) and replaces NaN values with
-        sensible defaults to prevent numerical issues in downstream calculations.
+        This method identifies points where interpolation failed (typically because 
+        the agent position was outside the dataset domain) and replaces NaN values 
+        with sensible defaults to prevent numerical issues in downstream calculations.
         
         For out-of-bounds temperature values, we use a configurable fallback value.
         For gradients, we create a default upward-pointing gradient (in the 
@@ -186,6 +195,51 @@ class EnvironmentDataSource:
             if dim_mapping[i] in self.coord_vars
         }
 
+    def get_domain_info(self) -> dict:
+        """
+        Extract WRF domain configuration information.
+        
+        Returns:
+            Dictionary containing domain metadata like grid spacing,
+            projection information, and simulation time
+        """
+        attrs = self.dataset.attrs
+        
+        return {
+            "cen_lat"     : attrs.get("CEN_LAT", None),
+            "cen_lon"     : attrs.get("CEN_LON", None),
+            "dt"          : attrs.get("DT", None),
+            "dx"          : attrs.get("DX", None),
+            "dy"          : attrs.get("DY", None),
+            "grid_id"     : attrs.get("GRID_ID", None),
+            "map_proj"    : attrs.get("MAP_PROJ", None),
+            "parent_id"   : attrs.get("PARENT_ID", None),
+            "start_date"  : attrs.get("START_DATE", None)
+        }
+    
+    def query_fire_heat_flux(self, positions: Tensor) -> Tensor:
+        """
+        Query ground heat flux from fire.
+        
+        GRNHFX represents the sensible heat flux at the surface due
+        to fire, measured in W/m². This is a 2D field, so the query
+        ignores the vertical coordinate.
+        
+        Args:
+            positions: Tensor [N, 3] of agent positions
+            
+        Returns:
+            Tensor [N, 1] of heat flux values in W/m²
+        """
+        coords_dict = self._transform_coordinates(positions)
+        coords_2d   = {k: v for k, v in coords_dict.items() if k != self.physics.z_dimension}
+        
+        heat_flux = self._interpolate_field(coords_2d, self.wrf_data.fire_heat_variable)
+        return torch.nan_to_num(
+            Tensor(heat_flux.reshape(-1, 1), device=positions.device),
+            nan = 0.0
+        )
+
     def query_thermal(self, positions: Tensor) -> tuple[Tensor, Tensor]:
         """
         Queries temperature and its gradient for a batch of positions.
@@ -195,9 +249,9 @@ class EnvironmentDataSource:
         interpolation for the entire batch of agent positions and calculates the 
         temperature gradient using finite differences.
         
-        The workflow involves transforming coordinates, interpolating temperature
-        values, calculating gradients using central differences, and handling
-        out-of-bounds positions with NaN indicators.
+        WRF stores temperature as perturbation potential temperature, where
+        actual temperature = T + 300K. This method handles the conversion
+        automatically when the temperature variable is "T".
         
         Args:
             positions: Tensor [N, 3] containing N agent positions in simulation 
@@ -219,7 +273,12 @@ class EnvironmentDataSource:
             device = positions.device
         )
         
-        return self._handle_out_of_bounds(temp_gradients, temp_values)
+        temperatures, gradients = self._handle_out_of_bounds(temp_gradients, temp_values)
+        
+        if self.temp_var == "T":
+            temperatures = temperatures + 300.0
+        
+        return temperatures, gradients
     
     def query_wind(self, positions: Tensor) -> Tensor:
         """
