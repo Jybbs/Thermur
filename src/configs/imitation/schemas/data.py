@@ -6,7 +6,7 @@ wildfire simulation datasets, particularly large-scale WRF-Fire outputs
 like the Moisseeva (2020) LES plume dataset.
 """
 from pathlib  import Path
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 
 
 class DataAcquisitionModel(BaseModel, extra="forbid"):
@@ -37,7 +37,7 @@ class DataAcquisitionModel(BaseModel, extra="forbid"):
         default     = 2,
         description = "Maximum number of files to download for training."
     )
-    max_size_gb: float = Field(
+    max_size_gb: PositiveFloat = Field(
         default     = 50.0,
         gt          = 0,
         description = "Maximum total download size in gigabytes."
@@ -61,6 +61,10 @@ class WRFDataModel(BaseModel, extra="forbid"):
     domain_randomization: bool = Field(
         default     = True,
         description = "Enable domain randomization for robustness."
+    )
+    fire_heat_variable: str = Field(
+        default     = "GRNHFX",
+        description = "NetCDF variable name for ground heat flux from fire."
     )
     temperature_noise_std: float = Field(
         default     = 0.5,
