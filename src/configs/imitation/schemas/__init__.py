@@ -6,6 +6,7 @@ components. The models enforce type safety and parameter bounds, ensuring that
 configurations are valid before runtime instantiation.
 """
 from .control       import *
+from .dataset       import *
 from .flock         import *
 from .learning      import *
 from .monitoring    import *
@@ -13,4 +14,3 @@ from .physics       import *
 from .safety        import *
 from .specs         import *
 from .visualization import *
-from .wrf_dataset    import *
