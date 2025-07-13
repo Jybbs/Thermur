@@ -1,17 +1,17 @@
 """
 Hydra-zen builders for data collection and storage.
 
-This module provides configuration builders for the data collector and
-experience replay buffer used in the imitation learning pipeline.
+This module provides configuration builders for trajectory collection,
+experience replay, and WRF dataset management.
 """
+from ..schemas                   import WRFDatasetModel
 from hydra_zen                   import builds
 from omegaconf                   import SI
 from torchrl.collectors          import SyncDataCollector  
 from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
 
-
-build_data_collector = builds(
+build_trajectory_collector = builds(
     SyncDataCollector,
     device                  = SI("${learning.device}"),
     frames_per_batch        = SI("${learning.frames_per_batch}"),
@@ -21,11 +21,11 @@ build_data_collector = builds(
     populate_full_signature = False,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.data",
-        "cls_name" : "CollectorBuild"
+        "cls_name" : "TrajectoryCollectorBuild"
     }
 )
 """
-Builder for synchronous data collection.
+Builder for trajectory collection during training.
 
 Manages the interaction loop between expert policy and environment,
 collecting demonstration trajectories for imitation learning.
@@ -50,4 +50,20 @@ Builder for experience replay buffer.
 
 Stores and samples agent experiences for training, enabling efficient
 batch processing and decorrelated learning updates.
+"""
+
+build_wrf_dataset = builds(
+    WRFDatasetModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.data",
+        "cls_name" : "WRFDatasetBuild"
+    }
+)
+"""
+Builder for unified WRF-Fire dataset configuration.
+
+Manages both dataset acquisition (download, caching) and data structure
+definitions (variable names, processing options) in a single configuration.
+Supports downloading subsets of large datasets and domain randomization.
 """

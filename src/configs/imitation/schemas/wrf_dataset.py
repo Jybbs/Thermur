@@ -1,26 +1,26 @@
 """
-Data acquisition and management schemas.
+WRF-Fire dataset configuration schema.
 
-This module defines configuration models for acquiring and managing
-wildfire simulation datasets, particularly large-scale WRF-Fire outputs
-like the Moisseeva (2020) LES plume dataset.
+This module defines the complete configuration for WRF-Fire datasets,
+including both acquisition parameters and data structure definitions.
 """
 from pathlib  import Path
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 
 
-class DataAcquisitionModel(BaseModel, extra="forbid"):
+class WRFDatasetModel(BaseModel, extra="forbid"):
     """
-    Configuration for wildfire dataset acquisition and management.
+    Unified configuration for WRF-Fire dataset management and structure.
     
-    Controls how the system downloads and manages subsets of large
-    wildfire simulation datasets. The Moisseeva (2020) dataset contains
-    147 NetCDF files totaling 5.33 TB, so this configuration enables
-    downloading manageable subsets for development and training.
+    This model combines dataset acquisition parameters (download, caching)
+    with data structure definitions (variable names, processing options).
+    It provides a single configuration point for all WRF-Fire data needs.
     
-    The acquisition system uses Globus for efficient large-scale data
-    transfers and maintains a local manifest to track downloaded files.
+    The Moisseeva (2020) dataset contains 147 NetCDF files totaling 5.33 TB,
+    making subset downloads essential for development. WRF uses staggered
+    grids where U, V, W wind components are offset from cell centers.
     """
+    # Acquisition parameters
     cache_dir: Path = Field(
         default     = Path("data/wrf_cache"),
         description = "Local directory for caching downloaded NetCDF files."
@@ -42,22 +42,8 @@ class DataAcquisitionModel(BaseModel, extra="forbid"):
         gt          = 0,
         description = "Maximum total download size in gigabytes."
     )
-
-
-class WRFDataModel(BaseModel, extra="forbid"):
-    """
-    Configuration for WRF-Fire NetCDF data structure and variables.
     
-    Defines the expected structure and variable names for WRF-Fire
-    output files. WRF uses staggered grids where U, V, W components
-    are offset from cell centers, requiring special handling.
-    
-    Standard WRF variables:
-    - T: Perturbation potential temperature (actual = 300 + T)
-    - U, V, W: Wind components on staggered grid points
-    - GRNHFX: Ground heat flux from fire
-    - QVAPOR: Water vapor mixing ratio
-    """
+    # Data structure parameters
     domain_randomization: bool = Field(
         default     = True,
         description = "Enable domain randomization for robustness."
