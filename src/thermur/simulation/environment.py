@@ -248,7 +248,8 @@ class SimulationEnv(EnvBase):
         
         # Update with thermal data and edge_index
         positions       = initial_observation["position"]
-        temp, temp_grad = self.data_source(positions)
+        temp, temp_grad = self.data_source.query_thermal(positions)
+        wind            = self.data_source.query_wind(positions)
         
         initial_observation.update(
             {
@@ -257,7 +258,8 @@ class SimulationEnv(EnvBase):
                     r   = self.communication_range
                 ),
                 "temperature"      : temp,
-                "temperature_grad" : temp_grad
+                "temperature_grad" : temp_grad,
+                "wind"             : wind
             }
         )
         
@@ -339,7 +341,8 @@ class SimulationEnv(EnvBase):
         mj.mj_step(model, data)
         
         pos, vel         = self._extract_agent_states(data)
-        temp, temp_grad  = self.data_source(pos)
+        temp, temp_grad  = self.data_source.query_thermal(pos)
+        wind             = self.data_source.query_wind(pos)
         edge_index       = self.compute_edge_index(pos, self.communication_range)
         next_observation = TensorDict(
             {
@@ -350,7 +353,8 @@ class SimulationEnv(EnvBase):
                 "reward"           : torch.zeros(self.agent_count),
                 "temperature"      : temp,
                 "temperature_grad" : temp_grad,
-                "velocity"         : vel
+                "velocity"         : vel,
+                "wind"             : wind
             }, 
             batch_size = []
         )

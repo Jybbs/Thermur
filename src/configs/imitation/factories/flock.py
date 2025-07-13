@@ -70,12 +70,13 @@ def create_observation_spec(agent_count: int, spatial_dims: int):
     Creates the observation specification for thermal flock state.
     
     Defines the complete observation space for each agent:
-        - position         : Spatial coordinates x ∈ ℝᵈ
-        - velocity         : Motion vectors v ∈ ℝᵈ  
-        - temperature      : Thermal state T ∈ ℝ
-        - temperature_grad : Thermal gradient ∇T ∈ ℝᵈ
         - battery          : Energy remaining E ∈ [0,1]
         - edge_index       : Dynamic graph topology for inter-agent communication
+        - position         : Spatial coordinates x ∈ ℝᵈ
+        - temperature      : Thermal state T ∈ ℝ
+        - temperature_grad : Thermal gradient ∇T ∈ ℝᵈ
+        - velocity         : Motion vectors v ∈ ℝᵈ  
+        - wind             : Wind velocity vector w ∈ ℝᵈ at agent position
         
     Args:
         agent_count  : Number of agents N in the flock
@@ -91,6 +92,7 @@ def create_observation_spec(agent_count: int, spatial_dims: int):
         temperature      = create_float_spec((agent_count, 1)),
         temperature_grad = create_float_spec((agent_count, spatial_dims)),
         velocity         = create_float_spec((agent_count, spatial_dims)),
+        wind             = create_float_spec((agent_count, spatial_dims)),
     )
 
 
