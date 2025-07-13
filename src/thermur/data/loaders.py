@@ -56,6 +56,22 @@ class WRFDataSource:
         self.v_var    = wrf_data.v_wind_variable
         self.w_var    = wrf_data.w_wind_variable
 
+    def _add_domain_noise(self, data: Tensor, noise_std: float) -> Tensor:
+        """
+        Add domain randomization noise if enabled.
+        
+        Args:
+            data      : Tensor to add noise to
+            noise_std : Standard deviation of Gaussian noise
+            
+        Returns:
+            Tensor with noise added if domain randomization is enabled
+        """
+        if self.wrf_data.domain_randomization and noise_std > 0:
+            return data + torch.randn_like(data) * noise_std
+        
+        return data
+
     def _calculate_gradient(
         self, 
         coords_dict   : dict,
@@ -253,6 +269,9 @@ class WRFDataSource:
         actual temperature = T + 300K. This method handles the conversion
         automatically when the temperature variable is "T".
         
+        Domain randomization adds Gaussian noise to improve robustness during
+        training, simulating sensor noise and environmental uncertainty.
+        
         Args:
             positions: Tensor [N, 3] containing N agent positions in simulation 
                        coordinates
@@ -278,6 +297,11 @@ class WRFDataSource:
         if self.temp_var == "T":
             temperatures = temperatures + 300.0
         
+        temperatures = self._add_domain_noise(
+            temperatures, 
+            self.wrf_data.temperature_noise_std
+        )
+        
         return temperatures, gradients
     
     def query_wind(self, positions: Tensor) -> Tensor:
@@ -291,6 +315,9 @@ class WRFDataSource:
         
         If wind data is not available in the dataset, returns zero vectors
         to maintain compatibility with simulations that don't include wind.
+        
+        Domain randomization adds Gaussian noise to each wind component to
+        simulate measurement uncertainty and turbulent fluctuations.
         
         Args:
             positions: Tensor [N, 3] containing N agent positions in simulation
@@ -310,4 +337,6 @@ class WRFDataSource:
             ]
         )
         
-        return torch.nan_to_num(wind_values, 0.0)
+        wind_values = torch.nan_to_num(wind_values, 0.0)
+
+        return self._add_domain_noise(wind_values, self.wrf_data.wind_noise_std)
