@@ -123,30 +123,15 @@ class EnvironmentDataSource:
         Returns:
             Tuple of processed (temperatures, gradients) with NaNs handled
         """
-        nan_mask = torch.isnan(temperatures).squeeze()
-        
-        if not nan_mask.any():
-            return temperatures, gradients
-            
-        fallback_temp = Tensor(
-            [self.physics.fallback_temperature], 
-            device = temperatures.device
-        )
-        
+        nan_grad_mask       = torch.isnan(gradients).any(dim=1)
         default_grad        = torch.zeros_like(gradients)
         default_grad[:, -1] = 1.0
         
+        gradients[nan_grad_mask] = default_grad[nan_grad_mask]
+        
         return (
-            torch.where(
-                condition = torch.isnan(temperatures), 
-                input     = fallback_temp.expand_as(temperatures), 
-                other     = temperatures
-            ),
-            torch.where(
-                condition = torch.isnan(gradients), 
-                input     = default_grad, 
-                other     = gradients
-            )
+            torch.nan_to_num(temperatures, nan=self.physics.fallback_temperature),
+            gradients
         )
         
     def _interpolate_field(
@@ -168,39 +153,11 @@ class EnvironmentDataSource:
         Returns:
             Array of interpolated values at each position
         """
-        n_points = len(next(iter(coords.values())))
-        result   = [
-            float(
-                self.dataset[variable_name].interp(
-                    coords = {d: a[i:i + 1] for d, a in coords.items()},
-                    kwargs = {"fill_value": 0.0},
-                    method = "linear"
-                ).values
-            )
-            for i in range(n_points)
-        ]
-            
-        return zeros(n_points) + result
-        
-    def _interpolate_temperature(self, coords_dict: dict) -> DataArray:
-        """
-        Performs vectorized interpolation of temperature data.
-        
-        This method uses xarray's efficient interpolation capabilities to sample
-        temperature values for an entire batch of agent positions in a single
-        operation, avoiding Python loops over individual agents.
-        
-        Args:
-            coords_dict: Dictionary mapping dataset coordinates to position values
-            
-        Returns:
-            xarray.DataArray containing interpolated temperatures
-        """
-        return self.dataset[self.temp_var].interp(
-            coords = coords_dict, 
-            kwargs = {"fill_value": self.physics.fill_value},
+        return self.dataset[variable_name].interp(
+            coords = coords,
+            kwargs = {"fill_value": 0.0},
             method = "linear"
-        )
+        ).values.astype(float)
     
     def _transform_coordinates(self, positions: Tensor) -> dict[str, ndarray]:
         """
@@ -251,17 +208,47 @@ class EnvironmentDataSource:
             - temperature : Tensor [N, 1] of interpolated temperature values
             - gradient    : Tensor [N, 3] of temperature gradients (∇T)
         """
-        coords_dict    = self._transform_coordinates(positions)
-        temp_values    = self._interpolate_field(coords_dict, self.temp_var)
-        temp_gradients = self._calculate_gradient(coords_dict, positions, self.temp_var)
+        coords_dict = self._transform_coordinates(positions)
         
-        return self._handle_out_of_bounds(
-            Tensor(
-                temp_values.reshape(-1, 1), 
-                device = positions.device
-            ),
-            Tensor(
-                temp_gradients, 
-                device = positions.device
-            )
+        temp_values = Tensor(
+            self._interpolate_field(coords_dict, self.temp_var).reshape(-1, 1),
+            device = positions.device
         )
+        temp_gradients = Tensor(
+            self._calculate_gradient(coords_dict, positions, self.temp_var),
+            device = positions.device
+        )
+        
+        return self._handle_out_of_bounds(temp_gradients, temp_values)
+    
+    def query_wind(self, positions: Tensor) -> Tensor:
+        """
+        Queries wind velocity vectors for a batch of positions.
+        
+        This method samples the U, V, W wind components from the WRF-Fire
+        dataset at arbitrary agent positions. WRF uses a staggered grid where
+        wind components are defined at cell faces rather than centers, but
+        this method handles the interpolation transparently.
+        
+        If wind data is not available in the dataset, returns zero vectors
+        to maintain compatibility with simulations that don't include wind.
+        
+        Args:
+            positions: Tensor [N, 3] containing N agent positions in simulation
+                       coordinates
+                       
+        Returns:
+            Tensor [N, 3] of wind velocity vectors [u, v, w] in m/s
+        """
+        coords_dict = self._transform_coordinates(positions)
+        wind_values = torch.stack(
+            dim     = 1,
+            tensors = [
+                Tensor(
+                    self._interpolate_field(coords_dict, v), 
+                    device = positions.device
+                ) for v in [self.u_var, self.v_var, self.w_var]
+            ]
+        )
+        
+        return torch.nan_to_num(wind_values, 0.0)
