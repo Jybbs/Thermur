@@ -276,6 +276,16 @@ class ThermurUI:
                     else:
                         value = Text("Not Detected", style="dim")
 
+                elif key == "dataset":
+                    count = system_info.get(logic.get("count"), 0)
+                    if raw_value and raw_value > 0:
+                        value = Text(
+                            style = "bold green",
+                            text  = format_str.format(raw_value, count)
+                        )
+                    else:
+                        value = Text("No files downloaded", style="dim")
+
                 else:
                     if raw_value is not None:
                         value = Text(format_str.format(raw_value), no_wrap=True)

@@ -18,12 +18,12 @@ def download(
     ctx       : Context,
     max_files : Optional[int] = Option(
         None,
-        "--max-files", "-n",
+        "--max-files",
         help = "Override maximum number of files to download"
     ),
     dataset   : str = Option(
         "moisseeva_2020",
-        "--dataset", "-d",
+        "--dataset",
         help = "Dataset to download"
     ),
     dry_run   : bool = Option(
@@ -33,7 +33,7 @@ def download(
     )
 ):
     """
-    💾 Download WRF-Fire simulation data for training.
+    📥 Download WRF-Fire simulation data for training.
     
     Acquires NetCDF files from configured Globus endpoints, managing large-scale
     transfers efficiently. The system tracks downloaded files in a manifest to
@@ -149,7 +149,7 @@ class DownloadCommand:
         Performs the actual dataset acquisition through Globus.
         
         Args:
-            dataset : Dataset identifier for manifest tracking
+            dataset: Dataset identifier for manifest tracking
         """
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
@@ -219,14 +219,14 @@ class DownloadCommand:
         
         table = Table(title=f"Download Plan: {dataset}")
         table.add_column("Parameter", style="cyan")
-        table.add_column("Value", style="green")
+        table.add_column("Value",     style="green")
         
-        table.add_row("Dataset", dataset)
-        table.add_row("Endpoint", self.dataset.endpoint_id)
-        table.add_row("Max Files", str(self.max_files))
-        table.add_row("Existing Files", str(len(existing_files)))
+        table.add_row("Dataset",           dataset)
+        table.add_row("Endpoint",          self.dataset.endpoint_id)
+        table.add_row("Max Files",         str(self.max_files))
+        table.add_row("Existing Files",    str(len(existing_files)))
         table.add_row("Files to Download", str(files_needed))
-        table.add_row("Cache Path", str(self.cache_dir))
+        table.add_row("Cache Path",        str(self.cache_dir))
         
         self.ui.console.print(table)
         self.ui.console.print()

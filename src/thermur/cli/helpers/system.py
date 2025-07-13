@@ -7,6 +7,7 @@ the raw data that other modules, like the UI, will then format and display.
 """
 from importlib.metadata import PackageNotFoundError, version
 from omegaconf          import DictConfig
+from pathlib            import Path
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
@@ -57,6 +58,33 @@ class SystemInspector:
             "gpu_name"     : cuda.get_device_name(0),
         }
 
+    def _get_dataset_info(self) -> dict[str, float]:
+        """
+        Gather information about downloaded WRF dataset files.
+        
+        Scans the configured cache directory for NetCDF files (*.nc) and 
+        computes their total size. This provides visibility into how much
+        of the Moisseeva dataset has been downloaded locally.
+        
+        Returns:
+            Dictionary with dataset_size in GB and dataset_count.
+            Returns zeros if dataset information cannot be retrieved.
+        """
+        try:
+            cache_dir = Path(self.cfg.dataset.cache_dir)
+            if not cache_dir.exists():
+                return {"dataset_size": 0.0, "dataset_count": 0}
+                
+            nc_files   = list(cache_dir.glob("*.nc"))
+            total_size = sum(f.stat().st_size for f in nc_files if f.is_file())
+            
+            return {
+                "dataset_size"  : total_size / 1e9,
+                "dataset_count" : len(nc_files),
+            }
+        except Exception:
+            return {"dataset_size": 0.0, "dataset_count": 0}
+    
     def _get_disk_info(self) -> dict[str, float]:
         """
         Gather disk usage information for the current directory.
@@ -220,6 +248,7 @@ class SystemInspector:
         info.update(self._get_cuda_info())
         info.update(self._get_memory_info())
         info.update(self._get_disk_info())
+        info.update(self._get_dataset_info())
         
         return info
 
