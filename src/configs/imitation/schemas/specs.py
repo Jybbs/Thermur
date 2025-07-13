@@ -44,7 +44,7 @@ class FlockObservationModel(BaseModel, extra="forbid"):
     graph topology (edge_index). This defines the structure of the agent
     state vector s, where:
     
-        s = [𝐩, 𝐯, T, ∇T, E]
+        s = [𝐩, 𝐯, T, ∇T, E, 𝐰]
     
     Components:
     - 𝐩  (position)         : Agent's d-dimensional position in the environment
@@ -52,6 +52,7 @@ class FlockObservationModel(BaseModel, extra="forbid"):
     - T  (temperature)      : Scalar temperature at agent's position
     - ∇T (temperature_grad) : Temperature gradient vector for thermal navigation
     - E  (battery)          : Remaining battery percentage [0, 1]
+    - 𝐰  (wind)            : Wind velocity vector at agent's position
     
     The edge_index defines the communication graph, determining which agents
     can share information. This is computed dynamically based on the
@@ -105,5 +106,10 @@ class FlockObservationModel(BaseModel, extra="forbid"):
     velocity_shape: tuple[int, int] = Field(
         description = (
             "Shape (N, d) for agent velocity vectors in m/s."
+        )
+    )
+    wind_shape: tuple[int, int] = Field(
+        description = (
+            "Shape (N, d) for wind velocity vectors at each agent's location."
         )
     )
