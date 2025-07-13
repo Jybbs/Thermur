@@ -37,9 +37,9 @@ class Renderer:
     
     def __init__(
         self,
-        colors    : Optional[ColorModel] = None,
-        glyphs    : Optional[GlyphModel] = None,
-        opacities : Optional[OpacityModel] = None
+        colors    : ColorModel,
+        glyphs    : GlyphModel,
+        opacities : OpacityModel
     ):
         """
         Initialize the renderer with visual configuration.
@@ -160,7 +160,7 @@ class Renderer:
         )
         
         if self.glyphs.type == "arrow" and velocity is not None:
-            norms = np.linalg.norm(velocities, axis=1, keepdims=True)
+            norms      = np.linalg.norm(velocities, axis=1, keepdims=True)
             safe_norms = np.maximum(norms, 1e-6)
             point_cloud["direction"] = velocities / safe_norms
             

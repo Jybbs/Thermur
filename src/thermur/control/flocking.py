@@ -10,7 +10,6 @@ from .safety           import SafetyFilter
 from configs.imitation import ControlModel, FlockModel
 from tensordict        import TensorDict
 from torch             import Tensor
-from typing            import Optional
 
 import torch
 import torch.nn.functional as F
@@ -35,7 +34,7 @@ class ExpertFlockingController:
         self,
         agent_properties : FlockModel,
         control          : ControlModel,
-        safety_filter    : Optional[SafetyFilter] = None
+        safety_filter    : SafetyFilter
     ):
         """
         Initializes the controller with the necessary configuration models.
@@ -44,7 +43,7 @@ class ExpertFlockingController:
             agent_properties : Contains agent-specific properties like T_max.
             control          : Contains both Reynolds weights and numerical parameters
                                for stable force calculations.
-            safety_filter    : Optional safety filter that applies a CBF to enforce 
+            safety_filter    : Safety filter that applies a CBF to enforce 
                                thermal safety constraints.
         """
         self.agent_properties = agent_properties
@@ -417,7 +416,4 @@ class ExpertFlockingController:
             )
         )
         
-        if self.safety_filter is not None:
-            return self.safety_filter.filter(flock, u_nominal)
-        
-        return u_nominal
+        return self.safety_filter.filter(flock, u_nominal)

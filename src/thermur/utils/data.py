@@ -5,7 +5,7 @@ This module provides a class to abstract away the details of reading and
 interpolating from large, gridded datasets like the NetCDF files produced by
 WRF-Fire.
 """
-from configs.imitation import PhysicsModel
+from configs.imitation import PhysicsModel, WRFDataModel
 from numpy             import ndarray, zeros
 from torch             import Tensor
 from xarray            import DataArray, open_dataset
@@ -25,7 +25,8 @@ class EnvironmentDataSource:
     def __init__(
         self, 
         data_path : str,
-        physics   : PhysicsModel
+        physics   : PhysicsModel,
+        wrf_data  : WRFDataModel
     ):
         """
         Loads the dataset from the specified path and initializes configuration.
@@ -33,67 +34,68 @@ class EnvironmentDataSource:
         Args:
             data_path : Path to the NetCDF dataset file
             physics   : Physics configuration model with thermal interpolation settings
+            wrf_data  : WRF data configuration for wind variables
         """
         self.dataset    = open_dataset(data_path, cache=True)
         self.coord_vars = list(self.dataset.coords)
         self.physics    = physics
+        self.wrf_data   = wrf_data
         
-        if physics.temperature_variable in self.dataset.variables:
-            self.temp_var = physics.temperature_variable
-
-        else:
-            temp_vars = [
-                v for v in self.dataset.variables 
-                if any(n in v.lower() for n in ['t', 'temp'])
-            ]
-            
-            self.temp_var = temp_vars[0] if temp_vars else next(
-                (v for v in self.dataset.variables if v not in self.coord_vars), 
-                None
-            )
+        self.temp_var = physics.temperature_variable
+        self.u_var    = self.wrf_data.u_wind_variable
+        self.v_var    = self.wrf_data.v_wind_variable
+        self.w_var    = self.wrf_data.w_wind_variable
 
     def _calculate_gradient(
         self, 
-        coords_dict : dict,
-        positions   : Tensor 
+        coords_dict   : dict,
+        positions     : Tensor,
+        variable_name : str
     ) -> ndarray:
         """
-        Calculates temperature gradient using finite differences.
+        Calculates field gradient using finite differences.
         
-        For each agent position, this method computes the 3D temperature 
-        gradient ∇T by sampling temperature at offset positions and 
-        calculating partial derivatives:
+        For each agent position, this method computes the 3D gradient ∇F 
+        of a field variable F by sampling at offset positions and calculating 
+        partial derivatives:
         
-            ∂T/∂x ≈ (T(𝐱+εî) - T(𝐱-εî)) / 2ε
-            ∂T/∂y ≈ (T(𝐱+εĵ) - T(𝐱-εĵ)) / 2ε
-            ∂T/∂z ≈ (T(𝐱+εk̂) - T(𝐱-εk̂)) / 2ε
+            ∂F/∂x ≈ (F(𝐱+εî) - F(𝐱-εî)) / 2ε
+            ∂F/∂y ≈ (F(𝐱+εĵ) - F(𝐱-εĵ)) / 2ε
+            ∂F/∂z ≈ (F(𝐱+εk̂) - F(𝐱-εk̂)) / 2ε
         
         Args:
-            coords_dict : Dictionary mapping dataset coordinates to position values
-            positions   : Original position tensor [N, 3]
+            coords_dict   : Dictionary mapping dataset coordinates to position values
+            positions     : Original position tensor [N, 3]
+            variable_name : Name of the field variable to differentiate
             
         Returns:
-            numpy.ndarray [N, 3] containing temperature gradients
+            numpy.ndarray [N, 3] containing field gradients
         """
         epsilon         = self.physics.epsilon
         num_agents, dim = positions.shape
         gradients       = zeros((num_agents, dim))
         axes            = ['x', 'y', 'z']
-        dim_names       = [self.physics.x_dimension, self.physics.y_dimension, self.physics.z_dimension]
+        dim_names       = [
+            self.physics.x_dimension, 
+            self.physics.y_dimension, 
+            self.physics.z_dimension
+        ]
         
         for i in range(min(dim, len(axes))):
             dim_name = dim_names[i]
             if dim_name not in self.coord_vars:
                 continue
             
-            pos_temps = self._interpolate_along_dimension(
-                {**coords_dict, dim_name: coords_dict[dim_name] + epsilon}
+            pos_values = self._interpolate_field(
+                {**coords_dict, dim_name: coords_dict[dim_name] + epsilon},
+                variable_name
             )
-            neg_temps = self._interpolate_along_dimension(
-                {**coords_dict, dim_name: coords_dict[dim_name] - epsilon}
+            neg_values = self._interpolate_field(
+                {**coords_dict, dim_name: coords_dict[dim_name] - epsilon},
+                variable_name
             )
             
-            gradients[:, i] = (pos_temps - neg_temps) / (2 * epsilon)
+            gradients[:, i] = (pos_values - neg_values) / (2 * epsilon)
         
         return gradients
     
@@ -110,8 +112,9 @@ class EnvironmentDataSource:
         sensible defaults to prevent numerical issues in downstream calculations.
         
         For out-of-bounds temperature values, we use a configurable fallback value.
-        For gradients, we create a default upward-pointing gradient (in the z-dimension),
-        mimicking the behavior in ExpertFlockingController._vertical_heat_gradient.
+        For gradients, we create a default upward-pointing gradient (in the 
+        z-dimension), mimicking the behavior in ExpertFlockingController's
+        vertical heat gradient method.
         
         Args:
             gradients    : Tensor [N, 3] of temperature gradients
@@ -146,26 +149,31 @@ class EnvironmentDataSource:
             )
         )
         
-    def _interpolate_along_dimension(self, coords: dict) -> ndarray:
+    def _interpolate_field(
+        self, 
+        coords        : dict,
+        variable_name : str
+    ) -> ndarray:
         """
-        Samples temperature at the specified coordinates.
+        Interpolates a field variable at the specified coordinates.
         
         For a batch of agent positions 𝐱₁, 𝐱₂, ..., 𝐱ₙ, this method interpolates
-        the temperature field T at each position. This vectorized operation 
-        returns exactly one temperature value per position.
+        the requested field at each position. This vectorized operation returns 
+        exactly one value per position.
         
         Args:
-            coords : Dictionary mapping dimensions (`d`) to coordinate arrays (`a`)
+            coords        : Dictionary mapping dimensions to coordinate arrays
+            variable_name : Name of the NetCDF variable to interpolate
             
         Returns:
-            Array of temperature values T(𝐱₁), T(𝐱₂), ..., T(𝐱ₙ)
+            Array of interpolated values at each position
         """
         n_points = len(next(iter(coords.values())))
         result   = [
             float(
-                self.dataset[self.temp_var].interp(
+                self.dataset[variable_name].interp(
                     coords = {d: a[i:i + 1] for d, a in coords.items()},
-                    kwargs = {"fill_value": self.physics.fill_value},
+                    kwargs = {"fill_value": 0.0},
                     method = "linear"
                 ).values
             )
@@ -244,8 +252,8 @@ class EnvironmentDataSource:
             - gradient    : Tensor [N, 3] of temperature gradients (∇T)
         """
         coords_dict    = self._transform_coordinates(positions)
-        temp_values    = self._interpolate_along_dimension(coords_dict)
-        temp_gradients = self._calculate_gradient(positions, coords_dict)
+        temp_values    = self._interpolate_field(coords_dict, self.temp_var)
+        temp_gradients = self._calculate_gradient(coords_dict, positions, self.temp_var)
         
         return self._handle_out_of_bounds(
             Tensor(

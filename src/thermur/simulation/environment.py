@@ -16,7 +16,7 @@ from configs.imitation import PhysicsModel, FlockModel
 from tensordict        import TensorDict, TensorDictBase
 from torch             import Tensor
 from torchrl.envs      import EnvBase
-from typing            import Any, Callable, Optional
+from typing            import Any, Callable
 
 import math
 import mujoco as mj
@@ -45,7 +45,7 @@ class SimulationEnv(EnvBase):
         flock              : FlockModel,
         observation_spec   : TensorDictBase,
         physics            : PhysicsModel,
-        seed_fn            : Optional[Callable] = None,
+        seed_fn            : Callable,
     ):
         """
         Initializes the Thermur environment with dependency injection.
@@ -57,7 +57,7 @@ class SimulationEnv(EnvBase):
             flock              : Flock parameters configuration.
             observation_spec   : The observation space specification.
             physics            : Physics simulation configuration.
-            seed_fn            : Optional callable for setting random seeds.
+            seed_fn            : Callable for setting random seeds.
         """
         super().__init__(device="cpu")
         self.action_spec        = action_spec
@@ -297,14 +297,13 @@ class SimulationEnv(EnvBase):
         """
         Sets the random seed for the environment.
         
-        This method delegates to the provided seed_fn if one was injected
+        This method delegates to the provided seed_fn that was injected
         during initialization.
         
         Args:
             seed: Integer seed value to use for random number generation
         """
-        if self.seed_fn is not None:
-            self.seed_fn(seed)
+        self.seed_fn(seed)
 
 
     def _step(self, td: TensorDictBase) -> TensorDictBase:
