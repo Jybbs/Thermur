@@ -62,16 +62,8 @@ class ThermurCLI:
             rich_markup_mode = "rich"
         )
         
-        # Create data subcommand group
-        data_app = Typer(
-            rich_markup_mode = "rich"
-        )
-        data_app.command(name="download")(download)
-        data_app.command(name="list")(list)
-        data_app.command(name="clean")(clean)
-        
         # Register commands
-        cli.add_typer(data_app, name="data")
+        cli.command(name="download")(download)
         cli.command(name="info")(info)
         cli.command(name="monitor")(monitor)
         cli.command(name="train")(train)

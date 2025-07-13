@@ -20,9 +20,9 @@ import wandb as wb
 
 
 def cleanup_resources(
-    data_collector : SyncDataCollector,
-    pbar           : tqdm,
-    visualizer     : Visualizer | None
+    pbar       : tqdm,
+    trajectory : SyncDataCollector,
+    visualizer : Visualizer | None
 ):
     """
     Clean up resources used during training.
@@ -31,11 +31,11 @@ def cleanup_resources(
     and closes the visualizer if it exists.
     
     Args:
-        data_collector : The experience collector to shut down
-        pbar           : The progress bar to close
-        visualizer     : The visualization module instance or None
+        pbar       : The progress bar to close
+        trajectory : The experience collector to shut down
+        visualizer : The visualization module instance or None
     """
-    data_collector.shutdown()
+    trajectory.shutdown()
     pbar.close()
     
     if visualizer is not None:
@@ -109,12 +109,12 @@ def save_checkpoint(
 
 
 def train_imitation_learning(
-    data_collector    : SyncDataCollector,
     experience_buffer : TensorDictReplayBuffer,
     learning          : LearningModel,
     loss              : LossModule,
     optimizer         : Optimizer,
     policy            : Module,
+    trajectory        : SyncDataCollector,
     visualizer        : Visualizer | None,
     wandb             : WandbModel
 ):
@@ -129,12 +129,12 @@ def train_imitation_learning(
     where π_θ is the learned policy and π* is the expert controller.
     
     Args:
-        data_collector    : Manages environment interaction loop
         experience_buffer : Stores and samples demonstration data
         learning          : Training hyperparameters and settings
         loss              : Behavioral cloning loss module
         optimizer         : Gradient-based optimizer
         policy            : GNN policy network to train
+        trajectory        : Manages environment interaction loop
         visualizer        : Optional 3D visualization module
         wandb             : Experiment tracking configuration
     """
@@ -145,7 +145,7 @@ def train_imitation_learning(
     pbar = tqdm(total=learning.total_frames)
     
     total_frames = 0
-    for i, data in enumerate(data_collector):
+    for i, data in enumerate(trajectory):
         experience_buffer.extend(data.to("cpu"))
         current_frames = data.numel()
         total_frames  += current_frames
@@ -183,9 +183,9 @@ def train_imitation_learning(
             )
     
     cleanup_resources(
-        data_collector = data_collector,
-        pbar           = pbar,
-        visualizer     = visualizer
+        pbar       = pbar,
+        trajectory = trajectory,
+        visualizer = visualizer
     )
     
     save_checkpoint(

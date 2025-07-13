@@ -28,9 +28,9 @@ class CLIModel(BaseModel, extra="forbid"):
     commands_available: list[dict[str, str]] = Field(
         default = [
             {
-                "icon" : "🚀",
-                "name" : "train",
-                "desc" : "Train thermal drone flock behaviors"
+                "icon" : "💾",
+                "name" : "download",
+                "desc" : "Download WRF-Fire simulation datasets"
             },
             {
                 "icon" : "📋",
@@ -38,19 +38,19 @@ class CLIModel(BaseModel, extra="forbid"):
                 "desc" : "Display system and configuration details"
             },
             {
-                "icon" : "✅",
-                "name" : "validate",
-                "desc" : "Validate configuration and dependencies"
-            },
-            {
                 "icon" : "🎨",
                 "name" : "monitor",
                 "desc" : "Monitor training progress and resources"
             },
             {
-                "icon" : "📥",
-                "name" : "data",
-                "desc" : "Manage WRF-Fire simulation datasets"
+                "icon" : "🚀",
+                "name" : "train",
+                "desc" : "Train thermal drone flock behaviors"
+            },
+            {
+                "icon" : "✅",
+                "name" : "validate",
+                "desc" : "Validate configuration and dependencies"
             },
         ],
         description = "List of available commands with metadata."
@@ -90,7 +90,7 @@ class CLIModel(BaseModel, extra="forbid"):
             },
             {
                 "desc"    : "Download training data",
-                "command" : "thermur data download --max-files 5",
+                "command" : "thermur download --max-files 5",
                 "note"    : "Downloads WRF-Fire datasets"
             },
         ],
@@ -109,13 +109,13 @@ class CLIModel(BaseModel, extra="forbid"):
     )
     training_component_configs: list[tuple[str, str, str]] = Field(
         default = [
-            ("simulation",        "simulation",        "🌍 Simulation"),
             ("controller",        "controller",        "🎓 Controller"),
-            ("policy",            "policy",            "🧠 Learning Policy"),
-            ("data_collector",    "data_collector",    "📊 Data Collector"),
             ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
             ("loss",              "loss",              "📏 Loss Function"),
             ("optimizer",         "optimizer",         "🔎 Optimizer"),
+            ("policy",            "policy",            "🧠 Learning Policy"),
+            ("simulation",        "simulation",        "🌍 Simulation"),
+            ("trajectory",        "trajectory",        "📊 Trajectory"),
         ],
         description = (
             "List of (key, config_path, display_name) tuples for training "
