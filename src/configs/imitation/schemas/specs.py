@@ -5,7 +5,7 @@ This module defines the data structures for flock observations and actions,
 providing the definitive shape and dtype specifications for all tensors
 passed between the environment, policy, and replay buffer.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 from typing   import Literal
 
 
@@ -28,7 +28,7 @@ class FlockActionModel(BaseModel, extra="forbid"):
             "and precision."
         )
     )
-    shape: tuple[int, int] = Field(
+    shape: tuple[PositiveInt, PositiveInt] = Field(
         description = (
             "Shape of action tensor (N, d) defining the "
             "batch and action dimensions."
@@ -58,7 +58,7 @@ class FlockObservationModel(BaseModel, extra="forbid"):
     can share information. This is computed dynamically based on the
     communication range and agent positions.
     """
-    battery_shape: tuple[int, int] = Field(
+    battery_shape: tuple[PositiveInt, PositiveInt] = Field(
         default     = (10, 1),
         description = (
             "Shape (N, 1) for normalized battery levels ranging from "
@@ -72,13 +72,13 @@ class FlockObservationModel(BaseModel, extra="forbid"):
             "flocks."
         )
     )
-    edge_index_shape: tuple[int, int] = Field(
+    edge_index_shape: tuple[PositiveInt, PositiveInt] = Field(
         description = (
             "Shape (2, E) for COO-format edge indices where E ≤ N(N-1) "
             "is the number of edges in the communication graph."
         )
     )
-    position_shape: tuple[int, int] = Field(
+    position_shape: tuple[PositiveInt, PositiveInt] = Field(
         description = (
             "Shape (N, d) for agent positions in world "
             "coordinates."
@@ -91,24 +91,24 @@ class FlockObservationModel(BaseModel, extra="forbid"):
             "efficiency."
         )
     )
-    temperature_grad_shape: tuple[int, int] = Field(
+    temperature_grad_shape: tuple[PositiveInt, PositiveInt] = Field(
         description = (
             "Shape (N, d) for thermal gradient vectors "
             "used in navigation."
         )
     )
-    temperature_shape: tuple[int, int] = Field(
+    temperature_shape: tuple[PositiveInt, PositiveInt] = Field(
         description = (
             "Shape (N, 1) for scalar temperature readings at each "
             "agent's location."
         )
     )
-    velocity_shape: tuple[int, int] = Field(
+    velocity_shape: tuple[PositiveInt, PositiveInt] = Field(
         description = (
             "Shape (N, d) for agent velocity vectors in m/s."
         )
     )
-    wind_shape: tuple[int, int] = Field(
+    wind_shape: tuple[PositiveInt, PositiveInt] = Field(
         description = (
             "Shape (N, d) for wind velocity vectors at each agent's location."
         )
