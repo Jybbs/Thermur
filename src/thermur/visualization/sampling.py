@@ -12,7 +12,7 @@ operations and leveraging PyVista's optimized data structures.
 from configs.imitation import VisualizationModel
 from pyvista           import Axes, ImageData, PolyData
 from torch             import Tensor
-from typing            import Any, Optional
+from typing            import Any
 
 import numpy   as np
 import pyvista as pv
@@ -32,20 +32,19 @@ class GridSampler:
     simulations while maintaining performance.
     """
     
-    def __init__(self, grid_config: Optional[VisualizationModel] = None):
+    def __init__(self, grid: VisualizationModel):
         """
         Initialize the grid sampler with configuration.
         
         Args:
-            grid_config: Visualization configuration containing grid parameters.
-                         Can be set later if not provided during initialization.
+            grid: Visualization configuration containing grid parameters.
         """
-        self.grid_config = grid_config
+        self.grid = grid
     
     def compute_grid_bounds(
         self,
         position : Tensor,
-        padding  : Optional[float] = None
+        padding  : float = None
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Compute the bounding box for a grid based on agent positions.
@@ -56,15 +55,13 @@ class GridSampler:
         
         Args:
             position : Agent positions tensor of shape [N, 3]
-            padding  : Override padding value. If None, uses grid_config.padding
+            padding  : Override padding value. If None, uses grid.padding
             
         Returns:
             Tuple of (min_bounds, max_bounds) as numpy arrays of shape [3]
         """
         if padding is None:
-            if self.grid_config is None:
-                raise ValueError("No padding specified and no grid_config set")
-            padding = self.grid_config.padding
+            padding = self.grid.padding
             
         positions  = position.detach().cpu().numpy()
         min_bounds = positions.min(axis=0) - padding
@@ -120,14 +117,12 @@ class GridSampler:
         Returns:
             PyVista UniformGrid with temperature scalar field data
         """
-        if self.grid_config is None:
-            raise ValueError("Grid configuration not set")
             
         min_bounds, max_bounds = self.compute_grid_bounds(position)
         
-        resolution = np.array(self.grid_config.temperature_resolution)
+        resolution = np.array(self.grid.temperature_resolution)
         grid       = pv.ImageData(
-            dimensions = self.grid_config.temperature_resolution,
+            dimensions = self.grid.temperature_resolution,
             origin     = min_bounds,
             spacing    = (max_bounds - min_bounds) / (resolution - 1)
         )
@@ -157,11 +152,9 @@ class GridSampler:
         Returns:
             PyVista PolyData with wind vector field data at each grid point
         """
-        if self.grid_config is None:
-            raise ValueError("Grid configuration not set")
             
         min_bounds, max_bounds = self.compute_grid_bounds(position)
-        resolution = self.grid_config.wind_resolution
+        resolution = self.grid.wind_resolution
         
         spacing_grid = pv.ImageData(
             dimensions = (resolution, resolution, resolution),

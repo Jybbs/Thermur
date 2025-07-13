@@ -5,6 +5,7 @@ This module defines configuration builders for the expert flocking controller
 and related components that implement Reynolds rules and thermal-aware behavior.
 These builders leverage Pydantic validation through the zen() wrapper.
 """
+from .safety          import build_safety_filter
 from ..schemas       import ControlModel, FlockModel
 from hydra_zen       import builds, zen
 from thermur.control import ExpertFlockingController
@@ -14,6 +15,7 @@ build_controller = builds(
     ExpertFlockingController,
     agent_properties        = zen(FlockModel),
     control                 = zen(ControlModel),
+    safety_filter           = build_safety_filter,
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.flocking",

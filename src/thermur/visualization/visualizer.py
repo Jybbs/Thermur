@@ -46,7 +46,7 @@ class Visualizer:
     def __init__(
         self,
         max_temperature : float,
-        simulation      : Optional[object],
+        simulation      : object,
         visualization   : VisualizationModel
     ):
         """
@@ -59,11 +59,10 @@ class Visualizer:
         
         Args:
             max_temperature : Maximum safe temperature (T_max) for safety visualization
-            simulation      : Optional simulation reference for accessing environment data
+            simulation      : Simulation reference for accessing environment data
             visualization   : Consolidated visualization configuration model
         """
         # Store configuration models
-        self.config          = visualization
         self.max_temperature = max_temperature
         self.simulation      = simulation
         self.visualization   = visualization
@@ -75,12 +74,12 @@ class Visualizer:
         self.opacity       = visualization.opacity
         
         # Initialize rendering state
-        self._plotter       : Optional[Plotter]      = None
-        self._agent_actors  : Optional[list[Actor]]  = None
-        self._wind_actors   : Optional[list[Actor]]  = None
-        self._safety_actors : Optional[list[Actor]]  = None
-        self._graph_actors  : Optional[list[Actor]]  = None
-        self._colormap      : Optional[str]          = None
+        self._plotter       : Plotter      = None
+        self._agent_actors  : list[Actor]  = None
+        self._wind_actors   : list[Actor]  = None
+        self._safety_actors : list[Actor]  = None
+        self._graph_actors  : list[Actor]  = None
+        self._colormap      : str          = None
         
         # Initialize the grid sampler and renderer
         self._grid_sampler = GridSampler(self.grids)
@@ -185,7 +184,7 @@ class Visualizer:
             )
         
         # Render thermal safety boundary if enabled
-        if self.visualization.show_safety and self.simulation is not None:
+        if self.visualization.show_safety:
             self._safety_actors = self._renderer.add_safety_boundary(
                 grids            = self.grids,
                 max_temperature  = self.max_temperature,
