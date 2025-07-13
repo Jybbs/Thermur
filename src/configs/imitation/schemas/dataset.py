@@ -5,7 +5,7 @@ This module defines the configuration for WRF-Fire datasets, including both
 download parameters and data structure definitions for the NetCDF files.
 """
 from pathlib  import Path
-from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
+from pydantic import BaseModel, Field, NonNegativeFloat, PositiveInt
 
 
 class DatasetModel(BaseModel, extra="forbid"):
@@ -44,14 +44,8 @@ class DatasetModel(BaseModel, extra="forbid"):
         default     = 2,
         description = "Maximum number of files to download for training."
     )
-    max_size_gb: PositiveFloat = Field(
-        default     = 50.0,
-        gt          = 0,
-        description = "Maximum total download size in gigabytes."
-    )
-    temperature_noise_std: float = Field(
+    temperature_noise_std: NonNegativeFloat = Field(
         default     = 0.5,
-        ge          = 0,
         description = "Standard deviation of Gaussian noise added to temperature."
     )
     u_wind_variable: str = Field(
@@ -66,8 +60,7 @@ class DatasetModel(BaseModel, extra="forbid"):
         default     = "W", 
         description = "NetCDF variable name for z-wind component."
     )
-    wind_noise_std: float = Field(
+    wind_noise_std: NonNegativeFloat = Field(
         default     = 0.1,
-        ge          = 0,
         description = "Standard deviation of noise added to wind vectors."
     )

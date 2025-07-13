@@ -319,3 +319,31 @@ class CLIPrompts:
             console = self.ui.console,
             default = True
         )
+    
+    def confirm_download(self, files_needed: int, estimated_size: int) -> bool:
+        """
+        Prompts user to confirm dataset download operation.
+        
+        Args:
+            files_needed   : Number of files to download
+            estimated_size : Estimated total size in GB
+            
+        Returns:
+            True if user confirms download, False otherwise
+        """
+        self.ui.console.print()
+        self.ui.print_message(
+            f"Ready to download {files_needed} files (~{estimated_size} GB)",
+            "warning"
+        )
+        self.ui.console.print(
+            "[grey70]This operation requires a stable internet connection "
+            "and may take several hours[/grey70]"
+        )
+        self.ui.console.print()
+        
+        return questionary.confirm(
+            message = "Proceed with download?",
+            default = False,
+            style   = self.thermal_style
+        ).ask()

@@ -19,12 +19,7 @@ def download(
     max_files : Optional[int] = Option(
         None,
         "--max-files", "-n",
-        help = "Maximum number of files to download"
-    ),
-    max_size  : Optional[float] = Option(
-        None,
-        "--max-size", "-s", 
-        help = "Maximum total size in GB"
+        help = "Override maximum number of files to download"
     ),
     dataset   : str = Option(
         "moisseeva_2020",
@@ -42,13 +37,13 @@ def download(
     
     Acquires NetCDF files from configured Globus endpoints, managing large-scale
     transfers efficiently. The system tracks downloaded files in a manifest to
-    avoid redundant transfers and enforces size limits for development workflows.
+    avoid redundant transfers and checks for existing files before downloading.
     
-    The Moisseeva (2020) dataset contains 147 files totaling 5.33 TB, so subset
-    downloads are essential for iterative development.
+    The Moisseeva (2020) dataset contains 147 files totaling 5.33 TB, with
+    individual files ranging from 20-50 GB each.
     """
     command = DownloadCommand(ctx)
-    command.run(max_files, max_size, dataset, dry_run)
+    command.run(max_files, dataset, dry_run)
 
 
 class DownloadCommand:
@@ -68,19 +63,19 @@ class DownloadCommand:
             ctx: The Typer context containing AppContext with configuration,
                  UI utilities, and system inspection capabilities.
         """
-        self.cfg    = ctx.obj.cfg
-        self.ui     = ctx.obj.ui
-        self.system = ctx.obj.system
+        self.cfg       = ctx.obj.cfg
+        self.dataset   = ctx.obj.cfg.dataset
+        self.max_files = self.dataset.max_files
+        self.prompts   = ctx.obj.prompts
+        self.system    = ctx.obj.system
+        self.ui        = ctx.obj.ui
         
-        # Access dataset configuration
-        self.dataset   = self.cfg.dataset
         self.cache_dir = Path(self.dataset.cache_dir)
         self.manifest  = self.cache_dir / "manifest.json"
     
     def run(
         self, 
-        max_files : Optional[int], 
-        max_size  : Optional[float],
+        max_files : Optional[int],
         dataset   : str,
         dry_run   : bool
     ):
@@ -88,83 +83,93 @@ class DownloadCommand:
         Executes the download workflow.
         
         Args:
-            max_files : Override for maximum file count from configuration
-            max_size  : Override for maximum total size in GB
-            dataset   : Target dataset identifier (e.g., "moisseeva_2020")
+            max_files : CLI override for maximum file count (None uses config value)
+            dataset   : Target dataset identifier
             dry_run   : If True, show plan without downloading files
         """
         self.ui.print_header("WRF Data Acquisition")
         
-        # Apply CLI overrides to configuration values
-        files_limit = max_files if max_files is not None else self.dataset.max_files
-        size_limit  = max_size if max_size is not None else self.dataset.max_size_gb
+        if max_files is not None:
+            self.max_files = max_files
         
-        if dry_run:
-            self._show_download_plan(dataset, files_limit, size_limit)
+        existing_files = self._check_existing_files(dataset)
+        files_needed   = max(0, self.max_files - len(existing_files))
+        
+        self._show_download_plan(dataset, existing_files, files_needed, dry_run)
+        
+        if files_needed == 0:
             return
             
-        self._perform_download(dataset, files_limit, size_limit)
+        if not dry_run and self._confirm_download(files_needed):
+            self._perform_download(dataset)
     
-    def _show_download_plan(self, dataset: str, max_files: int, max_gb: float):
+    def _check_existing_files(self, dataset: str) -> list[str]:
         """
-        Displays the download configuration without executing transfers.
+        Checks manifest for already downloaded files.
         
         Args:
-            dataset   : Dataset name to display in plan
-            max_files : Maximum number of files that would be downloaded
-            max_gb    : Maximum total size in GB that would be downloaded
+            dataset: Dataset name to check
+            
+        Returns:
+            List of filenames that have already been downloaded
         """
-        self.ui.print_message("Dry-run mode - no files will be downloaded", "warning")
+        manifest = self._load_manifest()
+        if dataset in manifest:
+            return manifest[dataset].get("files", [])
+        return []
+    
+    def _confirm_download(self, files_needed: int) -> bool:
+        """
+        Prompts user to confirm the download operation.
         
-        table = Table(title=f"Download Plan: {dataset}")
-        table.add_column("Parameter", style="cyan")
-        table.add_column("Value", style="green")
+        Args:
+            files_needed: Number of files that will be downloaded
+            
+        Returns:
+            True if user confirms, False otherwise
+        """
+        estimated_size = files_needed * 35
+        return self.prompts.confirm_download(files_needed, estimated_size)
+    
+    def _load_manifest(self) -> dict:
+        """
+        Loads the dataset manifest from disk.
         
-        table.add_row("Dataset", dataset)
-        table.add_row("Endpoint", self.dataset.endpoint_id)
-        table.add_row("Max Files", str(max_files))
-        table.add_row("Max Size", f"{max_gb:.1f} GB")
-        table.add_row("Cache Path", str(self.cache_dir))
-        
-        self.ui.console.print(table)
-        self.ui.console.print()
-        self.ui.print_message(
-            "Run without --dry-run to execute download",
-            "tip"
-        )
-        
-    def _perform_download(self, dataset: str, max_files: int, max_gb: float):
+        Returns:
+            Dictionary mapping dataset names to metadata including file lists
+            and timestamps. Returns empty dict if manifest doesn't exist.
+        """
+        if self.manifest.exists():
+            with open(self.manifest, 'r') as f:
+                return json.load(f)
+        return {}
+    
+    def _perform_download(self, dataset: str):
         """
         Performs the actual dataset acquisition through Globus.
         
         Args:
-            dataset   : Dataset identifier for manifest tracking
-            max_files : Maximum number of files to download
-            max_gb    : Maximum total size in GB to download
+            dataset : Dataset identifier for manifest tracking
         """
-        # Ensure cache directory exists
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         try:
             import globus_sdk
             
             with self.ui.console.status("Initializing Globus authentication...", spinner="dots"):
-                # Globus OAuth2 flow would be implemented here
+                # TODO: Implement Globus OAuth2 flow
                 pass
-                
-            # Placeholder for actual Globus transfer implementation
+            
             self.ui.print_message(
                 f"Globus transfer pending - endpoint: {self.dataset.endpoint_id[:8]}...", 
                 "error"
             )
             
-            # Update manifest to track dataset
             manifest = self._load_manifest()
             if dataset not in manifest:
                 manifest[dataset] = {
-                    "files"         : [],
-                    "total_size_gb" : 0,
-                    "last_updated"  : datetime.now().isoformat()
+                    "files"        : [],
+                    "last_updated" : datetime.now().isoformat()
                 }
                 self._save_manifest(manifest)
                 self.ui.print_message(
@@ -183,19 +188,6 @@ class DownloadCommand:
                 "tip"
             )
     
-    def _load_manifest(self) -> dict:
-        """
-        Loads the dataset manifest from disk.
-        
-        Returns:
-            Dictionary mapping dataset names to metadata including file lists,
-            total sizes, and timestamps. Returns empty dict if manifest doesn't exist.
-        """
-        if self.manifest.exists():
-            with open(self.manifest, 'r') as f:
-                return json.load(f)
-        return {}
-        
     def _save_manifest(self, data: dict):
         """
         Persists the dataset manifest to disk.
@@ -205,3 +197,53 @@ class DownloadCommand:
         """
         with open(self.manifest, 'w') as f:
             json.dump(data, f, indent=2)
+            
+    def _show_download_plan(
+        self,
+        dataset        : str,
+        existing_files : list[str], 
+        files_needed   : int,
+        dry_run        : bool
+    ):
+        """
+        Displays the download configuration.
+        
+        Args:
+            dataset        : Dataset name to display in plan
+            existing_files : List of already downloaded files
+            files_needed   : Number of new files to download
+            dry_run        : Whether this is a dry-run
+        """
+        if dry_run:
+            self.ui.print_message("Dry-run mode - no files will be downloaded", "warning")
+        
+        table = Table(title=f"Download Plan: {dataset}")
+        table.add_column("Parameter", style="cyan")
+        table.add_column("Value", style="green")
+        
+        table.add_row("Dataset", dataset)
+        table.add_row("Endpoint", self.dataset.endpoint_id)
+        table.add_row("Max Files", str(self.max_files))
+        table.add_row("Existing Files", str(len(existing_files)))
+        table.add_row("Files to Download", str(files_needed))
+        table.add_row("Cache Path", str(self.cache_dir))
+        
+        self.ui.console.print(table)
+        self.ui.console.print()
+        
+        if files_needed > 0:
+            verb = "Would download" if dry_run else "Will download"
+            self.ui.print_message(
+                f"{verb} {files_needed} new file(s) (~{files_needed * 35} GB)",
+                "info"
+            )
+            if dry_run:
+                self.ui.print_message(
+                    "Run without --dry-run to execute download",
+                    "tip"
+                )
+        else:
+            self.ui.print_message(
+                "All requested files already downloaded",
+                "success"
+            )

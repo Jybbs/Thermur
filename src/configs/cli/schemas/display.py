@@ -4,7 +4,7 @@ Display configuration schemas for the Thermur CLI.
 This module consolidates all display-related models including themes, UI components,
 and all types of user-facing messages for a cohesive visual interface configuration.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 
 
 class DisplayModel(BaseModel, extra="forbid"):
@@ -59,7 +59,7 @@ class DisplayModel(BaseModel, extra="forbid"):
         },
         description = "Message type configurations with icons and styles."
     )
-    progress_bar_length: int = Field(
+    progress_bar_length: PositiveInt = Field(
         default     = 20,
         description = "Character width for progress bars."
     )
