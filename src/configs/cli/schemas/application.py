@@ -47,6 +47,11 @@ class CLIModel(BaseModel, extra="forbid"):
                 "name" : "monitor",
                 "desc" : "Monitor training progress and resources"
             },
+            {
+                "icon" : "📥",
+                "name" : "data",
+                "desc" : "Manage WRF-Fire simulation datasets"
+            },
         ],
         description = "List of available commands with metadata."
     )
@@ -82,6 +87,11 @@ class CLIModel(BaseModel, extra="forbid"):
                 "command" : "thermur train --config flock.num_drones=20 "
                             "environment.max_temp=85",
                 "note"    : "Multiple parameters"
+            },
+            {
+                "desc"    : "Download training data",
+                "command" : "thermur data download --max-files 5",
+                "note"    : "Downloads WRF-Fire datasets"
             },
         ],
         description = "Example commands for quick start guide."

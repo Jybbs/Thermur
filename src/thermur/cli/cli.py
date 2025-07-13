@@ -62,6 +62,16 @@ class ThermurCLI:
             rich_markup_mode = "rich"
         )
         
+        # Create data subcommand group
+        data_app = Typer(
+            rich_markup_mode = "rich"
+        )
+        data_app.command(name="download")(download)
+        data_app.command(name="list")(list)
+        data_app.command(name="clean")(clean)
+        
+        # Register commands
+        cli.add_typer(data_app, name="data")
         cli.command(name="info")(info)
         cli.command(name="monitor")(monitor)
         cli.command(name="train")(train)
@@ -157,7 +167,6 @@ class ThermurCLI:
             return
 
         app_context = self._get_context(ctx)
-        cfg         = app_context.cfg
         system      = app_context.system
         ui          = app_context.ui
 

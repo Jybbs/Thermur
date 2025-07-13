@@ -8,20 +8,21 @@ from ..factories import *
 from hydra_zen   import make_config, ZenStore
 
 imitation_cfg = make_config(
-    controller        = build_controller,
-    data_collector    = build_data_collector,
-    experience_buffer = build_experience_buffer,
-    flock             = build_flock,
-    learning          = build_learning,
-    logging           = build_logging,
-    loss              = build_loss,
-    optimizer         = build_optimizer,
-    physics           = build_physics,
-    policy            = build_policy,
-    simulation        = build_simulation,
-    visualizer        = build_visualizer,
-    wandb             = build_wandb,
-    defaults          = ["_self_"],
+    controller           = build_controller,
+    experience_buffer    = build_experience_buffer,
+    flock                = build_flock,
+    learning             = build_learning,
+    logging              = build_logging,
+    loss                 = build_loss,
+    optimizer            = build_optimizer,
+    physics              = build_physics,
+    policy               = build_policy,
+    simulation           = build_simulation,
+    trajectory_collector = build_trajectory_collector,
+    visualizer           = build_visualizer,
+    wandb                = build_wandb,
+    wrf_dataset          = build_wrf_dataset,
+    defaults             = ["_self_"],
 )
     
 

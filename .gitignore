@@ -3,39 +3,17 @@ __pycache__/
 *.py[cod]
 *.so
 
-# Poetry
-.poetry/
-*.lock
-dist/
-build/
-*.egg-info/
-
 # Class materials
 requirements.pdf
 notes.md
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
+# Data directory
+data/
 
 # Jupyter
 .ipynb_checkpoints
 .profile_default/
 .ipython/
-
-# Virtual environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# VS Code & extensions
-.vscode/
-.claude/
 
 # Logs and temporary files
 *.log
@@ -46,6 +24,18 @@ venv.bak/
 *.old
 outputs/
 logs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Poetry
+.poetry/
+*.lock
+dist/
+build/
+*.egg-info/
 
 # pyenv and Python-specific files
 .python-version
@@ -60,5 +50,15 @@ htmlcov/
 tox/
 .pytest_cache/
 
-# OSQP generated files (if C extensions used)
-osqp_sources/
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# VS Code & extensions
+.vscode/
+.claude/
