@@ -4,8 +4,7 @@ Learning system model.
 This module defines the unified configuration for imitation learning,
 including training hyperparameters, data handling, and network architecture.
 """
-from pathlib  import Path
-from pydantic import BaseModel, Field, NonNegativeFloat
+from pydantic import BaseModel, DirectoryPath, Field, NonNegativeFloat
 from pydantic import NonNegativeInt, PositiveFloat, PositiveInt
 from typing   import Literal
 
@@ -48,8 +47,8 @@ class LearningModel(BaseModel, extra="forbid"):
         default     = 25_000,
         description = "Frequency (in frames) for saving model checkpoints."
     )
-    checkpoint_path: Path = Field(
-        default     = Path("checkpoints"),
+    checkpoint_path: DirectoryPath = Field(
+        default     = "checkpoints",
         description = "Directory path for saving training checkpoints."
     )
     device: Literal["cpu", "cuda", "mps"] = Field(

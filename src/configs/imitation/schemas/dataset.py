@@ -4,13 +4,12 @@ Dataset configuration schema.
 This module defines the configuration for simulation datasets, including both
 download parameters and data structure definitions for the NetCDF files.
 """
-from pathlib  import Path
 from pydantic import BaseModel, Field, NonNegativeFloat
 
 
-class DatasetModel(BaseModel, extra="forbid"):
+class WRFModel(BaseModel, extra="forbid"):
     """
-    Configuration for dataset management.
+    Configuration for WRF dataset management.
     
     This model defines data structure parameters (variable names, processing 
     options) and caching configuration for the Moisseeva (2020) dataset.
@@ -18,14 +17,6 @@ class DatasetModel(BaseModel, extra="forbid"):
     The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
     uses staggered grids where U, V, W wind components are offset from cell centers.
     """
-    cache_dir: Path = Field(
-        default     = Path("data/cache"),
-        description = "Local directory for caching downloaded NetCDF files."
-    )
-    dataset_name: str = Field(
-        default     = "moisseeva_2020",
-        description = "Name of the dataset configuration to use."
-    )
     domain_randomization: bool = Field(
         default     = True,
         description = "Enable domain randomization for robustness."

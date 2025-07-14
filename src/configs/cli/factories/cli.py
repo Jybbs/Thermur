@@ -10,7 +10,7 @@ from hydra_zen import builds
 
 build_cli               = builds(CLIModel)
 build_display           = builds(DisplayModel)
-build_file              = builds(FileModel)
+build_download          = builds(DownloadModel)
 build_messages          = builds(MessagesModel)
 build_presets           = builds(PresetsModel)
 build_prompts           = builds(PromptsModel)

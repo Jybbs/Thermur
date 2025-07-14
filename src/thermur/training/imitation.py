@@ -7,7 +7,6 @@ to mimic expert flocking behavior while respecting thermal constraints.
 from ..visualization    import Visualizer
 from configs.imitation  import LearningModel, WandbModel
 from loguru             import logger
-from pathlib            import Path
 from torch.nn           import Module
 from torch.optim        import Optimizer
 from torchrl.collectors import SyncDataCollector
@@ -91,11 +90,10 @@ def save_checkpoint(
         save_path   : Directory to save checkpoints
         is_final    : Whether this is the final checkpoint
     """
-    save_dir = Path(save_path)
-    save_dir.mkdir(parents=True, exist_ok=True)
+    save_path.mkdir(parents=True, exist_ok=True)
     
     filename  = "final.pt" if is_final else f"checkpoint_{frame_count}.pt"
-    full_path = save_dir / filename
+    full_path = save_path / filename
     
     torch.save(
         f   = full_path,

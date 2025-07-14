@@ -2,9 +2,9 @@
 Hydra-zen builders for data collection and storage.
 
 This module provides configuration builders for trajectory collection,
-experience replay, and dataset downloads.
+experience replay, and WRF dataset downloads.
 """
-from ..schemas                   import DatasetModel
+from ..schemas                   import WRFModel
 from hydra_zen                   import builds
 from omegaconf                   import SI
 from torchrl.collectors          import SyncDataCollector  
@@ -34,7 +34,7 @@ batch processing and decorrelated learning updates.
 """
 
 build_dataset = builds(
-    DatasetModel,
+    WRFModel,
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.data",

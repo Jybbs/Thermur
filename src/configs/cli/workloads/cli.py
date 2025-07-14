@@ -12,7 +12,7 @@ from hydra_zen   import make_config, ZenStore
 cli_cfg = make_config(
     cli                 = build_cli,
     display             = build_display,
-    file                = build_file,
+    download            = build_download,
     messages            = build_messages,
     presets             = build_presets,
     prompts             = build_prompts,
