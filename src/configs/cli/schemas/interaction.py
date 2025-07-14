@@ -109,3 +109,32 @@ class PromptsModel(BaseModel, extra="forbid"):
         default     = "Select a workload configuration:",
         description = "Prompt shown when user needs to select a workload."
     )
+
+
+class FileModel(BaseModel, extra="forbid"):
+    """
+    File download and management configuration for the CLI.
+    
+    This model contains settings for file downloads, display options, and
+    caching behavior, separate from the dataset schema used for training.
+    """
+    cache_dir: str = Field(
+        default     = "data/cache",
+        description = "Local directory for caching downloaded files."
+    )
+    chunk_size: int = Field(
+        default     = 8192,
+        description = "Download chunk size in bytes for streaming."
+    )
+    dataset_id: str = Field(
+        default     = "dd39c220-356d-4f06-a8e5-77016c648ca4",
+        description = "FRDR dataset UUID for the Moisseeva (2020) dataset."
+    )
+    repo_base_url: str = Field(
+        default     = "https://www.frdr-dfdr.ca/repo/dataset",
+        description = "Base URL for the FRDR repository."
+    )
+    show_numbers_default: bool = Field(
+        default     = True,
+        description = "Show numbers by default in file selection tables."
+    )

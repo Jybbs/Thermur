@@ -1,27 +1,25 @@
 """
 Dataset configuration schema.
 
-This module defines the configuration for WRF-Fire datasets, including both
+This module defines the configuration for simulation datasets, including both
 download parameters and data structure definitions for the NetCDF files.
 """
 from pathlib  import Path
-from pydantic import BaseModel, Field, NonNegativeFloat, PositiveInt
+from pydantic import BaseModel, Field, NonNegativeFloat
 
 
 class DatasetModel(BaseModel, extra="forbid"):
     """
-    Configuration for WRF-Fire dataset management.
+    Configuration for dataset management.
     
-    This model combines dataset acquisition parameters (download, caching)
-    with data structure definitions (variable names, processing options).
-    It provides a single configuration point for all WRF-Fire data needs.
+    This model defines data structure parameters (variable names, processing 
+    options) and caching configuration for the Moisseeva (2020) dataset.
     
-    The Moisseeva (2020) dataset contains 147 NetCDF files totaling 5.33 TB,
-    making subset downloads essential for development. WRF uses staggered
-    grids where U, V, W wind components are offset from cell centers.
+    The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
+    uses staggered grids where U, V, W wind components are offset from cell centers.
     """
     cache_dir: Path = Field(
-        default     = Path("data/wrf_cache"),
+        default     = Path("data/cache"),
         description = "Local directory for caching downloaded NetCDF files."
     )
     dataset_name: str = Field(
@@ -32,17 +30,9 @@ class DatasetModel(BaseModel, extra="forbid"):
         default     = True,
         description = "Enable domain randomization for robustness."
     )
-    endpoint_id: str = Field(
-        default     = "dd39c220-356d-4f06-a8e5-77016c648ca4",
-        description = "Globus endpoint UUID for the dataset."
-    )
     fire_heat_variable: str = Field(
         default     = "GRNHFX",
         description = "NetCDF variable name for ground heat flux from fire."
-    )
-    max_files: PositiveInt = Field(
-        default     = 2,
-        description = "Maximum number of files to download for training."
     )
     temperature_noise_std: NonNegativeFloat = Field(
         default     = 0.5,

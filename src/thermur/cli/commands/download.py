@@ -1,58 +1,50 @@
 """
 Dataset download command for the Thermur CLI.
 
-This module provides the 'download' command for acquiring WRF-Fire simulation
-datasets from remote repositories. It manages efficient transfers of large-scale
-NetCDF files from the Moisseeva (2020) wildfire plume dataset.
+This module provides the 'download' command for acquiring simulation datasets
+from remote repositories. It manages efficient transfers of large-scale NetCDF
+files from the Moisseeva (2020) wildfire plume dataset.
 """
-from datetime   import datetime
-from pathlib    import Path
-from rich.table import Table
-from typer      import Context, Option
-from typing     import Optional
 
-import json
+from ..helpers import FileIO
+from pathlib   import Path
+from typer     import Context, Option
 
 
 def download(
-    ctx       : Context,
-    max_files : Optional[int] = Option(
-        None,
-        "--max-files",
-        help = "Override maximum number of files to download"
-    ),
-    dataset   : str = Option(
-        "moisseeva_2020",
-        "--dataset",
-        help = "Dataset to download"
-    ),
-    dry_run   : bool = Option(
+    ctx  : Context,
+    list : bool = Option(
         False,
-        "--dry-run",
-        help = "Show download plan without executing"
+        "--list", "-l", 
+        help = "List available files and their download status"
     )
 ):
     """
-    📥 Download WRF-Fire simulation data for training.
+    📥 Download simulation data for training.
     
-    Acquires NetCDF files from configured Globus endpoints, managing large-scale
-    transfers efficiently. The system tracks downloaded files in a manifest to
-    avoid redundant transfers and checks for existing files before downloading.
+    Downloads NetCDF files from the Moisseeva (2020) wildfire plume dataset
+    hosted on FRDR. The system tracks downloaded files and shows checkmarks
+    for files you already have. Interactive file selection allows you to choose
+    exactly which file to download.
     
-    The Moisseeva (2020) dataset contains 147 files totaling 5.33 TB, with
-    individual files ranging from 20-50 GB each.
+    The dataset contains 147 LES simulations totaling 5.33 TB, with individual
+    files ranging from 20-50 GB each. Each file represents a different fire
+    scenario with varying conditions (case, fire type, run number).
+    
+    Examples:
+        thermur download --list    # Show all files with download status
+        thermur download           # Interactive selection and download
     """
     command = DownloadCommand(ctx)
-    command.run(max_files, dataset, dry_run)
+    command.run(list)
 
 
 class DownloadCommand:
     """
-    Manages WRF-Fire dataset acquisition through Globus transfers.
+    Manages dataset acquisition through HTTP transfers.
     
-    Coordinates authentication, transfer initiation, progress tracking, and
-    manifest updates. Supports dry-run mode for planning downloads without
-    consuming bandwidth or storage.
+    Coordinates file listing, selection, download progress tracking, and
+    manifest updates. Downloads individual files from the FRDR repository.
     """
     
     def __init__(self, ctx: Context):
@@ -64,186 +56,154 @@ class DownloadCommand:
                  UI utilities, and system inspection capabilities.
         """
         self.cfg       = ctx.obj.cfg
-        self.dataset   = ctx.obj.cfg.dataset
-        self.max_files = self.dataset.max_files
+        self.cache_dir = Path(self.cfg.file.cache_dir)
+        self.file_cfg  = self.cfg.file
         self.prompts   = ctx.obj.prompts
         self.system    = ctx.obj.system
         self.ui        = ctx.obj.ui
         
-        self.cache_dir = Path(self.dataset.cache_dir)
-        self.manifest  = self.cache_dir / "manifest.json"
+        # Initialize FileIO with dataset URL
+        dataset_url = f"{self.file_cfg.repo_base_url}/{self.file_cfg.dataset_id}"
+        self.file_io = FileIO(
+            cache_dir   = self.cache_dir,
+            chunk_size  = self.file_cfg.chunk_size,
+            dataset_url = dataset_url
+        )
     
-    def run(
-        self, 
-        max_files : Optional[int],
-        dataset   : str,
-        dry_run   : bool
-    ):
+    
+    
+    
+    
+    
+    def _perform_download(self, file_info: dict):
+        """
+        Downloads a file via HTTP with progress tracking.
+        
+        Args:
+            file_info: Dictionary with 'name', 'size', and 'url' keys
+        """
+        self.ui.console.print()
+        self.ui.print_minor_section(f"Downloading {file_info['name']}")
+        
+        # Check resume status
+        resume_info = self.file_io.get_resume_info(file_info)
+        if resume_info['status'] == 'partial':
+            self.ui.print_message(
+                f"Resuming from {resume_info['current_size'] / 1e9:.1f} GB "
+                f"({resume_info['progress_percent']:.1f}% complete)",
+                "info"
+            )
+        elif resume_info['status'] == 'complete':
+            self.ui.print_message(
+                f"File already downloaded: {file_info['name']}",
+                "success"
+            )
+            return
+        
+        # Download with progress
+        with self.ui.create_thermal_progress() as progress:
+            success = self.file_io.download_file_with_progress(file_info, progress)
+        
+        self.ui.console.print()
+        
+        if success:
+            if self.file_io.update_manifest(file_info):
+                self.ui.print_message(
+                    f"Successfully downloaded: {file_info['name']}",
+                    "success"
+                )
+                self.ui.print_message(
+                    f"Saved to: {self.cache_dir / file_info['name']}",
+                    "info"
+                )
+            else:
+                self.ui.print_message(
+                    "Warning: Could not update manifest",
+                    "warning"
+                )
+        else:
+            self.ui.print_message(
+                "Download failed. Run the command again to resume.",
+                "error"
+            )
+    
+    
+    def _show_files_and_summary(
+        self,
+        available_files : list[dict],
+        existing_files  : set[str],
+        show_numbers    : bool = False,
+    ) -> dict[int, dict]:
+        """
+        Display file table and summary.
+        
+        Args:
+            available_files : All available files
+            existing_files  : Already downloaded files
+            show_numbers    : Whether to show selection numbers
+            
+        Returns:
+            File index mapping if show_numbers is True
+        """
+        table, file_index_map = self.ui.create_file_table(
+            available_files  = available_files,
+            existing_files   = existing_files,
+            group_extractor  = lambda name: name.split('F')[0] if 'F' in name else "Unknown",
+            show_numbers     = show_numbers,
+            title            = "Moisseeva (2020) Dataset Files"
+        )
+        self.ui.console.print(table)
+        self.ui.console.print()
+        self.ui.display_file_summary(available_files, existing_files)
+        
+        return file_index_map if show_numbers else {}
+    
+    def run(self, list_only: bool):
         """
         Executes the download workflow.
         
         Args:
-            max_files : CLI override for maximum file count (None uses config value)
-            dataset   : Target dataset identifier
-            dry_run   : If True, show plan without downloading files
+            list_only: If True, only list files without downloading
         """
-        self.ui.print_header("WRF Data Acquisition")
+        self.ui.print_header("Data Acquisition")
         
-        if max_files is not None:
-            self.max_files = max_files
+        # Get file listings
+        self.ui.print_message(
+            "Note: Using representative file listing. FRDR integration pending dataset availability.",
+            "warning"
+        )
         
-        existing_files = self._check_existing_files(dataset)
-        files_needed   = max(0, self.max_files - len(existing_files))
-        
-        self._show_download_plan(dataset, existing_files, files_needed, dry_run)
-        
-        if files_needed == 0:
+        available_files = self.file_io.fetch_file_listing()
+        if not available_files:
+            self.ui.print_message(
+                "Unable to fetch file listing. The dataset may be temporarily unavailable.",
+                "error"
+            )
             return
             
-        if not dry_run and self._confirm_download(files_needed):
-            self._perform_download(dataset)
-    
-    def _check_existing_files(self, dataset: str) -> list[str]:
-        """
-        Checks manifest for already downloaded files.
+        existing_files = self.file_io.check_existing_files()
         
-        Args:
-            dataset: Dataset name to check
+        # List mode - show all files with status
+        if list_only:
+            self._show_files_and_summary(available_files, existing_files, show_numbers=False)
+            return
             
-        Returns:
-            List of filenames that have already been downloaded
-        """
-        manifest = self._load_manifest()
-        if dataset in manifest:
-            return manifest[dataset].get("files", [])
-        return []
-    
-    def _confirm_download(self, files_needed: int) -> bool:
-        """
-        Prompts user to confirm the download operation.
+        # Download mode - check if anything to download
+        files_to_download = self.file_io.get_undownloaded_files(available_files)
         
-        Args:
-            files_needed: Number of files that will be downloaded
+        if not files_to_download:
+            self.ui.print_message("All files already downloaded! 🎉", "success")
+            return
             
-        Returns:
-            True if user confirms, False otherwise
-        """
-        estimated_size = files_needed * 35
-        return self.prompts.confirm_download(files_needed, estimated_size)
-    
-    def _load_manifest(self) -> dict:
-        """
-        Loads the dataset manifest from disk.
-        
-        Returns:
-            Dictionary mapping dataset names to metadata including file lists
-            and timestamps. Returns empty dict if manifest doesn't exist.
-        """
-        if self.manifest.exists():
-            with open(self.manifest, 'r') as f:
-                return json.load(f)
-        return {}
-    
-    def _perform_download(self, dataset: str):
-        """
-        Performs the actual dataset acquisition through Globus.
-        
-        Args:
-            dataset: Dataset identifier for manifest tracking
-        """
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            import globus_sdk
-            
-            with self.ui.console.status("Initializing Globus authentication...", spinner="dots"):
-                # TODO: Implement Globus OAuth2 flow
-                pass
-            
-            self.ui.print_message(
-                f"Globus transfer pending - endpoint: {self.dataset.endpoint_id[:8]}...", 
-                "error"
-            )
-            
-            manifest = self._load_manifest()
-            if dataset not in manifest:
-                manifest[dataset] = {
-                    "files"        : [],
-                    "last_updated" : datetime.now().isoformat()
-                }
-                self._save_manifest(manifest)
-                self.ui.print_message(
-                    f"Created manifest entry for dataset: {dataset}",
-                    "success"
-                )
-                
-        except ImportError:
-            self.ui.print_message(
-                "Globus SDK not available. Install with: pip install globus-sdk",
-                "error"
-            )
-            self.ui.console.print()
-            self.ui.print_message(
-                "The Globus SDK is required for efficient large-scale data transfers",
-                "tip"
-            )
-    
-    def _save_manifest(self, data: dict):
-        """
-        Persists the dataset manifest to disk.
-        
-        Args:
-            data: Dictionary containing dataset metadata to save
-        """
-        with open(self.manifest, 'w') as f:
-            json.dump(data, f, indent=2)
-            
-    def _show_download_plan(
-        self,
-        dataset        : str,
-        existing_files : list[str], 
-        files_needed   : int,
-        dry_run        : bool
-    ):
-        """
-        Displays the download configuration.
-        
-        Args:
-            dataset        : Dataset name to display in plan
-            existing_files : List of already downloaded files
-            files_needed   : Number of new files to download
-            dry_run        : Whether this is a dry-run
-        """
-        if dry_run:
-            self.ui.print_message("Dry-run mode - no files will be downloaded", "warning")
-        
-        table = Table(title=f"Download Plan: {dataset}")
-        table.add_column("Parameter", style="cyan")
-        table.add_column("Value",     style="green")
-        
-        table.add_row("Dataset",           dataset)
-        table.add_row("Endpoint",          self.dataset.endpoint_id)
-        table.add_row("Max Files",         str(self.max_files))
-        table.add_row("Existing Files",    str(len(existing_files)))
-        table.add_row("Files to Download", str(files_needed))
-        table.add_row("Cache Path",        str(self.cache_dir))
-        
-        self.ui.console.print(table)
+        # Show files with selection numbers
+        file_index_map = self._show_files_and_summary(
+            available_files, existing_files, show_numbers=self.file_cfg.show_numbers_default
+        )
         self.ui.console.print()
         
-        if files_needed > 0:
-            verb = "Would download" if dry_run else "Will download"
-            self.ui.print_message(
-                f"{verb} {files_needed} new file(s) (~{files_needed * 35} GB)",
-                "info"
-            )
-            if dry_run:
-                self.ui.print_message(
-                    "Run without --dry-run to execute download",
-                    "tip"
-                )
+        # File selection and download
+        selected_file = self.prompts.select_file_by_number(file_index_map)
+        if selected_file and self.prompts.confirm_download(selected_file):
+            self._perform_download(selected_file)
         else:
-            self.ui.print_message(
-                "All requested files already downloaded",
-                "success"
-            )
+            self.ui.print_message("Download cancelled", "warning")

@@ -146,6 +146,36 @@ class CLIPrompts:
             msg_type = "success"
         )
         return project_name
+    
+    def confirm_download(self, file_info: dict) -> bool:
+        """
+        Prompts user to confirm file download operation.
+        
+        Args:
+            file_info: File information dictionary with name and size
+            
+        Returns:
+            True if user confirms download, False otherwise
+        """
+        size_gb = file_info['size'] / 1e9
+        
+        self.ui.console.print()
+        self.ui.print_message(
+            f"Ready to download: {file_info['name']}",
+            "info"
+        )
+        self.ui.console.print(f"[yellow]File size: {size_gb:.1f} GB[/yellow]")
+        self.ui.console.print(
+            "[grey70]This download may take several hours depending on your "
+            "internet connection[/grey70]"
+        )
+        self.ui.console.print()
+        
+        return questionary.confirm(
+            default = True,
+            message = "Proceed with download?",
+            style   = self.thermal_style
+        ).ask()
 
     def confirm_system_override(self, issues: list[str]) -> bool:
         """
@@ -255,6 +285,56 @@ class CLIPrompts:
             )
 
         return chosen_preset
+    
+    def select_file_by_number(
+        self,
+        file_index_map : dict[int, dict]
+    ) -> dict | None:
+        """
+        Select a file to download by entering its number.
+        
+        Args:
+            file_index_map : Mapping of indices to file info dictionaries
+            
+        Returns:
+            Selected file info dict, or None if cancelled
+        """
+        if not file_index_map:
+            return None
+            
+        max_index = max(file_index_map.keys())
+        
+        self.ui.print_message(
+            f"Enter a number (1-{max_index}) to download a file, or 0 to cancel:",
+            "info"
+        )
+        
+        while True:
+            response = questionary.text(
+                message  = "File number:",
+                style    = self.thermal_style,
+                validate = lambda x: x.isdigit() or x == ""
+            ).ask()
+            
+            if not response:
+                return None
+                
+            try:
+                number = int(response)
+                if number == 0:
+                    return None
+                elif number in file_index_map:
+                    return file_index_map[number]
+                else:
+                    self.ui.print_message(
+                        f"Please enter a number between 1 and {max_index}",
+                        "warning"
+                    )
+            except ValueError:
+                self.ui.print_message(
+                    "Please enter a valid number",
+                    "error"
+                )
 
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
@@ -319,31 +399,3 @@ class CLIPrompts:
             console = self.ui.console,
             default = True
         )
-    
-    def confirm_download(self, files_needed: int, estimated_size: int) -> bool:
-        """
-        Prompts user to confirm dataset download operation.
-        
-        Args:
-            files_needed   : Number of files to download
-            estimated_size : Estimated total size in GB
-            
-        Returns:
-            True if user confirms download, False otherwise
-        """
-        self.ui.console.print()
-        self.ui.print_message(
-            f"Ready to download {files_needed} files (~{estimated_size} GB)",
-            "warning"
-        )
-        self.ui.console.print(
-            "[grey70]This operation requires a stable internet connection "
-            "and may take several hours[/grey70]"
-        )
-        self.ui.console.print()
-        
-        return questionary.confirm(
-            message = "Proceed with download?",
-            default = False,
-            style   = self.thermal_style
-        ).ask()

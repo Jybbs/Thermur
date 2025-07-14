@@ -60,7 +60,7 @@ class SystemInspector:
 
     def _get_dataset_info(self) -> dict[str, float]:
         """
-        Gather information about downloaded WRF dataset files.
+        Gather information about downloaded dataset files.
         
         Scans the configured cache directory for NetCDF files (*.nc) and 
         computes their total size. This provides visibility into how much
@@ -71,11 +71,11 @@ class SystemInspector:
             Returns zeros if dataset information cannot be retrieved.
         """
         try:
-            cache_dir = Path(self.cfg.dataset.cache_dir)
-            if not cache_dir.exists():
+            cache = Path(self.cfg.file.cache_dir)
+            if not cache.exists():
                 return {"dataset_size": 0.0, "dataset_count": 0}
                 
-            nc_files   = list(cache_dir.glob("*.nc"))
+            nc_files   = list(cache.glob("*.nc"))
             total_size = sum(f.stat().st_size for f in nc_files if f.is_file())
             
             return {
