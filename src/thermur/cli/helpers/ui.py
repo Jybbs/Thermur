@@ -362,6 +362,103 @@ class ThermurUI:
             )
         )
 
+    def create_file_table(
+        self,
+        available_files : list[dict],
+        existing_files  : set[str],
+        group_by_field  : str      = None,
+        group_extractor : callable = None,
+        show_numbers    : bool     = True,
+        title           : str      = "Available Files"
+    ) -> tuple[Table, dict[int, dict]]:
+        """
+        Create a table displaying files with download status.
+        
+        Args:
+            available_files : List of file info dictionaries
+            existing_files  : Set of already downloaded file names
+            group_by_field  : Optional field name to extract grouping info
+            group_extractor : Optional function to extract group from filename
+            show_numbers    : If True, show numbers for selection; if False, show all with status
+            title           : Table title
+            
+        Returns:
+            Tuple of (formatted Table, mapping of indices to file info or empty dict)
+        """
+        columns = [
+            ("#",      "bright_cyan", 4,  "right") if show_numbers else 
+            ("Status", "green",       6,  "center"),
+            ("File",   "cyan",        40, "left"),
+            ("Size",   "yellow",      10, "right"),
+        ]
+        
+        if group_by_field or group_extractor:
+            columns.append(("Group", "magenta", 12, "left"))
+            
+        table          = self.create_aligned_table(columns=columns, title=title)
+        file_index_map = {}
+        
+        if show_numbers:
+            # Only show undownloaded files for selection
+            files_to_show = [f for f in available_files if f['name'] not in existing_files]
+        else:
+            # Show all files for listing
+            files_to_show = available_files
+        
+        for idx, file_info in enumerate(files_to_show, 1):
+            name = file_info['name']
+            size = file_info['size']
+            
+            if show_numbers:
+                file_index_map[idx] = file_info
+                row = [str(idx), name, f"{size / 1e9:.1f} GB"]
+            else:
+                status = "✓" if name in existing_files else ""
+                row = [status, name, f"{size / 1e9:.1f} GB"]
+            
+            if group_by_field and group_by_field in file_info:
+                row.append(str(file_info[group_by_field]))
+            elif group_extractor:
+                row.append(group_extractor(name))
+                
+            table.add_row(*row)
+            
+        return table, file_index_map
+    
+    def display_file_summary(
+        self,
+        available_files : list[dict],
+        existing_files  : set[str]
+    ):
+        """
+        Display summary statistics for dataset files.
+        
+        Args:
+            available_files : List of all available files
+            existing_files  : Set of already downloaded file names
+        """
+        total_size = sum(f['size'] for f in available_files)
+        downloaded_size = sum(
+            f['size'] for f in available_files 
+            if f['name'] in existing_files
+        )
+        
+        self.print_message(
+            f"Total: {len(available_files)} files ({total_size / 1e9:.1f} GB)",
+            "info"
+        )
+        self.print_message(
+            f"Downloaded: {len(existing_files)} files ({downloaded_size / 1e9:.1f} GB)",
+            "success"
+        )
+        
+        remaining = len(available_files) - len(existing_files)
+        if remaining > 0:
+            self.print_message(
+                f"Remaining: {remaining} files ({(total_size - downloaded_size) / 1e9:.1f} GB)",
+                "warning"
+            )
+
     def format_fire_gradient_text(self, text: str) -> Text:
         """
         Format text with the distinctive Thermur fire gradient colors.
@@ -423,8 +520,6 @@ class ThermurUI:
         )
         
         return progress_bar, details_text
-
-
 
     def print_command_example(
         self,
