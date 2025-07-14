@@ -12,8 +12,6 @@ from typing   import Any
 import json
 import requests
 
-from rich.progress import Progress
-
 
 class FileIO:
     """
@@ -79,51 +77,38 @@ class FileIO:
         else:
             return 'missing', 0  # Corrupt file
     
-    def download_file_with_progress(
-        self,
-        file_info : dict,
-        progress  : Progress,
-    ) -> bool:
+    def download_chunks(self, file_info: dict):
         """
-        Download a file with progress tracking.
+        Download a file, yielding progress updates.
         
         Args:
-            file_info : File information dictionary with name, size, url
-            progress  : Rich Progress instance for tracking
+            file_info: File information dictionary with name, size, url
             
-        Returns:
-            True if download successful, False otherwise
+        Yields:
+            Tuple of (bytes_downloaded, status) where status is 'progress' or 'complete'
+            
+        Raises:
+            requests.exceptions.RequestException: On download failure
         """
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         filepath = self.cache_dir / file_info['name']
         
         status, initial_pos = self.check_file_status(file_info)
         if status == 'complete':
-            return True
+            yield (0, 'complete')
+            return
             
-        headers = {} if status != 'partial' else {'Range': f'bytes={initial_pos}-'}
+        headers = {}   if status != 'partial' else {'Range': f'bytes={initial_pos}-'}
         mode    = 'wb' if status != 'partial' else 'ab'
         
-        try:
-            response = requests.get(file_info['url'], headers=headers, stream=True)
-            response.raise_for_status()
-            
-            task = progress.add_task(
-                f"[cyan]{file_info['name']}[/cyan]",
-                completed = initial_pos,
-                total     = file_info['size']
-            )
-            
-            with open(filepath, mode) as f:
-                for chunk in response.iter_content(chunk_size=self.chunk_size):
-                    if chunk:
-                        f.write(chunk)
-                        progress.update(task, advance=len(chunk))
-                        
-            return True
-            
-        except requests.exceptions.RequestException:
-            return False
+        response = requests.get(file_info['url'], headers=headers, stream=True)
+        response.raise_for_status()
+        
+        with open(filepath, mode) as f:
+            for chunk in response.iter_content(chunk_size=self.chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    yield (len(chunk), 'progress')
     
     def fetch_file_listing(self) -> list[dict]:
         """
@@ -183,11 +168,11 @@ class FileIO:
         total_size = file_info['size']
         
         return {
-            'current_size': current_size,
-            'progress_percent': (current_size / total_size * 100) if total_size > 0 else 0,
-            'remaining_size': total_size - current_size,
-            'status': status,
-            'total_size': total_size
+            'current_size'     : current_size,
+            'progress_percent' : (current_size / total_size * 100) if total_size > 0 else 0,
+            'remaining_size'   : total_size - current_size,
+            'status'           : status,
+            'total_size'       : total_size
         }
     
     def get_undownloaded_files(self, available_files: list[dict]) -> list[dict]:

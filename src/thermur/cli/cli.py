@@ -31,9 +31,14 @@ class AppContext:
         Initialize the application context with the loaded configuration.
         """
         self.cfg     = cfg
+        self.prompts = CLIPrompts(self.cfg, self.ui)
         self.system  = SystemInspector(cfg)
         self.ui      = ThermurUI(self.cfg.display)
-        self.prompts = CLIPrompts(self.cfg, self.ui)
+        self.file_io = FileIO(
+            cache_dir   = self.cfg.download.cache_dir,
+            chunk_size  = self.cfg.download.chunk_size,
+            dataset_url = f"{self.cfg.download.repo_base_url}/{self.cfg.download.dataset_id}"
+        )
 
 
 class ThermurCLI:

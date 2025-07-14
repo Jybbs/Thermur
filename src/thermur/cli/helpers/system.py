@@ -7,7 +7,6 @@ the raw data that other modules, like the UI, will then format and display.
 """
 from importlib.metadata import PackageNotFoundError, version
 from omegaconf          import DictConfig
-from pathlib            import Path
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
@@ -71,7 +70,7 @@ class SystemInspector:
             Returns zeros if dataset information cannot be retrieved.
         """
         try:
-            cache = Path(self.cfg.file.cache_dir)
+            cache = self.cfg.download.cache_dir
             if not cache.exists():
                 return {"dataset_size": 0.0, "dataset_count": 0}
                 

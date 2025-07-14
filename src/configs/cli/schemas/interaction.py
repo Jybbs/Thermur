@@ -4,7 +4,7 @@ User interaction and preset configuration schemas for the Thermur CLI.
 This module contains models for interactive prompts and pre-configured training
 presets that guide users through the CLI experience.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, DirectoryPath, Field, HttpUrl
 
 
 class PresetsModel(BaseModel, extra="forbid"):
@@ -111,14 +111,14 @@ class PromptsModel(BaseModel, extra="forbid"):
     )
 
 
-class FileModel(BaseModel, extra="forbid"):
+class DownloadModel(BaseModel, extra="forbid"):
     """
-    File download and management configuration for the CLI.
+    Download and management configuration for the CLI.
     
     This model contains settings for file downloads, display options, and
     caching behavior, separate from the dataset schema used for training.
     """
-    cache_dir: str = Field(
+    cache_dir: DirectoryPath = Field(
         default     = "data/cache",
         description = "Local directory for caching downloaded files."
     )
@@ -130,7 +130,7 @@ class FileModel(BaseModel, extra="forbid"):
         default     = "dd39c220-356d-4f06-a8e5-77016c648ca4",
         description = "FRDR dataset UUID for the Moisseeva (2020) dataset."
     )
-    repo_base_url: str = Field(
+    repo_base_url: HttpUrl = Field(
         default     = "https://www.frdr-dfdr.ca/repo/dataset",
         description = "Base URL for the FRDR repository."
     )

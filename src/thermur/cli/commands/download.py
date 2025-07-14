@@ -5,10 +5,9 @@ This module provides the 'download' command for acquiring simulation datasets
 from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
+from typer import Context, Option
 
-from ..helpers import FileIO
-from pathlib   import Path
-from typer     import Context, Option
+import requests
 
 
 def download(
@@ -55,25 +54,11 @@ class DownloadCommand:
             ctx: The Typer context containing AppContext with configuration,
                  UI utilities, and system inspection capabilities.
         """
-        self.cfg       = ctx.obj.cfg
-        self.cache_dir = Path(self.cfg.file.cache_dir)
-        self.file_cfg  = self.cfg.file
-        self.prompts   = ctx.obj.prompts
-        self.system    = ctx.obj.system
-        self.ui        = ctx.obj.ui
-        
-        # Initialize FileIO with dataset URL
-        dataset_url = f"{self.file_cfg.repo_base_url}/{self.file_cfg.dataset_id}"
-        self.file_io = FileIO(
-            cache_dir   = self.cache_dir,
-            chunk_size  = self.file_cfg.chunk_size,
-            dataset_url = dataset_url
-        )
-    
-    
-    
-    
-    
+        self.cfg     = ctx.obj.cfg
+        self.file_io = ctx.obj.file_io
+        self.prompts = ctx.obj.prompts
+        self.system  = ctx.obj.system
+        self.ui      = ctx.obj.ui
     
     def _perform_download(self, file_info: dict):
         """
@@ -85,48 +70,41 @@ class DownloadCommand:
         self.ui.console.print()
         self.ui.print_minor_section(f"Downloading {file_info['name']}")
         
-        # Check resume status
-        resume_info = self.file_io.get_resume_info(file_info)
-        if resume_info['status'] == 'partial':
-            self.ui.print_message(
-                f"Resuming from {resume_info['current_size'] / 1e9:.1f} GB "
-                f"({resume_info['progress_percent']:.1f}% complete)",
-                "info"
-            )
-        elif resume_info['status'] == 'complete':
-            self.ui.print_message(
-                f"File already downloaded: {file_info['name']}",
-                "success"
-            )
-            return
+        resume = self.file_io.get_resume_info(file_info)
+        if resume['status'] == 'partial':
+            gb  = resume['current_size'] / 1e9
+            pct = resume['progress_percent']
+            self.ui.print_message(f"Resuming from {gb:.1f} GB ({pct:.1f}%)", "info")
         
         # Download with progress
-        with self.ui.create_thermal_progress() as progress:
-            success = self.file_io.download_file_with_progress(file_info, progress)
-        
-        self.ui.console.print()
-        
-        if success:
+        try:
+            with self.ui.create_thermal_progress() as progress:
+                task = progress.add_task(
+                    completed   = resume['current_size'],
+                    description = f"[cyan]{file_info['name']}[/cyan]",
+                    total       = file_info['size']
+                )
+                
+                for bytes_down, status in self.file_io.download_chunks(file_info):
+                    if status == 'complete':
+                        self.ui.print_message(
+                            message  = f"Already downloaded: {file_info['name']}", 
+                            msg_type = "success"
+                        )
+                        return
+                    progress.update(task, advance=bytes_down)
+            
+            self.ui.console.print()
             if self.file_io.update_manifest(file_info):
-                self.ui.print_message(
-                    f"Successfully downloaded: {file_info['name']}",
-                    "success"
-                )
-                self.ui.print_message(
-                    f"Saved to: {self.cache_dir / file_info['name']}",
-                    "info"
-                )
+                self.ui.print_message(f"Downloaded: {file_info['name']}", "success")
+                path = self.cfg.download.cache_dir / file_info['name']
+                self.ui.print_message(f"Saved to: {path}", "info")
             else:
-                self.ui.print_message(
-                    "Warning: Could not update manifest",
-                    "warning"
-                )
-        else:
-            self.ui.print_message(
-                "Download failed. Run the command again to resume.",
-                "error"
-            )
-    
+                self.ui.print_message("Could not update manifest", "warning")
+                
+        except requests.exceptions.RequestException:
+            self.ui.console.print()
+            self.ui.print_message("Download failed. Run again to resume.", "error")
     
     def _show_files_and_summary(
         self,
@@ -197,7 +175,7 @@ class DownloadCommand:
             
         # Show files with selection numbers
         file_index_map = self._show_files_and_summary(
-            available_files, existing_files, show_numbers=self.file_cfg.show_numbers_default
+            available_files, existing_files, show_numbers=self.cfg.download.show_numbers_default
         )
         self.ui.console.print()
         
