@@ -39,7 +39,7 @@ class FileIO:
             Set of filenames that have already been downloaded
         """
         manifest_files = {f["name"] for f in self.load_json_manifest(self.manifest_path).get("files", [])}
-        disk_files = {f.name for f in self.cache_dir.glob("*.nc")} if self.cache_dir.exists() else set()
+        disk_files     = {f.name for f in self.cache_dir.glob("*.nc")} if self.cache_dir.exists() else set()
         return manifest_files | disk_files
     
     
