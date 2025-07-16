@@ -4,7 +4,44 @@ User interaction and preset configuration schemas for the Thermur CLI.
 This module contains models for interactive prompts and pre-configured training
 presets that guide users through the CLI experience.
 """
-from pydantic import BaseModel, DirectoryPath, Field, HttpUrl
+from pydantic import BaseModel, DirectoryPath, Field
+
+
+class DownloadModel(BaseModel, extra="forbid"):
+    """
+    Download and management configuration for the CLI.
+    
+    This model contains settings for file downloads, display options, and
+    caching behavior, separate from the dataset schema used for training.
+    """
+    cache_dir: DirectoryPath = Field(
+        default     = "data/cache",
+        description = "Local directory for caching downloaded files."
+    )
+    globus_client_id: str = Field(
+        default     = "d0f1d9b0-bd81-4108-be74-3ed532f15e86",
+        description = "Native app client ID for Globus OAuth2 authentication flow."
+    )
+    globus_dataset_path: str = Field(
+        default     = "/1/published/publication_309/submitted_data",
+        description = "Path to the WRF-Fire dataset within the FRDR Globus endpoint."
+    )
+    globus_endpoint_id: str = Field(
+        default     = "f163c1b3-9c88-42f6-a7bb-5839ed6c4063",
+        description = "UUID of the FRDR Globus endpoint hosting WRF-Fire simulations."
+    )
+    globus_scopes: str = Field(
+        default     = "urn:globus:auth:scope:transfer.api.globus.org:all",
+        description = "OAuth2 scopes required for Globus transfer operations."
+    )
+    globus_token_file: str = Field(
+        default     = ".config/thermur/tokens/globus_tokens.json",
+        description = "Path to securely store Globus OAuth tokens relative to user home."
+    )
+    show_numbers_default: bool = Field(
+        default     = True,
+        description = "Show numbers by default in file selection tables."
+    )
 
 
 class PresetsModel(BaseModel, extra="forbid"):
@@ -108,33 +145,4 @@ class PromptsModel(BaseModel, extra="forbid"):
     workload_selection_prompt: str = Field(
         default     = "Select a workload configuration:",
         description = "Prompt shown when user needs to select a workload."
-    )
-
-
-class DownloadModel(BaseModel, extra="forbid"):
-    """
-    Download and management configuration for the CLI.
-    
-    This model contains settings for file downloads, display options, and
-    caching behavior, separate from the dataset schema used for training.
-    """
-    cache_dir: DirectoryPath = Field(
-        default     = "data/cache",
-        description = "Local directory for caching downloaded files."
-    )
-    chunk_size: int = Field(
-        default     = 8192,
-        description = "Download chunk size in bytes for streaming."
-    )
-    dataset_id: str = Field(
-        default     = "dd39c220-356d-4f06-a8e5-77016c648ca4",
-        description = "FRDR dataset UUID for the Moisseeva (2020) dataset."
-    )
-    repo_base_url: HttpUrl = Field(
-        default     = "https://www.frdr-dfdr.ca/repo/dataset",
-        description = "Base URL for the FRDR repository."
-    )
-    show_numbers_default: bool = Field(
-        default     = True,
-        description = "Show numbers by default in file selection tables."
     )

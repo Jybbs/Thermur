@@ -7,8 +7,6 @@ files from the Moisseeva (2020) wildfire plume dataset.
 """
 from typer import Context, Option
 
-import requests
-
 
 def download(
     ctx  : Context,
@@ -40,7 +38,7 @@ def download(
 
 class DownloadCommand:
     """
-    Manages dataset acquisition through HTTP transfers.
+    Manages dataset acquisition through Globus transfers.
     
     Coordinates file listing, selection, download progress tracking, and
     manifest updates. Downloads individual files from the FRDR repository.
@@ -56,55 +54,83 @@ class DownloadCommand:
         """
         self.cfg     = ctx.obj.cfg
         self.file_io = ctx.obj.file_io
+        self.globus  = ctx.obj.globus
         self.prompts = ctx.obj.prompts
         self.system  = ctx.obj.system
         self.ui      = ctx.obj.ui
     
-    def _perform_download(self, file_info: dict):
+    def _perform_download(self, file_info: dict, globus_client):
         """
-        Downloads a file via HTTP with progress tracking.
+        Initiates a Globus transfer for the selected file.
         
         Args:
-            file_info: Dictionary with 'name', 'size', and 'url' keys
+            file_info     : Dictionary with 'name', 'size', and 'path' keys
+            globus_client : Authenticated Globus transfer client
         """
         self.ui.console.print()
-        self.ui.print_minor_section(f"Downloading {file_info['name']}")
+        self.ui.print_minor_section(f"Preparing transfer for {file_info['name']}")
         
-        resume = self.file_io.get_resume_info(file_info)
-        if resume['status'] == 'partial':
-            gb  = resume['current_size'] / 1e9
-            pct = resume['progress_percent']
-            self.ui.print_message(f"Resuming from {gb:.1f} GB ({pct:.1f}%)", "info")
+        local_endpoints = self.globus.get_local_endpoints(globus_client)
         
-        # Download with progress
-        try:
-            with self.ui.create_thermal_progress() as progress:
-                task = progress.add_task(
-                    completed   = resume['current_size'],
-                    description = f"[cyan]{file_info['name']}[/cyan]",
-                    total       = file_info['size']
-                )
-                
-                for bytes_down, status in self.file_io.download_chunks(file_info):
-                    if status == 'complete':
-                        self.ui.print_message(
-                            message  = f"Already downloaded: {file_info['name']}", 
-                            msg_type = "success"
-                        )
-                        return
-                    progress.update(task, advance=bytes_down)
+        if not local_endpoints:
+            self.ui.print_message(
+                "No local Globus endpoint found. Please install and configure Globus Connect Personal.",
+                "error"
+            )
+            return
             
-            self.ui.console.print()
-            if self.file_io.update_manifest(file_info):
-                self.ui.print_message(f"Downloaded: {file_info['name']}", "success")
-                path = self.cfg.download.cache_dir / file_info['name']
-                self.ui.print_message(f"Saved to: {path}", "info")
-            else:
-                self.ui.print_message("Could not update manifest", "warning")
+        if len(local_endpoints) == 1:
+            local_endpoint = local_endpoints[0]
+        else:
+            self.ui.print_message("Multiple local endpoints found:", "info")
+            for i, ep in enumerate(local_endpoints):
+                self.ui.console.print(f"  {i+1}. {ep['display_name']}")
+            
+            import questionary
+            choices = [ep['display_name'] for ep in local_endpoints]
+            selected = questionary.select(
+                "Select local endpoint:",
+                choices=choices
+            ).ask()
+            
+            for ep in local_endpoints:
+                if ep['display_name'] == selected:
+                    local_endpoint = ep
+                    break
+        
+        dest_path = f"/~/{self.cfg.download.cache_dir}/{file_info['name']}"
+        
+        self.ui.print_message(f"Source: {self.cfg.download.globus_endpoint_id}", "info")
+        self.ui.print_message(f"Destination: {local_endpoint['display_name']}", "info")
+        
+        try:
+            task_id = self.globus.submit_transfer_task(
+                source_endpoint = self.cfg.download.globus_endpoint_id,
+                dest_endpoint   = local_endpoint['id'],
+                items           = [(file_info['path'], dest_path)],
+                label           = f"Thermur: {file_info['name']}",
+                transfer_client = globus_client
+            )
+            
+            self.ui.print_message(f"Transfer submitted! Task ID: {task_id}", "success")
+            self.ui.print_message("You can monitor progress at https://app.globus.org/activity", "info")
+            
+            if self.prompts.confirm("Wait for transfer to complete?"):
+                with self.ui.console.status("[bold green]Transferring file...") as status:
+                    success = self.globus.wait_for_transfer(
+                        task_id         = task_id,
+                        transfer_client = globus_client,
+                        timeout         = 3600  # 1 hour timeout
+                    )
                 
-        except requests.exceptions.RequestException:
-            self.ui.console.print()
-            self.ui.print_message("Download failed. Run again to resume.", "error")
+                if success:
+                    self.ui.print_message(f"Transfer complete: {file_info['name']}", "success")
+                    self.file_io.update_manifest(file_info)
+                else:
+                    self.ui.print_message("Transfer failed or timed out", "error")
+                    
+        except Exception as e:
+            self.ui.print_message(f"Transfer failed: {str(e)}", "error")
     
     def _show_files_and_summary(
         self,
@@ -145,16 +171,20 @@ class DownloadCommand:
         """
         self.ui.print_header("Data Acquisition")
         
-        # Get file listings
-        self.ui.print_message(
-            "Note: Using representative file listing. FRDR integration pending dataset availability.",
-            "warning"
-        )
-        
-        available_files = self.file_io.fetch_file_listing()
-        if not available_files:
+        try:
+            globus_client = self.globus.authenticate()
+            
+            files = self.globus.list_endpoint_directory(
+                endpoint_id     = self.cfg.download.globus_endpoint_id,
+                path            = self.cfg.download.globus_dataset_path,
+                transfer_client = globus_client
+            )
+            
+            available_files = [f for f in files if f["type"] == "file" and f["name"].endswith(".nc")]
+            
+        except Exception as e:
             self.ui.print_message(
-                "Unable to fetch file listing. The dataset may be temporarily unavailable.",
+                f"Unable to connect to Globus: {str(e)}",
                 "error"
             )
             return
@@ -179,9 +209,8 @@ class DownloadCommand:
         )
         self.ui.console.print()
         
-        # File selection and download
         selected_file = self.prompts.select_file_by_number(file_index_map)
         if selected_file and self.prompts.confirm_download(selected_file):
-            self._perform_download(selected_file)
+            self._perform_download(selected_file, globus_client)
         else:
             self.ui.print_message("Download cancelled", "warning")
