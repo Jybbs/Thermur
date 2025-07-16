@@ -12,11 +12,11 @@ The manager handles:
 - Transfer task submission between Globus endpoints
 - Progress monitoring for long-running transfers
 """
-from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from pathlib    import Path
-from typing     import Optional, Type
+from configs.cli import GlobusSecrets
+from globus_sdk  import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
+from omegaconf   import DictConfig
+from typing      import Optional
 
-import json
 import time
 import webbrowser
 
@@ -35,42 +35,89 @@ class GlobusManager:
     when necessary. This provides a seamless experience for repeated use.
     """
     
-    def __init__(
-        self, 
-        client_id       : str,
-        scopes          : str,
-        token_file_path : str
-    ):
+    def __init__(self, download: DictConfig):
         """
-        Initialize the Globus manager with authentication configuration.
+        Initialize the Globus manager with download configuration.
         
-        Sets up the OAuth2 client and token storage, but does not attempt
-        authentication until needed. This allows the manager to be created
-        without side effects.
+        Sets up the OAuth2 client and loads any existing authentication secrets.
+        Authentication is attempted lazily when needed. All token management is
+        handled internally by this class.
         
         Args:
-            client_id       : Native app client ID registered with Globus
-            scopes          : OAuth2 scopes required for operations
-            token_file_path : Path for secure token storage relative to home
+            download: Download configuration containing Globus settings
         """
-        self.client_id    = client_id
-        self.scopes       = scopes
-        self.token_store  = TokenStore(token_file_path)
+        self.client_id    = download.globus_client_id
+        self.dataset_path = download.globus_dataset_path
+        self.endpoint_id  = download.globus_endpoint_id
+        self.scopes       = download.globus_scopes
+        self.secrets      = GlobusSecrets.load()
+
+    def _do_native_app_authentication(self) -> TransferClient:
+        """
+        Perform interactive OAuth2 authentication via browser.
+        
+        Implements the OAuth2 native app flow by opening the user's browser
+        to the Globus authentication page. After the user approves access,
+        they paste the authorization code back into the CLI to complete
+        the flow.
+        
+        Returns:
+            Authenticated TransferClient with fresh tokens
+            
+        Raises:
+            Exception: If the user cancels or authentication fails
+        """
+        client = NativeAppAuthClient(self.client_id)
+        client.oauth2_start_flow(requested_scopes=self.scopes)
+        
+        auth_url = client.oauth2_get_authorize_url()
+        
+        print("\nAuthentication required for Globus access.")
+        print("Your browser will open to complete authentication.\n")
+        print("If the browser doesn't open automatically, please visit:")
+        print(f"  {auth_url}\n")
+        
+        try:
+            webbrowser.open(auth_url, new=2)
+        except:
+            pass
+        
+        auth_code       = input("Enter the authorization code from the browser: ")
+        token_response  = client.oauth2_exchange_code_for_tokens(auth_code)
+        transfer_tokens = token_response.by_resource_server["transfer.api.globus.org"]
+
+        # Create new secrets instance
+        self.secrets = GlobusSecrets(
+            access_token  = transfer_tokens["access_token"],
+            expires_at    = transfer_tokens["expires_at"],
+            refresh_token = transfer_tokens["refresh_token"],
+            scope         = transfer_tokens["scope"]
+        )
+        
+        # Save to disk for future use
+        self.secrets.save()
+        
+        authorizer = RefreshTokenAuthorizer(
+            auth_client   = client,
+            refresh_token = self.secrets.refresh_token.get_secret_value()
+        )
+        
+        return TransferClient(authorizer=authorizer)
     
     def authenticate(self) -> TransferClient:
         """
         Obtain an authenticated Transfer client, handling all OAuth2 flows.
         
         This method implements lazy authentication with automatic token refresh.
-        If valid tokens exist in storage, they are used to create an authorizer
-        that will automatically refresh expired tokens. If no tokens exist or
-        refresh fails, the user is guided through a browser-based OAuth2 flow.
+        If valid secrets exist in the application context, they are used to create
+        an authorizer that will automatically refresh expired tokens. If no secrets
+        exist or refresh fails, the user is guided through a browser-based OAuth2 flow.
         
         The authentication flow:
-        1. Check for existing tokens in secure storage
-        2. If found, create authorizer with refresh capability
+        1. Check for existing secrets in application context
+        2. If found and valid, create authorizer with refresh capability
         3. If missing or invalid, perform browser-based OAuth2
-        4. Persist new tokens for future use
+        4. Update application context with new secrets
         
         Returns:
             Authenticated TransferClient ready for operations
@@ -78,22 +125,20 @@ class GlobusManager:
         Raises:
             Exception: If authentication fails after user interaction
         """
-        tokens = self.token_store.load_tokens()
-        
-        if tokens:
+        if self.secrets and self.secrets.is_valid:
             # Create authorizer that can refresh expired tokens
             auth_client = NativeAppAuthClient(self.client_id)
             authorizer  = RefreshTokenAuthorizer(
-                access_token  = tokens.access_token,
+                access_token  = self.secrets.access_token.get_secret_value(),
                 auth_client   = auth_client,
-                expires_at    = tokens.expires_at,
-                refresh_token = tokens.refresh_token
+                expires_at    = self.secrets.expires_at,
+                refresh_token = self.secrets.refresh_token.get_secret_value()
             )
             
             # The authorizer will automatically refresh on first use if needed
             return TransferClient(authorizer=authorizer)
         
-        # No valid tokens, perform OAuth2 flow
+        # No valid secrets, perform OAuth2 flow
         return self._do_native_app_authentication()
     
     def get_local_endpoints(self, transfer_client: TransferClient) -> list[dict]:
@@ -282,53 +327,3 @@ class GlobusManager:
                 return False
                 
             time.sleep(polling_interval)
-    
-    def _do_native_app_authentication(self) -> TransferClient:
-        """
-        Perform interactive OAuth2 authentication via browser.
-        
-        Implements the OAuth2 native app flow by opening the user's browser
-        to the Globus authentication page. After the user approves access,
-        they paste the authorization code back into the CLI to complete
-        the flow.
-        
-        Returns:
-            Authenticated TransferClient with fresh tokens
-            
-        Raises:
-            Exception: If the user cancels or authentication fails
-        """
-        client = NativeAppAuthClient(self.client_id)
-        client.oauth2_start_flow(requested_scopes=self.scopes)
-        
-        auth_url = client.oauth2_get_authorize_url()
-        
-        print("\nAuthentication required for Globus access.")
-        print("Your browser will open to complete authentication.\n")
-        print("If the browser doesn't open automatically, please visit:")
-        print(f"  {auth_url}\n")
-        
-        try:
-            webbrowser.open(auth_url, new=2)
-        except:
-            pass
-        
-        auth_code       = input("Enter the authorization code from the browser: ")
-        token_response  = client.oauth2_exchange_code_for_tokens(auth_code)
-        transfer_tokens = token_response.by_resource_server["transfer.api.globus.org"]
-
-        token_model = GlobusTokenModel(
-            access_token  = transfer_tokens["access_token"],
-            expires_at    = transfer_tokens["expires_at"],
-            refresh_token = transfer_tokens["refresh_token"],
-            scope         = transfer_tokens["scope"]
-        )
-        
-        self.token_store.save_tokens(token_model)
-        
-        authorizer = RefreshTokenAuthorizer(
-            auth_client   = client,
-            refresh_token = token_model.refresh_token
-        )
-        
-        return TransferClient(authorizer=authorizer)

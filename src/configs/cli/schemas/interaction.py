@@ -34,10 +34,6 @@ class DownloadModel(BaseModel, extra="forbid"):
         default     = "urn:globus:auth:scope:transfer.api.globus.org:all",
         description = "OAuth2 scopes required for Globus transfer operations."
     )
-    globus_token_file: str = Field(
-        default     = ".config/thermur/tokens/globus_tokens.json",
-        description = "Path to securely store Globus OAuth tokens relative to user home."
-    )
     show_numbers_default: bool = Field(
         default     = True,
         description = "Show numbers by default in file selection tables."

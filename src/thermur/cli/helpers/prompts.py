@@ -336,6 +336,44 @@ class CLIPrompts:
                     "error"
                 )
 
+    def select_globus_endpoint(self, endpoints: list[dict]) -> dict | None:
+        """
+        Select a Globus endpoint from multiple available endpoints.
+        
+        When multiple local Globus endpoints are found, prompts the user
+        to select which one to use for transfers.
+        
+        Args:
+            endpoints: List of endpoint dictionaries with 'display_name' and 'id'
+            
+        Returns:
+            Selected endpoint dict, or None if cancelled
+        """
+        if not endpoints:
+            return None
+            
+        if len(endpoints) == 1:
+            return endpoints[0]
+            
+        self.ui.print_message("Multiple local endpoints found:", "info")
+        for i, e in enumerate(endpoints):
+            self.ui.console.print(f"  {i+1}. {e['display_name']}")
+            
+        selected = questionary.select(
+            choices = [e['display_name'] for e in endpoints],
+            message = "Select local endpoint:",
+            style   = self.thermal_style
+        ).ask()
+        
+        if not selected:
+            return None
+            
+        for e in endpoints:
+            if e['display_name'] == selected:
+                return e
+                
+        return None
+
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
         Presents a final summary of all chosen configurations for user confirmation.

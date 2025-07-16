@@ -31,15 +31,11 @@ class AppContext:
         Initialize the application context with the loaded configuration.
         """
         self.cfg     = cfg
-        self.file_io = FileIO(self.cfg.download.cache_dir)
         self.ui      = ThermurUI(self.cfg.display)
+        self.file_io = FileIO(self.cfg.download.cache_dir)
+        self.globus  = GlobusManager(self.cfg.download)
         self.prompts = CLIPrompts(self.cfg, self.ui)
         self.system  = SystemInspector(cfg)
-        self.globus  = GlobusManager(
-            client_id       = self.cfg.download.globus_client_id,
-            scopes          = self.cfg.download.globus_scopes,
-            token_file_path = self.cfg.download.globus_token_file
-        )
 
 
 class ThermurCLI:
