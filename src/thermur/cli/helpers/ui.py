@@ -528,6 +528,21 @@ class ThermurUI:
         )
         
         return progress_bar, details_text
+    
+    def print_auth_prompt(self, auth_url: str) -> None:
+        """
+        Display authentication prompt with URL.
+        
+        Shows the authentication URL in a user-friendly format with
+        proper styling and instructions.
+        
+        Args:
+            auth_url : The authentication URL to display
+        """
+        self.console.print()
+        self.print_message("Globus authentication required to access dataset files.", "info")
+        self.console.print("\nPlease visit the following URL to authenticate:")
+        self.console.print(f"\n  [link={auth_url}]{auth_url}[/link]\n")
 
     def print_command_example(
         self,
@@ -698,7 +713,6 @@ class ThermurUI:
         self.console.print()
         self.console.print(Rule(title, style=style, align="center"))
         self.console.print()
-
 
     def print_wandb_info(self, project: str, url: str | None = None):
         """

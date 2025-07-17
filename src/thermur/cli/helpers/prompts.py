@@ -8,7 +8,6 @@ DictConfig objects for all static text and configuration.
 """
 from omegaconf   import DictConfig
 from rich.align  import Align
-from rich.prompt import Confirm
 from typing      import Any
 
 import questionary
@@ -147,6 +146,27 @@ class CLIPrompts:
         )
         return project_name
     
+    def confirm(
+        self, 
+        message : str, 
+        default : bool = True
+    ) -> bool:
+        """
+        General purpose confirmation prompt.
+        
+        Args:
+            message : The question to ask the user
+            default : Default value if user just presses enter
+            
+        Returns:
+            True if user confirms, False otherwise
+        """
+        return questionary.confirm(
+            default = default,
+            message = message,
+            style   = self.thermal_style
+        ).ask()
+    
     def confirm_download(self, file_info: dict) -> bool:
         """
         Prompts user to confirm file download operation.
@@ -171,11 +191,7 @@ class CLIPrompts:
         )
         self.ui.console.print()
         
-        return questionary.confirm(
-            default = True,
-            message = "Proceed with download?",
-            style   = self.thermal_style
-        ).ask()
+        return self.confirm(message = "Proceed with download?")
 
     def confirm_system_override(self, issues: list[str]) -> bool:
         """
@@ -200,11 +216,9 @@ class CLIPrompts:
         self.ui.console.print(warning_panel)
         self.ui.console.print()
 
-        warning_style = self.ui.display.styles['warning']
-        return Confirm.ask(
-            console = self.ui.console,
-            default = False,
-            prompt  = f"[{warning_style}]Do you want to proceed anyway?[/]"
+        return self.confirm(
+            message = "Do you want to proceed anyway?",
+            default = False
         )
     
     def select_configuration_preset(self) -> str | None:
@@ -432,8 +446,7 @@ class CLIPrompts:
         self.ui.console.print(ready_panel)
         self.ui.console.print()
 
-        return Confirm.ask(
-            "[bold bright_green]Start training with this configuration?[/]",
-            console = self.ui.console,
+        return self.confirm(
+            message = "Start training with this configuration?",
             default = True
         )

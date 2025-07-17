@@ -52,59 +52,73 @@ class GlobusManager:
         self.scopes       = download.globus_scopes
         self.secrets      = GlobusSecrets()
 
-    def _do_native_app_authentication(self) -> TransferClient:
+    def finalize_oauth2_flow(
+        self, 
+        auth_code : str,
+        client    : NativeAppAuthClient
+    ) -> TransferClient:
         """
-        Perform interactive OAuth2 authentication via browser.
+        Complete OAuth2 authentication with the provided code.
         
-        Implements the OAuth2 native app flow by opening the user's browser
-        to the Globus authentication page. After the user approves access,
-        they paste the authorization code back into the CLI to complete
-        the flow.
-        
+        Args:
+            auth_code : Authorization code from the browser
+            client    : The NativeAppAuthClient from start_oauth2_flow
+            
         Returns:
             Authenticated TransferClient with fresh tokens
-            
-        Raises:
-            Exception: If the user cancels or authentication fails
         """
-        client = NativeAppAuthClient(self.client_id)
-        client.oauth2_start_flow(requested_scopes=self.scopes)
-        
-        auth_url = client.oauth2_get_authorize_url()
-        
-        print("\nAuthentication required for Globus access.")
-        print("Your browser will open to complete authentication.\n")
-        print("If the browser doesn't open automatically, please visit:")
-        print(f"  {auth_url}\n")
-        
-        try:
-            webbrowser.open(auth_url, new=2)
-        except:
-            pass
-        
-        auth_code       = input("Enter the authorization code from the browser: ")
         token_response  = client.oauth2_exchange_code_for_tokens(auth_code)
         transfer_tokens = token_response.by_resource_server["transfer.api.globus.org"]
-
-        # Create new secrets instance
-        self.secrets = GlobusSecrets(
-            access_token  = transfer_tokens["access_token"],
-            expires_at    = transfer_tokens["expires_at"],
-            refresh_token = transfer_tokens["refresh_token"],
-            scope         = transfer_tokens["scope"]
+        
+        # Store only the refresh token and scope
+        self.secrets    = GlobusSecrets(
+            refresh_token = transfer_tokens.get("refresh_token"),
+            scope         = transfer_tokens.get("scope")
         )
         
-        # Save to disk for future use
         self.secrets.save()
         
+        # Create authorizer with just the refresh token
+        # The SDK will handle getting/refreshing access tokens as needed
         authorizer = RefreshTokenAuthorizer(
             auth_client   = client,
-            refresh_token = self.secrets.refresh_token.get_secret_value()
+            refresh_token = transfer_tokens["refresh_token"]
         )
         
         return TransferClient(authorizer=authorizer)
     
-    def authenticate(self) -> TransferClient:
+    def get_local_endpoints(self, transfer_client: TransferClient) -> list[dict]:
+        """
+        Retrieve all Globus Connect Personal endpoints for the authenticated user.
+        
+        Queries the Globus service for endpoints where the current user has
+        ownership. This is typically used to find the local endpoint created
+        by Globus Connect Personal for receiving transferred files.
+        
+        Args:
+            transfer_client : Authenticated client for API calls
+            
+        Returns:
+            List of endpoint information dictionaries containing:
+            - id           : Endpoint UUID
+            - display_name : Human-readable endpoint name  
+            - description  : Optional endpoint description
+        """
+        endpoints = transfer_client.endpoint_search(
+            filter_scope = "my-endpoints",
+            filter_type  = "GCP"
+        )
+        
+        return [
+            {
+                "description"  : ep.get("description", ""),
+                "display_name" : ep["display_name"],
+                "id"           : ep["id"]
+            }
+            for ep in endpoints
+        ]
+    
+    def get_or_create_client(self) -> TransferClient:
         """
         Obtain an authenticated Transfer client, handling all OAuth2 flows.
         
@@ -128,48 +142,15 @@ class GlobusManager:
         if self.secrets and self.secrets.is_valid:
             auth_client = NativeAppAuthClient(self.client_id)
             authorizer  = RefreshTokenAuthorizer(
-                access_token  = self.secrets.access_token.get_secret_value(),
                 auth_client   = auth_client,
-                expires_at    = self.secrets.expires_at,
                 refresh_token = self.secrets.refresh_token.get_secret_value()
             )
             
-            # The authorizer will automatically refresh on first use if needed
+            # The authorizer will automatically get/refresh access tokens as needed
             return TransferClient(authorizer=authorizer)
         
-        return self._do_native_app_authentication()
-    
-    def get_local_endpoints(self, transfer_client: TransferClient) -> list[dict]:
-        """
-        Retrieve all Globus Connect Personal endpoints for the authenticated user.
-        
-        Queries the Globus service for endpoints where the current user has
-        ownership. This is typically used to find the local endpoint created
-        by Globus Connect Personal for receiving transferred files.
-        
-        Args:
-            transfer_client : Authenticated client for API calls
-            
-        Returns:
-            List of endpoint information dictionaries containing:
-            - id: Endpoint UUID
-            - display_name: Human-readable endpoint name  
-            - description: Optional endpoint description
-        """
-        # Filter for GCP endpoints owned by the user
-        endpoints = transfer_client.endpoint_search(
-            filter_scope = "my-endpoints",
-            filter_type  = "GCP"
-        )
-        
-        return [
-            {
-                "description"  : ep.get("description", ""),
-                "display_name" : ep["display_name"],
-                "id"           : ep["id"]
-            }
-            for ep in endpoints
-        ]
+        # If no valid secrets, auth needs to be handled by caller
+        return None
     
     def list_endpoint_directory(
         self,
@@ -245,7 +226,7 @@ class GlobusManager:
             destination_endpoint = dest_endpoint,
             label                = label,
             source_endpoint      = source_endpoint,
-            sync_level           = "checksum"  # Verify integrity
+            sync_level           = "checksum"
         )
         
         for source_path, dest_path in items:
@@ -287,6 +268,24 @@ class GlobusManager:
             "nice_status"       : task.get("nice_status", "Unknown"),
             "status"            : task["status"]
         }
+    
+    def start_oauth2_flow(self) -> tuple[NativeAppAuthClient, str]:
+        """
+        Start OAuth2 flow and return the authentication URL.
+        
+        Initiates the OAuth2 native app flow and generates the authorization
+        URL for browser-based authentication. The returned client object must
+        be preserved to complete the flow after user authorization.
+        
+        Returns:
+            Tuple of (auth_client, auth_url) for the OAuth2 flow
+        """
+        client = NativeAppAuthClient(self.client_id)
+        client.oauth2_start_flow(
+            requested_scopes=self.scopes,
+            refresh_tokens=True  # Enable refresh tokens
+        )
+        return client, client.oauth2_get_authorize_url()
     
     def wait_for_transfer(
         self,

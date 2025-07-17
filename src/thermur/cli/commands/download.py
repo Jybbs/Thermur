@@ -6,7 +6,9 @@ from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
 from globus_sdk import TransferClient
+from pathlib    import Path
 from typer      import Context
+from webbrowser import open
 
 
 def download(ctx: Context):
@@ -44,12 +46,50 @@ class DownloadCommand:
             ctx: The Typer context containing AppContext with configuration,
                  UI utilities, and system inspection capabilities.
         """
-        self.cache_dir = ctx.obj.cfg.download.cache_dir
+        self.cache_dir = Path(ctx.obj.cfg.download.cache_dir)
         self.cfg       = ctx.obj.cfg
         self.globus    = ctx.obj.globus
         self.prompts   = ctx.obj.prompts
         self.system    = ctx.obj.system
         self.ui        = ctx.obj.ui
+
+    def _ensure_authentication(self) -> TransferClient:
+        """
+        Ensure we have an authenticated Globus client.
+        
+        Attempts to use existing authentication tokens, and if not available,
+        guides the user through the browser-based OAuth2 flow.
+        
+        Returns:
+            Authenticated TransferClient
+            
+        Raises:
+            Exception: If authentication fails
+        """
+        globus_client = self.globus.get_or_create_client()
+        
+        if globus_client is None:
+            auth_client, auth_url = self.globus.start_oauth2_flow()
+            self.ui.print_auth_prompt(auth_url)
+            
+            if self.prompts.confirm("Open browser to complete authentication?"):
+                try:
+                    open(auth_url, new=2)
+                    self.ui.print_message(
+                        message  = "Browser opened successfully", 
+                        msg_type = "success"
+                    )
+                except:
+                    self.ui.print_message(
+                        message  = "Unable to open browser automatically", 
+                        msg_type = "warning"
+                    )
+            
+            auth_code = input("Enter the authorization code from the browser: ")
+            return self.globus.finalize_oauth2_flow(
+                auth_code = auth_code,
+                client    = auth_client
+            )
     
     def _get_available_files(self, globus_client: TransferClient) -> list[dict]:
         """
@@ -281,7 +321,6 @@ class DownloadCommand:
         if self.prompts.confirm("Wait for transfer to complete?"):
             self._monitor_transfer(file_info, globus_client, task_id)
     
-    
     def run(self):
         """
         Executes the download workflow.
@@ -292,8 +331,9 @@ class DownloadCommand:
         self.ui.print_header("Data Acquisition")
         
         try:
-            globus_client   = self.globus.authenticate()
+            globus_client   = self._ensure_authentication()
             available_files = self._get_available_files(globus_client)
+            
         except Exception as e:
             self.ui.print_message(f"Unable to connect to Globus: {str(e)}", "error")
             return

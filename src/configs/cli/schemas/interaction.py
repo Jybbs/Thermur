@@ -19,7 +19,7 @@ class DownloadModel(BaseModel, extra="forbid"):
         description = "Local directory for caching downloaded files."
     )
     globus_client_id: str = Field(
-        default     = "d0f1d9b0-bd81-4108-be74-3ed532f15e86",
+        default     = "ac349f52-8197-4a41-8d6d-5ae1c879273f",
         description = "Native app client ID for Globus OAuth2 authentication flow."
     )
     globus_dataset_path: str = Field(
