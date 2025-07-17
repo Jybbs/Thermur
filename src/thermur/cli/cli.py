@@ -32,7 +32,6 @@ class AppContext:
         """
         self.cfg     = cfg
         self.ui      = ThermurUI(self.cfg.display)
-        self.file_io = FileIO(self.cfg.download.cache_dir)
         self.globus  = GlobusManager(self.cfg.download)
         self.prompts = CLIPrompts(self.cfg, self.ui)
         self.system  = SystemInspector(cfg)

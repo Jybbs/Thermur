@@ -5,6 +5,7 @@ This module provides a consistent console interface leveraging Rich's
 built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
+from collections  import Counter
 from omegaconf    import DictConfig
 from rich         import box, progress
 from rich.align   import Align
@@ -361,103 +362,110 @@ class ThermurUI:
                 "\n".join(f"• {i}" for i in issues)
             )
         )
-
-    def create_file_table(
-        self,
-        available_files : list[dict],
-        existing_files  : set[str],
-        group_by_field  : str      = None,
-        group_extractor : callable = None,
-        show_numbers    : bool     = True,
-        title           : str      = "Available Files"
-    ) -> tuple[Table, dict[int, dict]]:
-        """
-        Create a table displaying files with download status.
-        
-        Args:
-            available_files : List of file info dictionaries
-            existing_files  : Set of already downloaded file names
-            group_by_field  : Optional field name to extract grouping info
-            group_extractor : Optional function to extract group from filename
-            show_numbers    : If True, show numbers for selection; if False, show all with status
-            title           : Table title
-            
-        Returns:
-            Tuple of (formatted Table, mapping of indices to file info or empty dict)
-        """
-        columns = [
-            ("#",      "bright_cyan", 4,  "right") if show_numbers else 
-            ("Status", "green",       6,  "center"),
-            ("File",   "cyan",        40, "left"),
-            ("Size",   "yellow",      10, "right"),
-        ]
-        
-        if group_by_field or group_extractor:
-            columns.append(("Group", "magenta", 12, "left"))
-            
-        table          = self.create_aligned_table(columns=columns, title=title)
-        file_index_map = {}
-        
-        if show_numbers:
-            # Only show undownloaded files for selection
-            files_to_show = [f for f in available_files if f['name'] not in existing_files]
-        else:
-            # Show all files for listing
-            files_to_show = available_files
-        
-        for idx, file_info in enumerate(files_to_show, 1):
-            name = file_info['name']
-            size = file_info['size']
-            
-            if show_numbers:
-                file_index_map[idx] = file_info
-                row = [str(idx), name, f"{size / 1e9:.1f} GB"]
-            else:
-                status = "✓" if name in existing_files else ""
-                row = [status, name, f"{size / 1e9:.1f} GB"]
-            
-            if group_by_field and group_by_field in file_info:
-                row.append(str(file_info[group_by_field]))
-            elif group_extractor:
-                row.append(group_extractor(name))
-                
-            table.add_row(*row)
-            
-        return table, file_index_map
     
-    def display_file_summary(
+    def display_download_summary(
         self,
         available_files : list[dict],
-        existing_files  : set[str]
+        file_status     : dict[str, str]
     ):
         """
-        Display summary statistics for dataset files.
+        Display summary statistics for dataset download status.
+        
+        Shows total dataset size, downloaded size, and file counts
+        broken down by status.
         
         Args:
-            available_files : List of all available files
-            existing_files  : Set of already downloaded file names
+            available_files : List of all available files with size info
+            file_status     : Dict mapping filename to status
         """
+        statuses       = Counter(file_status.values())
+        size_by_status = {
+            status: sum(
+                f['size'] for f in available_files 
+                if file_status.get(f['name']) == status
+            )
+            for status in ['downloaded', 'incomplete', 'missing']
+        }
+        
         total_size = sum(f['size'] for f in available_files)
-        downloaded_size = sum(
-            f['size'] for f in available_files 
-            if f['name'] in existing_files
-        )
         
         self.print_message(
             f"Total: {len(available_files)} files ({total_size / 1e9:.1f} GB)",
             "info"
         )
-        self.print_message(
-            f"Downloaded: {len(existing_files)} files ({downloaded_size / 1e9:.1f} GB)",
-            "success"
-        )
         
-        remaining = len(available_files) - len(existing_files)
-        if remaining > 0:
+        if statuses['downloaded'] > 0:
+            size_gb = size_by_status['downloaded'] / 1e9
             self.print_message(
-                f"Remaining: {remaining} files ({(total_size - downloaded_size) / 1e9:.1f} GB)",
+                f"Downloaded: {statuses['downloaded']} files ({size_gb:.1f} GB)",
+                "success"
+            )
+            
+        if statuses['incomplete'] > 0:
+            size_gb = size_by_status['incomplete'] / 1e9
+            self.print_message(
+                f"Incomplete: {statuses['incomplete']} files ({size_gb:.1f} GB)",
                 "warning"
             )
+            
+        if statuses['missing'] > 0:
+            size_gb = size_by_status['missing'] / 1e9
+            self.print_message(
+                f"Not downloaded: {statuses['missing']} files ({size_gb:.1f} GB)",
+                "info"
+            )
+
+    def display_download_table(
+        self,
+        available_files : list[dict],
+        file_status     : dict[str, str],
+        title           : str  = "Available Files"
+    ) -> dict[int, dict]:
+        """
+        Display a table of files with their download status.
+        
+        Shows all available files with status indicators and selection
+        numbers. Automatically groups files by case prefix for the 
+        Moisseeva dataset.
+        
+        Args:
+            available_files : List of file info dictionaries with 'name' and 'size'
+            file_status     : Dict mapping filename to status ('downloaded', 'incomplete', 'missing')
+            title           : Table title
+            
+        Returns:
+            Dict mapping selection numbers to file info
+        """
+        status_symbols = {
+            'downloaded' : Text("✅", style="green"),
+            'incomplete' : Text("⚠️", style="yellow"), 
+            'missing'    : Text(" ",  style="dim")
+        }
+        
+        columns = [
+            ("#",      "bright_cyan", 4,  "right"),
+            ("Status", "green",       8,  "center"),
+            ("File",   "cyan",        40, "left"),
+            ("Size",   "yellow",      10, "right"),
+            ("Case",   "magenta",     12, "left")
+        ]
+        
+        table          = self.create_aligned_table(columns=columns, title=title)
+        file_index_map = {}
+        
+        for i, file_info in enumerate(available_files, 1):
+            name   = file_info['name']
+            size   = file_info['size']
+            status = file_status.get(name, 'missing')
+            case   = name.split('F')[0] if 'F' in name else "Unknown"
+            
+            file_index_map[i] = file_info
+            row = [str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB", case]
+                
+            table.add_row(*row)
+            
+        self.console.print(table)
+        return file_index_map
 
     def format_fire_gradient_text(self, text: str) -> Text:
         """

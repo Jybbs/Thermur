@@ -34,10 +34,6 @@ class DownloadModel(BaseModel, extra="forbid"):
         default     = "urn:globus:auth:scope:transfer.api.globus.org:all",
         description = "OAuth2 scopes required for Globus transfer operations."
     )
-    show_numbers_default: bool = Field(
-        default     = True,
-        description = "Show numbers by default in file selection tables."
-    )
 
 
 class PresetsModel(BaseModel, extra="forbid"):

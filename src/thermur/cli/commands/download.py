@@ -6,35 +6,26 @@ from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
 from globus_sdk import TransferClient
-from typer      import Context, Option
+from typer      import Context
 
 
-def download(
-    ctx  : Context,
-    list : bool = Option(
-        False,
-        "--list", "-l", 
-        help = "List available files and their download status"
-    )
-):
+def download(ctx: Context):
     """
     📥 Download simulation data for training.
     
-    Downloads NetCDF files from the Moisseeva (2020) wildfire plume dataset
-    hosted on FRDR. The system tracks downloaded files and shows checkmarks
-    for files you already have. Interactive file selection allows you to choose
-    exactly which file to download.
+    Shows NetCDF files from the Moisseeva (2020) wildfire plume dataset
+    hosted on FRDR. Files you already have are marked with checkmarks.
+    Select any file to download or re-download.
     
     The dataset contains 147 LES simulations totaling 5.33 TB, with individual
     files ranging from 20-50 GB each. Each file represents a different fire
     scenario with varying conditions (case, fire type, run number).
     
-    Examples:
-        thermur download --list    # Show all files with download status
-        thermur download           # Interactive selection and download
+    Example:
+        thermur download    # Show files and select for download
     """
     command = DownloadCommand(ctx)
-    command.run(list)
+    command.run()
 
 
 class DownloadCommand:
@@ -53,12 +44,62 @@ class DownloadCommand:
             ctx: The Typer context containing AppContext with configuration,
                  UI utilities, and system inspection capabilities.
         """
-        self.cfg     = ctx.obj.cfg
-        self.file_io = ctx.obj.file_io
-        self.globus  = ctx.obj.globus
-        self.prompts = ctx.obj.prompts
-        self.system  = ctx.obj.system
-        self.ui      = ctx.obj.ui
+        self.cache_dir = ctx.obj.cfg.download.cache_dir
+        self.cfg       = ctx.obj.cfg
+        self.globus    = ctx.obj.globus
+        self.prompts   = ctx.obj.prompts
+        self.system    = ctx.obj.system
+        self.ui        = ctx.obj.ui
+    
+    def _get_available_files(self, globus_client: TransferClient) -> list[dict]:
+        """
+        Retrieve list of NetCDF files from the Globus endpoint.
+        
+        Args:
+            globus_client : Authenticated transfer client
+            
+        Returns:
+            List of file dictionaries with 'name', 'size', and 'path' keys
+        """
+        files = self.globus.list_endpoint_directory(
+            endpoint_id     = self.cfg.download.globus_endpoint_id,
+            path            = self.cfg.download.globus_dataset_path,
+            transfer_client = globus_client
+        )
+        
+        return [
+            f for f in files 
+            if f["type"] == "file" and f["name"].endswith(".nc")
+        ]
+    
+    def _get_download_status(self, available_files: list[dict]) -> dict[str, str]:
+        """
+        Check download status for each file.
+        
+        Compares available files against local cache directory to determine
+        status: 'downloaded', 'incomplete', or 'missing'.
+        
+        Args:
+            available_files : List of files from Globus with size info
+            
+        Returns:
+            Dict mapping filename to status
+        """
+        if not self.cache_dir.exists():
+            return {f['name']: 'missing' for f in available_files}
+            
+        status = {}
+        for file_info in available_files:
+            local_path = self.cache_dir / file_info['name']
+            
+            if not local_path.exists():
+                status[file_info['name']] = 'missing'
+            elif local_path.stat().st_size != file_info['size']:
+                status[file_info['name']] = 'incomplete'
+            else:
+                status[file_info['name']] = 'downloaded'
+                
+        return status
     
     def _get_local_endpoint(self, globus_client: TransferClient) -> dict | None:
         """
@@ -160,11 +201,41 @@ class DownloadCommand:
         
         if success:
             self.ui.print_message(f"Transfer complete: {file_info['name']}", "success")
-            self.file_io.update_manifest(file_info)
         else:
             self.ui.print_message("Transfer failed or timed out", "error")
             
         return success
+    
+    def _handle_file_selection(
+        self,
+        file_info     : dict,
+        file_status   : dict[str, str],
+        globus_client : TransferClient
+    ) -> None:
+        """
+        Handle user's file selection with appropriate prompts.
+        
+        Checks the file's current status and prompts for confirmation
+        if needed before initiating the download.
+        
+        Args:
+            file_info     : Selected file information
+            file_status   : Dict mapping filenames to status
+            globus_client : Authenticated transfer client
+        """
+        status = file_status.get(file_info['name'], 'missing')
+        
+        if status == 'downloaded':
+            if not self.prompts.confirm(f"{file_info['name']} is already downloaded. Re-download?"):
+                return
+        elif status == 'incomplete':
+            self.ui.print_message(
+                f"{file_info['name']} appears incomplete. Will re-download.",
+                "warning"
+            )
+                
+        if self.prompts.confirm_download(file_info):
+            self._perform_download(file_info, globus_client)
     
     def _perform_download(self, file_info: dict, globus_client: TransferClient):
         """
@@ -210,85 +281,37 @@ class DownloadCommand:
         if self.prompts.confirm("Wait for transfer to complete?"):
             self._monitor_transfer(file_info, globus_client, task_id)
     
-    def _show_files_and_summary(
-        self,
-        available_files : list[dict],
-        existing_files  : set[str],
-        show_numbers    : bool = False,
-    ) -> dict[int, dict]:
-        """
-        Display file table and summary.
-        
-        Args:
-            available_files : All available files
-            existing_files  : Already downloaded files
-            show_numbers    : Whether to show selection numbers
-            
-        Returns:
-            File index mapping if show_numbers is True
-        """
-        table, file_index_map = self.ui.create_file_table(
-            available_files  = available_files,
-            existing_files   = existing_files,
-            group_extractor  = lambda name: name.split('F')[0] if 'F' in name else "Unknown",
-            show_numbers     = show_numbers,
-            title            = "Moisseeva (2020) Dataset Files"
-        )
-        self.ui.console.print(table)
-        self.ui.console.print()
-        self.ui.display_file_summary(available_files, existing_files)
-        
-        return file_index_map if show_numbers else {}
     
-    def run(self, list_only: bool):
+    def run(self):
         """
         Executes the download workflow.
         
-        Args:
-            list_only: If True, only list files without downloading
+        Shows all available files with status indicators (downloaded, 
+        incomplete, or missing) and allows selection for download.
         """
         self.ui.print_header("Data Acquisition")
         
         try:
-            globus_client = self.globus.authenticate()
-            files         = self.globus.list_endpoint_directory(
-                endpoint_id     = self.cfg.download.globus_endpoint_id,
-                path            = self.cfg.download.globus_dataset_path,
-                transfer_client = globus_client
-            )
-            
-            available_files = [
-                f for f in files 
-                if f["type"] == "file" 
-                and f["name"].endswith(".nc")
-            ]
-            
+            globus_client   = self.globus.authenticate()
+            available_files = self._get_available_files(globus_client)
         except Exception as e:
-            self.ui.print_message(
-                f"Unable to connect to Globus: {str(e)}",
-                "error"
-            )
+            self.ui.print_message(f"Unable to connect to Globus: {str(e)}", "error")
             return
             
-        existing_files = self.file_io.check_existing_files()
+        file_status = self._get_download_status(available_files)
         
-        if list_only:
-            self._show_files_and_summary(available_files, existing_files, show_numbers=False)
-            return
-            
-        files_to_download = self.file_io.get_undownloaded_files(available_files)
-        
-        if not files_to_download:
-            self.ui.print_message("All files already downloaded! 🎉", "success")
-            return
-            
-        file_index_map = self._show_files_and_summary(
-            available_files, existing_files, show_numbers=self.cfg.download.show_numbers_default
+        file_index_map = self.ui.display_download_table(
+            available_files = available_files,
+            file_status     = file_status,
+            title           = "Moisseeva (2020) Dataset Files"
         )
+        
+        self.ui.console.print()
+        self.ui.display_download_summary(available_files, file_status)
         self.ui.console.print()
         
         selected_file = self.prompts.select_file_by_number(file_index_map)
-        if selected_file and self.prompts.confirm_download(selected_file):
-            self._perform_download(selected_file, globus_client)
+        if selected_file:
+            self._handle_file_selection(selected_file, file_status, globus_client)
         else:
             self.ui.print_message("Download cancelled", "warning")
