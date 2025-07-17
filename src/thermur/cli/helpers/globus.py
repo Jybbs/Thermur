@@ -50,7 +50,7 @@ class GlobusManager:
         self.dataset_path = download.globus_dataset_path
         self.endpoint_id  = download.globus_endpoint_id
         self.scopes       = download.globus_scopes
-        self.secrets      = GlobusSecrets.load()
+        self.secrets      = GlobusSecrets()
 
     def _do_native_app_authentication(self) -> TransferClient:
         """
@@ -126,7 +126,6 @@ class GlobusManager:
             Exception: If authentication fails after user interaction
         """
         if self.secrets and self.secrets.is_valid:
-            # Create authorizer that can refresh expired tokens
             auth_client = NativeAppAuthClient(self.client_id)
             authorizer  = RefreshTokenAuthorizer(
                 access_token  = self.secrets.access_token.get_secret_value(),
@@ -138,7 +137,6 @@ class GlobusManager:
             # The authorizer will automatically refresh on first use if needed
             return TransferClient(authorizer=authorizer)
         
-        # No valid secrets, perform OAuth2 flow
         return self._do_native_app_authentication()
     
     def get_local_endpoints(self, transfer_client: TransferClient) -> list[dict]:

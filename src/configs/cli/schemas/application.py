@@ -90,7 +90,7 @@ class CLIModel(BaseModel, extra="forbid"):
             },
             {
                 "desc"    : "Download training data",
-                "command" : "thermur download --max-files 5",
+                "command" : "thermur download",
                 "note"    : "Downloads WRF-Fire datasets"
             },
         ],
