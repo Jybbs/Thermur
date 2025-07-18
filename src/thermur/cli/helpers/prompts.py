@@ -6,9 +6,9 @@ preset selection, wandb configuration, override collection, and training
 confirmation. It uses the ThermurUI class to render complex components and 
 DictConfig objects for all static text and configuration.
 """
-from omegaconf   import DictConfig
-from rich.align  import Align
-from typing      import Any
+from itertools import islice
+from omegaconf import DictConfig
+from typing    import Any
 
 import questionary
 
@@ -305,56 +305,61 @@ class CLIPrompts:
         """
         Display files in paginated table format and allow selection.
         
-        Handles the complete pagination interaction loop, showing files
-        in pages with navigation controls and selection by number.
+        Presents a paginated view of available files with their download status,
+        allowing users to navigate between pages and select files using keyboard
+        commands. Uses Rich tables for display and questionary for input handling.
         
         Args:
-            available_files : List of file dictionaries with 'name' and 'size'
+            available_files : List of file dictionaries with 'name' and 'size' keys
             file_status     : Dict mapping filename to status
-            page_size       : Number of files per page
-            title_prefix    : Prefix for the page title
+            page_size       : Number of files to display per page
+            title_prefix    : Prefix for the page title display
             
         Returns:
-            Selected file dict or None if cancelled
+            Selected file dictionary or None if cancelled
         """
-        page  = 0
-        total = len(available_files)
+        page, total = 0, len(available_files)
+        pages = -(-total // page_size)
         
         while True:
-            page_slice = slice(page * page_size, (page + 1) * page_size)
-            page_files = available_files[page_slice]
-            page_title = f"{title_prefix} (Page {page + 1}/{-(-total // page_size)})"
-            
             self.ui.console.clear()
-            self.ui.print_header("Data Acquisition")
+            
+            start = page * page_size
+            page_files = list(islice(available_files, start, start + page_size))
+            
             self.ui.display_download_table(
                 available_files = page_files,
                 file_status     = file_status,
-                title           = page_title
+                title           = f"{title_prefix} (Page {page + 1}/{pages})"
             )
             self.ui.console.print()
             self.ui.display_download_summary(available_files, file_status)
             self.ui.console.print()
             
-            actions = filter(None, 
-                [
-                    "#: Select",
-                    "←: Prev" if page > 0 else None,
-                    "→: Next" if page_slice.stop < total else None,
-                    "q: Cancel"
-                ]
-            )
+            choices = list(map(str, range(len(page_files)))) + ["q", ""]
+            nav = ["[bold cyan]0-9[/]: Select", "[bold cyan]q[/]: Quit"]
             
-            choice = (questionary.text(
-                message = f"{', '.join(actions)}: ",
-                style   = self.thermal_style
-            ).ask() or "q").strip()
+            if page:
+                choices.append("p")
+                nav.insert(1, "[bold cyan]p[/]: Previous")
+            if start + page_size < total:
+                choices.append("n") 
+                nav.insert(-1, "[bold cyan]n[/]: Next")
             
-            match choice:
-                case "q": return None
-                case "←" if page > 0: page -= 1
-                case "→" if page_slice.stop < total: page += 1
-                case n if n.isdigit() and 0 <= int(n) < len(page_files):
+            self.ui.console.print("  ".join(nav) + "\n")
+            
+            if not (choice := questionary.text(
+                "Select",
+                style=self.thermal_style,
+                validate=lambda x: x.strip().lower() in choices
+            ).ask()):
+                return None
+            
+            match choice.strip().lower():
+                case "q" | "": return None
+                case "p": page -= 1
+                case "n": page += 1  
+                case n if n.isdigit():
                     return page_files[int(n)]
             
     def select_globus_endpoint(self, endpoints: list[dict]) -> dict | None:
@@ -442,7 +447,7 @@ class CLIPrompts:
         for key, value in summary_data:
             table.add_row(key, value)
 
-        self.ui.console.print(Align.center(table))
+        self.ui.console.print(table, justify="center")
         self.ui.console.print()
 
         ready_panel = self.ui.create_ready_panel(
