@@ -5,10 +5,11 @@ This module provides the 'download' command for acquiring simulation datasets
 from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
-from globus_sdk import TransferClient
-from pathlib    import Path
-from typer      import Context
-from webbrowser import open
+from collections import defaultdict
+from globus_sdk  import TransferClient
+from pathlib     import Path
+from typer       import Context
+from webbrowser  import open
 
 
 def download(ctx: Context):
@@ -68,7 +69,7 @@ class DownloadCommand:
         """
         globus_client = self.globus.get_or_create_client()
         
-        if globus_client is None:
+        if not globus_client:
             auth_client, auth_url = self.globus.start_oauth2_flow()
             self.ui.print_auth_prompt(auth_url)
             
@@ -79,17 +80,17 @@ class DownloadCommand:
                         message  = "Browser opened successfully", 
                         msg_type = "success"
                     )
-                except:
+                except Exception:
                     self.ui.print_message(
                         message  = "Unable to open browser automatically", 
                         msg_type = "warning"
                     )
             
-            auth_code = input("Enter the authorization code from the browser: ")
-            globus_client = self.globus.finalize_oauth2_flow(
-                auth_code = auth_code,
-                client    = auth_client
-            )
+            if auth_code := input("Enter the authorization code from the browser: "):
+                globus_client = self.globus.finalize_oauth2_flow(
+                    auth_code = auth_code,
+                    client    = auth_client
+                )
             self.ui.print_message(
                 message  = "Authentication successful! Credentials saved.",
                 msg_type = "success"
@@ -133,16 +134,15 @@ class DownloadCommand:
         if not self.cache_dir.exists():
             return {f['name']: 'missing' for f in available_files}
             
-        status = {}
+        status = defaultdict(lambda: 'missing')
         for file_info in available_files:
             local_path = self.cache_dir / file_info['name']
             
-            if not local_path.exists():
-                status[file_info['name']] = 'missing'
-            elif local_path.stat().st_size != file_info['size']:
-                status[file_info['name']] = 'incomplete'
-            else:
-                status[file_info['name']] = 'downloaded'
+            if local_path.exists():
+                status[file_info['name']] = (
+                    'downloaded' if local_path.stat().st_size == file_info['size']
+                    else 'incomplete'
+                )
                 
         return status
     
@@ -172,8 +172,7 @@ class DownloadCommand:
             )
             return None
             
-        selected = self.prompts.select_globus_endpoint(local_endpoints)
-        if not selected:
+        if not (selected := self.prompts.select_globus_endpoint(local_endpoints)):
             self.ui.print_message("No endpoint selected", "warning")
             
         return selected
@@ -200,12 +199,12 @@ class DownloadCommand:
         Returns:
             Task ID string or None if submission failed
         """
-        dest_path = f"/~/{self.cfg.download.cache_dir}/{file_info['name']}"
+        dest_path = Path("/~") / self.cfg.download.cache_dir / file_info['name']
         
         try:
             task_id = self.globus.submit_transfer_task(
                 dest_endpoint   = dest_endpoint,
-                items           = [(file_info['path'], dest_path)],
+                items           = [(file_info['path'], str(dest_path))],
                 label           = f"Thermur: {file_info['name']}",
                 source_endpoint = source_endpoint,
                 transfer_client = globus_client
@@ -299,8 +298,7 @@ class DownloadCommand:
         self.ui.console.print()
         self.ui.print_minor_section(f"Preparing transfer for {file_info['name']}")
         
-        local_endpoint = self._get_local_endpoint(globus_client)
-        if not local_endpoint:
+        if not (local_endpoint := self._get_local_endpoint(globus_client)):
             return
         
         self.ui.print_message(
@@ -312,14 +310,14 @@ class DownloadCommand:
             msg_type = "info"
         )
         
-        task_id = self._initiate_transfer(
-            dest_endpoint   = local_endpoint['id'],
-            file_info       = file_info,
-            globus_client   = globus_client,
-            source_endpoint = self.cfg.download.globus_endpoint_id
-        )
-        
-        if not task_id:
+        if not (task_id := 
+            self._initiate_transfer(
+                dest_endpoint   = local_endpoint['id'],
+                file_info       = file_info,
+                globus_client   = globus_client,
+                source_endpoint = self.cfg.download.globus_endpoint_id
+            )
+        ):
             return
             
         self.ui.print_message(f"Transfer submitted! Task ID: {task_id}", "success")

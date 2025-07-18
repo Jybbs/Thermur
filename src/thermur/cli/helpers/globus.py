@@ -15,10 +15,12 @@ The manager handles:
 import json
 import time
 
-from configs.cli import GlobusSecrets
-from globus_sdk  import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from omegaconf   import DictConfig
-from typing      import Optional
+from configs.cli   import GlobusSecrets
+from contextlib    import suppress
+from globus_sdk    import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
+from omegaconf     import DictConfig
+from pathlib       import Path
+from typing        import Optional
 
 
 class GlobusManager:
@@ -73,7 +75,8 @@ class GlobusManager:
             if value is not None:
                 file_path = self.secrets.secrets_path / field_name
                 file_path.write_text(json.dumps(value))
-                file_path.chmod(0o600)
+                with suppress(OSError):
+                    file_path.chmod(0o600)
     
     def _monitor_transfer_task(
         self,
@@ -238,7 +241,7 @@ class GlobusManager:
         return [
             {
                 "name" : item["name"],
-                "path" : f"{path.rstrip('/')}/{item['name']}",
+                "path" : str(Path(path) / item['name']),
                 "size" : item.get("size", 0),
                 "type" : item["type"]
             }
@@ -331,9 +334,7 @@ class GlobusManager:
         """
         start_time = time.time()
         
-        while True:
-            status = self._monitor_transfer_task(task_id, transfer_client)
-            
+        while status := self._monitor_transfer_task(task_id, transfer_client):
             match status["status"]:
                 case "SUCCEEDED" : return True
                 case "FAILED"    : return False

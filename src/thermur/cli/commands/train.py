@@ -107,15 +107,11 @@ class TrainCommand:
             preset           : The selected configuration preset.
             wandb_project    : The configured wandb project name.
         """
-        gpu = self.system.get_system_info()["cuda"]
-        if preset:
-            preset_display = (
-                self.cfg.presets.presets
-                    .get(preset, {})
-                    .get('emoji', preset)
-            )
-        else:
-            preset_display = "🧵"
+        gpu = self.system.get_system_info().get("cuda", False)
+        preset_display = (
+            self.cfg.presets.presets.get(preset, {}).get('emoji', preset)
+            if preset else "🧵"
+        )
             
         if not self.prompts.show_training_summary(
             {
@@ -196,12 +192,12 @@ class TrainCommand:
         meta_info = []
         if preset:
             preset_info = self.cfg.presets.presets.get(preset, {})
-            meta_info.append(f"Preset: {preset_info.get('emoji', '')} {preset}")
+            emoji = preset_info.get('emoji', '')
+            meta_info.append(f"Preset: {emoji} {preset}")
         
         if config_overrides:
             meta_info.append(f"Overrides: {len(config_overrides)}")
-            for override in config_overrides:
-                meta_info.append(f"  • {override}")
+            meta_info.extend(f"  • {override}" for override in config_overrides)
         
         if meta_info:
             self.ui.console.print()
@@ -327,7 +323,7 @@ class TrainCommand:
             if key.startswith('_'):
                 continue
                 
-            new_key = f"{parent_key}{separator}{key}" if parent_key else key
+            new_key = separator.join(filter(None, [parent_key, key]))
             
             if isinstance(value, dict):
                 items.update(self._flatten_config(value, new_key, separator))
@@ -364,8 +360,8 @@ class TrainCommand:
                 message  = self.cfg.messages.validation["config_fail"],
                 msg_type = "error"
             )
-            for issue in issues:
-                self.ui.console.print(f"  • {issue}")
+            for i, issue in enumerate(issues, start=1):
+                self.ui.console.print(f"  {i}. {issue}")
             self.ui.print_message(
                 message  = self.cfg.messages.validation["force_override"],
                 msg_type = "info"
@@ -470,13 +466,10 @@ class TrainCommand:
                 task_id   = task
             )
 
-            # Handle optional visualizer
-            visualizer_cfg = OmegaConf.select(cfg, "visualizer")
-            components['visualizer'] = (
-                instantiate(visualizer_cfg, pydantic_parser) 
-                if visualizer_cfg is not None 
-                else None
-            )
+            if visualizer_cfg := OmegaConf.select(cfg, "visualizer"):
+                components['visualizer'] = instantiate(visualizer_cfg, pydantic_parser)
+            else:
+                components['visualizer'] = None
 
         return components
 
@@ -588,11 +581,10 @@ class TrainCommand:
         imports = self._prepare_training_imports()
         self.ui.console.print()
 
-        overrides = []
-        if preset in list(self.cfg.presets.presets.keys()):
-            overrides.append(f"+preset={preset}")
-        if config_overrides:
-            overrides.extend(config_overrides)
+        overrides = (
+            ([f"+preset={preset}"] if preset in self.cfg.presets.presets else [])
+            + (config_overrides or [])
+        )
 
         def training_task(cfg):
             self._training_imports = imports
@@ -644,31 +636,25 @@ class TrainCommand:
         """
         self.ui.print_major_section("Configuration Setup")
 
-        preset = (
-            self.prompts.select_configuration_preset() 
-            if interactive and not preset 
-            else preset
-        )
+        if interactive and not preset:
+            preset = self.prompts.select_configuration_preset()
 
-        if preset:
-            preset_emoji = (
-                self.cfg.presets.presets
-                    .get(preset, {})
-                    .get('emoji', preset)
-            )
-            self.ui.print_message(
-                message  = f"Using preset: [bright_cyan]{preset_emoji}[/bright_cyan]",
-                msg_type = "config"
-            )
-        elif not interactive:
-            self.ui.print_message(
-                message  = "Using default configuration",
-                msg_type = "config"
-            )
+        match (preset, interactive):
+            case (preset, _) if preset:
+                preset_emoji = self.cfg.presets.presets.get(preset, {}).get('emoji', preset)
+                self.ui.print_message(
+                    message  = f"Using preset: [bright_cyan]{preset_emoji}[/bright_cyan]",
+                    msg_type = "config"
+                )
+            case (None, False):
+                self.ui.print_message(
+                    message  = "Using default configuration",
+                    msg_type = "config"
+                )
 
         default_project = self.cfg.wandb_integration.default_project
-        wandb_project   = (
-            self.prompts.ask_wandb_project_name(default_project) 
+        wandb_project = (
+            self.prompts.ask_wandb_project_name(default_project)
             if interactive and not wandb_project
             else wandb_project or default_project
         )

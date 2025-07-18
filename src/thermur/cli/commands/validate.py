@@ -5,7 +5,8 @@ This module provides the 'validate' command, which allows users to check
 their system setup and configuration syntax without initiating a full
 training run.
 """
-from typer import Context, Option
+from operator import itemgetter
+from typer    import Context, Option
 
 
 def validate(
@@ -83,18 +84,13 @@ class ValidateCommand:
                 overrides = config_overrides
             )
 
-        if issues:
-            self.ui.print_message(
-                message  = self.cfg.messages.validation["config_issues"], 
-                msg_type = "warning"
-            )
-            for issue in issues:
-                self.ui.console.print(f"  [warning]⚠️  {issue}[/warning]")
-        else:
-            self.ui.print_message(
-                message  = self.cfg.messages.validation["config_passed"],
-                msg_type = "success"
-            )
+        msg_key = "config_issues" if issues else "config_passed"
+        self.ui.print_message(
+            message  = self.cfg.messages.validation[msg_key],
+            msg_type = "warning" if issues else "success"
+        )
+        for i, issue in enumerate(issues, start=1):
+            self.ui.console.print(f"  [warning]⚠️  {i}. {issue}[/warning]")
 
         self.ui.print_major_section("Integration Check")
         status, details = self.system.check_wandb_status()
@@ -105,21 +101,16 @@ class ValidateCommand:
             self.ui.print_message(f"wandb: {details}", "success")
 
         self.ui.console.print()
-        if issues or "Not" in status:
-            self.ui.print_message(
-                message  = self.cfg.messages.validation["with_warnings"],
-                msg_type = "warning"
+        
+        if any([issues, "Not" in status]):
+            with_warn, review = itemgetter("with_warnings", "review_issues")(
+                self.cfg.messages.validation
             )
-            self.ui.print_message(
-                message  = self.cfg.messages.validation["review_issues"],
-                msg_type = "tip"
-            )
+            self.ui.print_message(with_warn, "warning")
+            self.ui.print_message(review,    "tip")
         else:
-            self.ui.print_message(
-                message  = self.cfg.messages.validation["all_passed"],
-                msg_type = "success"
+            all_pass, ready = itemgetter("all_passed", "system_ready")(
+                self.cfg.messages.validation
             )
-            self.ui.print_message(
-                message  = self.cfg.messages.validation["system_ready"],
-                msg_type = "success"
-            )
+            self.ui.print_message(all_pass, "success")
+            self.ui.print_message(ready,    "success")

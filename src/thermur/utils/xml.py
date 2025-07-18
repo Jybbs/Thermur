@@ -42,7 +42,7 @@ def generate_flock_xml(
     for i in range(agent_count):
         # Create a slight offset for each drone to prevent initial collisions
         offset   = 0.3 * i
-        position = f"0 {offset} 0" if spatial_dims == 3 else f"0 {offset} 0"
+        position = f"0 {offset} 0" if spatial_dims == 3 else f"0 {offset}"
         
         joints_xml = ""
         for j in range(spatial_dims):
@@ -58,9 +58,12 @@ def generate_flock_xml(
             />
             """
         
-        drone_body = drone_template.replace("$AGENT_ID$", str(i))
-        drone_body = drone_body.replace("$POSITION$", position)
-        drone_body = drone_body.replace("<!-- JOINTS_XML -->", joints_xml)
+        drone_body = (
+            drone_template
+            .replace("$AGENT_ID$", str(i))
+            .replace("$POSITION$", position)
+            .replace("<!-- JOINTS_XML -->", joints_xml)
+        )
         
         drone_bodies.append(drone_body)
         
@@ -75,9 +78,12 @@ def generate_flock_xml(
             name        = "drone_{i}_vel_{axis_name}"
         />""")
     
-    flock_xml = flock_template.replace("$TIMESTEP$", str(simulation_step))
-    flock_xml = flock_xml.replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
-    flock_xml = flock_xml.replace("<!-- ACTUATORS -->", "\n".join(actuator_defs))
+    flock_xml = (
+        flock_template
+        .replace("$TIMESTEP$", str(simulation_step))
+        .replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
+        .replace("<!-- ACTUATORS -->", "\n".join(actuator_defs))
+    )
     
     return flock_xml
 

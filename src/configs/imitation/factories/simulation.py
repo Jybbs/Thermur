@@ -13,7 +13,7 @@ from .flock             import build_action_spec, build_observation_spec
 from hydra_zen          import builds, zen
 from omegaconf          import SI
 from thermur.data       import WRFDataSource
-from thermur.simulation import compute_edge_index, SimulationEnv
+from thermur.simulation import SimulationEnv
 from thermur.utils      import set_seed
 
 
@@ -50,7 +50,6 @@ from external wildfire simulations (e.g., WRF-Fire outputs).
 build_simulation = builds(
     SimulationEnv,
     action_spec             = build_action_spec,
-    compute_edge_index      = compute_edge_index,
     data_source             = build_data_source,
     flock                   = SI("${flock}"),
     observation_spec        = build_observation_spec,

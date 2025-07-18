@@ -37,7 +37,7 @@ def cleanup_resources(
     trajectory.shutdown()
     pbar.close()
     
-    if visualizer is not None:
+    if visualizer:
         visualizer.close()
 
 
@@ -148,8 +148,7 @@ def train_imitation_learning(
         current_frames = data.numel()
         total_frames  += current_frames
         
-        if visualizer is not None:
-            latest_observation = data[-1].get("next")
+        if visualizer and (latest_observation := data[-1].get("next")):
             update_visualization(
                 latest_observation = latest_observation,
                 visualizer         = visualizer
@@ -158,17 +157,17 @@ def train_imitation_learning(
         pbar.update(current_frames)
         
         if total_frames > experience_buffer.batch_size:
-            batch     = experience_buffer.sample().to(device)
-            loss_dict = loss(batch)
-            loss      = loss_dict["loss"]
+            batch = experience_buffer.sample().to(device)
+            loss  = loss(batch)["loss"]
             
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
             
             if i % learning.log_interval == 0:
-                if wandb.mode != "disabled":
-                    wb.log({"train/loss": loss.item()}, step=total_frames)
+                wandb.mode != "disabled" and wb.log(
+                    {"train/loss": loss.item()}, step=total_frames
+                )
                 pbar.set_description(f"Loss: {loss.item():.4f}")
         
         if total_frames % learning.checkpoint_interval == 0:
@@ -211,6 +210,5 @@ def update_visualization(
         latest_observation : The most recent observation from the environment
         visualizer         : The visualization module instance
     """
-    if visualizer is not None:
-        visualizer.update(latest_observation)
-        visualizer.render()
+    visualizer.update(latest_observation)
+    visualizer.render()

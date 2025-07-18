@@ -110,9 +110,7 @@ class SafetyFilter:
         except Exception as e:
             if self.safety.qp_on_failure == "nominal":
                 return u_nominal
-            
-            else:
-                raise ValueError(f"QP safety filter failed to find a solution: {e}")
+            raise ValueError(f"QP safety filter failed to find a solution: {e}")
 
         return u_safe.view_as(u_nominal)
 
@@ -164,16 +162,9 @@ class ThermalBarrierFunction:
         Returns:
             A tuple containing (h_values, h_grads).
         """
-        temperature = flock["temperature"]
-        if "temperature_grad" in flock:
-            temp_grad = flock["temperature_grad"]
-
-        else:
-            # Fall back to gradient from agent position if not provided
-            temp_grad = None
-            
-        h_grads  = -temp_grad if temp_grad is not None else None
-        h_values = self.max_temperature - temperature
+        temp_grad = flock.get("temperature_grad", None)       
+        h_grads   = -temp_grad if temp_grad is not None else None
+        h_values  = self.max_temperature - flock["temperature"]
         
         return h_values, h_grads
     
@@ -184,10 +175,10 @@ class ThermalBarrierFunction:
         Returns:
             The activation rate as a percentage.
         """
-        if self.total_queries == 0:
-            return 0.0
-        
-        return (self.activation_count / self.total_queries) * 100.0
+        return (
+            0.0 if self.total_queries == 0 
+            else (self.activation_count / self.total_queries) * 100.0
+        )
         
     def log_activation(self, is_active: Tensor):
         """
