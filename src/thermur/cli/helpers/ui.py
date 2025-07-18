@@ -469,26 +469,16 @@ class ThermurUI:
             "info"
         )
         
-        if statuses['downloaded'] > 0:
-            size_gb = size_by_status['downloaded'] / 1e9
-            self.print_message(
-                f"Downloaded: {statuses['downloaded']} files ({size_gb:.1f} GB)",
-                "success"
-            )
-            
-        if statuses['incomplete'] > 0:
-            size_gb = size_by_status['incomplete'] / 1e9
-            self.print_message(
-                f"Incomplete: {statuses['incomplete']} files ({size_gb:.1f} GB)",
-                "warning"
-            )
-            
-        if statuses['missing'] > 0:
-            size_gb = size_by_status['missing'] / 1e9
-            self.print_message(
-                f"Not downloaded: {statuses['missing']} files ({size_gb:.1f} GB)",
-                "info"
-            )
+        status_info = [
+            ('downloaded', "Downloaded: {} files ({:.1f} GB)",     "success"),
+            ('incomplete', "Incomplete: {} files ({:.1f} GB)",     "warning"),
+            ('missing',    "Not downloaded: {} files ({:.1f} GB)", "info")
+        ]
+        
+        for status_type, template, msg_type in status_info:
+            if count := statuses[status_type]:
+                size_gb = size_by_status[status_type] / 1e9
+                self.print_message(template.format(count, size_gb), msg_type)
 
     def display_download_table(
         self,
@@ -577,6 +567,24 @@ class ThermurUI:
             )
         
         self.console.print()
+
+    def print_command_examples(self, examples: list[dict]):
+        """
+        Print multiple command examples from a list.
+        
+        This method handles the common pattern of iterating through command
+        examples and printing each one, eliminating duplication across commands.
+        
+        Args:
+            examples: List of example dictionaries with 'command', 'desc', 
+                      and optional 'note' keys
+        """
+        for example in examples:
+            self.print_command_example(
+                command     = example["command"],
+                description = example["desc"],
+                note        = example.get("note", "")
+            )
 
     def print_config_value(
         self,

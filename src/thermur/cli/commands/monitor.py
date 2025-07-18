@@ -57,34 +57,32 @@ class MonitorCommand:
         Args:
             project: The wandb project name to open, or None to use the default.
         """
-        if project is None:
-            project = self.cfg.wandb_integration.default_project
+        project = project or self.cfg.wandb_integration.default_project
 
         self.ui.print_header("wandb Monitoring")
 
-        url = self.system.get_wandb_url(project)
-
-        if not url:
+        if not (url := self.system.get_wandb_url(project)):
             info = self.system.get_system_info()
-            if not info["wandb_installed"]:
-                self.ui.print_message(
-                    message  = "wandb is not installed in your Poetry environment",
-                    msg_type = "error"
-                )
-                self.ui.print_message(
-                    message  = "Run 'poetry install' to install all dependencies",
-                    msg_type = "info"
-                )
-            else:
-                # wandb is installed but user is not authenticated
-                self.ui.print_message(
-                    message  = self.msgs.wandb_unavailable,
-                    msg_type = "error"
-                )
-                self.ui.print_message(
-                    message  = "Run 'wandb login' to authenticate",
-                    msg_type = "info"
-                )
+            match info.get("wandb_installed", False):
+                case False:
+                    self.ui.print_message(
+                        message  = "wandb is not installed in your Poetry environment",
+                        msg_type = "error"
+                    )
+                    self.ui.print_message(
+                        message  = "Run 'poetry install' to install all dependencies",
+                        msg_type = "info"
+                    )
+                case True:
+                    # wandb is installed but user is not authenticated
+                    self.ui.print_message(
+                        message  = self.msgs.wandb_unavailable,
+                        msg_type = "error"
+                    )
+                    self.ui.print_message(
+                        message  = "Run 'wandb login' to authenticate",
+                        msg_type = "info"
+                    )
             raise Exit(1)
 
         self.ui.print_message(

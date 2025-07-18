@@ -83,16 +83,11 @@ class CLIPrompts:
         )
 
         overrides = []
-        while True:
-            override = questionary.text(
-                instruction = "(e.g., hyperparameters.lr=0.001)",
-                message     = "Override:",
-                style       = self.thermal_style
-            ).ask()
-
-            if not override:
-                break
-
+        while override := questionary.text(
+            instruction = "(e.g., hyperparameters.lr=0.001)",
+            message     = "Override:",
+            style       = self.thermal_style
+        ).ask():
             overrides.append(override)
             success_style = self.ui.display.styles['success']
             self.ui.console.print(
@@ -263,7 +258,7 @@ class CLIPrompts:
                 title = preset_cfgs[name]['emoji'], 
                 value = name
             )
-            for name in list(self.presets.presets.keys())
+            for name in self.presets.presets.keys()
             if name != 'custom'
         ]
         choices.extend([
@@ -280,13 +275,12 @@ class CLIPrompts:
             style   = self.thermal_style
         ).ask()
 
-        # Map emoji back to preset name
         if chosen_emoji:
-            chosen_preset = None
-            for name, config in preset_cfgs.items():
-                if config['emoji'] == chosen_emoji:
-                    chosen_preset = name
-                    break
+            emoji_to_preset = {
+                config['emoji']: name 
+                for name, config in preset_cfgs.items()
+            }
+            chosen_preset = emoji_to_preset.get(chosen_emoji)
             
             self.ui.print_message(
                 message  = f"Selected preset: [bright_cyan]{chosen_emoji}[/bright_cyan]",
@@ -342,9 +336,14 @@ class CLIPrompts:
             self.ui.display_download_summary(available_files, file_status)
             self.ui.console.print()
             
-            actions = ["#: Select", "q: Cancel"]
-            if page > 0: actions.insert(1, "←: Prev")
-            if page_slice.stop < total: actions.insert(-1, "→: Next")
+            actions = filter(None, 
+                [
+                    "#: Select",
+                    "←: Prev" if page > 0 else None,
+                    "→: Next" if page_slice.stop < total else None,
+                    "q: Cancel"
+                ]
+            )
             
             choice = (questionary.text(
                 message = f"{', '.join(actions)}: ",
@@ -378,8 +377,8 @@ class CLIPrompts:
             return endpoints[0]
             
         self.ui.print_message("Multiple local endpoints found:", "info")
-        for i, e in enumerate(endpoints):
-            self.ui.console.print(f"  {i+1}. {e['display_name']}")
+        for i, e in enumerate(endpoints, start=1):
+            self.ui.console.print(f"  {i}. {e['display_name']}")
             
         selected = questionary.select(
             choices = [e['display_name'] for e in endpoints],
@@ -390,11 +389,10 @@ class CLIPrompts:
         if not selected:
             return None
             
-        for e in endpoints:
-            if e['display_name'] == selected:
-                return e
-                
-        return None
+        return next(
+            (e for e in endpoints if e['display_name'] == selected),
+            None
+        )
             
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """

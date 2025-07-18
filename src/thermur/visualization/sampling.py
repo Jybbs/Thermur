@@ -9,6 +9,7 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
+from collections       import namedtuple
 from configs.imitation import VisualizationModel
 from pyvista           import Axes, ImageData, PolyData
 from torch             import Tensor
@@ -17,6 +18,9 @@ from typing            import Any
 import numpy   as np
 import pyvista as pv
 import torch
+
+
+Bounds = namedtuple('Bounds', ['min', 'max'])
 
 
 class GridSampler:
@@ -41,11 +45,7 @@ class GridSampler:
         """
         self.grid = grid
     
-    def compute_grid_bounds(
-        self,
-        position : Tensor,
-        padding  : float = None
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def compute_grid_bounds(self, position: Tensor) -> tuple[np.ndarray, np.ndarray]:
         """
         Compute the bounding box for a grid based on agent positions.
         
@@ -54,18 +54,14 @@ class GridSampler:
         domain of interest is captured for visualization.
         
         Args:
-            position : Agent positions tensor of shape [N, 3]
-            padding  : Override padding value. If None, uses grid.padding
+            position: Agent positions tensor of shape [N, 3]
             
         Returns:
             Tuple of (min_bounds, max_bounds) as numpy arrays of shape [3]
         """
-        if padding is None:
-            padding = self.grid.padding
-            
         positions  = position.detach().cpu().numpy()
-        min_bounds = positions.min(axis=0) - padding
-        max_bounds = positions.max(axis=0) + padding
+        min_bounds = positions.min(axis=0) - self.grid.padding
+        max_bounds = positions.max(axis=0) + self.grid.padding
         return min_bounds, max_bounds
     
     def create_coordinate_axes(

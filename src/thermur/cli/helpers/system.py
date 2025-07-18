@@ -5,6 +5,7 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
+from contextlib         import suppress
 from importlib.metadata import PackageNotFoundError, version
 from omegaconf          import DictConfig
 from platform           import platform, python_version
@@ -69,7 +70,7 @@ class SystemInspector:
             Dictionary with dataset_size in GB and dataset_count.
             Returns zeros if dataset information cannot be retrieved.
         """
-        try:
+        with suppress(Exception):
             cache = self.cfg.download.cache_dir
             if not cache.exists():
                 return {"dataset_size": 0.0, "dataset_count": 0}
@@ -81,8 +82,7 @@ class SystemInspector:
                 "dataset_size"  : total_size / 1e9,
                 "dataset_count" : len(nc_files),
             }
-        except Exception:
-            return {"dataset_size": 0.0, "dataset_count": 0}
+        return {"dataset_size": 0.0, "dataset_count": 0}
     
     def _get_disk_info(self) -> dict[str, float]:
         """
@@ -92,14 +92,13 @@ class SystemInspector:
             Dictionary with disk_available and disk_total in GB.
             Returns zeros if disk information cannot be retrieved.
         """
-        try:
+        with suppress(Exception):
             usage = disk_usage(".")
             return {
                 "disk_available" : usage.free  / 1e9,
                 "disk_total"     : usage.total / 1e9,
             }
-        except Exception:
-            return {"disk_available": 0, "disk_total": 0}
+        return {"disk_available": 0, "disk_total": 0}
 
     def _get_memory_info(self) -> dict[str, float]:
         """
@@ -109,15 +108,14 @@ class SystemInspector:
             Dictionary with memory_available and memory_total in GB.
             Returns zeros if psutil is not installed.
         """
-        try:
+        with suppress(ImportError):
             from psutil import virtual_memory
             mem = virtual_memory()
             return {
                 "memory_available" : mem.available / 1e9,
                 "memory_total"     : mem.total     / 1e9,
             }
-        except ImportError:
-            return {"memory_available": 0, "memory_total": 0}
+        return {"memory_available": 0, "memory_total": 0}
 
     def _get_package_version(
         self, 
@@ -134,10 +132,9 @@ class SystemInspector:
         Returns:
             Version string or default value.
         """
-        try:
+        with suppress(PackageNotFoundError):
             return version(package_name)
-        except PackageNotFoundError:
-            return default
+        return default
 
     def _get_wandb_status(self) -> dict[str, any]:
         """
@@ -161,24 +158,22 @@ class SystemInspector:
             "username"  : None,
         }
         
-        try:
+        with suppress(ImportError):
             __import__('wandb')
             status["installed"] = True
-        except ImportError:
+            
+        if not status["installed"]:
             self._wandb_status = status
             return status
             
-        status["api_key"] = (
-            os.environ.get(self.wandb_integration.api_key_env) or 
-            api.api_key
-        )
+        status["api_key"] = os.environ.get(
+            self.wandb_integration.api_key_env
+        ) or api.api_key
         
         if status["api_key"]:
-            try:
+            with suppress(Exception):
                 user = Api().viewer
                 status["username"] = user.get("username") if user else None
-            except Exception:
-                pass
                 
         self._wandb_status = status
         return status
@@ -292,7 +287,10 @@ class SystemInspector:
                 )
                 continue
 
-            key = o.split("=")[0].lstrip("+").replace(".", "").replace("_", "")
+            key = (
+                o.partition("=")[0]
+                .removeprefix("+").replace(".", "").replace("_", "")
+            )
             if not key.isalnum():
                 issues.append(
                     f"{self.messages.validation['invalid_override_key']}: {o}"

@@ -67,10 +67,11 @@ class WRFDataSource:
         Returns:
             Tensor with noise added if domain randomization is enabled
         """
-        if self.wrf_data.domain_randomization and noise_std > 0:
-            return data + torch.randn_like(data) * noise_std
-        
-        return data
+        return (
+            data + torch.randn_like(data) * noise_std
+            if self.wrf_data.domain_randomization and noise_std > 0
+            else data
+        )
 
     def _calculate_gradient(
         self, 
@@ -106,8 +107,7 @@ class WRFDataSource:
             self.physics.z_dimension
         ]
         
-        for i in range(min(dim, 3)):
-            dim_name = dim_names[i]
+        for i, dim_name in enumerate(dim_names[:min(dim, 3)]):
             if dim_name not in self.coord_vars:
                 continue
             
@@ -199,16 +199,16 @@ class WRFDataSource:
             Dictionary mapping dataset coordinate names to position values
         """
         position_array = positions.detach().cpu().numpy()
-        dim_mapping    = {
-            0 : self.physics.x_dimension,
-            1 : self.physics.y_dimension,
-            2 : self.physics.z_dimension
-        }
+        dim_mapping = [
+            self.physics.x_dimension,
+            self.physics.y_dimension,
+            self.physics.z_dimension
+        ]
         
         return {
-            dim_mapping[i]: position_array[:, i]
-            for i in range(min(3, position_array.shape[1]))
-            if dim_mapping[i] in self.coord_vars
+            dim_name: position_array[:, i]
+            for i, dim_name in enumerate(dim_mapping[:position_array.shape[1]])
+            if i < 3 and dim_name in self.coord_vars
         }
 
     def get_domain_info(self) -> dict:
@@ -221,17 +221,18 @@ class WRFDataSource:
         """
         attrs = self.dataset.attrs
         
-        return {
-            "cen_lat"     : attrs.get("CEN_LAT", None),
-            "cen_lon"     : attrs.get("CEN_LON", None),
-            "dt"          : attrs.get("DT", None),
-            "dx"          : attrs.get("DX", None),
-            "dy"          : attrs.get("DY", None),
-            "grid_id"     : attrs.get("GRID_ID", None),
-            "map_proj"    : attrs.get("MAP_PROJ", None),
-            "parent_id"   : attrs.get("PARENT_ID", None),
-            "start_date"  : attrs.get("START_DATE", None)
+        domain_keys = {
+            "cen_lat"    : "CEN_LAT",
+            "cen_lon"    : "CEN_LON",
+            "dt"         : "DT",
+            "dx"         : "DX",
+            "dy"         : "DY",
+            "grid_id"    : "GRID_ID",
+            "map_proj"   : "MAP_PROJ",
+            "parent_id"  : "PARENT_ID",
+            "start_date" : "START_DATE"
         }
+        return {k: attrs.get(v) for k, v in domain_keys.items()}
     
     def query_fire_heat_flux(self, positions: Tensor) -> Tensor:
         """

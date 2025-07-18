@@ -62,18 +62,16 @@ class Visualizer:
             simulation      : Simulation reference for accessing environment data
             visualization   : Consolidated visualization configuration model
         """
-        # Store configuration models
         self.max_temperature = max_temperature
         self.simulation      = simulation
         self.visualization   = visualization
+        self.colors          = visualization.colors
+        self.glyphs          = visualization.glyphs
+        self.grids           = visualization.grids
+        self.opacity         = visualization.opacity
+        self._grid_sampler   = GridSampler(self.grids)
+        self._renderer       = Renderer(self.colors, self.glyphs, self.opacity)
         
-        # Extract nested configurations for easier access
-        self.colors        = visualization.colors
-        self.glyphs        = visualization.glyphs
-        self.grids         = visualization.grids
-        self.opacity       = visualization.opacity
-        
-        # Initialize rendering state
         self._plotter       : Plotter      = None
         self._agent_actors  : list[Actor]  = None
         self._wind_actors   : list[Actor]  = None
@@ -81,11 +79,6 @@ class Visualizer:
         self._graph_actors  : list[Actor]  = None
         self._colormap      : str          = None
         
-        # Initialize the grid sampler and renderer
-        self._grid_sampler = GridSampler(self.grids)
-        self._renderer     = Renderer(self.colors, self.glyphs, self.opacity)
-        
-        # Initialize the plotter
         self._initialize_plotter()
     
     def _initialize_plotter(self):
@@ -101,10 +94,11 @@ class Visualizer:
         The method also initializes the temperature colormap that will be
         used for thermal visualization of agents throughout the simulation.
         """
-        theme = (
-            pv.themes.DarkTheme() if self.visualization.dark_mode 
-            else pv.themes.DocumentTheme()
-        )
+        match self.visualization.dark_mode:
+            case True:
+                theme = pv.themes.DarkTheme()
+            case False:
+                theme = pv.themes.DocumentTheme()
         pv.global_theme.load_theme(theme)
         
         self._plotter = Plotter(
@@ -114,11 +108,8 @@ class Visualizer:
             window_size = self.visualization.window_size
         )
         
-        # Set up initial view
         self._plotter.camera_position = 'xy'
         self._plotter.camera.zoom(1.5)
-        
-        # Use colormap from configuration
         self._colormap = self.colors.colormap
 
     def update(self, observation: TensorDictBase):
@@ -147,20 +138,16 @@ class Visualizer:
         if self._plotter is None:
             self._initialize_plotter()
         
-        # Extract tensor data from observation
         edge_index       = observation.get("edge_index")
         position         = observation.get("position")
         temperature      = observation.get("temperature")
-        temperature_grad = observation.get("temperature_grad")
         velocity         = observation.get("velocity")
         
-        # Skip if window was closed
         if self._plotter.ren_win is None:
             return
             
         self._plotter.clear_actors()
         
-        # Render agent glyphs if enabled
         if self.visualization.show_agents:
             colormap = self._colormap if self.visualization.show_thermal else None
             self._agent_actors = self._renderer.add_agents(
@@ -172,7 +159,6 @@ class Visualizer:
                 velocity    = velocity
             )
         
-        # Render wind field vectors if enabled
         if self.visualization.show_wind:
             wind_grid = self._grid_sampler.create_wind_grid(
                 position   = position,
@@ -183,7 +169,6 @@ class Visualizer:
                 wind_grid = wind_grid
             )
         
-        # Render thermal safety boundary if enabled
         if self.visualization.show_safety:
             self._safety_actors = self._renderer.add_safety_boundary(
                 grids            = self.grids,
@@ -193,7 +178,6 @@ class Visualizer:
                 temperature      = temperature
             )
         
-        # Render communication graph edges if enabled
         if self.visualization.show_graph:
             self._graph_actors = self._renderer.add_communication_graph(
                 edge_index = edge_index,

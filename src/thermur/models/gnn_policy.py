@@ -54,10 +54,8 @@ class GNNPolicy(Module):
 
         # Maps raw node features [𝐩, 𝐯, T, ∇T, E] to the hidden dimension.
         self.encoder = Linear(in_dim, learning.hidden_dim)
-
-        # A stack of GNN layers and recurrent cells for state updates.
-        self.convs = ModuleList()
-        self.grus  = ModuleList()
+        self.convs   = ModuleList()
+        self.grus    = ModuleList()
         for _ in range(learning.num_layers):
             self.convs.append(
                 GCNConv(
@@ -72,15 +70,17 @@ class GNNPolicy(Module):
                 )
             )
 
-        # Maps the final hidden state to a nominal action vector 𝐮_nom.
         self.decoder = Linear(learning.hidden_dim, out_dim)
 
-        # --- Activation Function ---
-        self.activation = {
-            "relu" : ReLU, 
-            "silu" : SiLU, 
-            "tanh" : Tanh
-        }[learning.activation]()
+        match learning.activation:
+            case "relu":
+                self.activation = ReLU()
+            case "silu":
+                self.activation = SiLU()
+            case "tanh":
+                self.activation = Tanh()
+            case _:
+                raise ValueError(f"Unknown activation: {learning.activation}")
 
     def forward(self, data: Data) -> Tensor:
         """
@@ -101,7 +101,7 @@ class GNNPolicy(Module):
         h = self.activation(self.encoder(x))
 
         # Iteratively process through message-passing layers.
-        for conv, gru in zip(self.convs, self.grus):
+        for conv, gru in zip(self.convs, self.grus, strict=True):
             # Aggregate information from neighbors via GNN convolution.
             message = self.activation(conv(h, edge_index))
             # Update the node's hidden state using the aggregated message.

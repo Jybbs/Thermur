@@ -13,9 +13,11 @@ rewards to the learning algorithm. It couples a rigid-body physics engine
 """
 from ..utils           import generate_flock_xml, load_flock_model
 from configs.imitation import PhysicsModel, FlockModel
+from operator          import itemgetter
 from tensordict        import TensorDict, TensorDictBase
 from torch             import Tensor
 from torchrl.envs      import EnvBase
+from torch             import cdist, nonzero
 from typing            import Any, Callable
 
 import math
@@ -39,35 +41,83 @@ class SimulationEnv(EnvBase):
 
     def __init__(
         self,
-        action_spec        : TensorDictBase,
-        compute_edge_index : Callable,
-        data_source        : Any,
-        flock              : FlockModel,
-        observation_spec   : TensorDictBase,
-        physics            : PhysicsModel,
-        seed_fn            : Callable,
+        action_spec      : TensorDictBase,
+        data_source      : Any,
+        flock            : FlockModel,
+        observation_spec : TensorDictBase,
+        physics          : PhysicsModel,
+        seed_fn          : Callable,
     ):
         """
         Initializes the Thermur environment with dependency injection.
 
         Args:
-            action_spec        : The action space specification.
-            compute_edge_index : A callable that computes communication graph edges.
-            data_source        : A callable that provides environmental data queries.
-            flock              : Flock parameters configuration.
-            observation_spec   : The observation space specification.
-            physics            : Physics simulation configuration.
-            seed_fn            : Callable for setting random seeds.
+            action_spec      : The action space specification.
+            data_source      : A callable that provides environmental data queries.
+            flock            : Flock parameters configuration.
+            observation_spec : The observation space specification.
+            physics          : Physics simulation configuration.
+            seed_fn          : Callable for setting random seeds.
         """
         super().__init__(device="cpu")
-        self.action_spec        = action_spec
-        self.compute_edge_index = compute_edge_index
-        self.data_source        = data_source
-        self.flock              = flock
-        self.observation_spec   = observation_spec
-        self.physics            = physics
-        self.physics_model      = self._initialize_physics()
-        self.seed_fn            = seed_fn
+        self.action_spec      = action_spec
+        self.data_source      = data_source
+        self.flock            = flock
+        self.observation_spec = observation_spec
+        self.physics          = physics
+        self.physics_model    = self._initialize_physics()
+        self.seed_fn          = seed_fn
+    
+    def _compute_edge_index(self, pos: Tensor, r: float) -> Tensor:
+        """
+        Computes the graph connectivity based on metric distance.
+
+        This function builds an `edge_index` for `torch-geometric` by finding all
+        pairs of nodes (i, j) where the Euclidean distance is less than `r`.
+        It avoids self-loops.
+
+        Args:
+            pos : A tensor of node positions, shape (num_nodes, num_dims).
+            r   : The communication radius.
+
+        Returns:
+            An `edge_index` tensor of shape (2, num_edges), suitable for a
+            `torch_geometric.data.Data` object.
+        """
+        distances = cdist(pos, pos)
+        mask      = (distances < r) & (distances > 0)
+        return nonzero(mask, as_tuple=False).t().contiguous()
+    
+    def _create_base_observation(self, include_defaults: bool = False) -> dict:
+        """
+        Creates the base observation dictionary with zero-initialized tensors.
+        
+        This helper method DRYs up the common tensor initialization patterns
+        used in both _reset and _step methods.
+        
+        Args:
+            include_defaults: If True, includes default zero tensors for all fields
+        
+        Returns:
+            Dictionary with zero-initialized tensors for the observation
+        """
+        n = self.flock.agent_count
+        d = self.flock.spatial_dims
+        
+        base = {
+            "_done"  : torch.zeros(n, dtype=torch.bool),
+            "done"   : torch.zeros(1, dtype=torch.bool),
+            "reward" : torch.zeros(n),
+        }
+        
+        if include_defaults:
+            base.update({
+                "edge_index"       : torch.zeros((2, 0), dtype=torch.long),
+                "temperature"      : torch.zeros(n),
+                "temperature_grad" : torch.zeros((n, d)),
+            })
+        
+        return base
     
     def _extract_agent_states(self, data) -> tuple:
         """
@@ -83,13 +133,14 @@ class SimulationEnv(EnvBase):
             positions  : Tensor of shape [agent_count, spatial_dims]
             velocities : Tensor of shape [agent_count, spatial_dims]
         """
-        end_idx      = self.agent_count * self.spatial_dims
+        end_idx      = self.flock.agent_count * self.flock.spatial_dims
 
+        reshape_dims = (self.flock.agent_count, self.flock.spatial_dims)
         positions = torch.from_numpy(
-            data.qpos[:end_idx].copy().reshape(self.agent_count, self.spatial_dims)
+            data.qpos[:end_idx].copy().reshape(reshape_dims)
         )
         velocities = torch.from_numpy(
-            data.qvel[:end_idx].copy().reshape(self.agent_count, self.spatial_dims)
+            data.qvel[:end_idx].copy().reshape(reshape_dims)
         )
     
         return positions, velocities
@@ -187,10 +238,10 @@ class SimulationEnv(EnvBase):
         """
         # Generate XML model with N distinct agent bodies
         xml_string = generate_flock_xml(
-            agent_count     = self.agent_count,
-            assets_dir      = self.assets_dir,
-            simulation_step = self.simulation_step,
-            spatial_dims    = self.spatial_dims
+            agent_count     = self.flock.agent_count,
+            assets_dir      = self.physics.assets_dir,
+            simulation_step = self.physics.simulation_step,
+            spatial_dims    = self.flock.spatial_dims
         )
         
         return load_flock_model(xml_string)
@@ -225,26 +276,24 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` containing the initial observation of the flock.
         """
-        if self.initial_formation == "cube":
-            positions = self._generate_cube_formation(self.agent_count, self.spatial_dims)
-        else:
-            positions = self._generate_sphere_formation(self.agent_count, self.spatial_dims)
+        formation_args = (self.flock.spatial_dims, self.flock.agent_count)
+        match self.flock.initial_formation:
+            case "cube":
+                positions = self._generate_cube_formation(*formation_args)
+            case "sphere" | _:
+                positions = self._generate_sphere_formation(*formation_args)
 
         # Create a fresh TensorDict with proper structure and shape
-        scaled_positions    = positions * self.communication_range * self.formation_scale_factor
-        initial_observation = TensorDict(
-            {
-                "_done"            : torch.zeros(self.agent_count, dtype=torch.bool),
-                "done"             : torch.zeros(1,                dtype=torch.bool),
-                "edge_index"       : torch.zeros((2, 0),           dtype=torch.long),
-                "position"         : scaled_positions,
-                "reward"           : torch.zeros(self.agent_count),
-                "temperature"      : torch.zeros(self.flock.agent_count),
-                "temperature_grad" : torch.zeros((self.flock.agent_count, self.flock.spatial_dims)),
-                "velocity"         : torch.zeros_like(scaled_positions)
-            }, 
-            batch_size = []
-        )
+        scale_factor     = self.flock.communication_range * self.flock.formation_scale_factor
+        scaled_positions = positions * scale_factor
+        
+        base_obs = self._create_base_observation(include_defaults=True)
+        base_obs.update({
+            "position" : scaled_positions,
+            "velocity" : torch.zeros_like(scaled_positions)
+        })
+        
+        initial_observation = TensorDict(base_obs, batch_size=[])
         
         # Update with thermal data and edge_index
         positions       = initial_observation["position"]
@@ -253,9 +302,9 @@ class SimulationEnv(EnvBase):
         
         initial_observation.update(
             {
-                "edge_index"       : self.compute_edge_index(
+                "edge_index"       : self._compute_edge_index(
                     pos = positions,
-                    r   = self.communication_range
+                    r   = self.flock.communication_range
                 ),
                 "temperature"      : temp,
                 "temperature_grad" : temp_grad,
@@ -285,7 +334,7 @@ class SimulationEnv(EnvBase):
             velocities : Tensor [N, spatial_dims] containing agent velocities
         """
         data         = self.physics_model["data"]
-        end_idx      = self.agent_count * self.spatial_dims
+        end_idx      = self.flock.agent_count * self.flock.spatial_dims
         
         mj.mj_resetData(self.physics_model["model"], data)
         
@@ -329,34 +378,33 @@ class SimulationEnv(EnvBase):
             A `TensorDict` for the `next` state, including the new
             observation, reward, and done flag.
         """
-        actions      = td.get("action")
-        model        = self.physics_model["model"]
-        data         = self.physics_model["data"]
-        
-        # Reshape actions to match control array layout
-        reshaped_actions = actions[:, :self.spatial_dims].reshape(-1).cpu().numpy()
-        ctrl_count       = min(len(reshaped_actions), len(data.ctrl))
-        data.ctrl[:ctrl_count] = reshaped_actions[:ctrl_count]
+        actions     = td.get("action")
+        model, data = itemgetter("model", "data")(self.physics_model)
+        reshaped    = actions[:, :self.flock.spatial_dims].flatten().cpu().numpy()
+
+        if ctrl_count := min(len(reshaped), len(data.ctrl)):
+            data.ctrl[:ctrl_count] = reshaped[:ctrl_count]
         
         mj.mj_step(model, data)
         
         pos, vel         = self._extract_agent_states(data)
         temp, temp_grad  = self.data_source.query_thermal(pos)
         wind             = self.data_source.query_wind(pos)
-        edge_index       = self.compute_edge_index(pos, self.communication_range)
-        next_observation = TensorDict(
-            {
-                "_done"            : torch.zeros(self.agent_count, dtype=torch.bool),
-                "done"             : torch.zeros(1, dtype=torch.bool),
-                "edge_index"       : edge_index,
-                "position"         : pos,
-                "reward"           : torch.zeros(self.agent_count),
-                "temperature"      : temp,
-                "temperature_grad" : temp_grad,
-                "velocity"         : vel,
-                "wind"             : wind
-            }, 
-            batch_size = []
+        edge_index       = self._compute_edge_index(
+            pos = pos,
+            r   = self.flock.communication_range
         )
+        
+        base_obs = self._create_base_observation()
+        base_obs.update({
+            "edge_index"       : edge_index,
+            "position"         : pos,
+            "temperature"      : temp,
+            "temperature_grad" : temp_grad,
+            "velocity"         : vel,
+            "wind"             : wind
+        })
+        
+        next_observation = TensorDict(base_obs, batch_size=[])
     
         return next_observation

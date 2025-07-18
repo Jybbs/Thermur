@@ -5,7 +5,7 @@ This module provides the main CLI interface by discovering and registering
 all available commands from the .commands subpackage. It uses Hydra-zen
 to load and validate the CLI configuration through Pydantic schemas.
 """
-from .commands                      import *
+from .                              import commands
 from .helpers                       import *
 from configs.cli                    import cli_cfg
 from hydra_zen                      import instantiate
@@ -63,12 +63,8 @@ class ThermurCLI:
             rich_markup_mode = "rich"
         )
         
-        # Register commands
-        cli.command(name="download")(download)
-        cli.command(name="info")(info)
-        cli.command(name="monitor")(monitor)
-        cli.command(name="train")(train)
-        cli.command(name="validate")(validate)
+        for cmd_name in commands.__all__:
+            cli.command()(getattr(commands, cmd_name))
         
         cli.callback(invoke_without_command=True)(self._main_callback)
         
@@ -88,10 +84,9 @@ class ThermurCLI:
         Returns:
             The singleton AppContext instance for the current application run.
         """
-        if not ctx.obj:
-            ctx.obj = AppContext()
-            
-        return ctx.obj
+        if not (app_ctx := ctx.obj):
+            ctx.obj = app_ctx = AppContext()
+        return app_ctx
     
     def _main_callback(
         self,
@@ -118,8 +113,7 @@ class ThermurCLI:
         app_context = self._get_context(ctx)
 
         if ctx.invoked_subcommand is None:
-            cfg = app_context.cfg
-            ui  = app_context.ui
+            cfg, ui = app_context.cfg, app_context.ui
 
             ui.print_header("Welcome to Thermur")
             ui.print_section("Available Commands", "accent")
@@ -131,13 +125,7 @@ class ThermurCLI:
                 )
 
             ui.print_section("Getting Started", "bright_green")
-
-            for example in cfg.cli.commands_examples:
-                ui.print_command_example(
-                    command     = example["command"],
-                    description = example["desc"],
-                    note        = example["note"]
-                )
+            ui.print_command_examples(cfg.cli.commands_examples)
 
             ui.console.print()
             ui.print_message(
@@ -180,8 +168,7 @@ def main():
     """
     Main entry point for the CLI.
     """
-    app = ThermurCLI()
-    app.run()
+    ThermurCLI().run()
 
 
 if __name__ == "__main__":

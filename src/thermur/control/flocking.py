@@ -217,11 +217,13 @@ class ExpertFlockingController:
             other = t_margin
         )
 
-        gradient = grad_temp if grad_temp is not None \
+        gradient = (
+            grad_temp if grad_temp is not None 
             else self._estimate_temperature_gradient(
                 position    = position, 
                 temperature = temperature
             )
+        )
 
         # Force points away from high temperatures
         return -gradient * magnitude.unsqueeze(1)
@@ -236,10 +238,11 @@ class ExpertFlockingController:
         Returns:
             Tensor [N] with any singleton dimensions removed
         """
-        if temperature.dim() > 1 and temperature.size(1) == 1:
-            return temperature.squeeze(1)
-        
-        return temperature
+        return (
+            temperature.squeeze(1) 
+            if temperature.dim() > 1 and temperature.size(1) == 1 
+            else temperature
+        )
 
     def _estimate_temperature_gradient(
         self,
@@ -268,7 +271,7 @@ class ExpertFlockingController:
         temperature = self._ensure_1d_temperature(temperature)
 
         # Handle the edge case of a completely disconnected graph
-        if self._edge_source is None or self._edge_source.numel() == 0:
+        if self._edge_source is None or not self._edge_source.numel():
             return self._vertical_heat_gradient(
                 position    = position, 
                 temperature = temperature
@@ -326,9 +329,8 @@ class ExpertFlockingController:
             edge_index : Tensor defining the communication graph topology Gₜ = (V, Eₜ)
             num_agents : The total number of agents N in the flock
         """
-        if edge_index.numel() > 0:
+        if edge_index.numel():
             self._edge_source, self._edge_target = edge_index
-
         else:
             # Handle empty graph case to prevent errors
             device            = edge_index.device
@@ -405,15 +407,18 @@ class ExpertFlockingController:
         self._update_graph_state(flock["edge_index"], flock["position"].size(0))
 
         # Compute the nominal control based on Reynolds rules and thermal potential
-        u_nominal = (
-            self.control.w_cohesion   * self._compute_cohesion(flock["position"])   +
-            self.control.w_separation * self._compute_separation(flock["position"]) +
-            self.control.w_alignment  * self._compute_alignment(flock["velocity"])  +
-            self.control.w_thermal    * self._compute_thermal(
+        forces = [
+            (self.control.w_cohesion,   self._compute_cohesion(flock["position"])),
+            (self.control.w_separation, self._compute_separation(flock["position"])),
+            (self.control.w_alignment,  self._compute_alignment(flock["velocity"])),
+            (self.control.w_thermal,    self._compute_thermal(
                 grad_temp   = flock.get("temperature_grad", None),
                 position    = flock["position"],
                 temperature = flock["temperature"]
-            )
-        )
+            ))
+        ]
         
-        return self.safety_filter.filter(flock, u_nominal)
+        return self.safety_filter.filter(
+            flock     = flock, 
+            u_nominal = sum(weight * force for weight, force in forces)
+        )

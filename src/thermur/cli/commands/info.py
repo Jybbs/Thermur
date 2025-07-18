@@ -75,18 +75,12 @@ class InfoCommand:
             value       = "configs/"
         )
         
-        preset_names = list(self.cfg.presets.presets.keys())
         self.ui.print_config_value(
             align_width = 11,
             key         = "Presets",
-            value       = ", ".join(sorted(preset_names))
+            value       = ", ".join(sorted(self.cfg.presets.presets.keys()))
         )
         
 
         self.ui.print_major_section("Common Commands")
-        for example in self.cfg.cli.commands_examples:
-            self.ui.print_command_example(
-                command     = example["command"],
-                description = example["desc"],
-                note        = example["note"]
-            )
+        self.ui.print_command_examples(self.cfg.cli.commands_examples)
