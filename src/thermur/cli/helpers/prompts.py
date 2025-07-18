@@ -221,6 +221,7 @@ class CLIPrompts:
             default = False
         )
     
+    
     def select_configuration_preset(self) -> str | None:
         """
         Prompts the user to select a high-level configuration preset.
@@ -300,56 +301,63 @@ class CLIPrompts:
 
         return chosen_preset
     
-    def select_file_by_number(
+    def select_file_with_pagination(
         self,
-        file_index_map : dict[int, dict]
+        available_files : list[dict],
+        file_status     : dict[str, str],
+        page_size       : int = 10,
+        title_prefix    : str = "Available Files"
     ) -> dict | None:
         """
-        Select a file to download by entering its number.
+        Display files in paginated table format and allow selection.
+        
+        Handles the complete pagination interaction loop, showing files
+        in pages with navigation controls and selection by number.
         
         Args:
-            file_index_map : Mapping of indices to file info dictionaries
+            available_files : List of file dictionaries with 'name' and 'size'
+            file_status     : Dict mapping filename to status
+            page_size       : Number of files per page
+            title_prefix    : Prefix for the page title
             
         Returns:
-            Selected file info dict, or None if cancelled
+            Selected file dict or None if cancelled
         """
-        if not file_index_map:
-            return None
-            
-        max_index = max(file_index_map.keys())
-        
-        self.ui.print_message(
-            f"Enter a number (1-{max_index}) to download a file, or 0 to cancel:",
-            "info"
-        )
+        page  = 0
+        total = len(available_files)
         
         while True:
-            response = questionary.text(
-                message  = "File number:",
-                style    = self.thermal_style,
-                validate = lambda x: x.isdigit() or x == ""
-            ).ask()
+            page_slice = slice(page * page_size, (page + 1) * page_size)
+            page_files = available_files[page_slice]
+            page_title = f"{title_prefix} (Page {page + 1}/{-(-total // page_size)})"
             
-            if not response:
-                return None
-                
-            try:
-                number = int(response)
-                if number == 0:
-                    return None
-                elif number in file_index_map:
-                    return file_index_map[number]
-                else:
-                    self.ui.print_message(
-                        f"Please enter a number between 1 and {max_index}",
-                        "warning"
-                    )
-            except ValueError:
-                self.ui.print_message(
-                    "Please enter a valid number",
-                    "error"
-                )
-
+            self.ui.console.clear()
+            self.ui.print_header("Data Acquisition")
+            self.ui.display_download_table(
+                available_files = page_files,
+                file_status     = file_status,
+                title           = page_title
+            )
+            self.ui.console.print()
+            self.ui.display_download_summary(available_files, file_status)
+            self.ui.console.print()
+            
+            actions = ["#: Select", "q: Cancel"]
+            if page > 0: actions.insert(1, "←: Prev")
+            if page_slice.stop < total: actions.insert(-1, "→: Next")
+            
+            choice = (questionary.text(
+                message = f"{', '.join(actions)}: ",
+                style   = self.thermal_style
+            ).ask() or "q").strip()
+            
+            match choice:
+                case "q": return None
+                case "←" if page > 0: page -= 1
+                case "→" if page_slice.stop < total: page += 1
+                case n if n.isdigit() and 0 <= int(n) < len(page_files):
+                    return page_files[int(n)]
+            
     def select_globus_endpoint(self, endpoints: list[dict]) -> dict | None:
         """
         Select a Globus endpoint from multiple available endpoints.
@@ -387,7 +395,7 @@ class CLIPrompts:
                 return e
                 
         return None
-
+            
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
         Presents a final summary of all chosen configurations for user confirmation.

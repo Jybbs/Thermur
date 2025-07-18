@@ -44,6 +44,152 @@ class ThermurUI:
             legacy_windows = False,
         )
 
+    def _create_header_panel(
+        self,
+        title : str
+    ) -> Panel:
+        """
+        Create a styled header panel with fire gradient for "Thermur".
+        
+        Creates a visually striking header panel with special formatting
+        for the word "Thermur" using the signature fire gradient effect.
+        
+        Args:
+            title: Main header text
+            
+        Returns:
+            Formatted header panel
+        """
+        title_text = Text()
+        if "Thermur" in title:
+            parts = title.split("Thermur", 1)
+            
+            if parts[0]:
+                title_text.append(parts[0], style="bold bright_white")
+            
+            title_text.append_text(self._format_fire_gradient_text("Thermur"))
+            
+            if parts[1]:
+                title_text.append(parts[1], style="bold bright_white")
+        else:
+            title_text.append(title, style="bold bright_white")
+        
+        return Panel(
+            Align.center(title_text),
+            border_style = self.display.styles['thermal'],
+            padding      = (1, 3),
+            expand       = True,
+        )
+
+    def _create_progress_bar(
+        self,
+        color         : str,
+        used_fraction : float,
+        length        : int = None
+    ) -> str:
+        """
+        Create a string-based progress bar using Rich markup for resource display.
+        
+        Constructs a visual progress bar using Unicode block characters and Rich
+        styling. Color coding helps users quickly assess system health.
+        
+        Args:
+            color         : Rich color name for the filled portion of the bar
+            used_fraction : Utilization ratio from 0.0 (empty) to 1.0 (full)
+            length        : Total character width of the progress bar
+            
+        Returns:
+            Rich markup string representing the styled progress bar
+        """
+        if length is None:
+            length = self.display.progress_bar_length
+            
+        return (
+            f"[{color}]"
+            f"{'█' * int(used_fraction * length)}"
+            f"[/{color}][{self.display.progress_unfilled_color}]"
+            f"{'░' * (length - int(used_fraction * length))}"
+            f"[/{self.display.progress_unfilled_color}]"
+        )
+    
+    def _create_status_indicator(self, text: str, is_available: bool) -> Text:
+        """
+        Create a status indicator Text with availability-based styling.
+        
+        Used for system component display where available/present items
+        are shown in green and unavailable/missing items are dimmed.
+        
+        Args:
+            text         : The text to display
+            is_available : Whether the component/resource is available
+            
+        Returns:
+            Text object styled green for available, dim for unavailable
+        """
+        return Text(text, style="bold green" if is_available else "dim")
+
+    def _format_fire_gradient_text(self, text: str) -> Text:
+        """
+        Format text with the distinctive Thermur fire gradient colors.
+        
+        Applies the signature thermal gradient to create the distinctive visual
+        effect used for "Thermur" branding. The gradient transitions from deep
+        red through bright orange to yellow, mimicking thermal imaging.
+        
+        Args:
+            text : The text to apply the gradient to
+            
+        Returns:
+            Rich Text object with character-by-character gradient styling
+        """
+        gradient_text = Text()
+        colors        = self.display.fire_gradient
+        
+        for i, char in enumerate(text):
+            color = colors[i % len(colors)]
+            gradient_text.append(char, style=f"bold {color}")
+            
+        return gradient_text
+
+    def _format_resource_display(
+        self,
+        available_gb : float,
+        total_gb     : float,
+        thresholds   : tuple[int, int],
+        unit         : str = "GB",
+    ) -> tuple[str, str]:
+        """
+        Format system resource display with intelligent color-coded progress bars.
+        
+        Creates resource utilization display with visual progress indicators and
+        precise numerical information. The threshold-based coloring provides
+        immediate feedback about resource availability.
+        
+        Args:
+            available_gb : Amount of available resource in gigabytes
+            total_gb     : Total system resource capacity in gigabytes
+            thresholds   : Tuple of (low_threshold, medium_threshold) in GB
+            unit         : Display unit string (typically "GB")
+            
+        Returns:
+            Tuple containing (progress_bar_markup, details_text) for display
+        """
+        used_fraction = (total_gb - available_gb) / total_gb if total_gb > 0 else 0
+        low_thresh, med_thresh = thresholds
+        
+        color = (
+            "red"     if available_gb < low_thresh else
+            "yellow"  if available_gb < med_thresh else
+            "bright_green"
+        )
+        
+        progress_bar = self._create_progress_bar(color, used_fraction)
+        details_text = self.display.resource_details_template.format(
+            available_gb, unit, total_gb, unit
+        )
+        
+        return progress_bar, details_text
+
     def create_aligned_table(
         self,
         columns      : list[tuple[str, str, int, str]],
@@ -97,74 +243,6 @@ class ThermurUI:
             )
         
         return table
-
-    def create_header_panel(
-        self,
-        title : str
-    ) -> Panel:
-        """
-        Create a styled header panel with fire gradient for "Thermur".
-        
-        Creates a visually striking header panel with special formatting
-        for the word "Thermur" using the signature fire gradient effect.
-        
-        Args:
-            title: Main header text
-            
-        Returns:
-            Formatted header panel
-        """
-        title_text = Text()
-        if "Thermur" in title:
-            parts = title.split("Thermur", 1)
-            
-            if parts[0]:
-                title_text.append(parts[0], style="bold bright_white")
-            
-            title_text.append_text(self.format_fire_gradient_text("Thermur"))
-            
-            if parts[1]:
-                title_text.append(parts[1], style="bold bright_white")
-        else:
-            title_text.append(title, style="bold bright_white")
-        
-        return Panel(
-            Align.center(title_text),
-            border_style = self.display.styles['thermal'],
-            padding      = (1, 3),
-            expand       = True,
-        )
-
-    def create_progress_bar(
-        self,
-        color         : str,
-        used_fraction : float,
-        length        : int = None
-    ) -> str:
-        """
-        Create a string-based progress bar using Rich markup for resource display.
-        
-        Constructs a visual progress bar using Unicode block characters and Rich
-        styling. Color coding helps users quickly assess system health.
-        
-        Args:
-            color         : Rich color name for the filled portion of the bar
-            used_fraction : Utilization ratio from 0.0 (empty) to 1.0 (full)
-            length        : Total character width of the progress bar
-            
-        Returns:
-            Rich markup string representing the styled progress bar
-        """
-        if length is None:
-            length = self.display.progress_bar_length
-            
-        return (
-            f"[{color}]"
-            f"{'█' * int(used_fraction * length)}"
-            f"[/{color}][{self.display.progress_unfilled_color}]"
-            f"{'░' * (length - int(used_fraction * length))}"
-            f"[/{self.display.progress_unfilled_color}]"
-        )
 
     def create_ready_panel(self, title: str, subtitle: str) -> Panel:
         """
@@ -251,9 +329,8 @@ class ThermurUI:
             logic = self.display.system_logic[key]
             
             if logic.get("is_resource"):
-                # Get thresholds
                 thresholds = (4, 8) if key == "memory" else (5, 20)
-                progress_bar, details_text = self.format_resource_display(
+                progress_bar, details_text = self._format_resource_display(
                     available_gb = system_info.get(logic.get("available"), 0),
                     total_gb     = system_info.get(logic.get("total"), 0),
                     thresholds   = thresholds,
@@ -265,33 +342,31 @@ class ThermurUI:
                 raw_value  = system_info.get(logic.get("key", key))
                 format_str = logic.get("format", "{}")
                 
-                if key == "cuda":
-                    if raw_value:
-                        value = Text("✅ Available", style="bold green")
-                    else:
-                        value = Text("Not Available", style="bold yellow")
-
-                elif key == "gpu":
-                    if raw_value and raw_value != "N/A":
-                        value = Text(str(raw_value), style="bold green")
-                    else:
-                        value = Text("Not Detected", style="dim")
-
-                elif key == "dataset":
-                    count = system_info.get(logic.get("count"), 0)
-                    if raw_value and raw_value > 0:
-                        value = Text(
-                            style = "bold green",
-                            text  = format_str.format(raw_value, count)
+                match key:
+                    case "cuda":
+                        value = self._create_status_indicator(
+                            "✅ Available" if raw_value else "Not Available", 
+                            bool(raw_value)
                         )
-                    else:
-                        value = Text("No files downloaded", style="dim")
-
-                else:
-                    if raw_value is not None:
-                        value = Text(format_str.format(raw_value), no_wrap=True)
-                    else:
-                        value = Text("Not Available", style="dim")
+                    case "gpu":
+                        is_available = raw_value and raw_value != "N/A"
+                        value = self._create_status_indicator(
+                            str(raw_value) if is_available else "Not Detected", 
+                            is_available
+                        )
+                    case "dataset":
+                        count         = system_info.get(logic.get("count"), 0)
+                        is_available  = raw_value and raw_value > 0
+                        formatted_str = format_str.format(raw_value, count)
+                        value = self._create_status_indicator(
+                            formatted_str if is_available else "No files downloaded", 
+                            is_available
+                        )
+                    case _:
+                        if raw_value is not None:
+                            value = Text(format_str.format(raw_value), no_wrap=True)
+                        else:
+                            value = self._create_status_indicator("Not Available", False)
                 
             table.add_row(Text(title), value)
 
@@ -420,21 +495,16 @@ class ThermurUI:
         available_files : list[dict],
         file_status     : dict[str, str],
         title           : str  = "Available Files"
-    ) -> dict[int, dict]:
+    ):
         """
-        Display a table of files with their download status.
+        Display a paginated table of files with their download status.
         
-        Shows all available files with status indicators and selection
-        numbers. Automatically groups files by case prefix for the 
-        Moisseeva dataset.
+        Shows up to 10 files with status indicators and selection numbers (0-9).
         
         Args:
             available_files : List of file info dictionaries with 'name' and 'size'
             file_status     : Dict mapping filename to status ('downloaded', 'incomplete', 'missing')
             title           : Table title
-            
-        Returns:
-            Dict mapping selection numbers to file info
         """
         status_symbols = {
             'downloaded' : Text("✅", style="green"),
@@ -445,90 +515,23 @@ class ThermurUI:
         columns = [
             ("#",      "bright_cyan", 4,  "right"),
             ("Status", "green",       8,  "center"),
-            ("File",   "cyan",        40, "left"),
-            ("Size",   "yellow",      10, "right"),
-            ("Case",   "magenta",     12, "left")
+            ("File",   "cyan",        50, "left"),
+            ("Size",   "yellow",      10, "right")
         ]
         
-        table          = self.create_aligned_table(columns=columns, title=title)
-        file_index_map = {}
+        table = self.create_aligned_table(columns=columns, title=title)
         
-        for i, file_info in enumerate(available_files, 1):
+        for i, file_info in enumerate(available_files):
             name   = file_info['name']
             size   = file_info['size']
             status = file_status.get(name, 'missing')
-            case   = name.split('F')[0] if 'F' in name else "Unknown"
-            
-            file_index_map[i] = file_info
-            row = [str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB", case]
+            row = [str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB"]
                 
             table.add_row(*row)
             
+        self.console.print()
         self.console.print(table)
-        return file_index_map
 
-    def format_fire_gradient_text(self, text: str) -> Text:
-        """
-        Format text with the distinctive Thermur fire gradient colors.
-        
-        Applies the signature thermal gradient to create the distinctive visual
-        effect used for "Thermur" branding. The gradient transitions from deep
-        red through bright orange to yellow, mimicking thermal imaging.
-        
-        Args:
-            text : The text to apply the gradient to
-            
-        Returns:
-            Rich Text object with character-by-character gradient styling
-        """
-        gradient_text = Text()
-        colors        = self.display.fire_gradient
-        
-        for i, char in enumerate(text):
-            color = colors[i % len(colors)]
-            gradient_text.append(char, style=f"bold {color}")
-            
-        return gradient_text
-
-    def format_resource_display(
-        self,
-        available_gb : float,
-        total_gb     : float,
-        thresholds   : tuple[int, int],
-        unit         : str = "GB",
-    ) -> tuple[str, str]:
-        """
-        Format system resource display with intelligent color-coded progress bars.
-        
-        Creates resource utilization display with visual progress indicators and
-        precise numerical information. The threshold-based coloring provides
-        immediate feedback about resource availability.
-        
-        Args:
-            available_gb : Amount of available resource in gigabytes
-            total_gb     : Total system resource capacity in gigabytes
-            thresholds   : Tuple of (low_threshold, medium_threshold) in GB
-            unit         : Display unit string (typically "GB")
-            
-        Returns:
-            Tuple containing (progress_bar_markup, details_text) for display
-        """
-        used_fraction = (total_gb - available_gb) / total_gb if total_gb > 0 else 0
-        low_thresh, med_thresh = thresholds
-        
-        color = (
-            "red"     if available_gb < low_thresh else
-            "yellow"  if available_gb < med_thresh else
-            "bright_green"
-        )
-        
-        progress_bar = self.create_progress_bar(color, used_fraction)
-        details_text = self.display.resource_details_template.format(
-            available_gb, unit, total_gb, unit
-        )
-        
-        return progress_bar, details_text
-    
     def print_auth_prompt(self, auth_url: str) -> None:
         """
         Display authentication prompt with URL.
@@ -620,8 +623,7 @@ class ThermurUI:
             title : Main header text
         """
         self.console.print()
-        panel = self.create_header_panel(title)
-        self.console.print(panel)
+        self.console.print(self._create_header_panel(title))
         self.console.print()
 
     def print_major_section(
@@ -693,25 +695,6 @@ class ThermurUI:
                 align      = "center"
             )
         )
-        self.console.print()
-
-    def print_section(
-        self,
-        title : str,
-        style : str
-    ):
-        """
-        Print a section divider with title.
-        
-        Creates a visual separator between different sections of output
-        using Rich's Rule component.
-        
-        Args:
-            title : Section title
-            style : Style to apply to the rule
-        """
-        self.console.print()
-        self.console.print(Rule(title, style=style, align="center"))
         self.console.print()
 
     def print_wandb_info(self, project: str, url: str | None = None):

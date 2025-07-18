@@ -12,13 +12,13 @@ The manager handles:
 - Transfer task submission between Globus endpoints
 - Progress monitoring for long-running transfers
 """
+import json
+import time
+
 from configs.cli import GlobusSecrets
 from globus_sdk  import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
 from omegaconf   import DictConfig
 from typing      import Optional
-
-import time
-import webbrowser
 
 
 class GlobusManager:
@@ -52,6 +52,63 @@ class GlobusManager:
         self.scopes       = download.globus_scopes
         self.secrets      = GlobusSecrets()
 
+    def _save_secrets(self):
+        """
+        Save authentication secrets to the filesystem.
+        
+        Creates individual files for each token field in the secrets directory.
+        This allows Pydantic's secrets_dir functionality to automatically load
+        these values on the next instantiation.
+        """
+        self.secrets.secrets_path.mkdir(exist_ok=True, parents=True)
+        
+        for field_name, value in self.secrets.model_dump(
+            exclude      = {'is_valid', 'secrets_path'},
+            exclude_none = True,
+            mode         = 'python'
+        ).items():
+            if hasattr(value, 'get_secret_value'):
+                value = value.get_secret_value()
+            
+            if value is not None:
+                file_path = self.secrets.secrets_path / field_name
+                file_path.write_text(json.dumps(value))
+                file_path.chmod(0o600)
+    
+    def _monitor_transfer_task(
+        self,
+        task_id         : str, 
+        transfer_client : TransferClient
+    ) -> dict:
+        """
+        Check the current status of a transfer task.
+        
+        Queries the Globus service for detailed information about a submitted
+        transfer task. This includes completion status, bytes transferred,
+        and any error information.
+        
+        Args:
+            task_id         : UUID of the transfer task
+            transfer_client : Authenticated client for API calls
+            
+        Returns:
+            Task status dictionary containing:
+            - bytes_transferred : Number of bytes successfully transferred
+            - files_transferred : Number of files completed
+            - is_ok             : Boolean indicating if transfer completed
+            - nice_status       : Human-readable status message
+            - status            : Current status (ACTIVE, SUCCEEDED, FAILED)
+        """
+        task = transfer_client.get_task(task_id)
+        
+        return {
+            "bytes_transferred" : task.get("bytes_transferred", 0),
+            "files_transferred" : task.get("files_transferred", 0), 
+            "is_ok"             : task.get("is_ok", False),
+            "nice_status"       : task.get("nice_status", "Unknown"),
+            "status"            : task["status"]
+        }
+
     def finalize_oauth2_flow(
         self, 
         auth_code : str,
@@ -69,23 +126,19 @@ class GlobusManager:
         """
         token_response  = client.oauth2_exchange_code_for_tokens(auth_code)
         transfer_tokens = token_response.by_resource_server["transfer.api.globus.org"]
-        
-        # Store only the refresh token and scope
         self.secrets    = GlobusSecrets(
             refresh_token = transfer_tokens.get("refresh_token"),
             scope         = transfer_tokens.get("scope")
         )
         
-        self.secrets.save()
+        self._save_secrets()
         
-        # Create authorizer with just the refresh token
-        # The SDK will handle getting/refreshing access tokens as needed
-        authorizer = RefreshTokenAuthorizer(
-            auth_client   = client,
-            refresh_token = transfer_tokens["refresh_token"]
+        return TransferClient(
+            authorizer = RefreshTokenAuthorizer(
+                auth_client   = client,
+                refresh_token = transfer_tokens["refresh_token"]
+            )
         )
-        
-        return TransferClient(authorizer=authorizer)
     
     def get_local_endpoints(self, transfer_client: TransferClient) -> list[dict]:
         """
@@ -235,40 +288,6 @@ class GlobusManager:
         result = transfer_client.submit_transfer(transfer_data)
         return result["task_id"]
     
-    def monitor_transfer_task(
-        self,
-        task_id         : str, 
-        transfer_client : TransferClient
-    ) -> dict:
-        """
-        Check the current status of a transfer task.
-        
-        Queries the Globus service for detailed information about a submitted
-        transfer task. This includes completion status, bytes transferred,
-        and any error information.
-        
-        Args:
-            task_id         : UUID of the transfer task
-            transfer_client : Authenticated client for API calls
-            
-        Returns:
-            Task status dictionary containing:
-            - bytes_transferred : Number of bytes successfully transferred
-            - files_transferred : Number of files completed
-            - is_ok             : Boolean indicating if transfer completed
-            - nice_status       : Human-readable status message
-            - status            : Current status (ACTIVE, SUCCEEDED, FAILED)
-        """
-        task = transfer_client.get_task(task_id)
-        
-        return {
-            "bytes_transferred" : task.get("bytes_transferred", 0),
-            "files_transferred" : task.get("files_transferred", 0), 
-            "is_ok"             : task.get("is_ok", False),
-            "nice_status"       : task.get("nice_status", "Unknown"),
-            "status"            : task["status"]
-        }
-    
     def start_oauth2_flow(self) -> tuple[NativeAppAuthClient, str]:
         """
         Start OAuth2 flow and return the authentication URL.
@@ -313,12 +332,11 @@ class GlobusManager:
         start_time = time.time()
         
         while True:
-            status = self.monitor_transfer_task(task_id, transfer_client)
+            status = self._monitor_transfer_task(task_id, transfer_client)
             
-            if status["status"] == "SUCCEEDED":
-                return True
-            elif status["status"] == "FAILED":
-                return False
+            match status["status"]:
+                case "SUCCEEDED" : return True
+                case "FAILED"    : return False
                 
             if timeout and (time.time() - start_time) > timeout:
                 return False

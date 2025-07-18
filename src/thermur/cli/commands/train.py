@@ -6,6 +6,7 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from omegaconf import OmegaConf
+from textwrap  import shorten
 from typer     import Context, Exit, Option
 
 
@@ -165,7 +166,7 @@ class TrainCommand:
         for path, value in sorted(flat_config.items()):
             display_value = str(value)
             if len(display_value) > 35:
-                display_value = display_value[:32] + "..."
+                display_value = shorten(display_value, width=35, placeholder="...")
             table.add_row(path, display_value)
         
         return table
