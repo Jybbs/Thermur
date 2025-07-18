@@ -12,15 +12,14 @@ The manager handles:
 - Transfer task submission between Globus endpoints
 - Progress monitoring for long-running transfers
 """
-import json
 import time
 
-from configs.cli   import GlobusSecrets
-from contextlib    import suppress
-from globus_sdk    import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from omegaconf     import DictConfig
-from pathlib       import Path
-from typing        import Optional
+from configs.cli import GlobusSecrets
+from contextlib  import suppress
+from globus_sdk  import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
+from omegaconf   import DictConfig
+from pathlib     import Path
+from typing      import Optional
 
 
 class GlobusManager:
@@ -74,7 +73,7 @@ class GlobusManager:
             
             if value is not None:
                 file_path = self.secrets.secrets_path / field_name
-                file_path.write_text(json.dumps(value))
+                file_path.write_text(str(value))
                 with suppress(OSError):
                     file_path.chmod(0o600)
     
@@ -160,18 +159,15 @@ class GlobusManager:
             - display_name : Human-readable endpoint name  
             - description  : Optional endpoint description
         """
-        endpoints = transfer_client.endpoint_search(
-            filter_scope = "my-endpoints",
-            filter_type  = "GCP"
-        )
-        
         return [
             {
                 "description"  : ep.get("description", ""),
                 "display_name" : ep["display_name"],
                 "id"           : ep["id"]
             }
-            for ep in endpoints
+            for ep in transfer_client.endpoint_search(
+                filter_scope = "my-endpoints"
+            )
         ]
     
     def get_or_create_client(self) -> TransferClient:
@@ -282,7 +278,7 @@ class GlobusManager:
             destination_endpoint = dest_endpoint,
             label                = label,
             source_endpoint      = source_endpoint,
-            sync_level           = "checksum"
+            sync_level           = 1
         )
         
         for source_path, dest_path in items:
@@ -311,10 +307,11 @@ class GlobusManager:
     
     def wait_for_transfer(
         self,
-        task_id         : str,
-        transfer_client : TransferClient,
-        polling_interval: int           = 10,
-        timeout         : Optional[int] = None
+        task_id           : str,
+        transfer_client   : TransferClient,
+        polling_interval  : int                = 10,
+        progress_callback : Optional[callable] = None,
+        timeout           : Optional[int]      = None
     ) -> bool:
         """
         Block until a transfer task completes or times out.
@@ -324,10 +321,11 @@ class GlobusManager:
         desired. For large transfers, async monitoring is recommended.
         
         Args:
-            task_id          : UUID of the transfer task to monitor
-            transfer_client  : Authenticated client for API calls
-            polling_interval : Seconds between status checks
-            timeout          : Maximum seconds to wait (None for infinite)
+            task_id           : UUID of the transfer task to monitor
+            transfer_client   : Authenticated client for API calls
+            polling_interval  : Seconds between status checks
+            progress_callback : Optional callback function that receives status dict
+            timeout           : Maximum seconds to wait (None for infinite)
             
         Returns:
             True if transfer succeeded, False if failed or timed out
@@ -335,6 +333,9 @@ class GlobusManager:
         start_time = time.time()
         
         while status := self._monitor_transfer_task(task_id, transfer_client):
+            if progress_callback:
+                progress_callback(status)
+                
             match status["status"]:
                 case "SUCCEEDED" : return True
                 case "FAILED"    : return False

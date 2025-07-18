@@ -95,7 +95,8 @@ class DownloadCommand:
                 message  = "Authentication successful! Credentials saved.",
                 msg_type = "success"
             )
-            return globus_client
+        
+        return globus_client
     
     def _get_available_files(self, globus_client: TransferClient) -> list[dict]:
         """
@@ -177,6 +178,39 @@ class DownloadCommand:
             
         return selected
     
+    def _handle_file_selection(
+        self,
+        file_info     : dict,
+        file_status   : dict[str, str],
+        globus_client : TransferClient
+    ) -> None:
+        """
+        Handle user's file selection with appropriate prompts.
+        
+        Checks the file's current status and prompts for confirmation
+        if needed before initiating the download.
+        
+        Args:
+            file_info     : Selected file information
+            file_status   : Dict mapping filenames to status
+            globus_client : Authenticated transfer client
+        """
+        status = file_status.get(file_info['name'], 'missing')
+        
+        match status:
+            case 'downloaded':
+                message = f"{file_info['name']} is already downloaded. Re-download?"
+                if not self.prompts.confirm(message):
+                    return
+            case 'incomplete':
+                self.ui.print_message(
+                    f"{file_info['name']} appears incomplete. Will re-download.",
+                    "warning"
+                )
+                
+        if self.prompts.confirm_download(file_info):
+            self._perform_download(file_info, globus_client)
+    
     def _initiate_transfer(
         self,
         dest_endpoint   : str,
@@ -214,7 +248,7 @@ class DownloadCommand:
         except Exception as e:
             self.ui.print_message(f"Transfer submission failed: {str(e)}", "error")
             return None
-    
+
     def _monitor_transfer(
         self,
         file_info     : dict,
@@ -236,11 +270,26 @@ class DownloadCommand:
         Returns:
             True if transfer succeeded, False otherwise
         """
-        with self.ui.console.status("[bold green]Transferring file..."):
+        with self.ui.create_thermal_progress() as progress:
+            task = progress.add_task(
+                description = f"Downloading {file_info['name']}",
+                total       = file_info['size']
+            )
+            
+            update_callback = lambda status: progress.update(
+                completed   = status.get("bytes_transferred", 0),
+                description = (
+                    f"Downloading {file_info['name']} - "
+                    f"{status.get('nice_status', '')}"
+                ),
+                task_id     = task 
+            )
+            
             success = self.globus.wait_for_transfer(
-                task_id         = task_id,
-                transfer_client = globus_client,
-                timeout         = 3600 
+                progress_callback = update_callback,
+                task_id           = task_id,
+                timeout           = 3600,
+                transfer_client   = globus_client
             )
         
         if success:
@@ -249,39 +298,6 @@ class DownloadCommand:
             self.ui.print_message("Transfer failed or timed out", "error")
             
         return success
-    
-    def _handle_file_selection(
-        self,
-        file_info     : dict,
-        file_status   : dict[str, str],
-        globus_client : TransferClient
-    ) -> None:
-        """
-        Handle user's file selection with appropriate prompts.
-        
-        Checks the file's current status and prompts for confirmation
-        if needed before initiating the download.
-        
-        Args:
-            file_info     : Selected file information
-            file_status   : Dict mapping filenames to status
-            globus_client : Authenticated transfer client
-        """
-        status = file_status.get(file_info['name'], 'missing')
-        
-        match status:
-            case 'downloaded':
-                message = f"{file_info['name']} is already downloaded. Re-download?"
-                if not self.prompts.confirm(message):
-                    return
-            case 'incomplete':
-                self.ui.print_message(
-                    f"{file_info['name']} appears incomplete. Will re-download.",
-                    "warning"
-                )
-                
-        if self.prompts.confirm_download(file_info):
-            self._perform_download(file_info, globus_client)
     
     def _perform_download(self, file_info: dict, globus_client: TransferClient):
         """

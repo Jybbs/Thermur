@@ -36,8 +36,7 @@ class GlobusSecrets(BaseSettings):
     
     model_config = SettingsConfigDict(
         case_sensitive = False,
-        env_prefix     = "THERMUR_GLOBUS_",
-        secrets_dir    = SECRETS_DIR
+        secrets_dir    = str(SECRETS_DIR)
     )
     
     @computed_field
