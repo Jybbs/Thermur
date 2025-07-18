@@ -46,7 +46,7 @@ class DownloadCommand:
             ctx: The Typer context containing AppContext with configuration,
                  UI utilities, and system inspection capabilities.
         """
-        self.cache_dir = Path(ctx.obj.cfg.download.cache_dir)
+        self.cache_dir = ctx.obj.cfg.download.cache_dir
         self.cfg       = ctx.obj.cfg
         self.globus    = ctx.obj.globus
         self.prompts   = ctx.obj.prompts
@@ -86,10 +86,15 @@ class DownloadCommand:
                     )
             
             auth_code = input("Enter the authorization code from the browser: ")
-            return self.globus.finalize_oauth2_flow(
+            globus_client = self.globus.finalize_oauth2_flow(
                 auth_code = auth_code,
                 client    = auth_client
             )
+            self.ui.print_message(
+                message  = "Authentication successful! Credentials saved.",
+                msg_type = "success"
+            )
+            return globus_client
     
     def _get_available_files(self, globus_client: TransferClient) -> list[dict]:
         """
@@ -109,7 +114,7 @@ class DownloadCommand:
         
         return [
             f for f in files 
-            if f["type"] == "file" and f["name"].endswith(".nc")
+            if f["type"] == "file" and f["name"].startswith("wrfout_")
         ]
     
     def _get_download_status(self, available_files: list[dict]) -> dict[str, str]:
@@ -265,14 +270,16 @@ class DownloadCommand:
         """
         status = file_status.get(file_info['name'], 'missing')
         
-        if status == 'downloaded':
-            if not self.prompts.confirm(f"{file_info['name']} is already downloaded. Re-download?"):
-                return
-        elif status == 'incomplete':
-            self.ui.print_message(
-                f"{file_info['name']} appears incomplete. Will re-download.",
-                "warning"
-            )
+        match status:
+            case 'downloaded':
+                message = f"{file_info['name']} is already downloaded. Re-download?"
+                if not self.prompts.confirm(message):
+                    return
+            case 'incomplete':
+                self.ui.print_message(
+                    f"{file_info['name']} appears incomplete. Will re-download.",
+                    "warning"
+                )
                 
         if self.prompts.confirm_download(file_info):
             self._perform_download(file_info, globus_client)
@@ -316,7 +323,10 @@ class DownloadCommand:
             return
             
         self.ui.print_message(f"Transfer submitted! Task ID: {task_id}", "success")
-        self.ui.print_message("You can monitor progress at https://app.globus.org/activity", "info")
+        self.ui.print_message(
+            message  = "You can monitor progress at https://app.globus.org/activity",
+            msg_type = "info"
+        )
         
         if self.prompts.confirm("Wait for transfer to complete?"):
             self._monitor_transfer(file_info, globus_client, task_id)
@@ -340,18 +350,17 @@ class DownloadCommand:
             
         file_status = self._get_download_status(available_files)
         
-        file_index_map = self.ui.display_download_table(
+        selected_file = self.prompts.select_file_with_pagination(
             available_files = available_files,
             file_status     = file_status,
-            title           = "Moisseeva (2020) Dataset Files"
+            title_prefix    = "Moisseeva (2020) Dataset"
         )
         
-        self.ui.console.print()
-        self.ui.display_download_summary(available_files, file_status)
-        self.ui.console.print()
-        
-        selected_file = self.prompts.select_file_by_number(file_index_map)
         if selected_file:
-            self._handle_file_selection(selected_file, file_status, globus_client)
+            self._handle_file_selection(
+                file_info     = selected_file,
+                file_status   = file_status,
+                globus_client = globus_client
+            )
         else:
             self.ui.print_message("Download cancelled", "warning")

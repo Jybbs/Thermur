@@ -4,7 +4,8 @@ User interaction and preset configuration schemas for the Thermur CLI.
 This module contains models for interactive prompts and pre-configured training
 presets that guide users through the CLI experience.
 """
-from pydantic import BaseModel, DirectoryPath, Field
+from pathlib  import Path
+from pydantic import BaseModel, Field
 
 
 class DownloadModel(BaseModel, extra="forbid"):
@@ -14,8 +15,8 @@ class DownloadModel(BaseModel, extra="forbid"):
     This model contains settings for file downloads, display options, and
     caching behavior, separate from the dataset schema used for training.
     """
-    cache_dir: DirectoryPath = Field(
-        default     = "data/cache",
+    cache_dir: Path = Field(
+        default     = Path("data/cache"),
         description = "Local directory for caching downloaded files."
     )
     globus_client_id: str = Field(

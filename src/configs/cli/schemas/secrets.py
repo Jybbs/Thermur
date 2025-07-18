@@ -10,6 +10,8 @@ from pydantic          import computed_field, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing            import Optional
 
+SECRETS_DIR = Path.home() / ".config" / "thermur" / "secrets"
+
 
 class GlobusSecrets(BaseSettings):
     """
@@ -27,11 +29,15 @@ class GlobusSecrets(BaseSettings):
         default     = None,
         description = "Space-delimited OAuth2 scopes granted by this token"
     )
+    secrets_path: Path = Field(
+        default     = SECRETS_DIR,
+        description = "Directory for storing secret files"
+    )
     
     model_config = SettingsConfigDict(
         case_sensitive = False,
         env_prefix     = "THERMUR_GLOBUS_",
-        secrets_dir    = Path.home() / ".config" / "thermur" / "secrets"
+        secrets_dir    = SECRETS_DIR
     )
     
     @computed_field
@@ -45,26 +51,3 @@ class GlobusSecrets(BaseSettings):
             for field in ['refresh_token', 'scope']
         )
     
-    def save(self):
-        """
-        Write tokens to the secrets directory.
-        
-        Creates individual files for each token field in the secrets directory.
-        The built-in secrets_dir functionality will automatically load these
-        on the next instantiation.
-        """
-        self.model_config['secrets_dir'].mkdir(
-            exist_ok = True,
-            parents  = True
-        )
-        
-        for field_name, value in self.model_dump(
-            exclude_none = True, 
-            mode         = 'python'
-        ).items():
-            if hasattr(value, 'get_secret_value'):
-                value = value.get_secret_value()
-            
-            file_path = self.model_config['secrets_dir'] / field_name
-            file_path.write_text(str(value))
-            file_path.chmod(0o600)
