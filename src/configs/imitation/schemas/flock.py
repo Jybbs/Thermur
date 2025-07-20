@@ -8,26 +8,6 @@ from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
-class TensorSpec(BaseModel, extra="forbid"):
-    """
-    Specification for tensor shape and type information.
-    
-    This lightweight model captures the essential properties needed to
-    create TorchRL specs and validate tensor shapes throughout the system.
-    """
-    bounds: tuple[float, float] | None = Field(
-        default     = None,
-        description = "Optional (min, max) bounds for bounded tensors"
-    )
-    dtype: Literal["float32", "int64", "bool"] = Field(
-        default     = "float32",
-        description = "Tensor data type"
-    )
-    shape: list[str] = Field(
-        description = "Shape dimensions using 'N' for agent count and 'd' for spatial dims"
-    )
-
-
 class FlockModel(BaseModel, extra="forbid"):
     """
     Unified configuration for the thermal drone flock.
@@ -105,46 +85,20 @@ class FlockModel(BaseModel, extra="forbid"):
             "agent's heat dissipation rate."
         )
     )
-
-
-class ObservationSpace(BaseModel, extra="forbid"):
-    """
-    Defines the observation structure for the thermal flock system.
     
-    This model specifies the complete state representation available to agents,
-    including kinematics, thermal data, and communication topology. The structure
-    is used throughout the system for data consistency and can be converted to
-    TorchRL specs for environment interfaces.
+    @property
+    def shape(self) -> tuple[int, int]:
+        """
+        Returns (agent_count, spatial_dims) for common tensor shape operations.
+        """
+        return (self.agent_count, self.spatial_dims)
     
-    Shape notation:
-    - N : Number of agents (resolved from FlockModel.agent_count)
-    - d : Spatial dimensions (resolved from FlockModel.spatial_dims)
-    """
-    battery: TensorSpec = Field(
-        default     = TensorSpec(shape=["N", "1"], bounds=(0.0, 1.0)),
-        description = "Energy remaining per agent"
-    )
-    edge_index: TensorSpec = Field(
-        default     = TensorSpec(shape=["2", "N*(N-1)"], dtype="int64"),
-        description = "Dynamic graph connectivity for inter-agent communication"
-    )
-    position: TensorSpec = Field(
-        default     = TensorSpec(shape=["N", "d"]),
-        description = "Spatial coordinates in ℝᵈ"
-    )
-    temperature: TensorSpec = Field(
-        default     = TensorSpec(shape=["N", "1"], bounds=(0.0, float("inf"))),
-        description = "Thermal state per agent in Kelvin"
-    )
-    temperature_grad: TensorSpec = Field(
-        default     = TensorSpec(shape=["N", "d"]),
-        description = "Thermal gradient ∇T at agent positions"
-    )
-    velocity: TensorSpec = Field(
-        default     = TensorSpec(shape=["N", "d"]),
-        description = "Motion vectors in ℝᵈ"
-    )
-    wind: TensorSpec = Field(
-        default     = TensorSpec(shape=["N", "d"]),
-        description = "Environmental wind field at agent positions"
-    )
+    @property
+    def state_size(self) -> int:
+        """
+        Total number of scalar values needed to represent all agent states.
+        
+        Used for flattened state arrays in MuJoCo where positions and velocities
+        are stored as contiguous 1D arrays of size agent_count * spatial_dims.
+        """
+        return self.agent_count * self.spatial_dims

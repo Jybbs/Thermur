@@ -356,8 +356,11 @@ class ThermurUI:
                         )
                     case "dataset":
                         count         = system_info.get(logic.get("count"), 0)
+                        has_sample    = system_info.get("has_sample", False)
                         is_available  = raw_value and raw_value > 0
                         formatted_str = format_str.format(raw_value, count)
+                        if has_sample and is_available:
+                            formatted_str += " [includes sample]"
                         value = self._create_status_indicator(
                             formatted_str if is_available else "No files downloaded", 
                             is_available
@@ -523,6 +526,31 @@ class ThermurUI:
             
         self.console.print()
         self.console.print(table)
+
+    def display_system_validation(self, system):
+        """
+        Display comprehensive system validation information.
+        
+        Shows system information and wandb status in a formatted display.
+        Used by both train and validate commands for consistent output.
+        
+        Args:
+            system: SystemInspector instance for gathering system info
+        """
+        self.print_section("System Information")
+
+        with self.console.status(
+            spinner = "dots",
+            status  = system.messages.status["checking_reqs"]
+        ):
+            info = system.get_system_info()
+
+        self.console.print(self.create_system_table(info))
+        self.console.print()
+
+        status, details = system.check_wandb_status()
+        self.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
+        self.console.print()
 
     def print_auth_prompt(self, auth_url: str) -> None:
         """

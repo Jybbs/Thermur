@@ -47,22 +47,6 @@ class ValidateCommand:
         self.system = ctx.obj.system
         self.ui     = ctx.obj.ui
 
-    def _perform_system_validation(self):
-        """
-        Performs comprehensive system validation checks.
-
-        This helper validates hardware capabilities, software versions, and
-        integration status, displaying the results in a formatted table.
-        """
-        self.ui.print_section("System Information")
-
-        info = self.system.get_system_info()
-        self.ui.console.print(self.ui.create_system_table(info))
-        self.ui.console.print()
-
-        status, details = self.system.check_wandb_status()
-        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
-        self.ui.console.print()
 
     def run(self, config_overrides: list[str] | None):
         """
@@ -72,7 +56,7 @@ class ValidateCommand:
             config_overrides: A list of Hydra configuration overrides to validate.
         """
         self.ui.print_header("System Validation")
-        self._perform_system_validation()
+        self.ui.display_system_validation(self.system)
 
         self.ui.print_section("Configuration Check")
 

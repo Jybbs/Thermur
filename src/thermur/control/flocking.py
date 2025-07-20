@@ -219,7 +219,7 @@ class ExpertFlockingController:
 
         gradient = (
             gradient if gradient is not None 
-            else self._estimate_temperature_gradient(
+            else self._estimate_gradient(
                 position    = position, 
                 temperature = temperature
             )
@@ -244,7 +244,7 @@ class ExpertFlockingController:
             else temperature
         )
 
-    def _estimate_temperature_gradient(
+    def _estimate_gradient(
         self,
         position    : Tensor,
         temperature : Tensor
@@ -295,18 +295,16 @@ class ExpertFlockingController:
             index  = self._edge_source[sig_mask],
             source = pos_diff[sig_mask] * temp_diff[sig_mask].unsqueeze(dim=1)
         )
-
-        # Compute the primary gradient, avoiding division by zero
         grad_neighbors = torch.divide(
             input = grad_sum,
             other = torch.clamp(sig_counts, min=1).unsqueeze(dim=1)
         )
 
-        # Apply the fallback gradient where necessary
-        grad_fallback = self._vertical_heat_gradient(position=position, temperature=temperature)
-        use_fallback  = (sig_counts == 0).unsqueeze(dim=1)
-
-        return torch.where(use_fallback, grad_fallback, grad_neighbors)
+        return torch.where(
+            condition = (sig_counts == 0).unsqueeze(dim=1), 
+            input     = self._vertical_heat_gradient(position, temperature), 
+            other     = grad_neighbors
+        )
 
     def _reset_shared_state(self):
         """
