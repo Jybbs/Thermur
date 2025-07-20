@@ -101,7 +101,7 @@ class SimulationEnv(EnvBase):
         return Composite(
             action = Unbounded(
                 dtype = float32,
-                shape = (self.flock.agent_count, self.flock.spatial_dims),
+                shape = self.flock.shape,
             ),
         )
     
@@ -127,8 +127,7 @@ class SimulationEnv(EnvBase):
         Returns:
             Composite tensor specification defining the observation structure
         """
-        n = self.flock.agent_count
-        d = self.flock.spatial_dims
+        n, dims = self.flock.shape
         
         bounded_tensors = {
             "battery"     : Bounded(0, 1,   (n, 1),       dtype=float32),
@@ -139,11 +138,11 @@ class SimulationEnv(EnvBase):
         
         unbounded = lambda shape: Unbounded(shape=shape, dtype=float32)
         unbounded_tensors = {
-            "gradient" : unbounded((n, d)),
-            "position" : unbounded((n, d)),
+            "gradient" : unbounded((n, dims)),
+            "position" : unbounded((n, dims)),
             "reward"   : unbounded((n,  )),
-            "velocity" : unbounded((n, d)),
-            "wind"     : unbounded((n, d)),
+            "velocity" : unbounded((n, dims)),
+            "wind"     : unbounded((n, dims)),
         }
         
         return Composite(**bounded_tensors, **unbounded_tensors)
@@ -162,23 +161,16 @@ class SimulationEnv(EnvBase):
             positions  : Tensor of shape [agent_count, spatial_dims]
             velocities : Tensor of shape [agent_count, spatial_dims]
         """
-        end_idx      = self.flock.agent_count * self.flock.spatial_dims
-        reshape_dims = (self.flock.agent_count, self.flock.spatial_dims)
-
-        positions  = torch.from_numpy(
-            data.qpos[:end_idx].copy().reshape(reshape_dims)
+        positions = torch.from_numpy(
+            data.qpos[:self.flock.state_size].copy().reshape(self.flock.shape)
         )
         velocities = torch.from_numpy(
-            data.qvel[:end_idx].copy().reshape(reshape_dims)
+            data.qvel[:self.flock.state_size].copy().reshape(self.flock.shape)
         )
     
         return positions, velocities
     
-    def _generate_cube_formation(
-        self,
-        dims     : int,
-        n_agents : int
-    ) -> Tensor:
+    def _generate_cube_formation(self, shape: tuple[int, int]) -> Tensor:
         """
         Generates points distributed in a hypercube grid formation.
         
@@ -190,26 +182,22 @@ class SimulationEnv(EnvBase):
             - Returns the first N points from the flattened grid
         
         Args:
-            dims     : Spatial dimensions for the hypercube (2 or 3)
-            n_agents : Number of agents to place [N]
+            shape : (n, dims) tuple from FlockModel
 
         Returns:
-            A tensor of shape [n_agents, dims] containing agent positions
+            A tensor of shape [n, dims] containing agent positions
         """
-        side_length = math.ceil(n_agents ** (1./dims))
+        n, dims     = shape
+        side_length = math.ceil(n ** (1./dims))
         coords      = torch.linspace(-1, 1, side_length)
         grid        = torch.stack(
             dim     = -1,
             tensors = torch.meshgrid(*([coords] * dims), indexing='ij')
         )
 
-        return grid.reshape(-1, dims)[:n_agents]
+        return grid.reshape(-1, dims)[:n]
     
-    def _generate_sphere_formation(
-        self,
-        dims     : int,
-        n_agents : int
-    ) -> Tensor:
+    def _generate_sphere_formation(self, shape: tuple[int, int]) -> Tensor:
         """
         Generates points distributed evenly on a sphere (3D) or circle (2D).
 
@@ -226,21 +214,21 @@ class SimulationEnv(EnvBase):
             (r·cos(θ), r·sin(θ), z) where θ = 2π·k/φ
         
         Args:
-            dims     : Spatial dimensions (2 or 3)
-            n_agents : Number of agents to place [N]
+            shape : (n, dims) tuple from FlockModel
 
         Returns:
-            A tensor of shape [n_agents, dims] containing agent positions
+            A tensor of shape [n, dims] containing agent positions
         """
+        n, dims = shape
         if dims == 2:
-            thetas = torch.linspace(0, 2 * torch.pi, n_agents, endpoint=False)
+            thetas = torch.linspace(0, 2 * torch.pi, n, endpoint=False)
             return torch.stack(
                 dim     = 1,
                 tensors = (torch.cos(thetas), torch.sin(thetas))
             )
 
-        indices      = torch.arange(n_agents, dtype=float32)
-        z            = 1 - (2 * indices) / (n_agents - 1)
+        indices      = torch.arange(n, dtype=float32)
+        z            = 1 - (2 * indices) / (n - 1)
         radius       = torch.sqrt(1 - z*z)
         golden_angle = torch.pi * (3. - (5.**0.5))
         theta        = golden_angle * indices
@@ -269,10 +257,9 @@ class SimulationEnv(EnvBase):
             A dictionary containing the MuJoCo model and data instances.
         """
         xml_string = generate_flock_xml(
-            agent_count     = self.flock.agent_count,
             assets_dir      = physics.assets_dir,
-            simulation_step = physics.simulation_step,
-            spatial_dims    = self.flock.spatial_dims
+            shape           = self.flock.shape,
+            simulation_step = physics.simulation_step
         )
         
         return load_flock_model(xml_string)
@@ -307,15 +294,17 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` containing the initial observation of the flock.
         """
-        formation_args = (self.flock.spatial_dims, self.flock.agent_count)
         match self.flock.initial_formation:
             case "cube":
-                positions = self._generate_cube_formation(*formation_args)
+                positions = self._generate_cube_formation(self.flock.shape)
             case "sphere" | _:
-                positions = self._generate_sphere_formation(*formation_args)
+                positions = self._generate_sphere_formation(self.flock.shape)
 
-        scale_factor     = self.flock.communication_range * self.flock.formation_scale_factor
-        scaled_positions = positions * scale_factor
+        scaled_positions = (
+            positions * 
+            self.flock.communication_range *
+            self.flock.formation_scale_factor
+        )
         
         initial_observation = self.observation_spec.zero()
         initial_observation.update({
@@ -359,13 +348,11 @@ class SimulationEnv(EnvBase):
             positions  : Tensor [N, spatial_dims] containing agent positions
             velocities : Tensor [N, spatial_dims] containing agent velocities
         """
-        data    = self.physics_model["data"]
-        end_idx = self.flock.agent_count * self.flock.spatial_dims
-        
+        data = self.physics_model["data"]
         mj.mj_resetData(self.physics_model["model"], data)
         
-        data.qpos[:end_idx] = positions.reshape(-1).cpu().numpy()
-        data.qvel[:end_idx] = velocities.reshape(-1).cpu().numpy()
+        data.qpos[:self.flock.state_size] = positions.reshape(-1).cpu().numpy()
+        data.qvel[:self.flock.state_size] = velocities.reshape(-1).cpu().numpy()
         
         # Forward kinematics to update all derived quantities
         mj.mj_forward(self.physics_model["model"], data)

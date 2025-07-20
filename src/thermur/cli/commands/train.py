@@ -6,9 +6,10 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from omegaconf import OmegaConf
-from pathlib   import Path
 from textwrap  import shorten
 from typer     import Context, Exit, Option
+
+import subprocess
 
 
 def train(
@@ -480,28 +481,6 @@ class TrainCommand:
 
         return components
 
-    def _perform_system_validation(self):
-        """
-        Performs comprehensive system validation checks.
-
-        This helper validates hardware capabilities, software versions, and
-        integration status before proceeding with training initialization.
-        """
-        self.ui.print_section("System Information")
-
-        with self.ui.console.status(
-            spinner = "dots",
-            status  = self.cfg.messages.status["checking_reqs"]
-        ):
-            info = self.system.get_system_info()
-
-        self.ui.console.print(self.ui.create_system_table(info))
-        self.ui.console.print()
-
-        status, details = self.system.check_wandb_status()
-        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
-        self.ui.console.print()
-
     def _prepare_training_imports(self):
         """
         Lazily imports heavy dependencies for training.
@@ -529,7 +508,7 @@ class TrainCommand:
             from hydra_zen.third_party.pydantic import pydantic_parser
             from thermur.utils                  import configure_loguru
             from thermur.utils                  import set_seed
-            from thermur.imitation               import train_imitation_learning
+            from thermur.imitation              import train_imitation_learning
 
             progress.update(
                 advance     = 30,
@@ -562,40 +541,6 @@ class TrainCommand:
 
         return imports
     
-    def _resolve_data_path(self, use_sample: bool) -> tuple[Path, str]:
-        """
-        Resolves the appropriate data path based on availability and user preference.
-        
-        Args:
-            use_sample : Whether the user explicitly requested sample data
-            
-        Returns:
-            Tuple of (data_path, status_message)
-            
-        Raises:
-            SystemExit: If no data is available for training
-        """
-        sample_path = self.cfg.download.sample_data_path
-        wrf_dir     = self.cfg.download.wrf_sfire_dir
-        wrf_files   = (
-            [f for f in wrf_dir.glob("*") if f.is_file()] 
-            if not use_sample and wrf_dir.exists() 
-            else []
-        )
-        
-        match (use_sample, bool(wrf_files), sample_path.exists()):
-            case (True, _, True):
-                return sample_path, "Using sample dataset as requested."
-            case (False, True, _):
-                return wrf_files[0], f"Using WRF-SFIRE data: {wrf_files[0].name}"
-            case (False, False, True):
-                return sample_path, "No WRF-SFIRE data found. Using sample data."
-            case _:
-                self.ui.print_message("No training data found.", "error")
-                self.ui.print_message(
-                    "Download sample data with: thermur download -s", "info"
-                )
-                raise SystemExit(1)
 
     def _run_training(
         self,
@@ -745,15 +690,25 @@ class TrainCommand:
         self.ui.print_header(title = "Thermur Training System")
 
         if not force:
-            self._perform_system_validation()
+            self.ui.display_system_validation(self.system)
         else:
             self.ui.print_message(
                 message  = self.cfg.messages.skipping_checks,
                 msg_type = "warning"
             )
 
-        data_path, msg = self._resolve_data_path(use_sample=sample)
-        self.ui.print_message(msg, "info")
+        try:
+            data_path, msg = self.system.resolve_data_path(use_sample=sample)
+
+        except FileNotFoundError:
+            if self.prompts.confirm("No data found. Download sample dataset?"):
+                subprocess.run(["thermur", "download", "--sample"])
+                data_path = self.cfg.download.sample_data_path
+            else:
+                raise Exit("Training requires data. Run 'thermur download --sample'")
+            
+        if msg:
+            self.ui.print_message(msg, "info")
         
         config_overrides = list(config_overrides or [])
         config_overrides.append(f"dataset.data_path={data_path}")
