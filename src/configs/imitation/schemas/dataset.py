@@ -4,7 +4,8 @@ Dataset configuration schema.
 This module defines the configuration for simulation datasets, including both
 download parameters and data structure definitions for the NetCDF files.
 """
-from pydantic import BaseModel, Field, NonNegativeFloat
+from pydantic import BaseModel, Field, FilePath, NonNegativeFloat
+from typing   import Optional
 
 
 class WRFModel(BaseModel, extra="forbid"):
@@ -17,6 +18,13 @@ class WRFModel(BaseModel, extra="forbid"):
     The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
     uses staggered grids where U, V, W wind components are offset from cell centers.
     """
+    data_path: Optional[FilePath] = Field(
+        default     = None,
+        description = (
+            "Path to WRF-Fire NetCDF dataset file. Defaults to first available: "
+            "wrf-sfire/*.nc, then data/samples/wrf_sample.nc"
+        )
+    )
     domain_randomization: bool = Field(
         default     = True,
         description = "Enable domain randomization for robustness."

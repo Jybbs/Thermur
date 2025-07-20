@@ -129,19 +129,19 @@ class Visualizer:
         
         Args:
             observation: Current simulation state containing:
-                - edge_index       : Communication graph edges (2, E)
-                - position         : Agent positions (N, 3)
-                - temperature      : Agent temperatures (N, 1)
-                - temperature_grad : Temperature gradients (N, 3)
-                - velocity         : Agent velocities (N, 3) 
+                - edge_index  : Communication graph edges (2, E)
+                - gradient    : Temperature gradients (N, 3)
+                - position    : Agent positions (N, 3)
+                - temperature : Agent temperatures (N, 1)
+                - velocity    : Agent velocities (N, 3) 
         """
         if self._plotter is None:
             self._initialize_plotter()
         
-        edge_index       = observation.get("edge_index")
-        position         = observation.get("position")
-        temperature      = observation.get("temperature")
-        velocity         = observation.get("velocity")
+        edge_index  = observation.get("edge_index")
+        position    = observation.get("position")
+        temperature = observation.get("temperature")
+        velocity    = observation.get("velocity")
         
         if self._plotter.ren_win is None:
             return
@@ -171,11 +171,11 @@ class Visualizer:
         
         if self.visualization.show_safety:
             self._safety_actors = self._renderer.add_safety_boundary(
-                grids            = self.grids,
-                max_temperature  = self.max_temperature,
-                plotter          = self._plotter,
-                position         = position,
-                temperature      = temperature
+                grids           = self.grids,
+                max_temperature = self.max_temperature,
+                plotter         = self._plotter,
+                position        = position,
+                temperature     = temperature
             )
         
         if self.visualization.show_graph:

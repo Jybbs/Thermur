@@ -18,6 +18,7 @@ imitation_cfg = make_config(
     optimizer         = build_optimizer,
     physics           = build_physics,
     policy            = build_policy,
+    safety            = build_safety,
     simulation        = build_simulation,
     trajectory        = build_trajectory,
     visualizer        = build_visualizer,

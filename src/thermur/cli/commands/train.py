@@ -6,6 +6,7 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from omegaconf import OmegaConf
+from pathlib   import Path
 from textwrap  import shorten
 from typer     import Context, Exit, Option
 
@@ -162,7 +163,7 @@ class TrainCommand:
             title        = title
         )
         
-        cfg_dict = OmegaConf.to_container(cfg, resolve=True)
+        cfg_dict    = OmegaConf.to_container(cfg, resolve=True)
         flat_config = self._flatten_config(cfg_dict)
         
         for path, value in sorted(flat_config.items()):
@@ -528,7 +529,7 @@ class TrainCommand:
             from hydra_zen.third_party.pydantic import pydantic_parser
             from thermur.utils                  import configure_loguru
             from thermur.utils                  import set_seed
-            from thermur.training               import train_imitation_learning
+            from thermur.imitation               import train_imitation_learning
 
             progress.update(
                 advance     = 30,
@@ -560,6 +561,41 @@ class TrainCommand:
             )
 
         return imports
+    
+    def _resolve_data_path(self, use_sample: bool) -> tuple[Path, str]:
+        """
+        Resolves the appropriate data path based on availability and user preference.
+        
+        Args:
+            use_sample : Whether the user explicitly requested sample data
+            
+        Returns:
+            Tuple of (data_path, status_message)
+            
+        Raises:
+            SystemExit: If no data is available for training
+        """
+        sample_path = self.cfg.download.sample_data_path
+        wrf_dir     = self.cfg.download.wrf_sfire_dir
+        wrf_files   = (
+            [f for f in wrf_dir.glob("*") if f.is_file()] 
+            if not use_sample and wrf_dir.exists() 
+            else []
+        )
+        
+        match (use_sample, bool(wrf_files), sample_path.exists()):
+            case (True, _, True):
+                return sample_path, "Using sample dataset as requested."
+            case (False, True, _):
+                return wrf_files[0], f"Using WRF-SFIRE data: {wrf_files[0].name}"
+            case (False, False, True):
+                return sample_path, "No WRF-SFIRE data found. Using sample data."
+            case _:
+                self.ui.print_message("No training data found.", "error")
+                self.ui.print_message(
+                    "Download sample data with: thermur download -s", "info"
+                )
+                raise SystemExit(1)
 
     def _run_training(
         self,
@@ -716,33 +752,11 @@ class TrainCommand:
                 msg_type = "warning"
             )
 
-        # Handle sample data usage
-        wrf_files_exist  = any(self.cfg.download.wrf_sfire_dir.glob("*.nc"))
-        sample_file_path = Path("data/samples/wrf_sample.nc")
-        sample_exists    = sample_file_path.exists()
+        data_path, msg = self._resolve_data_path(use_sample=sample)
+        self.ui.print_message(msg, "info")
         
-        use_sample = sample or not wrf_files_exist
-        
-        if use_sample:
-            if not sample_exists:
-                self.ui.print_message(
-                    message  = "No training data found.",
-                    msg_type = "error"
-                )
-                self.ui.print_message(
-                    message  = "Download sample data with: thermur download -s",
-                    msg_type = "info"
-                )
-                raise SystemExit(1)
-            
-            if not sample:
-                self.ui.print_message(
-                    message  = "No WRF-SFIRE data found. Using sample data.",
-                    msg_type = "info"
-                )
-            
-            config_overrides = list(config_overrides or [])
-            config_overrides.append(f"dataset.data_path={sample_file_path}")
+        config_overrides = list(config_overrides or [])
+        config_overrides.append(f"dataset.data_path={data_path}")
 
         preset, wandb_project, config_overrides = self._setup_configuration(
             config_overrides = config_overrides,

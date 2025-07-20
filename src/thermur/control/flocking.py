@@ -6,10 +6,10 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from .safety           import SafetyFilter
-from configs.imitation import ControlModel, FlockModel
-from tensordict        import TensorDict
-from torch             import Tensor
+from .safety    import SafetyFilter
+from pydantic   import BaseModel
+from tensordict import TensorDict
+from torch      import Tensor
 
 import torch
 import torch.nn.functional as F
@@ -32,8 +32,8 @@ class ExpertFlockingController:
 
     def __init__(
         self,
-        agent_properties : FlockModel,
-        control          : ControlModel,
+        agent_properties : BaseModel,
+        control          : BaseModel,
         safety_filter    : SafetyFilter
     ):
         """
@@ -179,7 +179,7 @@ class ExpertFlockingController:
         self,
         position    : Tensor,
         temperature : Tensor,
-        grad_temp   : Tensor | None = None
+        gradient    : Tensor | None = None
     ) -> Tensor:
         """
         Calculates the thermal repulsion force for each agent.
@@ -200,7 +200,7 @@ class ExpertFlockingController:
         Args:
             position    : Tensor [N, dim] containing agent positions 𝐱
             temperature : Tensor [N] or [N, 1] containing temperatures T
-            grad_temp   : Optional[Tensor] tensor [N, dim] of pre-computed temperature
+            gradient    : Optional[Tensor] tensor [N, dim] of pre-computed temperature
                           gradients ∇T. If None, gradients are estimated.
         
         Returns:
@@ -218,7 +218,7 @@ class ExpertFlockingController:
         )
 
         gradient = (
-            grad_temp if grad_temp is not None 
+            gradient if gradient is not None 
             else self._estimate_temperature_gradient(
                 position    = position, 
                 temperature = temperature
@@ -412,7 +412,7 @@ class ExpertFlockingController:
             (self.control.w_separation, self._compute_separation(flock["position"])),
             (self.control.w_alignment,  self._compute_alignment(flock["velocity"])),
             (self.control.w_thermal,    self._compute_thermal(
-                grad_temp   = flock.get("temperature_grad", None),
+                gradient    = flock.get("gradient", None),
                 position    = flock["position"],
                 temperature = flock["temperature"]
             ))
