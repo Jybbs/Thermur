@@ -209,7 +209,7 @@ Wildfire environments present three distinct thermal challenges for aerial syste
 
 ### Safety Thresholds
 
-Converting physical measurements to operational limits requires understanding drone hardware constraints. We enforce a **temperature threshold** of $`T_{\max} = 400\text{K}`$ *(127°C)* based on lithium battery chemistry. Above this temperature, batteries enter thermal runaway and fail catastrophically. This represents a hard limit rather than gradual degradation.
+Converting physical measurements to operational limits requires understanding drone hardware constraints. We enforce a **temperature threshold** of $`T_{\max} = 475\text{K}`$ *(202°C)* based on lithium battery chemistry and aerogel protection. Above this temperature, batteries enter thermal runaway and fail catastrophically. This represents a hard limit rather than gradual degradation.
 
 **Vertical velocity** limits of $`|w| = 10`$ m/s reflect the aerodynamic capabilities explained above. The **heat flux limit** of $`\dot{q}_{\max} = 10`$ kW/m² protects electronic components from cumulative thermal damage, particularly in motors and speed controllers.
 
