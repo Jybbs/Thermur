@@ -37,6 +37,11 @@ def train(
         "--preset", "-p",
         help = "Configuration preset (quick, standard, large, debug)"
     ),
+    sample           : bool = Option(
+        False,
+        "--sample", "-s",
+        help = "Use bundled sample data instead of downloaded files"
+    ),
     wandb_project    : str | None = Option(
         None,
         "--wandb-project", "-w",
@@ -64,6 +69,7 @@ def train(
         force            = force,
         interactive      = interactive,
         preset           = preset,
+        sample           = sample,
         wandb_project    = wandb_project
     )
 
@@ -267,7 +273,7 @@ class TrainCommand:
         set_seed                 = imports["set_seed"]
         train_imitation_learning = imports["train_imitation_learning"]
 
-        self.ui.print_major_section("Preparing Training Environment")
+        self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
 
         configure_loguru(cfg.logging)
@@ -289,7 +295,7 @@ class TrainCommand:
         )
         self.ui.console.print()
 
-        self.ui.print_major_section("Training Started")
+        self.ui.print_section("Training Started")
         self.ui.print_message(
             message  = self.cfg.messages.monitoring_dynamics,
             msg_type = "thermal"
@@ -388,7 +394,7 @@ class TrainCommand:
             preset           : The selected configuration preset.
             wandb_project    : The configured wandb project name.
         """
-        self.ui.print_minor_section("Initializing Training")
+        self.ui.print_section("Initializing Training", minor=True)
 
         self.ui.print_wandb_info(
             project = wandb_project,
@@ -480,7 +486,7 @@ class TrainCommand:
         This helper validates hardware capabilities, software versions, and
         integration status before proceeding with training initialization.
         """
-        self.ui.print_major_section("System Information")
+        self.ui.print_section("System Information")
 
         with self.ui.console.status(
             spinner = "dots",
@@ -634,7 +640,7 @@ class TrainCommand:
         Returns:
             A tuple containing the final (preset, wandb_project, config_overrides).
         """
-        self.ui.print_major_section("Configuration Setup")
+        self.ui.print_section("Configuration Setup")
 
         if interactive and not preset:
             preset = self.prompts.select_configuration_preset()
@@ -682,6 +688,7 @@ class TrainCommand:
         force            : bool,
         interactive      : bool,
         preset           : str | None,
+        sample           : bool,
         wandb_project    : str | None,
     ):
         """
@@ -708,6 +715,34 @@ class TrainCommand:
                 message  = self.cfg.messages.skipping_checks,
                 msg_type = "warning"
             )
+
+        # Handle sample data usage
+        wrf_files_exist  = any(self.cfg.download.wrf_sfire_dir.glob("*.nc"))
+        sample_file_path = Path("data/samples/wrf_sample.nc")
+        sample_exists    = sample_file_path.exists()
+        
+        use_sample = sample or not wrf_files_exist
+        
+        if use_sample:
+            if not sample_exists:
+                self.ui.print_message(
+                    message  = "No training data found.",
+                    msg_type = "error"
+                )
+                self.ui.print_message(
+                    message  = "Download sample data with: thermur download -s",
+                    msg_type = "info"
+                )
+                raise SystemExit(1)
+            
+            if not sample:
+                self.ui.print_message(
+                    message  = "No WRF-SFIRE data found. Using sample data.",
+                    msg_type = "info"
+                )
+            
+            config_overrides = list(config_overrides or [])
+            config_overrides.append(f"dataset.data_path={sample_file_path}")
 
         preset, wandb_project, config_overrides = self._setup_configuration(
             config_overrides = config_overrides,

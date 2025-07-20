@@ -54,7 +54,7 @@ class ValidateCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_major_section("System Information")
+        self.ui.print_section("System Information")
 
         info = self.system.get_system_info()
         self.ui.console.print(self.ui.create_system_table(info))
@@ -74,7 +74,7 @@ class ValidateCommand:
         self.ui.print_header("System Validation")
         self._perform_system_validation()
 
-        self.ui.print_major_section("Configuration Check")
+        self.ui.print_section("Configuration Check")
 
         with self.ui.console.status(
             self.cfg.messages.status["validating_config"],
@@ -92,7 +92,7 @@ class ValidateCommand:
         for i, issue in enumerate(issues, start=1):
             self.ui.console.print(f"  [warning]⚠️  {i}. {issue}[/warning]")
 
-        self.ui.print_major_section("Integration Check")
+        self.ui.print_section("Integration Check")
         status, details = self.system.check_wandb_status()
 
         if "Not" in status:

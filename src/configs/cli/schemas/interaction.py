@@ -5,6 +5,8 @@ This module contains models for interactive prompts and pre-configured training
 presets that guide users through the CLI experience.
 """
 from pathlib  import Path
+from typing   import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -15,10 +17,6 @@ class DownloadModel(BaseModel, extra="forbid"):
     This model contains settings for file downloads, display options, and
     caching behavior, separate from the dataset schema used for training.
     """
-    cache_dir: Path = Field(
-        default     = Path("data/cache"),
-        description = "Local directory for caching downloaded files."
-    )
     globus_client_id: str = Field(
         default     = "ac349f52-8197-4a41-8d6d-5ae1c879273f",
         description = "Native app client ID for Globus OAuth2 authentication flow."
@@ -34,6 +32,47 @@ class DownloadModel(BaseModel, extra="forbid"):
     globus_scopes: str = Field(
         default     = "urn:globus:auth:scope:transfer.api.globus.org:all",
         description = "OAuth2 scopes required for Globus transfer operations."
+    )
+    recommended_files: list[dict[str, str]] = Field(
+        default = [
+            {
+                "file" : "wrfout_W3F1R0",
+                "desc" : "Light wind (3m/s) over short grass. Represents prescribed burns "
+                         "or early-season fires in grasslands with stable atmospheric conditions."
+            },
+            {
+                "file" : "wrfout_W5F7R4",  
+                "desc" : "Moderate wind (5m/s) through brushy forest understory. Models typical "
+                         "wildfire conditions with mixed vegetation and moderate atmospheric mixing."
+            },
+            {
+                "file" : "wrfout_W8F13R6",
+                "desc" : "Strong wind (8m/s) through heavy dead trees and branches. Simulates "
+                         "post-logging or storm damage areas with deep atmospheric mixing."
+            },
+            {
+                "file" : "wrfout_W12F4R8",
+                "desc" : "Extreme wind (12m/s) in dense shrubland. Represents high-risk fire "
+                         "weather in Mediterranean climates with strong temperature inversions."
+            }
+        ],
+        description = "Recommended starter files with condition descriptions."
+    )
+    sample_data_url: str = Field(
+        default     = "https://huggingface.co/datasets/Jybbs/sfire-samples/resolve/main/samples.tar.gz",
+        description = "Hugging Face direct download URL for sample data tar.gz file."
+    )
+    source: Literal["sample", "wrf-sfire", ""] = Field(
+        default     = "",
+        description = "Data source to download: 'sample' for quick start, 'wrf-sfire' for full dataset."
+    )
+    transfer_timeout: int = Field(
+        default     = 86400,
+        description = "Maximum seconds to wait for transfer completion (default: 24 hours)."
+    )
+    wrf_sfire_dir: Path = Field(
+        default     = Path("data/wrf-sfire"),
+        description = "Local directory for storing WRF-SFIRE dataset files from Globus."
     )
 
 

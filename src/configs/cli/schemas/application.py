@@ -91,7 +91,12 @@ class CLIModel(BaseModel, extra="forbid"):
             {
                 "desc"    : "Download training data",
                 "command" : "thermur download",
-                "note"    : "Downloads WRF-Fire datasets"
+                "note"    : "Interactive selection of datasets"
+            },
+            {
+                "desc"    : "Download sample data",
+                "command" : "thermur download -s",
+                "note"    : "Quick start with 468MB download (1.5GB extracted)"
             },
         ],
         description = "Example commands for quick start guide."

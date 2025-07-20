@@ -76,7 +76,7 @@ To train and validate the Thermur system, we will rely on a combination of synth
 
     -   **WRF-Fire / FARSITE**: We will use output from coupled weather-wildfire models like WRF-Fire [^20] and fire-spread simulators like FARSITE. These provide 3D gridded data of wind velocity, temperature, and heat flux at resolutions down to a few meters. The underlying physics, often based on semi-empirical models like the Rothermel spread equations [^21], provides a realistic basis for the environmental dynamics the swarm will face.
 
-    -   **Large-Eddy Simulation (LES) Plume Data**: For fine-scale turbulence, we will leverage public datasets of wildfire plumes, such as the 40 GB library from Moisseeva (2020) [^22], which captures the Kelvin-Helmholtz instabilities and turbulent eddies critical for firefighter safety.
+    -   **Large-Eddy Simulation (LES) Plume Data**: For fine-scale turbulence, we will leverage the WRF-SFIRE dataset from Moisseeva & Stull (2020) [^22], containing 147 high-resolution simulations that capture the Kelvin-Helmholtz instabilities and turbulent eddies critical for firefighter safety.
 
 2.  **UAV Thermal Telemetry**: To ground our thermal models in physical reality, we will use open-source datasets from drone flights in heated environments.
 
@@ -319,7 +319,7 @@ Deploying an autonomous swarm in a safety-critical environment requires careful 
 [^19]: Todorov, Emanuel, Tom Erez, and Yuval Tassa. 2012. “MuJoCo: A Physics Engine for Model-Based Control.” IROS 2012. https://github.com/deepmind/mujoco
 [^20]: Coen, Janice L., et al. 2013. “WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model.” *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1  
 [^21]: Rothermel, Richard C. 1972. “A Mathematical Model for Predicting Fire Spread in Wildland Fuels.” *USDA Forest Service Research Paper INT-115*.  
-[^22]: Moisseeva, Nadejda. 2020. *A Numerical Perspective on Wildfire Plume-Rise Dynamics*. (T). University of British Columbia. https://doi.org/10.14288/1.0395299  
+[^22]: Moisseeva, Nadya, and Roland Stull. 2020. "WRF-SFIRE LES Synthetic Wildfire Plume Dataset." *Federated Research Data Repository*. https://doi.org/10.20383/102.0314  
 [^23]: Dawson, Cian B., Christopher Holmquist‑Johnson, and Martin A. Briggs. 2018. “Thermal Infrared and Photogrammetric Data Collected by Small Unoccupied Aircraft System for Hydrogeologic Analysis of Oh‑be‑joyful Creek, Gunnison National Forest, Colorado, August 2017.” *U.S. Geological Survey Data Release*. https://doi.org/10.5066/1P931G95D  
 [^24]: Heilman, Warren E. 2023. “Atmospheric Turbulence and Wildland Fires: A Review.” *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053  
 [^25]: Stellato, Bartolomeo, Goran Banjac, Paul Goulart, Alberto Bemporad, and Stephen Boyd. 2020. “OSQP: An Operator Splitting Solver for Quadratic Programs.” *Mathematical Programming Computation* 12 (4): 637–672. https://doi.org/10.1007/s12532-020-00179-2  
