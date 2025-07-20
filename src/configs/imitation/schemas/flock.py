@@ -66,9 +66,9 @@ class FlockModel(BaseModel, extra="forbid"):
         )
     )
     max_temperature: PositiveFloat = Field(
-        default     = 500.0,
+        default     = 475.0,
         description = (
-            "Maximum survivable agent temperature T_max in Fahrenheit (°F), "
+            "Maximum survivable agent temperature T_max in Kelvin (K), "
             "defining the hard safety boundary h(𝐱) for the CBF."
         )
     )

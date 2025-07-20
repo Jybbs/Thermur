@@ -18,9 +18,9 @@ class SafetyModel(BaseModel, extra="forbid"):
     """
     # Control Barrier Function parameters
     activation_tolerance: NonNegativeFloat = Field(
-        default     = 5.0,
+        default     = 3.0,
         description = (
-            "Temperature buffer δ in Fahrenheit before CBF activation. "
+            "Temperature buffer δ in Kelvin before CBF activation. "
             "CBF triggers when T > T_max - δ."
         )
     )
