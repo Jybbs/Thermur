@@ -4,7 +4,8 @@ Monitoring and logging models.
 This module defines the Pydantic models for application logging
 and experiment tracking parameters.
 """
-from pydantic import BaseModel, Field, FilePath
+from pathlib  import Path
+from pydantic import BaseModel, Field
 from typing   import Literal, Optional
 
 
@@ -27,7 +28,7 @@ class LoggingModel(BaseModel, extra="forbid"):
         default     = True,
         description = "Whether to make file logging non-blocking and thread-safe."
     )
-    file_path: Optional[FilePath] = Field(
+    file_path: Optional[Path] = Field(
         default     = "logs/thermur.log",
         description = "Path to the log file. If None, file logging is disabled."
     )

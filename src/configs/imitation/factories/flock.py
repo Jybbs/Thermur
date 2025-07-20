@@ -95,8 +95,6 @@ def create_observation_spec(agent_count: int, spatial_dims: int):
         wind             = create_float_spec((agent_count, spatial_dims)),
     )
 
-
-# Builders that use structured interpolation
 build_action_spec = builds(
     create_action_spec,
     agent_count  = SI("${flock.agent_count}"),

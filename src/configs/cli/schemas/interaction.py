@@ -58,9 +58,17 @@ class DownloadModel(BaseModel, extra="forbid"):
         ],
         description = "Recommended starter files with condition descriptions."
     )
+    sample_data_path: Path = Field(
+        default     = Path("data/samples/wrf_sample.nc"),
+        description = "Local path where sample NetCDF file will be stored after extraction."
+    )
     sample_data_url: str = Field(
         default     = "https://huggingface.co/datasets/Jybbs/sfire-samples/resolve/main/samples.tar.gz",
         description = "Hugging Face direct download URL for sample data tar.gz file."
+    )
+    sample_extract_dir: Path = Field(
+        default     = Path("data"),
+        description = "Directory where sample tar.gz will be extracted."
     )
     source: Literal["sample", "wrf-sfire", ""] = Field(
         default     = "",

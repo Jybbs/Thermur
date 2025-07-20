@@ -5,16 +5,15 @@ This module provides the 'download' command for acquiring simulation datasets
 from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
-from collections import defaultdict
-from globus_sdk  import TransferClient
-from itertools   import accumulate
-from pathlib     import Path
-from requests    import get
-from tarfile     import open as tar_open
-from tempfile    import NamedTemporaryFile
-from time        import perf_counter
-from typer       import Context, Exit, Option
-from webbrowser  import open as web_open
+from globus_sdk import TransferClient
+from itertools  import accumulate
+from pathlib    import Path
+from requests   import get
+from tarfile    import open as tar_open
+from tempfile   import NamedTemporaryFile
+from time       import perf_counter
+from typer      import Context, Exit, Option
+from webbrowser import open as web_open
 
 
 def download(
@@ -89,7 +88,7 @@ class DownloadCommand:
         Downloads a tar.gz file containing sample WRF data and extracts it
         to the data/samples directory.
         """
-        sample_file = Path("data/samples/wrf_sample.nc")
+        sample_file = self.cfg.download.sample_data_path
         
         if sample_file.exists() and not self.prompts.confirm(
             "Sample data exists. Re-download?"
@@ -116,7 +115,7 @@ class DownloadCommand:
             self.ui.print_message("Extracting sample data...", "info")
             
             with tar_open(tmp_path, 'r:gz') as tar:
-                tar.extractall("data/")
+                tar.extractall(self.cfg.download.sample_extract_dir)
             
             self.ui.print_message(
                 message  = f"Sample data ready at {sample_file}",

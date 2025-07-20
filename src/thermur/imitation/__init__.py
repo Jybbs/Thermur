@@ -12,5 +12,6 @@ policy from expert demonstrations. The training process involves:
 The loss function includes optional regularization terms and can be extended
 with auxiliary objectives for improved learning stability.
 """
-from .imitation import save_checkpoint, train_imitation_learning
+from .train import save_checkpoint, train_imitation_learning
 from .loss      import ImitationLoss
+from .policy    import GNNPolicy

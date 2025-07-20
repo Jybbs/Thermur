@@ -10,6 +10,5 @@ from .dataset       import *
 from .flock         import *
 from .imitation     import *
 from .monitoring    import *
-from .safety        import *
 from .simulation    import *
 from .visualization import *
