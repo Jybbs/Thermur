@@ -99,11 +99,11 @@ class Renderer:
         }
         
         if temperature is not None and colormap:
-            params.update(
-                clim    = (temperature.min(), temperature.max()),
-                cmap    = colormap,
-                scalars = "temperature",
-            )
+            params |= {
+                "clim"    : (temperature.min(), temperature.max()),
+                "cmap"    : colormap,
+                "scalars" : "temperature",
+            }
         else:
             params["color"] = self.colors.trail_default
         
@@ -180,11 +180,11 @@ class Renderer:
         }
         
         if temperature is not None and colormap:
-            mesh_params.update(
-                clim    = (temps.min(), temps.max()),
-                cmap    = colormap,
-                scalars = "temperature",
-            )
+            mesh_params |= {
+                "clim"    : (temps.min(), temps.max()),
+                "cmap"    : colormap,
+                "scalars" : "temperature",
+            }
         else:
             mesh_params["color"] = self.colors.agent_default
         
@@ -402,9 +402,10 @@ class Renderer:
             scale  = "wind_magnitude",
         )
         
-        mesh_params = {
-            "color"   : self.colors.wind_default,
-            "opacity" : self.opacities.wind,
-        }
-        
-        return [plotter.add_mesh(mesh=wind_glyphs, **mesh_params)]
+        return [
+            plotter.add_mesh(
+                mesh    = wind_glyphs,
+                color   = self.colors.wind_default,
+                opacity = self.opacities.wind,
+            )
+        ]

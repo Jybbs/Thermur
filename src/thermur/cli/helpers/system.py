@@ -305,7 +305,7 @@ class SystemInspector:
                     "Run 'thermur download' to get sample data."
                 )
 
-    def validate_config_overrides(self, overrides: list[str] | None) -> list[str]:
+    def validate_overrides(self, overrides: list[str] | None) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
