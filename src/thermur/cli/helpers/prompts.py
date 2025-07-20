@@ -45,7 +45,7 @@ class CLIPrompts:
             dict(self.prompts.questionary_style)
         )
 
-    def ask_for_config_overrides(self) -> list[str]:
+    def ask_for_overrides(self) -> list[str]:
         """
         Asks the user if they wish to provide advanced configuration overrides.
 
