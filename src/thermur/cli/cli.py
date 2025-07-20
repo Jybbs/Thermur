@@ -8,6 +8,7 @@ to load and validate the CLI configuration through Pydantic schemas.
 from .                              import commands
 from .helpers                       import *
 from configs.cli                    import cli_cfg
+from functools                      import cached_property
 from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
 from typer                          import Context, Exit, Option, Typer
@@ -32,9 +33,18 @@ class AppContext:
         """
         self.cfg     = cfg
         self.ui      = ThermurUI(self.cfg.display)
-        self.globus  = GlobusManager(self.cfg.download)
         self.prompts = CLIPrompts(self.cfg, self.ui)
         self.system  = SystemInspector(cfg)
+    
+    @cached_property
+    def globus(self):
+        """
+        Lazy-loaded GlobusManager, created only when first accessed.
+        
+        This prevents a secrets directory warning from appearing when
+        Globus functionality isn't needed (e.g., when using sample data).
+        """
+        return GlobusManager(self.cfg.download)
 
 
 class ThermurCLI:

@@ -98,15 +98,18 @@ class GlobusManager:
             - bytes_transferred : Number of bytes successfully transferred
             - files_transferred : Number of files completed
             - is_ok             : Boolean indicating if transfer completed
+            - mbps              : Current transfer rate in MB/s
             - nice_status       : Human-readable status message
             - status            : Current status (ACTIVE, SUCCEEDED, FAILED)
         """
-        task = transfer_client.get_task(task_id)
+        task          = transfer_client.get_task(task_id)
+        bytes_per_sec = task.get("effective_bytes_per_second", 0)
         
         return {
             "bytes_transferred" : task.get("bytes_transferred", 0),
             "files_transferred" : task.get("files_transferred", 0), 
             "is_ok"             : task.get("is_ok", False),
+            "mbps"              : bytes_per_sec / (1024 * 1024),
             "nice_status"       : task.get("nice_status", "Unknown"),
             "status"            : task["status"]
         }

@@ -71,7 +71,7 @@ class SystemInspector:
             Returns zeros if dataset information cannot be retrieved.
         """
         with suppress(Exception):
-            cache = self.cfg.download.cache_dir
+            cache = self.cfg.download.wrf_sfire_dir
             if not cache.exists():
                 return {"dataset_size": 0.0, "dataset_count": 0}
                 

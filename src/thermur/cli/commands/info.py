@@ -47,7 +47,7 @@ class InfoCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_major_section("System Information")
+        self.ui.print_section("System Information")
 
         info = self.system.get_system_info()
         self.ui.console.print(self.ui.create_system_table(info))
@@ -68,7 +68,7 @@ class InfoCommand:
 
         self._perform_system_validation()
 
-        self.ui.print_major_section("Configuration System")
+        self.ui.print_section("Configuration System")
         self.ui.print_config_value(
             align_width = 11,
             key         = "Config Path",
@@ -82,5 +82,5 @@ class InfoCommand:
         )
         
 
-        self.ui.print_major_section("Common Commands")
+        self.ui.print_section("Common Commands")
         self.ui.print_command_examples(self.cfg.cli.commands_examples)

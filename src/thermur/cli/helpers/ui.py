@@ -391,7 +391,9 @@ class ThermurUI:
             ),
 
             progress.TextColumn(
-                text_format = "[{0}]{{task.description}}[/{0}]".format(self.display.progress_style)
+                text_format = "[{0}]{{task.description}}[/{0}]".format(
+                    self.display.progress_style
+                )
             ),
             progress.BarColumn(
                 bar_width        = self.display.progress_bar_length,
@@ -634,27 +636,32 @@ class ThermurUI:
         self.console.print(self._create_header_panel(title))
         self.console.print()
 
-    def print_major_section(
+    def print_section(
         self,
         title : str,
-        style : str = "bright_cyan"
+        minor : bool = False,
+        style : str | None = None
     ):
         """
-        Print a major section divider with enhanced styling.
+        Print a section divider with appropriate styling.
         
-        Creates a prominent visual separator for major sections with
-        bold formatting and double lines.
+        Creates a visual separator for sections with different prominence
+        based on whether it's a major or minor section.
         
         Args:
             title : Section title
-            style : Style to apply to the rule (default: bright_cyan)
+            minor : Whether this is a minor section (default: False)
+            style : Optional style override (defaults based on major/minor)
         """
+        if style is None:
+            style = "grey70" if minor else "bright_cyan"
+            
         self.console.print()
         self.console.print(
             Rule(
-                title      = f"[bold]{title}[/bold]", 
+                title      = title if minor else f"[bold]{title}[/bold]", 
                 style      = style, 
-                characters = "═", 
+                characters = "─" if minor else "═", 
                 align      = "center"
             )
         )
@@ -679,31 +686,6 @@ class ThermurUI:
         self.console.print(
             f"[{config['style']}]{config['icon']} {message}[/{config['style']}]"
         )
-
-    def print_minor_section(
-        self,
-        title : str,
-        style : str = "grey70"
-    ):
-        """
-        Print a minor section divider with subtle styling.
-        
-        Creates a subtle visual separator for subsections within major sections.
-        
-        Args:
-            title : Section title  
-            style : Style to apply to the rule (default: grey70)
-        """
-        self.console.print()
-        self.console.print(
-            Rule(
-                title      = title, 
-                style      = style, 
-                characters = "─", 
-                align      = "center"
-            )
-        )
-        self.console.print()
 
     def print_wandb_info(self, project: str, url: str | None = None):
         """

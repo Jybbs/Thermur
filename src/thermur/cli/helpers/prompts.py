@@ -57,7 +57,7 @@ class CLIPrompts:
             A list of configuration override strings, which may be empty.
         """
         self.ui.console.print()
-        self.ui.print_minor_section("Advanced Configuration")
+        self.ui.print_section("Advanced Configuration", minor=True)
 
         syntax_panel = self.ui.create_syntax_panel(
             code  = self.cli.override_syntax_help,
@@ -216,7 +216,6 @@ class CLIPrompts:
             default = False
         )
     
-    
     def select_configuration_preset(self) -> str | None:
         """
         Prompts the user to select a high-level configuration preset.
@@ -230,7 +229,7 @@ class CLIPrompts:
             The string name of the selected preset (e.g., "standard"), or None if
             the user explicitly chooses the "custom" configuration option.
         """
-        self.ui.print_minor_section("Configuration Presets")
+        self.ui.print_section("Configuration Presets", minor=True)
 
         table = self.ui.create_aligned_table(
             columns = self.prompts.presets_table_columns,
@@ -337,7 +336,7 @@ class CLIPrompts:
             self.ui.console.print()
             
             choices = list(map(str, range(len(page_files)))) + ["q", ""]
-            nav = ["[bold cyan]0-9[/]: Select", "[bold cyan]q[/]: Quit"]
+            nav     = ["[bold cyan]0-9[/]: Select", "[bold cyan]q[/]: Quit"]
             
             if page:
                 choices.append("p")
@@ -350,8 +349,8 @@ class CLIPrompts:
             
             if not (choice := questionary.text(
                 "Select",
-                style=self.thermal_style,
-                validate=lambda x: x.strip().lower() in choices
+                style    = self.thermal_style,
+                validate = lambda x: x.strip().lower() in choices
             ).ask()):
                 return None
             
@@ -361,6 +360,31 @@ class CLIPrompts:
                 case "n": page += 1  
                 case n if n.isdigit():
                     return page_files[int(n)]
+    
+    def select_from_list(
+        self,
+        choices : list[tuple[str, str]],
+        message : str
+    ) -> str | None:
+        """
+        Present a list of choices for selection.
+        
+        Args:
+            choices : List of (value, description) tuples
+            message : The prompt message
+            
+        Returns:
+            Selected value or None if cancelled
+        """
+        return questionary.select(
+            choices = [
+                questionary.Choice(desc, val) 
+                for val, desc in choices
+            ],
+            message = message,
+            style   = self.thermal_style,
+            instruction = "(↑↓)"
+        ).ask()
             
     def select_globus_endpoint(self, endpoints: list[dict]) -> dict | None:
         """
@@ -385,19 +409,12 @@ class CLIPrompts:
         for i, e in enumerate(endpoints, start=1):
             self.ui.console.print(f"  {i}. {e['display_name']}")
             
-        selected = questionary.select(
-            choices = [e['display_name'] for e in endpoints],
-            message = "Select local endpoint:",
-            style   = self.thermal_style
-        ).ask()
-        
-        if not selected:
-            return None
-            
-        return next(
-            (e for e in endpoints if e['display_name'] == selected),
-            None
+        selected = self.select_from_list(
+            choices = [(e, e['display_name']) for e in endpoints],
+            message = "Select local endpoint:"
         )
+        
+        return selected
             
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
@@ -414,7 +431,7 @@ class CLIPrompts:
             True if the user confirms to start training, False otherwise.
         """
         self.ui.console.print()
-        self.ui.print_minor_section("Training Configuration Summary")
+        self.ui.print_section("Training Configuration Summary", minor=True)
 
         table = self.ui.create_aligned_table(
             box       = None,
