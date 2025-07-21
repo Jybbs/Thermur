@@ -8,9 +8,10 @@ in the project.
 from ..schemas import *
 from hydra_zen import builds
 
-build_cli               = builds(CLIModel)
-build_display           = builds(DisplayModel)
-build_messages          = builds(MessagesModel)
-build_presets           = builds(PresetsModel)
-build_prompts           = builds(PromptsModel)
-build_wandb_integration = builds(WandbIntegrationModel)
+build_cli      = builds(CLIModel)
+build_display  = builds(DisplayModel)
+build_download = builds(DownloadModel)
+build_messages = builds(MessagesModel)
+build_presets  = builds(PresetsModel)
+build_prompts  = builds(PromptsModel)
+build_wandb    = builds(WandbModel)

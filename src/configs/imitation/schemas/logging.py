@@ -29,7 +29,7 @@ class LoggingModel(BaseModel, extra="forbid"):
         description = "Whether to make file logging non-blocking and thread-safe."
     )
     file_path: Optional[Path] = Field(
-        default     = Path("logs/thermur.log"),
+        default     = "logs/thermur.log",
         description = "Path to the log file. If None, file logging is disabled."
     )
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
@@ -43,25 +43,4 @@ class LoggingModel(BaseModel, extra="forbid"):
     rotation: str = Field(
         default     = "10 MB",
         description = "Log file rotation policy (e.g., '500 MB', '12:00')."
-    )
-
-
-class WandbModel(BaseModel, extra="forbid"):
-    """
-    Configuration for Weights & Biases experiment tracking.
-
-    These parameters control how training runs are logged and organized for
-    visualization, analysis, and comparison.
-    """
-    entity: Optional[str] = Field(
-        default     = None,
-        description = "The W&B entity (username or team name)."
-    )
-    mode: Literal["online", "offline", "disabled"] = Field(
-        default     = "online",
-        description = "The W&B run mode."
-    )
-    project: str = Field(
-        default     = "thermur",
-        description = "The W&B project name to log runs into."
     )

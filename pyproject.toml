@@ -10,7 +10,8 @@ authors         = [{ name = "James Parkington", email = "pongs.acreage.0o@icloud
 readme          = "README.md"
 requires-python = "~3.13"
 license         = { text = "MIT" }
-dependencies    = [
+dependencies    = [ 
+    "globus-sdk",
     "gymnasium",
     "hydra-zen",
     "loguru",
@@ -27,7 +28,7 @@ dependencies    = [
     "torchrl",
     "typer",
     "wandb",
-    "xarray[netcdf4]",
+    "xarray[netcdf4]"
 ]
 
 [project.scripts]

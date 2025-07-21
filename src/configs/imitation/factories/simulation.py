@@ -9,11 +9,11 @@ The environment follows dependency injection principles, so all dependencies
 are provided as arguments rather than imported directly.
 """
 from ..schemas          import PhysicsModel
-from .flock             import build_action_spec, build_observation_spec
-from hydra_zen          import builds, zen
+from hydra_zen          import builds
 from omegaconf          import SI
-from thermur.simulation import compute_edge_index, SimulationEnv
-from thermur.utils      import EnvironmentDataSource, set_seed
+from thermur.data       import WRFDataSource
+from thermur.simulation import SimulationEnv
+from thermur.utils      import set_seed
 
 
 build_physics = builds(
@@ -31,11 +31,11 @@ Defines physical simulation parameters and thermal constraints for
 the environment.
 """
 
-
 build_data_source = builds(
-        EnvironmentDataSource,
-        data_path               = SI("${physics.data_source}"),
+        WRFDataSource,
+        data_path               = SI("${dataset.data_path}"),
         physics                 = SI("${physics}"),
+        wrf_data                = SI("${dataset}"),
         populate_full_signature = True,
     )
 """
@@ -47,11 +47,8 @@ from external wildfire simulations (e.g., WRF-Fire outputs).
 
 build_simulation = builds(
     SimulationEnv,
-    action_spec             = build_action_spec,
-    compute_edge_index      = compute_edge_index,
     data_source             = build_data_source,
     flock                   = SI("${flock}"),
-    observation_spec        = build_observation_spec,
     physics                 = SI("${physics}"),
     seed_fn                 = set_seed,
     populate_full_signature = True,

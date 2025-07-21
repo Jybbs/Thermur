@@ -6,11 +6,10 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from .safety           import SafetyFilter
-from configs.imitation import ControlModel, FlockModel
-from tensordict        import TensorDict
-from torch             import Tensor
-from typing            import Optional
+from .safety    import SafetyFilter
+from pydantic   import BaseModel
+from tensordict import TensorDict
+from torch      import Tensor
 
 import torch
 import torch.nn.functional as F
@@ -33,9 +32,9 @@ class ExpertFlockingController:
 
     def __init__(
         self,
-        agent_properties : FlockModel,
-        control          : ControlModel,
-        safety_filter    : Optional[SafetyFilter] = None
+        agent_properties : BaseModel,
+        control          : BaseModel,
+        safety_filter    : SafetyFilter
     ):
         """
         Initializes the controller with the necessary configuration models.
@@ -44,7 +43,7 @@ class ExpertFlockingController:
             agent_properties : Contains agent-specific properties like T_max.
             control          : Contains both Reynolds weights and numerical parameters
                                for stable force calculations.
-            safety_filter    : Optional safety filter that applies a CBF to enforce 
+            safety_filter    : Safety filter that applies a CBF to enforce 
                                thermal safety constraints.
         """
         self.agent_properties = agent_properties
@@ -180,7 +179,7 @@ class ExpertFlockingController:
         self,
         position    : Tensor,
         temperature : Tensor,
-        grad_temp   : Tensor | None = None
+        gradient    : Tensor | None = None
     ) -> Tensor:
         """
         Calculates the thermal repulsion force for each agent.
@@ -201,7 +200,7 @@ class ExpertFlockingController:
         Args:
             position    : Tensor [N, dim] containing agent positions 𝐱
             temperature : Tensor [N] or [N, 1] containing temperatures T
-            grad_temp   : Optional[Tensor] tensor [N, dim] of pre-computed temperature
+            gradient    : Optional[Tensor] tensor [N, dim] of pre-computed temperature
                           gradients ∇T. If None, gradients are estimated.
         
         Returns:
@@ -218,11 +217,13 @@ class ExpertFlockingController:
             other = t_margin
         )
 
-        gradient = grad_temp if grad_temp is not None \
-            else self._estimate_temperature_gradient(
+        gradient = (
+            gradient if gradient is not None 
+            else self._estimate_gradient(
                 position    = position, 
                 temperature = temperature
             )
+        )
 
         # Force points away from high temperatures
         return -gradient * magnitude.unsqueeze(1)
@@ -237,12 +238,13 @@ class ExpertFlockingController:
         Returns:
             Tensor [N] with any singleton dimensions removed
         """
-        if temperature.dim() > 1 and temperature.size(1) == 1:
-            return temperature.squeeze(1)
-        
-        return temperature
+        return (
+            temperature.squeeze(1) 
+            if temperature.dim() > 1 and temperature.size(1) == 1 
+            else temperature
+        )
 
-    def _estimate_temperature_gradient(
+    def _estimate_gradient(
         self,
         position    : Tensor,
         temperature : Tensor
@@ -269,7 +271,7 @@ class ExpertFlockingController:
         temperature = self._ensure_1d_temperature(temperature)
 
         # Handle the edge case of a completely disconnected graph
-        if self._edge_source is None or self._edge_source.numel() == 0:
+        if self._edge_source is None or not self._edge_source.numel():
             return self._vertical_heat_gradient(
                 position    = position, 
                 temperature = temperature
@@ -293,18 +295,16 @@ class ExpertFlockingController:
             index  = self._edge_source[sig_mask],
             source = pos_diff[sig_mask] * temp_diff[sig_mask].unsqueeze(dim=1)
         )
-
-        # Compute the primary gradient, avoiding division by zero
         grad_neighbors = torch.divide(
             input = grad_sum,
             other = torch.clamp(sig_counts, min=1).unsqueeze(dim=1)
         )
 
-        # Apply the fallback gradient where necessary
-        grad_fallback = self._vertical_heat_gradient(position=position, temperature=temperature)
-        use_fallback  = (sig_counts == 0).unsqueeze(dim=1)
-
-        return torch.where(use_fallback, grad_fallback, grad_neighbors)
+        return torch.where(
+            condition = (sig_counts == 0).unsqueeze(dim=1), 
+            input     = self._vertical_heat_gradient(position, temperature), 
+            other     = grad_neighbors
+        )
 
     def _reset_shared_state(self):
         """
@@ -327,9 +327,8 @@ class ExpertFlockingController:
             edge_index : Tensor defining the communication graph topology Gₜ = (V, Eₜ)
             num_agents : The total number of agents N in the flock
         """
-        if edge_index.numel() > 0:
+        if edge_index.numel():
             self._edge_source, self._edge_target = edge_index
-
         else:
             # Handle empty graph case to prevent errors
             device            = edge_index.device
@@ -406,18 +405,18 @@ class ExpertFlockingController:
         self._update_graph_state(flock["edge_index"], flock["position"].size(0))
 
         # Compute the nominal control based on Reynolds rules and thermal potential
-        u_nominal = (
-            self.control.w_cohesion   * self._compute_cohesion(flock["position"])   +
-            self.control.w_separation * self._compute_separation(flock["position"]) +
-            self.control.w_alignment  * self._compute_alignment(flock["velocity"])  +
-            self.control.w_thermal    * self._compute_thermal(
-                grad_temp   = flock.get("temperature_grad", None),
+        forces = [
+            (self.control.w_cohesion,   self._compute_cohesion(flock["position"])),
+            (self.control.w_separation, self._compute_separation(flock["position"])),
+            (self.control.w_alignment,  self._compute_alignment(flock["velocity"])),
+            (self.control.w_thermal,    self._compute_thermal(
+                gradient    = flock.get("gradient", None),
                 position    = flock["position"],
                 temperature = flock["temperature"]
-            )
+            ))
+        ]
+        
+        return self.safety_filter.filter(
+            flock     = flock, 
+            u_nominal = sum(weight * force for weight, force in forces)
         )
-        
-        if self.safety_filter is not None:
-            return self.safety_filter.filter(flock, u_nominal)
-        
-        return u_nominal

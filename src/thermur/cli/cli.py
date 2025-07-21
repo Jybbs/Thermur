@@ -5,9 +5,10 @@ This module provides the main CLI interface by discovering and registering
 all available commands from the .commands subpackage. It uses Hydra-zen
 to load and validate the CLI configuration through Pydantic schemas.
 """
-from .commands                      import *
+from .                              import commands
 from .helpers                       import *
 from configs.cli                    import cli_cfg
+from functools                      import cached_property
 from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
 from typer                          import Context, Exit, Option, Typer
@@ -31,9 +32,19 @@ class AppContext:
         Initialize the application context with the loaded configuration.
         """
         self.cfg     = cfg
-        self.system  = SystemInspector(cfg)
-        self.ui      = ThermurUI(self.cfg.display)
+        self.ui      = ThermurUI(self.cfg.display, self.cfg.messages)
         self.prompts = CLIPrompts(self.cfg, self.ui)
+        self.system  = SystemInspector(cfg)
+    
+    @cached_property
+    def globus(self):
+        """
+        Lazy-loaded GlobusManager, created only when first accessed.
+        
+        This prevents a secrets directory warning from appearing when
+        Globus functionality isn't needed (e.g., when using sample data).
+        """
+        return GlobusManager(self.cfg.download)
 
 
 class ThermurCLI:
@@ -62,10 +73,8 @@ class ThermurCLI:
             rich_markup_mode = "rich"
         )
         
-        cli.command(name="info")(info)
-        cli.command(name="monitor")(monitor)
-        cli.command(name="train")(train)
-        cli.command(name="validate")(validate)
+        for cmd_name in commands.__all__:
+            cli.command()(getattr(commands, cmd_name))
         
         cli.callback(invoke_without_command=True)(self._main_callback)
         
@@ -85,10 +94,9 @@ class ThermurCLI:
         Returns:
             The singleton AppContext instance for the current application run.
         """
-        if not ctx.obj:
-            ctx.obj = AppContext()
-            
-        return ctx.obj
+        if not (app_ctx := ctx.obj):
+            ctx.obj = app_ctx = AppContext()
+        return app_ctx
     
     def _main_callback(
         self,
@@ -115,8 +123,7 @@ class ThermurCLI:
         app_context = self._get_context(ctx)
 
         if ctx.invoked_subcommand is None:
-            cfg = app_context.cfg
-            ui  = app_context.ui
+            cfg, ui = app_context.cfg, app_context.ui
 
             ui.print_header("Welcome to Thermur")
             ui.print_section("Available Commands", "accent")
@@ -128,13 +135,7 @@ class ThermurCLI:
                 )
 
             ui.print_section("Getting Started", "bright_green")
-
-            for example in cfg.cli.commands_examples:
-                ui.print_command_example(
-                    command     = example["command"],
-                    description = example["desc"],
-                    note        = example["note"]
-                )
+            ui.print_command_examples(cfg.cli.commands_examples)
 
             ui.console.print()
             ui.print_message(
@@ -157,7 +158,6 @@ class ThermurCLI:
             return
 
         app_context = self._get_context(ctx)
-        cfg         = app_context.cfg
         system      = app_context.system
         ui          = app_context.ui
 
@@ -178,8 +178,7 @@ def main():
     """
     Main entry point for the CLI.
     """
-    app = ThermurCLI()
-    app.run()
+    ThermurCLI().run()
 
 
 if __name__ == "__main__":

@@ -7,7 +7,10 @@ display properties, and toggles for various visualization elements like
 agent representations, thermal fields, safety boundaries, and graph topology.
 """
 from pydantic import BaseModel, Field, NonNegativeInt, PositiveFloat, PositiveInt
-from typing   import Literal
+from typing   import Annotated, Literal
+
+UnitFloat = Annotated[float, Field(ge=0.0, le=1.0)]
+RGBColor  = tuple[UnitFloat, UnitFloat, UnitFloat]
 
 
 class ColorModel(BaseModel, extra="forbid"):
@@ -17,7 +20,7 @@ class ColorModel(BaseModel, extra="forbid"):
     These settings control the color mapping and default colors used
     throughout the visualization system.
     """
-    agent_default: tuple[float, float, float] = Field(
+    agent_default: RGBColor = Field(
         default     = (0.2, 0.2, 0.8),
         description = "Default RGB color for agents when not using thermal coloring."
     )
@@ -25,35 +28,31 @@ class ColorModel(BaseModel, extra="forbid"):
         default     = "plasma",
         description = "Colormap for thermal visualization."
     )
-    graph_default: tuple[float, float, float] = Field(
+    graph_default: RGBColor = Field(
         default     = (0.7, 0.7, 0.9),
         description = "Default RGB color for communication graph edges."
     )
-    safety_default: tuple[float, float, float] = Field(
+    safety_default: RGBColor = Field(
         default     = (0.9, 0.3, 0.3),
         description = "Default RGB color for safety boundary."
     )
-    scalar_bar_position_x: float = Field(
+    scalar_bar_position_x: UnitFloat = Field(
         default     = 0.88,
-        ge          = 0.0,
-        le          = 1.0,
         description = "Horizontal position of the scalar bar (0=left, 1=right)."
     )
-    scalar_bar_position_y: float = Field(
+    scalar_bar_position_y: UnitFloat = Field(
         default     = 0.25,
-        ge          = 0.0,
-        le          = 1.0,
         description = "Vertical position of the scalar bar (0=bottom, 1=top)."
     )
     scalar_bar_title: str = Field(
         default     = "Temperature",
         description = "Title displayed on the temperature scalar bar."
     )
-    trail_default: tuple[float, float, float] = Field(
+    trail_default: RGBColor = Field(
         default     = (0.8, 0.8, 0.8),
         description = "Default RGB color for agent motion trails."
     )
-    wind_default: tuple[float, float, float] = Field(
+    wind_default: RGBColor = Field(
         default     = (0.7, 0.7, 0.7),
         description = "Default RGB color for wind field arrows."
     )
@@ -95,7 +94,7 @@ class GridModel(BaseModel, extra="forbid"):
         default     = 2.0,
         description = "Extra space around the flock's bounding box for grids."
     )
-    temperature_resolution: tuple[int, int, int] = Field(
+    temperature_resolution: tuple[PositiveInt, PositiveInt, PositiveInt] = Field(
         default     = (20, 20, 20),
         description = "Resolution for temperature field sampling grid (nx, ny, nz)."
     )
@@ -112,34 +111,24 @@ class OpacityModel(BaseModel, extra="forbid"):
     Opacity values range from 0.0 (fully transparent) to 1.0 (fully opaque).
     These settings allow fine-tuning the visual layering of simulation elements.
     """
-    agents: float = Field(
+    agents: UnitFloat = Field(
         default     = 1.0,
-        ge          = 0.0,
-        le          = 1.0,
         description = "Opacity of agent glyphs."
     )
-    graph: float = Field(
+    graph: UnitFloat = Field(
         default     = 0.5,
-        ge          = 0.0,
-        le          = 1.0,
         description = "Opacity of communication graph edges."
     )
-    safety: float = Field(
+    safety: UnitFloat = Field(
         default     = 0.3,
-        ge          = 0.0,
-        le          = 1.0,
         description = "Opacity of safety boundary isosurface."
     )
-    trails: float = Field(
+    trails: UnitFloat = Field(
         default     = 0.5,
-        ge          = 0.0,
-        le          = 1.0,
         description = "Opacity of agent motion trails."
     )
-    wind: float = Field(
+    wind: UnitFloat = Field(
         default     = 0.8,
-        ge          = 0.0,
-        le          = 1.0,
         description = "Opacity of wind field arrows."
     )
 
@@ -196,7 +185,7 @@ class VisualizationModel(BaseModel, extra="forbid"):
         default     = True,
         description = "Whether to visualize the wind field with vector glyphs."
     )
-    window_size: tuple[int, int] = Field(
+    window_size: tuple[PositiveInt, PositiveInt] = Field(
         default     = (1024, 768),
         description = "Size of the visualization window in pixels (width, height)."
     )

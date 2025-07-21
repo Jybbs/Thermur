@@ -94,7 +94,7 @@ class LearningModel(BaseModel, extra="forbid"):
         default     = 8,
         description = "Number of batches to prefetch for GPU efficiency."
     )
-    seed: int = Field(
+    seed: NonNegativeInt = Field(
         default     = 42,
         description = "Random seed for reproducible training runs."
     )

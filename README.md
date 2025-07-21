@@ -10,7 +10,7 @@ On June 30, 2013, nineteen members of the Granite Mountain Hotshots were fatally
 
 But, what if wildfire could be recast as the "predator" in this biological system? Could we create a swarm of robots that responds to thermal threats the way starlings react to a predator? Could we model their movement, measure their cohesion, and coordinate their alignment within the context of their flock [^5]? And most critically, could this system translate an invisible threat into a visual language that firefighters could intuitively understand?
 
-**Thermur** (a portmanteau of "thermal" and "murmuration") was born from this biomimetic insight. With modern micro-robotics now capable of surviving brief excursions up to 400°F [^6], we can finally ask:
+**Thermur** (a portmanteau of "thermal" and "murmuration") was born from this biomimetic insight. With modern micro-robotics now capable of surviving brief excursions up to 475K [^6], we can finally ask:
 
 *Can a swarm of robots, governed by the mathematical rules of a starling flock responding to a predator [^7], learn to move in such a way that it not only survives the thermal chaos of a wildfire but also translates that chaos into a dynamic visual display that is immediately legible to a human under pressure?*
 
@@ -30,7 +30,7 @@ The collective motion of starlings offers a compelling biological blueprint for 
 
 -   **Information Embodiment through Motion**: The flock's shape, density, and velocity are not random, but are a direct, emergent response to external stimuli and internal communication [^7]. When a predator approaches, this response becomes more pronounced, in that the flock's motion patterns change dramatically, with increased polarization, density fluctuations, and rapid directional shifts. What fascinated me in watching these displays was how precisely these motion changes communicated threat information. Thermur aims to co-opt this principle, forcing the swarm's motion to encode the local temperature and wind field with similar response characteristics, making the fire's behavior "readable" through the flock's collective motion [^8].
 
--   **Implicit Boundary Adherence**: Starlings naturally avoid collisions with the ground, obstacles, and especially predators. The flock's boundaries are emergent properties of its interaction rules [^5]. I've observed how they create a dynamic, adaptive "bubble" around an approaching threat without explicit communication. This natural avoidance behavior inspires a control framework where thermal safety limits, like a 500°F isotherm, are not programmed as rigid "no-go zones," but are integrated into the flocking dynamics as repulsive forces, ensuring safety is an intrinsic property of the swarm's emergent behavior [^9].
+-   **Implicit Boundary Adherence**: Starlings naturally avoid collisions with the ground, obstacles, and especially predators. The flock's boundaries are emergent properties of its interaction rules [^5]. I've observed how they create a dynamic, adaptive "bubble" around an approaching threat without explicit communication. This natural avoidance behavior inspires a control framework where thermal safety limits, like a 475K isotherm, are not programmed as rigid "no-go zones," but are integrated into the flocking dynamics as repulsive forces, ensuring safety is an intrinsic property of the swarm's emergent behavior [^9].
 
 These evolved strategies for high-speed, dense, and responsive group movement provide a rich foundation for designing a robotic system that must navigate a hazardous and dynamic environment while serving as a clear information display [^12].
 
@@ -44,13 +44,13 @@ The central aim of Thermur is to develop and validate a swarm control framework 
 
     -   Create a multi-agent control policy, inspired by starling interaction rules during predator encounters [^11], that treats fire as the "predator" and incorporates local temperature and temperature gradients as repulsive forces.
 
-    -   Implement this policy using a **Control Barrier Function (CBF)** [^9] to mathematically guarantee that no agent's estimated surface temperature exceeds a critical threshold (e.g., 500°F) [^14].
+    -   Implement this policy using a **Control Barrier Function (CBF)** [^9] to mathematically guarantee that no agent's estimated surface temperature exceeds a critical threshold (e.g., 475K) [^14].
 
 2.  **Train for Environmental Legibility**:
 
     -   Use a combination of imitation learning (*as a core supervised task*) and reinforcement learning [^15] to train the swarm to arrange its velocity field to mirror that of the surrounding air. Simulate increased motion chaos in areas of higher temperature, thereby mimicking a starling flock's response to a predator.
 
-    -   Develop a perceptually-accurate color-mapping function, where each robot's onboard LED hue directly and intuitively corresponds to the ambient temperature it is sensing, with a target accuracy of **≤ 5°F**, using perceptually-uniform colormaps.
+    -   Develop a perceptually-accurate color-mapping function, where each robot's onboard LED hue directly and intuitively corresponds to the ambient temperature it is sensing, with a target accuracy of **≤ 3K**, using perceptually-uniform colormaps.
 
 3.  **Ensure Robust Decentralized Operation**:
 
@@ -76,11 +76,11 @@ To train and validate the Thermur system, we will rely on a combination of synth
 
     -   **WRF-Fire / FARSITE**: We will use output from coupled weather-wildfire models like WRF-Fire [^20] and fire-spread simulators like FARSITE. These provide 3D gridded data of wind velocity, temperature, and heat flux at resolutions down to a few meters. The underlying physics, often based on semi-empirical models like the Rothermel spread equations [^21], provides a realistic basis for the environmental dynamics the swarm will face.
 
-    -   **Large-Eddy Simulation (LES) Plume Data**: For fine-scale turbulence, we will leverage public datasets of wildfire plumes, such as the 40 GB library from Moisseeva (2020) [^22], which captures the Kelvin-Helmholtz instabilities and turbulent eddies critical for firefighter safety.
+    -   **Large-Eddy Simulation (LES) Plume Data**: For fine-scale turbulence, we will leverage the WRF-SFIRE dataset from Moisseeva & Stull (2020) [^22], containing 147 high-resolution simulations that capture the Kelvin-Helmholtz instabilities and turbulent eddies critical for firefighter safety.
 
 2.  **UAV Thermal Telemetry**: To ground our thermal models in physical reality, we will use open-source datasets from drone flights in heated environments.
 
-    -   **FireDrone Kiln Tests**: Data from aerogel-protected drones tested in industrial kilns up to 400°F provides crucial information on the thermal lag between ambient temperature and a drone's skin and core temperatures [^6].
+    -   **FireDrone Kiln Tests**: Data from aerogel-protected drones tested in industrial kilns up to 475K provides crucial information on the thermal lag between ambient temperature and a drone's skin and core temperatures [^6].
 
     -   **USGS Thermal UAV Dataset**: Thermal‑infrared and photogrammetric data collected by a small multirotor over Oh‑be‑joyful Creek, Colorado, provide real‑world, geo‑referenced plume imagery for validating Thermur’s plume‑rise models and sensor‑fusion pipeline [^23].
 
@@ -124,7 +124,7 @@ where:
 
 ### Thermal Safety via Control Barrier Functions (CBFs)
 
-To guarantee that an agent never enters a region where its temperature would exceed a maximum safe value, $`T_{\max}`$ (e.g., 500°F), we enforce safety via a **Control Barrier Function** [^9]. We define a safety set $`\mathcal{C}`$ based on a continuously differentiable function $`h(\mathbf{s}): \mathbb{R}^n \to \mathbb{R}`$:
+To guarantee that an agent never enters a region where its temperature would exceed a maximum safe value, $`T_{\max}`$ (e.g., 475K), we enforce safety via a **Control Barrier Function** [^9]. We define a safety set $`\mathcal{C}`$ based on a continuously differentiable function $`h(\mathbf{s}): \mathbb{R}^n \to \mathbb{R}`$:
 
 $`
 \hspace{0.5cm} \displaystyle
@@ -280,7 +280,7 @@ The system's performance will be judged against baselines and project goals usin
 
 4.  **Energy Consumption**: The simulated total energy consumed by the swarm. This will be estimated using a simplified quadrotor power model, where power $`P \propto \|\mathbf{u}_{\text{safe}} - \mathbf{g}\|^k`$, with $`\mathbf{g}`$ being the gravity vector and $`k`$ being an empirically-derived constant. The goal is to benchmark against a 15-minute target endurance on a standard LiFePO₄ battery pack [^29].
 
-5.  **Color Accuracy**: The Mean Absolute Error (MAE) between the temperature sensed by an agent and the temperature decoded from its displayed RGB color, with a target of **≤ 5°F**.
+5.  **Color Accuracy**: The Mean Absolute Error (MAE) between the temperature sensed by an agent and the temperature decoded from its displayed RGB color, with a target of **≤ 3K**.
 
 ---
 
@@ -319,7 +319,7 @@ Deploying an autonomous swarm in a safety-critical environment requires careful 
 [^19]: Todorov, Emanuel, Tom Erez, and Yuval Tassa. 2012. “MuJoCo: A Physics Engine for Model-Based Control.” IROS 2012. https://github.com/deepmind/mujoco
 [^20]: Coen, Janice L., et al. 2013. “WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model.” *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1  
 [^21]: Rothermel, Richard C. 1972. “A Mathematical Model for Predicting Fire Spread in Wildland Fuels.” *USDA Forest Service Research Paper INT-115*.  
-[^22]: Moisseeva, Nadejda. 2020. *A Numerical Perspective on Wildfire Plume-Rise Dynamics*. (T). University of British Columbia. https://doi.org/10.14288/1.0395299  
+[^22]: Moisseeva, Nadya, and Roland Stull. 2020. "WRF-SFIRE LES Synthetic Wildfire Plume Dataset." *Federated Research Data Repository*. https://doi.org/10.20383/102.0314  
 [^23]: Dawson, Cian B., Christopher Holmquist‑Johnson, and Martin A. Briggs. 2018. “Thermal Infrared and Photogrammetric Data Collected by Small Unoccupied Aircraft System for Hydrogeologic Analysis of Oh‑be‑joyful Creek, Gunnison National Forest, Colorado, August 2017.” *U.S. Geological Survey Data Release*. https://doi.org/10.5066/1P931G95D  
 [^24]: Heilman, Warren E. 2023. “Atmospheric Turbulence and Wildland Fires: A Review.” *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053  
 [^25]: Stellato, Bartolomeo, Goran Banjac, Paul Goulart, Alberto Bemporad, and Stephen Boyd. 2020. “OSQP: An Operator Splitting Solver for Quadratic Programs.” *Mathematical Programming Computation* 12 (4): 637–672. https://doi.org/10.1007/s12532-020-00179-2  

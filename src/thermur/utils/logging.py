@@ -11,6 +11,7 @@ before the application is properly configured.
 """
 from configs.imitation import LoggingModel
 from loguru            import logger
+from pathlib           import Path
 from sys               import stderr
 
 logger.remove()
@@ -41,13 +42,13 @@ def configure_loguru(cfg: LoggingModel):
         sink     = stderr
     )
 
-    if cfg.file_path:
-        logger.info(f"File logging enabled. Writing logs to {cfg.file_path}")
+    if file_path := cfg.file_path:
+        logger.info(f"File logging enabled. Writing logs to {file_path}")
         logger.add(
             diagnose  = cfg.diagnose,
             enqueue   = cfg.enqueue,
             level     = cfg.level,
             retention = cfg.retention,
             rotation  = cfg.rotation,
-            sink      = cfg.file_path
+            sink      = file_path
         )

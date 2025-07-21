@@ -4,8 +4,7 @@ Physics and simulation model.
 This module defines the unified configuration for the physical simulation
 environment, including MuJoCo settings and thermal field interpolation.
 """
-from pathlib  import Path
-from pydantic import BaseModel, Field, PositiveFloat
+from pydantic import BaseModel, DirectoryPath, Field, PositiveFloat
 
 
 class PhysicsModel(BaseModel, extra="forbid"):
@@ -27,8 +26,8 @@ class PhysicsModel(BaseModel, extra="forbid"):
     
     where ê_i are the standard basis vectors in ℝ^d.
     """
-    assets_dir: Path = Field(
-        default     = Path("src/thermur/simulation/assets"),
+    assets_dir: DirectoryPath = Field(
+        default     = "src/thermur/simulation/assets",
         description = "Directory containing MuJoCo XML model files."
     )
     bounds_max: list[float] = Field(
@@ -38,10 +37,6 @@ class PhysicsModel(BaseModel, extra="forbid"):
     bounds_min: list[float] = Field(
         default     = [0.0, 0.0, 0.0],
         description = "Minimum coordinates [x_min, y_min, z_min] of workspace."
-    )
-    data_source: Path = Field(
-        default     = Path("data/environment/sample_field.nc"),
-        description = "Path to NetCDF file containing thermal field data."
     )
     epsilon: PositiveFloat = Field(
         default     = 1e-6,
