@@ -1,6 +1,6 @@
 [build-system]
-requires      = ["poetry-core>=2.0"]
-build-backend = "poetry.core.masonry.api"
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name            = "thermur"
@@ -8,7 +8,7 @@ version         = "0.1.0"
 description     = "Thermally-constrained flocking and color-mapping for wildfires."
 authors         = [{ name = "James Parkington", email = "pongs.acreage.0o@icloud.com" }]
 readme          = "README.md"
-requires-python = "~3.13"
+requires-python = ">=3.13"
 license         = { text = "MIT" }
 dependencies    = [ 
     "globus-sdk",
@@ -16,6 +16,7 @@ dependencies    = [
     "hydra-zen",
     "loguru",
     "mujoco",
+    "netcdf4",
     "pydantic",
     "pydantic-settings",
     "pyarrow",
@@ -28,14 +29,12 @@ dependencies    = [
     "torchrl",
     "typer",
     "wandb",
-    "xarray[netcdf4]"
+    "xarray"
 ]
 
 [project.scripts]
 thermur = "thermur.cli.cli:main"
 
-[tool.poetry]
-packages = [
-    { include = "thermur", from = "src" },
-    { include = "configs", from = "src" }
-]
+[tool.hatch.build.targets.wheel]
+packages = ["src/configs", "src/thermur"]
+
