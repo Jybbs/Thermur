@@ -248,7 +248,14 @@ class MessagesModel(BaseModel, extra="forbid"):
         },
         description = "Validation and diagnostic messages."
     )
-    wandb_unavailable: str = Field(
-        default     = "wandb monitoring not available - please authenticate first",
-        description = "Message when wandb is not available."
+    wandb: dict[str, str] = Field(
+        default = {
+            "dashboard" : "🎨 Dashboard: [link={}]{}[/link]",
+            "login"     : "Run 'wandb login' to authenticate",
+            "no_auth"   : "🎨 wandb: Not authenticated • Run 'wandb login'",
+            "open"      : "Opening dashboard for project: [bright_cyan]{}[/]",
+            "ready"     : "🎨 wandb: Ready • User: {}",
+            "required"  : "wandb authentication required to access dashboard",
+        },
+        description = "Wandb integration display messages."
     )

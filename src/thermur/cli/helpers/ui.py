@@ -16,6 +16,7 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
+from wandb        import Api, api
 
 
 class ThermurUI:
@@ -29,15 +30,21 @@ class ThermurUI:
     render output.
     """
     
-    def __init__(self, display: DictConfig):
+    def __init__(
+        self, 
+        display  : DictConfig, 
+        messages : DictConfig = None
+    ):
         """
         Initializes the ThermurUI with a configured Rich console.
 
         Args:
-            display : Display configuration containing theme and UI settings.
+            display  : Display configuration containing theme and UI settings.
+            messages : Messages configuration for user-facing text.
         """
-        self.display = display
-        self.console = Console(
+        self.display       = display
+        self.messages      = messages
+        self.console       = Console(
             theme          = Theme(display.styles),
             highlight      = False,
             width          = None,
@@ -355,16 +362,14 @@ class ThermurUI:
                             is_available
                         )
                     case "dataset":
-                        count         = system_info.get(logic.get("count"), 0)
-                        has_sample    = system_info.get("has_sample", False)
-                        is_available  = raw_value and raw_value > 0
-                        formatted_str = format_str.format(raw_value, count)
-                        if has_sample and is_available:
-                            formatted_str += " [includes sample]"
-                        value = self._create_status_indicator(
-                            formatted_str if is_available else "No files downloaded", 
-                            is_available
+                        count = system_info.get(logic.get("count"), 0)
+                        text  = (
+                            format_str.format(raw_value, count) 
+                                if raw_value and raw_value > 0 
+                                else "No files downloaded"
                         )
+                        style = "white" if raw_value else "dim"
+                        value = Text(text, style=style)
                     case _:
                         if raw_value is not None:
                             value = Text(format_str.format(raw_value), no_wrap=True)
@@ -443,6 +448,29 @@ class ThermurUI:
             )
         )
     
+    def display_panel(
+        self, 
+        content      : str, 
+        border_style : str = "dim",
+        title        : str = "" 
+    ):
+        """
+        Creates and displays a styled panel with the given content.
+        
+        Args:
+            content      : The text content to display inside the panel.
+            border_style : Style for the panel border (default: "dim").
+            title        : Optional title for the panel.
+        """
+        self.console.print(
+            Panel(
+                border_style = border_style,
+                padding      = (1, 2),
+                renderable   = content,
+                title        = title
+            )
+        )
+    
     def display_download_summary(
         self,
         available_files : list[dict],
@@ -470,8 +498,8 @@ class ThermurUI:
         total_size = sum(f['size'] for f in available_files)
         
         self.print_message(
-            f"Total: {len(available_files)} files ({total_size / 1e9:.1f} GB)",
-            "info"
+            message  = f"Total: {len(available_files)} files ({total_size / 1e9:.1f} GB)",
+            msg_type = "info"
         )
         
         status_info = [
@@ -548,9 +576,43 @@ class ThermurUI:
         self.console.print(self.create_system_table(info))
         self.console.print()
 
-        status, details = system.check_wandb_status()
-        self.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
-        self.console.print()
+    def display_wandb(
+        self, 
+        context : str = "info", 
+        project : str = "thermur"
+    ) -> str | bool | None:
+        """
+        Display wandb information appropriate to the context.
+        
+        Args:
+            context : Display context - "info", "train", or "monitor"
+            project : Project name for dashboard links
+            
+        Returns:
+            For monitor context: URL string if ready, False otherwise
+            For other contexts: None
+        """
+        msgs = self.messages.wandb
+        user = Api().viewer.get("username") if api.api_key  else None
+        url  = f"https://wandb.ai/{user}/{project}" if user else None
+        
+        match context:
+            case "info":
+                msg = msgs["ready"].format(user) if user else msgs["no_auth"]
+                self.print_message(msg, "flock" if user else "warning")
+                    
+            case "train" if url:
+                self.print_message(msgs["dashboard"].format(url, url), "flock")
+                        
+            case "monitor":
+                if not url:
+                    self.print_message(msgs["required"], "warning")
+                    self.print_message(msgs["login"],    "info")
+                    return False
+                self.console.print()
+                self.print_message(msgs["open"].format(project), "flock")
+                self.console.print(f"\n  [link={url}]{url}[/link]\n")
+                return url
 
     def print_auth_prompt(self, auth_url: str) -> None:
         """
@@ -714,27 +776,3 @@ class ThermurUI:
         self.console.print(
             f"[{config['style']}]{config['icon']} {message}[/{config['style']}]"
         )
-
-    def print_wandb_info(self, project: str, url: str | None = None):
-        """
-        Print wandb project information.
-        
-        Displays wandb integration status and provides links to monitoring
-        dashboards when available.
-        
-        Args:
-            project : The wandb project name
-            url     : Optional URL to the project dashboard
-        """
-        if url:
-            self.console.print(
-                f"[{self.display.styles['flock']}]🎨 Dashboard: "
-                f"[link={url}]{url}[/link][/]"
-            )
-
-        else:
-            self.console.print(
-                f"[{self.display.styles['flock']}]🎨 Project: "
-                f"[{self.display.styles['info']}]{project}[/][/]"
-            )
-

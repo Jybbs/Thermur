@@ -5,26 +5,19 @@ This module provides the 'monitor' command, a convenient shortcut for
 opening the Weights & Biases dashboard for a specified project in the
 user's default web browser.
 """
-from typer      import Context, Exit, Option
+from typer      import Context, Exit
 from webbrowser import open
 
 
-def monitor(
-    ctx     : Context,
-    project : str | None = Option(
-        None,
-        "--project", "-p",
-        help = "wandb project name to monitor. Defaults to 'thermur'."
-    )
-):
+def monitor(ctx: Context):
     """
-    🎨 Open wandb monitoring dashboard for the specified project.
+    🎨 Open wandb monitoring dashboard for project configured in settings.
 
     Quickly opens the wandb dashboard in your default browser to monitor
     training progress, view metrics, and analyze experiment results.
     """
     command = MonitorCommand(ctx)
-    command.run(project)
+    command.run()
 
 
 class MonitorCommand:
@@ -42,73 +35,37 @@ class MonitorCommand:
             ctx: The Typer context, which holds the shared AppContext object
                  containing UI, system, and other core components.
         """
-        self.cfg    = ctx.obj.cfg
-        self.msgs   = self.cfg.messages
-        self.system = ctx.obj.system
-        self.ui     = ctx.obj.ui
+        self.cfg     = ctx.obj.cfg
+        self.msgs    = self.cfg.messages
+        self.prompts = ctx.obj.prompts
+        self.system  = ctx.obj.system
+        self.ui      = ctx.obj.ui
 
-    def run(self, project: str | None):
+    def run(self):
         """
         Executes the main workflow for opening the wandb dashboard.
 
-        This method resolves the project name if not provided, generates the
-        URL, and attempts to open it in the system's default web browser.
-
-        Args:
-            project: The wandb project name to open, or None to use the default.
+        This method uses the configured project name, generates the URL,
+        and attempts to open it in the system's default web browser.
         """
-        project = project or self.cfg.wandb_integration.default_project
-
         self.ui.print_header("wandb Monitoring")
 
-        if not (url := self.system.get_wandb_url(project)):
-            info = self.system.get_system_info()
-            match info.get("wandb_installed", False):
-                case False:
+        if url := self.ui.display_wandb("monitor", self.cfg.wandb.project):
+            if self.prompts.confirm("Open browser to view dashboard?"):
+                try:
+                    open(url)
                     self.ui.print_message(
-                        message  = "wandb is not installed in your Poetry environment",
+                        message  = self.msgs.browser_success, 
+                        msg_type = "success"
+                    )
+                except Exception as e:
+                    self.ui.print_message(
+                        message  = self.msgs.browser_fail_template.format(e=e), 
                         msg_type = "error"
                     )
                     self.ui.print_message(
-                        message  = "Run 'poetry install' to install all dependencies",
+                        message  = self.msgs.browser_manual_template.format(url=url),
                         msg_type = "info"
                     )
-                case True:
-                    # wandb is installed but user is not authenticated
-                    self.ui.print_message(
-                        message  = self.msgs.wandb_unavailable,
-                        msg_type = "error"
-                    )
-                    self.ui.print_message(
-                        message  = "Run 'wandb login' to authenticate",
-                        msg_type = "info"
-                    )
+        else:
             raise Exit(1)
-
-        self.ui.print_message(
-            message  = self.msgs.browser_launch_template.format(project=project),
-            msg_type = "flock"
-        )
-        self.ui.print_wandb_info(project, url)
-        self.ui.console.print()
-
-        try:
-            with self.ui.console.status(
-                status  = self.msgs.status["launching_browser"],
-                spinner = "dots"
-            ):
-                open(url)
-
-            self.ui.print_message(
-                message  = self.msgs.browser_success, 
-                msg_type = "success"
-            )
-        except Exception as e:
-            self.ui.print_message(
-                message  = self.msgs.browser_fail_template.format(e=e), 
-                msg_type = "error"
-            )
-            self.ui.print_message(
-                message  = self.msgs.browser_manual_template.format(url=url),
-                msg_type = "info"
-            )

@@ -5,7 +5,8 @@ This module implements behavioral cloning for training a GNN policy
 to mimic expert flocking behavior while respecting thermal constraints.
 """
 from ..visualization    import Visualizer
-from configs.imitation  import LearningModel, WandbModel
+from configs.imitation      import LearningModel
+from configs.cli.schemas.application import WandbModel
 from loguru             import logger
 from torch.nn           import Module
 from torch.optim        import Optimizer
@@ -48,7 +49,7 @@ def initialize_wandb(
     """
     Initialize Weights & Biases for experiment tracking.
     
-    Sets up the W&B experiment with the appropriate project, entity, and
+    Sets up the W&B experiment with the appropriate project and
     configuration settings. Only initializes if W&B is enabled in the config.
     
     Args:
@@ -61,7 +62,6 @@ def initialize_wandb(
                 "learning" : learning.model_dump(),
                 "wandb"    : wandb.model_dump(),
             },
-            entity  = wandb.entity,
             mode    = wandb.mode,
             project = wandb.project
         )
@@ -165,9 +165,8 @@ def train_imitation_learning(
             optimizer.zero_grad()
             
             if i % learning.log_interval == 0:
-                wandb.mode != "disabled" and wb.log(
-                    {"train/loss": loss.item()}, step=total_frames
-                )
+                if wandb.mode != "disabled":
+                    wb.log({"train/loss": loss.item()}, step=total_frames)
                 pbar.set_description(f"Loss: {loss.item():.4f}")
         
         if total_frames % learning.checkpoint_interval == 0:
@@ -192,6 +191,10 @@ def train_imitation_learning(
         policy      = policy,
         save_path   = learning.checkpoint_path
     )
+    
+    if wandb.mode != "disabled":
+        wb.finish()
+        
     logger.info("Training finished successfully.")
 
 

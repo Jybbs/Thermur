@@ -5,6 +5,7 @@ This module defines the core application configuration and metadata, including
 command definitions, training components, and integration settings.
 """
 from pydantic import BaseModel, Field
+from typing   import Literal
 
 
 class CLIModel(BaseModel, extra="forbid"):
@@ -129,19 +130,22 @@ class CLIModel(BaseModel, extra="forbid"):
     )
 
 
-class WandbIntegrationModel(BaseModel, extra="forbid"):
+class WandbModel(BaseModel, extra="forbid"):
     """
-    Weights & Biases integration configuration.
+    Weights & Biases configuration for the CLI.
     
-    This model centralizes environment variable keys and display settings
-    for wandb integration in the CLI. It manages both the API authentication
-    and project defaults.
+    This model manages wandb project settings and API authentication
+    for CLI operations like monitoring and training status display.
     """
-    api_key_env: str = Field(
+    api_key: str = Field(
         default     = "WANDB_API_KEY",
-        description = "Environment variable for wandb API key."
+        description = "Environment variable name for wandb API key."
     )
-    default_project: str = Field(
+    mode: Literal["online", "offline", "disabled"] = Field(
+        default     = "online",
+        description = "Wandb tracking mode: online, offline, or disabled."
+    )
+    project: str = Field(
         default     = "thermur",
-        description = "Default project name for wandb tracking."
+        description = "Wandb project name for experiment tracking."
     )
