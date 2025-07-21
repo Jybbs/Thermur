@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *.so
 
+# Build artifacts
+*.egg-info/
+*.lock
+dist/
+build/
+
 # Class materials
 requirements.pdf
 notes.md
@@ -29,13 +35,6 @@ logs/
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# Poetry
-.poetry/
-*.lock
-dist/
-build/
-*.egg-info/
 
 # pyenv and Python-specific files
 .python-version
