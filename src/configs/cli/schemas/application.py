@@ -5,6 +5,7 @@ This module defines the core application configuration and metadata, including
 command definitions, training components, and integration settings.
 """
 from pydantic import BaseModel, Field
+from typing   import Literal
 
 
 class CLIModel(BaseModel, extra="forbid"):
@@ -28,9 +29,9 @@ class CLIModel(BaseModel, extra="forbid"):
     commands_available: list[dict[str, str]] = Field(
         default = [
             {
-                "icon" : "🚀",
-                "name" : "train",
-                "desc" : "Train thermal drone flock behaviors"
+                "icon" : "📥",
+                "name" : "download",
+                "desc" : "Download WRF-Fire simulation datasets"
             },
             {
                 "icon" : "📋",
@@ -38,14 +39,19 @@ class CLIModel(BaseModel, extra="forbid"):
                 "desc" : "Display system and configuration details"
             },
             {
-                "icon" : "✅",
-                "name" : "validate",
-                "desc" : "Validate configuration and dependencies"
-            },
-            {
                 "icon" : "🎨",
                 "name" : "monitor",
                 "desc" : "Monitor training progress and resources"
+            },
+            {
+                "icon" : "🚀",
+                "name" : "train",
+                "desc" : "Train thermal drone flock behaviors"
+            },
+            {
+                "icon" : "✅",
+                "name" : "validate",
+                "desc" : "Validate configuration and dependencies"
             },
         ],
         description = "List of available commands with metadata."
@@ -83,6 +89,16 @@ class CLIModel(BaseModel, extra="forbid"):
                             "environment.max_temp=85",
                 "note"    : "Multiple parameters"
             },
+            {
+                "desc"    : "Download training data",
+                "command" : "thermur download",
+                "note"    : "Interactive selection of datasets"
+            },
+            {
+                "desc"    : "Download sample data",
+                "command" : "thermur download -s",
+                "note"    : "Quick start with 468MB download (1.5GB extracted)"
+            },
         ],
         description = "Example commands for quick start guide."
     )
@@ -99,13 +115,13 @@ class CLIModel(BaseModel, extra="forbid"):
     )
     training_component_configs: list[tuple[str, str, str]] = Field(
         default = [
-            ("simulation",        "simulation",        "🌍 Simulation"),
             ("controller",        "controller",        "🎓 Controller"),
-            ("policy",            "policy",            "🧠 Learning Policy"),
-            ("data_collector",    "data_collector",    "📊 Data Collector"),
             ("experience_buffer", "experience_buffer", "💾 Experience Buffer"),
             ("loss",              "loss",              "📏 Loss Function"),
             ("optimizer",         "optimizer",         "🔎 Optimizer"),
+            ("policy",            "policy",            "🧠 Learning Policy"),
+            ("simulation",        "simulation",        "🌍 Simulation"),
+            ("trajectory",        "trajectory",        "📊 Trajectory"),
         ],
         description = (
             "List of (key, config_path, display_name) tuples for training "
@@ -114,19 +130,22 @@ class CLIModel(BaseModel, extra="forbid"):
     )
 
 
-class WandbIntegrationModel(BaseModel, extra="forbid"):
+class WandbModel(BaseModel, extra="forbid"):
     """
-    Weights & Biases integration configuration.
+    Weights & Biases configuration for the CLI.
     
-    This model centralizes environment variable keys and display settings
-    for wandb integration in the CLI. It manages both the API authentication
-    and project defaults.
+    This model manages wandb project settings and API authentication
+    for CLI operations like monitoring and training status display.
     """
-    api_key_env: str = Field(
+    api_key: str = Field(
         default     = "WANDB_API_KEY",
-        description = "Environment variable for wandb API key."
+        description = "Environment variable name for wandb API key."
     )
-    default_project: str = Field(
+    mode: Literal["online", "offline", "disabled"] = Field(
+        default     = "online",
+        description = "Wandb tracking mode: online, offline, or disabled."
+    )
+    project: str = Field(
         default     = "thermur",
-        description = "Default project name for wandb tracking."
+        description = "Wandb project name for experiment tracking."
     )

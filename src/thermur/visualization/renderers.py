@@ -15,6 +15,7 @@ the main visualizer for updates and cleanup.
 from configs.imitation import ColorModel, GlyphModel, GridModel, OpacityModel
 from pyvista           import Actor, ImageData, Plotter, PolyData
 from torch             import Tensor
+from contextlib        import suppress
 from typing            import Optional
 
 import numpy   as np
@@ -37,9 +38,9 @@ class Renderer:
     
     def __init__(
         self,
-        colors    : Optional[ColorModel] = None,
-        glyphs    : Optional[GlyphModel] = None,
-        opacities : Optional[OpacityModel] = None
+        colors    : ColorModel,
+        glyphs    : GlyphModel,
+        opacities : OpacityModel
     ):
         """
         Initialize the renderer with visual configuration.
@@ -98,11 +99,11 @@ class Renderer:
         }
         
         if temperature is not None and colormap:
-            params.update(
-                clim    = (temperature.min(), temperature.max()),
-                cmap    = colormap,
-                scalars = "temperature",
-            )
+            params |= {
+                "clim"    : (temperature.min(), temperature.max()),
+                "cmap"    : colormap,
+                "scalars" : "temperature",
+            }
         else:
             params["color"] = self.colors.trail_default
         
@@ -153,54 +154,52 @@ class Renderer:
             velocities = velocity.detach().cpu().numpy()
             point_cloud["velocity"] = velocities
         
-        glyph_geom = (
-            pv.Sphere(radius=self.glyphs.size) 
-            if self.glyphs.type == "sphere" 
-            else pv.Arrow()
-        )
+        match self.glyphs.type:
+            case "sphere":
+                glyph_geom = pv.Sphere(radius=self.glyphs.size)
+            case "arrow" | _:
+                glyph_geom = pv.Arrow()
         
-        if self.glyphs.type == "arrow" and velocity is not None:
-            norms = np.linalg.norm(velocities, axis=1, keepdims=True)
-            safe_norms = np.maximum(norms, 1e-6)
-            point_cloud["direction"] = velocities / safe_norms
-            
-            agent_glyphs = point_cloud.glyph(
-                geom   = glyph_geom, 
-                orient = "direction",
-                scale  = False
-            )
-            
-        else:
-            agent_glyphs = point_cloud.glyph(
-                geom   = glyph_geom, 
-                orient = False,
-                scale  = False
-            )
+        match (self.glyphs.type, velocity is not None):
+            case ("arrow", True):
+                norms      = np.linalg.norm(velocities, axis=1, keepdims=True)
+                safe_norms = np.maximum(norms, 1e-6)
+                point_cloud["direction"] = velocities / safe_norms
+                orient = "direction"
+            case _:
+                orient = False
+        
+        agent_glyphs = point_cloud.glyph(
+            geom   = glyph_geom, 
+            orient = orient,
+            scale  = False
+        )
         
         mesh_params = {
             "render_points_as_spheres": self.glyphs.type == "sphere",
         }
         
         if temperature is not None and colormap:
-            mesh_params.update(
-                clim    = (temps.min(), temps.max()),
-                cmap    = colormap,
-                scalars = "temperature",
-            )
+            mesh_params |= {
+                "clim"    : (temps.min(), temps.max()),
+                "cmap"    : colormap,
+                "scalars" : "temperature",
+            }
         else:
             mesh_params["color"] = self.colors.agent_default
         
         actors.append(plotter.add_mesh(agent_glyphs, **mesh_params))
         
         if show_trails and velocity is not None:
-            trail_actors = self._create_agent_trails(
-                colormap    = colormap,
-                plotter     = plotter,
-                positions   = positions,
-                temperature = temps if temperature is not None else None,
-                velocities  = velocities
+            actors.extend(
+                self._create_agent_trails(
+                    colormap    = colormap,
+                    plotter     = plotter,
+                    positions   = positions,
+                    temperature = temps if temperature is not None else None,
+                    velocities  = velocities
+                )
             )
-            actors.extend(trail_actors)
         
         return actors
     
@@ -289,8 +288,8 @@ class Renderer:
         point_cloud = pv.PolyData(positions)
         point_cloud["temperature"] = temperature.cpu().numpy().ravel()
         
-        min_bounds = np.array([positions[:, i].min() - grids.padding for i in range(3)])
-        max_bounds = np.array([positions[:, i].max() + grids.padding for i in range(3)])
+        min_bounds = positions.min(axis=0) - grids.padding
+        max_bounds = positions.max(axis=0) + grids.padding
         resolution = np.array(grids.temperature_resolution)
         
         target_grid = pv.ImageData(
@@ -302,13 +301,9 @@ class Renderer:
         # Use sample method to interpolate temperature values
         grid = target_grid.sample(point_cloud)
         
-        try:
-            contour = grid.contour([max_temperature])
-            if contour.n_points == 0:
+        with suppress(Exception):
+            if (contour := grid.contour([max_temperature])).n_points == 0:
                 return []
-        except:
-            return []
-        
         return [
             plotter.add_mesh(
                 color   = self.colors.safety_default,
@@ -407,9 +402,10 @@ class Renderer:
             scale  = "wind_magnitude",
         )
         
-        mesh_params = {
-            "color"   : self.colors.wind_default,
-            "opacity" : self.opacities.wind,
-        }
-        
-        return [plotter.add_mesh(mesh=wind_glyphs, **mesh_params)]
+        return [
+            plotter.add_mesh(
+                mesh    = wind_glyphs,
+                color   = self.colors.wind_default,
+                opacity = self.opacities.wind,
+            )
+        ]

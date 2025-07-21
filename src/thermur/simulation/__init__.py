@@ -14,4 +14,3 @@ The edge index computation uses spatial proximity to determine the communication
 graph G_t at each timestep, enabling decentralized coordination.
 """
 from .environment import SimulationEnv
-from .geometry    import compute_edge_index

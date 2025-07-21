@@ -5,13 +5,14 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
+from contextlib         import suppress
 from importlib.metadata import PackageNotFoundError, version
 from omegaconf          import DictConfig
+from pathlib            import Path
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
 from torch              import __version__ as torch_version, cuda
-from wandb              import Api, api
 
 import os
 
@@ -34,8 +35,6 @@ class SystemInspector:
         """
         self.cfg               = cfg
         self.messages          = getattr(cfg, 'messages', None)
-        self.wandb_integration = getattr(cfg, 'wandb_integration', None)
-        self._wandb_status     = None
 
     def _get_cuda_info(self) -> dict[str, any]:
         """
@@ -57,6 +56,25 @@ class SystemInspector:
             "gpu_name"     : cuda.get_device_name(0),
         }
 
+    def _get_dataset_info(self) -> dict[str, any]:
+        """
+        Gather information about downloaded dataset files.
+        
+        Returns:
+            Dictionary with dataset_size in GB, dataset_count, and has_sample.
+        """
+        with suppress(Exception):
+            sample_path = self.cfg.download.sample_data_path
+            if sample_path.exists():
+                all_files = self._get_wrf_files() + [sample_path]
+            
+            return {
+                "dataset_count" : len(all_files),
+                "dataset_size"  : sum(f.stat().st_size for f in all_files) / 1e9,
+                "has_sample"    : sample_path.exists(),
+            }
+        return {"dataset_count": 0, "dataset_size": 0.0, "has_sample": False}
+    
     def _get_disk_info(self) -> dict[str, float]:
         """
         Gather disk usage information for the current directory.
@@ -65,14 +83,13 @@ class SystemInspector:
             Dictionary with disk_available and disk_total in GB.
             Returns zeros if disk information cannot be retrieved.
         """
-        try:
+        with suppress(Exception):
             usage = disk_usage(".")
             return {
                 "disk_available" : usage.free  / 1e9,
                 "disk_total"     : usage.total / 1e9,
             }
-        except Exception:
-            return {"disk_available": 0, "disk_total": 0}
+        return {"disk_available": 0, "disk_total": 0}
 
     def _get_memory_info(self) -> dict[str, float]:
         """
@@ -82,15 +99,14 @@ class SystemInspector:
             Dictionary with memory_available and memory_total in GB.
             Returns zeros if psutil is not installed.
         """
-        try:
+        with suppress(ImportError):
             from psutil import virtual_memory
             mem = virtual_memory()
             return {
                 "memory_available" : mem.available / 1e9,
                 "memory_total"     : mem.total     / 1e9,
             }
-        except ImportError:
-            return {"memory_available": 0, "memory_total": 0}
+        return {"memory_available": 0, "memory_total": 0}
 
     def _get_package_version(
         self, 
@@ -107,87 +123,23 @@ class SystemInspector:
         Returns:
             Version string or default value.
         """
-        try:
+        with suppress(PackageNotFoundError):
             return version(package_name)
-        except PackageNotFoundError:
-            return default
+        return default
 
-    def _get_wandb_status(self) -> dict[str, any]:
+    def _get_wrf_files(self) -> list[Path]:
         """
-        Get comprehensive wandb status information.
-        
-        Checks installation, API key presence, and user authentication
-        in a single pass. Results are cached for efficiency.
+        Get list of WRF-SFIRE NetCDF files from configured directory.
         
         Returns:
-            Dictionary with keys:
-            - installed : bool
-            - api_key   : str | None
-            - username  : str | None
+            List of Path objects for WRF files, empty list if none found.
         """
-        if self._wandb_status is not None:
-            return self._wandb_status
+        wrf_dir = self.cfg.download.wrf_sfire_dir
+        if not wrf_dir.exists():
+            return []
             
-        status = {
-            "installed" : False,
-            "api_key"   : None,
-            "username"  : None,
-        }
-        
-        try:
-            __import__('wandb')
-            status["installed"] = True
-        except ImportError:
-            self._wandb_status = status
-            return status
-            
-        status["api_key"] = (
-            os.environ.get(self.wandb_integration.api_key_env) or 
-            api.api_key
-        )
-        
-        if status["api_key"]:
-            try:
-                user = Api().viewer
-                status["username"] = user.get("username") if user else None
-            except Exception:
-                pass
-                
-        self._wandb_status = status
-        return status
+        return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
 
-    def check_wandb_status(self) -> tuple[str, str]:
-        """
-        Check wandb installation and authentication status.
-
-        Returns:
-            Tuple of (status_message, details_message) with Rich markup
-            indicating the current wandb state and any required actions.
-        """
-        status = self._get_wandb_status()
-        
-        if not status["installed"]:
-            return (
-                "[red]❌ Not Installed[/red]",
-                "[yellow]Run 'poetry install'[/yellow]",
-            )
-
-        if status["username"]:
-            return (
-                "[green]✅ Connected[/green]",
-                f"[cyan]@{status['username']}[/cyan]",
-            )
-
-        if status["api_key"]:
-            return (
-                "[green]✅ API Key Set[/green]",
-                "[white]Ready to track[/white]",
-            )
-
-        return (
-            "[yellow]⚠️  Not Connected[/yellow]",
-            "[yellow]Run 'wandb login'[/yellow]",
-        )
 
     def get_system_info(self) -> dict[str, any]:
         """
@@ -199,13 +151,10 @@ class SystemInspector:
 
         Returns:
             Dictionary containing all system information with keys:
-            - Package versions : mujoco, thermur, torch, wandb_installed
+            - Package versions : mujoco, thermur, torch
             - System info      : platform, python, python_version_info
             - Hardware         : cuda info, memory stats, disk usage
-            - wandb_user if authenticated
         """
-        wandb_status = self._get_wandb_status()
-        
         info = {
             "mujoco"              : self._get_package_version("mujoco"),
             "platform"            : platform(),
@@ -213,31 +162,55 @@ class SystemInspector:
             "python_version_info" : version_info,
             "thermur"             : self._get_package_version("thermur", "dev"),
             "torch"               : torch_version,
-            "wandb_installed"     : wandb_status["installed"],
-            "wandb_user"          : wandb_status["username"],
         }
         
         info.update(self._get_cuda_info())
         info.update(self._get_memory_info())
         info.update(self._get_disk_info())
+        info.update(self._get_dataset_info())
         
         return info
 
-    def get_wandb_url(self, project: str) -> str | None:
+    
+    def resolve_data_path(self, use_sample: bool = False) -> tuple[Path, str]:
         """
-        Generate wandb project URL if user is authenticated.
-
+        Resolves the appropriate data path based on availability and user preference.
+        
+        This method implements a fallback strategy for data selection:
+        1. If sample explicitly requested and exists          -> use sample
+        2. If WRF-SFIRE data exists and not requesting sample -> use first WRF file
+        3. If no WRF data but sample exists                   -> fallback to sample  
+        4. Otherwise                                          -> no data available
+        
         Args:
-            project: The wandb project name.
-
+            use_sample : Whether the user explicitly requested sample data
+            
         Returns:
-            Full URL to the wandb project dashboard if authenticated,
-            None otherwise.
+            Tuple of (data_path, status_message)
+            
+        Raises:
+            FileNotFoundError: If no data is available for training
         """
-        username = self._get_wandb_status()["username"]
-        return f"https://wandb.ai/{username}/{project}" if username else None
+        if not self.cfg or not hasattr(self.cfg, 'download'):
+            raise ValueError("Configuration object missing download settings")
+            
+        sample_path = self.cfg.download.sample_data_path
+        wrf_files   = [] if use_sample else self._get_wrf_files()
+        
+        match (use_sample, bool(wrf_files), sample_path.exists()):
+            case (True, _, True):
+                return sample_path, "Using sample dataset as requested."
+            case (False, True, _):
+                return wrf_files[0], f"Using WRF-SFIRE data: {wrf_files[0].name}"
+            case (False, False, True):
+                return sample_path, "No WRF-SFIRE data found. Using sample data."
+            case _:
+                raise FileNotFoundError(
+                    "No training data available. "
+                    "Run 'thermur download' to get sample data."
+                )
 
-    def validate_config_overrides(self, overrides: list[str] | None) -> list[str]:
+    def validate_overrides(self, overrides: list[str] | None) -> list[str]:
         """
         Validate Hydra configuration override syntax.
 
@@ -264,7 +237,10 @@ class SystemInspector:
                 )
                 continue
 
-            key = o.split("=")[0].lstrip("+").replace(".", "").replace("_", "")
+            key = (
+                o.partition("=")[0]
+                .removeprefix("+").replace(".", "").replace("_", "")
+            )
             if not key.isalnum():
                 issues.append(
                     f"{self.messages.validation['invalid_override_key']}: {o}"

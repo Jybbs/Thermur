@@ -5,9 +5,9 @@ This module implements behavioral cloning for training a GNN policy
 to mimic expert flocking behavior while respecting thermal constraints.
 """
 from ..visualization    import Visualizer
-from configs.imitation  import LearningModel, WandbModel
+from configs.imitation      import LearningModel
+from configs.cli.schemas.application import WandbModel
 from loguru             import logger
-from pathlib            import Path
 from torch.nn           import Module
 from torch.optim        import Optimizer
 from torchrl.collectors import SyncDataCollector
@@ -20,9 +20,9 @@ import wandb as wb
 
 
 def cleanup_resources(
-    data_collector : SyncDataCollector,
-    pbar           : tqdm,
-    visualizer     : Visualizer | None
+    pbar       : tqdm,
+    trajectory : SyncDataCollector,
+    visualizer : Visualizer | None
 ):
     """
     Clean up resources used during training.
@@ -31,14 +31,14 @@ def cleanup_resources(
     and closes the visualizer if it exists.
     
     Args:
-        data_collector : The experience collector to shut down
-        pbar           : The progress bar to close
-        visualizer     : The visualization module instance or None
+        pbar       : The progress bar to close
+        trajectory : The experience collector to shut down
+        visualizer : The visualization module instance or None
     """
-    data_collector.shutdown()
+    trajectory.shutdown()
     pbar.close()
     
-    if visualizer is not None:
+    if visualizer:
         visualizer.close()
 
 
@@ -49,7 +49,7 @@ def initialize_wandb(
     """
     Initialize Weights & Biases for experiment tracking.
     
-    Sets up the W&B experiment with the appropriate project, entity, and
+    Sets up the W&B experiment with the appropriate project and
     configuration settings. Only initializes if W&B is enabled in the config.
     
     Args:
@@ -62,7 +62,6 @@ def initialize_wandb(
                 "learning" : learning.model_dump(),
                 "wandb"    : wandb.model_dump(),
             },
-            entity  = wandb.entity,
             mode    = wandb.mode,
             project = wandb.project
         )
@@ -91,11 +90,10 @@ def save_checkpoint(
         save_path   : Directory to save checkpoints
         is_final    : Whether this is the final checkpoint
     """
-    save_dir = Path(save_path)
-    save_dir.mkdir(parents=True, exist_ok=True)
+    save_path.mkdir(parents=True, exist_ok=True)
     
     filename  = "final.pt" if is_final else f"checkpoint_{frame_count}.pt"
-    full_path = save_dir / filename
+    full_path = save_path / filename
     
     torch.save(
         f   = full_path,
@@ -109,12 +107,12 @@ def save_checkpoint(
 
 
 def train_imitation_learning(
-    data_collector    : SyncDataCollector,
     experience_buffer : TensorDictReplayBuffer,
     learning          : LearningModel,
     loss              : LossModule,
     optimizer         : Optimizer,
     policy            : Module,
+    trajectory        : SyncDataCollector,
     visualizer        : Visualizer | None,
     wandb             : WandbModel
 ):
@@ -129,12 +127,12 @@ def train_imitation_learning(
     where π_θ is the learned policy and π* is the expert controller.
     
     Args:
-        data_collector    : Manages environment interaction loop
         experience_buffer : Stores and samples demonstration data
         learning          : Training hyperparameters and settings
         loss              : Behavioral cloning loss module
         optimizer         : Gradient-based optimizer
         policy            : GNN policy network to train
+        trajectory        : Manages environment interaction loop
         visualizer        : Optional 3D visualization module
         wandb             : Experiment tracking configuration
     """
@@ -145,13 +143,12 @@ def train_imitation_learning(
     pbar = tqdm(total=learning.total_frames)
     
     total_frames = 0
-    for i, data in enumerate(data_collector):
+    for i, data in enumerate(trajectory):
         experience_buffer.extend(data.to("cpu"))
         current_frames = data.numel()
         total_frames  += current_frames
         
-        if visualizer is not None:
-            latest_observation = data[-1].get("next")
+        if visualizer and (latest_observation := data[-1].get("next")):
             update_visualization(
                 latest_observation = latest_observation,
                 visualizer         = visualizer
@@ -160,9 +157,8 @@ def train_imitation_learning(
         pbar.update(current_frames)
         
         if total_frames > experience_buffer.batch_size:
-            batch     = experience_buffer.sample().to(device)
-            loss_dict = loss(batch)
-            loss      = loss_dict["loss"]
+            batch = experience_buffer.sample().to(device)
+            loss  = loss(batch)["loss"]
             
             loss.backward()
             optimizer.step()
@@ -183,9 +179,9 @@ def train_imitation_learning(
             )
     
     cleanup_resources(
-        data_collector = data_collector,
-        pbar           = pbar,
-        visualizer     = visualizer
+        pbar       = pbar,
+        trajectory = trajectory,
+        visualizer = visualizer
     )
     
     save_checkpoint(
@@ -195,6 +191,10 @@ def train_imitation_learning(
         policy      = policy,
         save_path   = learning.checkpoint_path
     )
+    
+    if wandb.mode != "disabled":
+        wb.finish()
+        
     logger.info("Training finished successfully.")
 
 
@@ -213,6 +213,5 @@ def update_visualization(
         latest_observation : The most recent observation from the environment
         visualizer         : The visualization module instance
     """
-    if visualizer is not None:
-        visualizer.update(latest_observation)
-        visualizer.render()
+    visualizer.update(latest_observation)
+    visualizer.render()

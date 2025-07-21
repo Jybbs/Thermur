@@ -11,10 +11,9 @@ import mujoco as mj
 
 
 def generate_flock_xml(
-    agent_count     : int,
     assets_dir      : Path,
-    simulation_step : float,
-    spatial_dims    : int
+    shape           : tuple[int, int],
+    simulation_step : float
 ) -> str:
     """
     Dynamically generates a MuJoCo XML model with N distinct drone bodies.
@@ -26,26 +25,26 @@ def generate_flock_xml(
     4. Inserting all N drone bodies and their actuators into the flock model
     
     Args:
-        agent_count     : Number of agent bodies to generate
         assets_dir      : Path to the directory containing XML templates
+        shape           : (agent_count, spatial_dims) tuple from FlockModel
         simulation_step : Physics simulation timestep in seconds
-        spatial_dims    : Number of spatial dimensions (2 or 3)
     
     Returns:
         A string containing the complete MuJoCo XML model
     """
+    n, dims        = shape
     drone_template = (assets_dir / "drone.xml").read_text()
     flock_template = (assets_dir / "flock.xml").read_text()
     actuator_defs  = []
     drone_bodies   = []
     
-    for i in range(agent_count):
+    for i in range(n):
         # Create a slight offset for each drone to prevent initial collisions
         offset   = 0.3 * i
-        position = f"0 {offset} 0" if spatial_dims == 3 else f"0 {offset} 0"
+        position = f"0 {offset} 0" if dims == 3 else f"0 {offset}"
         
         joints_xml = ""
-        for j in range(spatial_dims):
+        for j in range(dims):
             axis = ["1 0 0", "0 1 0", "0 0 1"][j]
             joints_xml += f"""
             <joint
@@ -58,13 +57,16 @@ def generate_flock_xml(
             />
             """
         
-        drone_body = drone_template.replace("$AGENT_ID$", str(i))
-        drone_body = drone_body.replace("$POSITION$", position)
-        drone_body = drone_body.replace("<!-- JOINTS_XML -->", joints_xml)
+        drone_body = (
+            drone_template
+            .replace("$AGENT_ID$", str(i))
+            .replace("$POSITION$", position)
+            .replace("<!-- JOINTS_XML -->", joints_xml)
+        )
         
         drone_bodies.append(drone_body)
         
-        for j in range(spatial_dims):
+        for j in range(dims):
             axis_name = ["x", "y", "z"][j]
             actuator_defs.append(f"""
         <velocity
@@ -75,9 +77,12 @@ def generate_flock_xml(
             name        = "drone_{i}_vel_{axis_name}"
         />""")
     
-    flock_xml = flock_template.replace("$TIMESTEP$", str(simulation_step))
-    flock_xml = flock_xml.replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
-    flock_xml = flock_xml.replace("<!-- ACTUATORS -->", "\n".join(actuator_defs))
+    flock_xml = (
+        flock_template
+        .replace("$TIMESTEP$", str(simulation_step))
+        .replace("<!-- DRONE_BODIES -->", "\n".join(drone_bodies))
+        .replace("<!-- ACTUATORS -->", "\n".join(actuator_defs))
+    )
     
     return flock_xml
 

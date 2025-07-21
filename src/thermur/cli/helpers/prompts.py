@@ -6,10 +6,9 @@ preset selection, wandb configuration, override collection, and training
 confirmation. It uses the ThermurUI class to render complex components and 
 DictConfig objects for all static text and configuration.
 """
-from omegaconf   import DictConfig
-from rich.align  import Align
-from rich.prompt import Confirm
-from typing      import Any
+from itertools import islice
+from omegaconf import DictConfig
+from typing    import Any
 
 import questionary
 
@@ -46,7 +45,7 @@ class CLIPrompts:
             dict(self.prompts.questionary_style)
         )
 
-    def ask_for_config_overrides(self) -> list[str]:
+    def ask_for_overrides(self) -> list[str]:
         """
         Asks the user if they wish to provide advanced configuration overrides.
 
@@ -58,7 +57,7 @@ class CLIPrompts:
             A list of configuration override strings, which may be empty.
         """
         self.ui.console.print()
-        self.ui.print_minor_section("Advanced Configuration")
+        self.ui.print_section("Advanced Configuration", minor=True)
 
         syntax_panel = self.ui.create_syntax_panel(
             code  = self.cli.override_syntax_help,
@@ -84,16 +83,11 @@ class CLIPrompts:
         )
 
         overrides = []
-        while True:
-            override = questionary.text(
-                instruction = "(e.g., hyperparameters.lr=0.001)",
-                message     = "Override:",
-                style       = self.thermal_style
-            ).ask()
-
-            if not override:
-                break
-
+        while override := questionary.text(
+            instruction = "(e.g., hyperparameters.lr=0.001)",
+            message     = "Override:",
+            style       = self.thermal_style
+        ).ask():
             overrides.append(override)
             success_style = self.ui.display.styles['success']
             self.ui.console.print(
@@ -109,43 +103,52 @@ class CLIPrompts:
 
         return overrides
     
-    def ask_wandb_project_name(self, default_project: str = "thermur") -> str:
+    def confirm(
+        self, 
+        message : str, 
+        default : bool = True
+    ) -> bool:
         """
-        Guides the user in setting a Weights & Biases project name for tracking.
-
-        This prompt explains the purpose of wandb before allowing the user
-        to enter their project name.
-
+        General purpose confirmation prompt.
+        
         Args:
-            default_project: The default project name to suggest.
-
+            message : The question to ask the user
+            default : Default value if user just presses enter
+            
         Returns:
-            The final project name for wandb tracking.
+            True if user confirms, False otherwise
         """
-        self.ui.console.print()
-        self.ui.print_message(
-            message  = "Configure experiment tracking",
-            msg_type = "flock"
-        )
-        self.ui.console.print(
-            f"[grey70]"
-            "wandb will track metrics, logs, and model checkpoints"
-            "[/grey70]"
-        )
-        self.ui.console.print()
-
-        project_name = questionary.text(
-            default     = default_project,
-            instruction = "(press Enter for default)",
-            message     = "Enter wandb project name:",
-            style       = self.thermal_style
+        return questionary.confirm(
+            default = default,
+            message = message,
+            style   = self.thermal_style
         ).ask()
-
+    
+    def confirm_download(self, file_info: dict) -> bool:
+        """
+        Prompts user to confirm file download operation.
+        
+        Args:
+            file_info: File information dictionary with name and size
+            
+        Returns:
+            True if user confirms download, False otherwise
+        """
+        size_gb = file_info['size'] / 1e9
+        
+        self.ui.console.print()
         self.ui.print_message(
-            message  = f"Project name: [bright_cyan]{project_name}[/bright_cyan]",
-            msg_type = "success"
+            f"Ready to download: {file_info['name']}",
+            "info"
         )
-        return project_name
+        self.ui.console.print(f"[yellow]File size: {size_gb:.1f} GB[/yellow]")
+        self.ui.console.print(
+            "[grey70]This download may take several hours depending on your "
+            "internet connection[/grey70]"
+        )
+        self.ui.console.print()
+        
+        return self.confirm(message = "Proceed with download?")
 
     def confirm_system_override(self, issues: list[str]) -> bool:
         """
@@ -170,11 +173,9 @@ class CLIPrompts:
         self.ui.console.print(warning_panel)
         self.ui.console.print()
 
-        warning_style = self.ui.display.styles['warning']
-        return Confirm.ask(
-            console = self.ui.console,
-            default = False,
-            prompt  = f"[{warning_style}]Do you want to proceed anyway?[/]"
+        return self.confirm(
+            message = "Do you want to proceed anyway?",
+            default = False
         )
     
     def select_configuration_preset(self) -> str | None:
@@ -190,7 +191,7 @@ class CLIPrompts:
             The string name of the selected preset (e.g., "standard"), or None if
             the user explicitly chooses the "custom" configuration option.
         """
-        self.ui.print_minor_section("Configuration Presets")
+        self.ui.print_section("Configuration Presets", minor=True)
 
         table = self.ui.create_aligned_table(
             columns = self.prompts.presets_table_columns,
@@ -218,7 +219,7 @@ class CLIPrompts:
                 title = preset_cfgs[name]['emoji'], 
                 value = name
             )
-            for name in list(self.presets.presets.keys())
+            for name in self.presets.presets.keys()
             if name != 'custom'
         ]
         choices.extend([
@@ -235,13 +236,12 @@ class CLIPrompts:
             style   = self.thermal_style
         ).ask()
 
-        # Map emoji back to preset name
         if chosen_emoji:
-            chosen_preset = None
-            for name, config in preset_cfgs.items():
-                if config['emoji'] == chosen_emoji:
-                    chosen_preset = name
-                    break
+            emoji_to_preset = {
+                config['emoji']: name 
+                for name, config in preset_cfgs.items()
+            }
+            chosen_preset = emoji_to_preset.get(chosen_emoji)
             
             self.ui.print_message(
                 message  = f"Selected preset: [bright_cyan]{chosen_emoji}[/bright_cyan]",
@@ -255,7 +255,129 @@ class CLIPrompts:
             )
 
         return chosen_preset
-
+    
+    def select_file_with_pagination(
+        self,
+        available_files : list[dict],
+        file_status     : dict[str, str],
+        page_size       : int = 10,
+        title_prefix    : str = "Available Files"
+    ) -> dict | None:
+        """
+        Display files in paginated table format and allow selection.
+        
+        Presents a paginated view of available files with their download status,
+        allowing users to navigate between pages and select files using keyboard
+        commands. Uses Rich tables for display and questionary for input handling.
+        
+        Args:
+            available_files : List of file dictionaries with 'name' and 'size' keys
+            file_status     : Dict mapping filename to status
+            page_size       : Number of files to display per page
+            title_prefix    : Prefix for the page title display
+            
+        Returns:
+            Selected file dictionary or None if cancelled
+        """
+        page, total = 0, len(available_files)
+        pages = -(-total // page_size)
+        
+        while True:
+            self.ui.console.clear()
+            
+            start = page * page_size
+            page_files = list(islice(available_files, start, start + page_size))
+            
+            self.ui.display_download_table(
+                available_files = page_files,
+                file_status     = file_status,
+                title           = f"{title_prefix} (Page {page + 1}/{pages})"
+            )
+            self.ui.console.print()
+            self.ui.display_download_summary(available_files, file_status)
+            self.ui.console.print()
+            
+            choices = list(map(str, range(len(page_files)))) + ["q", ""]
+            nav     = ["[bold cyan]0-9[/]: Select", "[bold cyan]q[/]: Quit"]
+            
+            if page:
+                choices.append("p")
+                nav.insert(1, "[bold cyan]p[/]: Previous")
+            if start + page_size < total:
+                choices.append("n") 
+                nav.insert(-1, "[bold cyan]n[/]: Next")
+            
+            self.ui.console.print("  ".join(nav) + "\n")
+            
+            if not (choice := questionary.text(
+                "Select",
+                style    = self.thermal_style,
+                validate = lambda x: x.strip().lower() in choices
+            ).ask()):
+                return None
+            
+            match choice.strip().lower():
+                case "q" | "": return None
+                case "p": page -= 1
+                case "n": page += 1  
+                case n if n.isdigit():
+                    return page_files[int(n)]
+    
+    def select_from_list(
+        self,
+        choices : list[tuple[str, str]],
+        message : str
+    ) -> str | None:
+        """
+        Present a list of choices for selection.
+        
+        Args:
+            choices : List of (value, description) tuples
+            message : The prompt message
+            
+        Returns:
+            Selected value or None if cancelled
+        """
+        return questionary.select(
+            choices = [
+                questionary.Choice(desc, val) 
+                for val, desc in choices
+            ],
+            message = message,
+            style   = self.thermal_style,
+            instruction = "(↑↓)"
+        ).ask()
+            
+    def select_globus_endpoint(self, endpoints: list[dict]) -> dict | None:
+        """
+        Select a Globus endpoint from multiple available endpoints.
+        
+        When multiple local Globus endpoints are found, prompts the user
+        to select which one to use for transfers.
+        
+        Args:
+            endpoints: List of endpoint dictionaries with 'display_name' and 'id'
+            
+        Returns:
+            Selected endpoint dict, or None if cancelled
+        """
+        if not endpoints:
+            return None
+            
+        if len(endpoints) == 1:
+            return endpoints[0]
+            
+        self.ui.print_message("Multiple local endpoints found:", "info")
+        for i, e in enumerate(endpoints, start=1):
+            self.ui.console.print(f"  {i}. {e['display_name']}")
+            
+        selected = self.select_from_list(
+            choices = [(e, e['display_name']) for e in endpoints],
+            message = "Select local endpoint:"
+        )
+        
+        return selected
+            
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
         Presents a final summary of all chosen configurations for user confirmation.
@@ -271,7 +393,7 @@ class CLIPrompts:
             True if the user confirms to start training, False otherwise.
         """
         self.ui.console.print()
-        self.ui.print_minor_section("Training Configuration Summary")
+        self.ui.print_section("Training Configuration Summary", minor=True)
 
         table = self.ui.create_aligned_table(
             box       = None,
@@ -304,7 +426,7 @@ class CLIPrompts:
         for key, value in summary_data:
             table.add_row(key, value)
 
-        self.ui.console.print(Align.center(table))
+        self.ui.console.print(table, justify="center")
         self.ui.console.print()
 
         ready_panel = self.ui.create_ready_panel(
@@ -314,8 +436,7 @@ class CLIPrompts:
         self.ui.console.print(ready_panel)
         self.ui.console.print()
 
-        return Confirm.ask(
-            "[bold bright_green]Start training with this configuration?[/]",
-            console = self.ui.console,
+        return self.confirm(
+            message = "Start training with this configuration?",
             default = True
         )

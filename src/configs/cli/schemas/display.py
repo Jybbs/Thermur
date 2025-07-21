@@ -4,7 +4,7 @@ Display configuration schemas for the Thermur CLI.
 This module consolidates all display-related models including themes, UI components,
 and all types of user-facing messages for a cohesive visual interface configuration.
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 
 
 class DisplayModel(BaseModel, extra="forbid"):
@@ -59,7 +59,7 @@ class DisplayModel(BaseModel, extra="forbid"):
         },
         description = "Message type configurations with icons and styles."
     )
-    progress_bar_length: int = Field(
+    progress_bar_length: PositiveInt = Field(
         default     = 20,
         description = "Character width for progress bars."
     )
@@ -86,6 +86,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             'gpu'      : '💎 GPU',
             'memory'   : '💾 Memory',
             'disk'     : '💿 Disk',
+            'dataset'  : '📥 Dataset',
         },
         description = "System component display names with icons."
     )
@@ -107,6 +108,11 @@ class DisplayModel(BaseModel, extra="forbid"):
                 'is_resource' : True, 
                 'available'   : 'disk_available', 
                 'total'       : 'disk_total'
+            },
+            'dataset'    : {
+                'key'    : 'dataset_size',
+                'format' : '{:.1f} GB ({} files)',
+                'count'  : 'dataset_count'
             },
         },
         description = "Logic for formatting system component values."
@@ -242,7 +248,14 @@ class MessagesModel(BaseModel, extra="forbid"):
         },
         description = "Validation and diagnostic messages."
     )
-    wandb_unavailable: str = Field(
-        default     = "wandb monitoring not available - please authenticate first",
-        description = "Message when wandb is not available."
+    wandb: dict[str, str] = Field(
+        default = {
+            "dashboard" : "🎨 Dashboard: [link={}]{}[/link]",
+            "login"     : "Run 'wandb login' to authenticate",
+            "no_auth"   : "🎨 wandb: Not authenticated • Run 'wandb login'",
+            "open"      : "Opening dashboard for project: [bright_cyan]{}[/]",
+            "ready"     : "🎨 wandb: Ready • User: {}",
+            "required"  : "wandb authentication required to access dashboard",
+        },
+        description = "Wandb integration display messages."
     )

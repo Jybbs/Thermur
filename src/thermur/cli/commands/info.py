@@ -47,14 +47,13 @@ class InfoCommand:
         This helper validates hardware capabilities, software versions, and
         integration status, displaying the results in a formatted table.
         """
-        self.ui.print_major_section("System Information")
+        self.ui.print_section("System Information")
 
         info = self.system.get_system_info()
         self.ui.console.print(self.ui.create_system_table(info))
         self.ui.console.print()
 
-        status, details = self.system.check_wandb_status()
-        self.ui.console.print(f"[flock]🎨 wandb: {status} • {details}[/flock]")
+        self.ui.display_wandb("info")
         self.ui.console.print()
 
     def run(self):
@@ -68,25 +67,19 @@ class InfoCommand:
 
         self._perform_system_validation()
 
-        self.ui.print_major_section("Configuration System")
+        self.ui.print_section("Configuration System")
         self.ui.print_config_value(
             align_width = 11,
             key         = "Config Path",
             value       = "configs/"
         )
         
-        preset_names = list(self.cfg.presets.presets.keys())
         self.ui.print_config_value(
             align_width = 11,
             key         = "Presets",
-            value       = ", ".join(sorted(preset_names))
+            value       = ", ".join(sorted(self.cfg.presets.presets.keys()))
         )
         
 
-        self.ui.print_major_section("Common Commands")
-        for example in self.cfg.cli.commands_examples:
-            self.ui.print_command_example(
-                command     = example["command"],
-                description = example["desc"],
-                note        = example["note"]
-            )
+        self.ui.print_section("Common Commands")
+        self.ui.print_command_examples(self.cfg.cli.commands_examples)

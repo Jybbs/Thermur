@@ -66,9 +66,9 @@ class FlockModel(BaseModel, extra="forbid"):
         )
     )
     max_temperature: PositiveFloat = Field(
-        default     = 500.0,
+        default     = 475.0,
         description = (
-            "Maximum survivable agent temperature T_max in Fahrenheit (°F), "
+            "Maximum survivable agent temperature T_max in Kelvin (K), "
             "defining the hard safety boundary h(𝐱) for the CBF."
         )
     )
@@ -85,3 +85,20 @@ class FlockModel(BaseModel, extra="forbid"):
             "agent's heat dissipation rate."
         )
     )
+    
+    @property
+    def shape(self) -> tuple[int, int]:
+        """
+        Returns (agent_count, spatial_dims) for common tensor shape operations.
+        """
+        return (self.agent_count, self.spatial_dims)
+    
+    @property
+    def state_size(self) -> int:
+        """
+        Total number of scalar values needed to represent all agent states.
+        
+        Used for flattened state arrays in MuJoCo where positions and velocities
+        are stored as contiguous 1D arrays of size agent_count * spatial_dims.
+        """
+        return self.agent_count * self.spatial_dims

@@ -17,4 +17,4 @@ The SafetyFilter ensures all control actions respect physical constraints and
 maintain safe distances from thermal hazards using Control Barrier Functions.
 """
 from .flocking import ExpertFlockingController
-from .safety   import SafetyFilter, ThermalBarrierFunction
+from .safety   import SafetyFilter

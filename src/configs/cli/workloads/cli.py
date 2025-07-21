@@ -10,13 +10,14 @@ from hydra_zen   import make_config, ZenStore
 
 
 cli_cfg = make_config(
-    cli                 = build_cli,
-    display             = build_display,
-    messages            = build_messages,
-    presets             = build_presets,
-    prompts             = build_prompts,
-    wandb_integration   = build_wandb_integration,
-    defaults            = ["_self_"],
+    cli      = build_cli,
+    display  = build_display,
+    download = build_download,
+    messages = build_messages,
+    presets  = build_presets,
+    prompts  = build_prompts,
+    wandb    = build_wandb,
+    defaults = ["_self_"],
 )
 
 
