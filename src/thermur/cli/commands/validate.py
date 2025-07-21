@@ -10,8 +10,8 @@ from typer    import Context, Option
 
 
 def validate(
-    ctx              : Context,
-    config_overrides : list[str] | None = Option(
+    ctx       : Context,
+    overrides : list[str] | None = Option(
         None,
         "--config", "-c",
         help = "Configuration overrides to validate"
@@ -25,7 +25,7 @@ def validate(
     a full report of any potential issues.
     """
     command = ValidateCommand(ctx)
-    command.run(config_overrides)
+    command.run(overrides)
 
 
 class ValidateCommand:
@@ -48,12 +48,12 @@ class ValidateCommand:
         self.ui     = ctx.obj.ui
 
 
-    def run(self, config_overrides: list[str] | None):
+    def run(self, overrides: list[str] | None):
         """
         Executes the main validation workflow.
 
         Args:
-            config_overrides: A list of Hydra configuration overrides to validate.
+            overrides: A list of Hydra configuration overrides to validate.
         """
         self.ui.print_header("System Validation")
         self.ui.display_system_validation(self.system)
@@ -64,9 +64,7 @@ class ValidateCommand:
             self.cfg.messages.status["validating_config"],
             spinner = "dots"
         ):
-            issues = self.system.validate_config_overrides(
-                overrides = config_overrides
-            )
+            issues = self.system.validate_overrides(overrides)
 
         msg_key = "config_issues" if issues else "config_passed"
         self.ui.print_message(
@@ -76,17 +74,9 @@ class ValidateCommand:
         for i, issue in enumerate(issues, start=1):
             self.ui.console.print(f"  [warning]⚠️  {i}. {issue}[/warning]")
 
-        self.ui.print_section("Integration Check")
-        status, details = self.system.check_wandb_status()
-
-        if "Not" in status:
-            self.ui.print_message(f"wandb: {details}", "warning")
-        else:
-            self.ui.print_message(f"wandb: {details}", "success")
-
         self.ui.console.print()
         
-        if any([issues, "Not" in status]):
+        if issues:
             with_warn, review = itemgetter("with_warnings", "review_issues")(
                 self.cfg.messages.validation
             )

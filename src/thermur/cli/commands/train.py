@@ -47,11 +47,6 @@ def train(
         False,
         "--sample", "-s",
         help = "Use bundled sample data instead of downloaded files"
-    ),
-    wandb_project: str | None = Option(
-        None,
-        "--wandb-project", "-w",
-        help = "wandb project name for experiment tracking"
     )
 ):
     """
@@ -64,7 +59,6 @@ def train(
         thermur train                                   # Interactive training
         thermur train --preset quick                    # Quick test run
         thermur train --config hyperparameters.lr=0.01  # Custom learning rate
-        thermur train --wandb-project my-experiment     # Custom wandb project
         thermur train --no-interactive --force          # Non-interactive mode
         thermur train --dry-run                         # Validate config without training
     """
@@ -75,8 +69,7 @@ def train(
         interactive   = interactive,
         overrides     = overrides,
         preset        = preset,
-        sample        = sample,
-        wandb_project = wandb_project
+        sample        = sample
     )
 
 
@@ -173,10 +166,12 @@ class TrainCommand:
         
         for path, value in sorted(flat_config.items()):
             display = str(value)
-            table.add_row(
-                path,
-                (shorten if len(display) > 35 else str)(display, 35, "...")
+            formatted = (
+                shorten(display, width=35, placeholder="...") 
+                if len(display) > 35 
+                else display
             )
+            table.add_row(path, formatted)
         
         return table
 
@@ -328,37 +323,26 @@ class TrainCommand:
 
     def _gather_interactive_inputs(
         self,
-        preset        : str | None,
-        wandb_project : str | None
-    ) -> tuple[str | None, str, list[str]]:
+        preset        : str | None
+    ) -> tuple[str | None, list[str]]:
         """
         Guides the user through interactive configuration by prompting for:
         1. Configuration preset (if not already specified)
-        2. Weights & Biases project name (if not already specified)
-        3. Any additional Hydra configuration overrides
+        2. Any additional Hydra configuration overrides
         
         The prompts are designed to provide sensible defaults while giving
         users full control over their training configuration.
         
         Args:
             preset        : Pre-selected preset.
-            wandb_project : Pre-selected project name.
             
         Returns:
-            Tuple of (preset, wandb_project, additional_overrides).
+            Tuple of (preset, additional_overrides).
         """
         self.ui.print_section("Configuration Setup")
         
-        wandb_project = (
-            wandb_project or 
-            self.prompts.ask_wandb_project_name(
-                self.cfg.wandb_integration.default_project
-            )
-        )
-        
         return (
             preset or self.prompts.select_configuration_preset(), 
-            wandb_project, 
             self.prompts.ask_for_overrides()
         )
 
@@ -562,11 +546,10 @@ class TrainCommand:
         self,
         overrides     : list[str],
         preset        : str | None,
-        wandb_project : str,
     ):
         """
         Presents a final summary of the training configuration, including GPU 
-        availability, selected preset, number of overrides, and the wandb project.
+        availability, selected preset, and number of overrides.
         
         It acts as a final checkpoint before launching the potentially long-running 
         training process.
@@ -574,7 +557,6 @@ class TrainCommand:
         Args:
             overrides     : Complete list of hydra overrides.
             preset        : Selected configuration preset.
-            wandb_project : Wandb project name.
             
         Raises:
             Exit: If the user declines to proceed with training.
@@ -586,7 +568,7 @@ class TrainCommand:
             "gpu_available" : system_info.get("cuda", False),
             "overrides"     : len(overrides),
             "preset"        : preset_info.get('emoji', preset) or "🧵",
-            "wandb_project" : wandb_project,
+            "wandb_project" : self.cfg.wandb.project,
         }
             
         if not self.prompts.show_training_summary(summary_data):
@@ -661,7 +643,6 @@ class TrainCommand:
         overrides     : list[str] | None,
         preset        : str | None,
         sample        : bool,
-        wandb_project : str | None,
     ):
         """
         Executes the main training workflow from start to finish.
@@ -677,7 +658,6 @@ class TrainCommand:
             overrides     : A list of Hydra configuration overrides.
             preset        : The name of the configuration preset to use.
             sample        : If True, use sample data.
-            wandb_project : The name of the wandb project for tracking.
         """
         self.ui.print_header("Thermur Training System")
 
@@ -689,14 +669,9 @@ class TrainCommand:
                 msg_type = "warning"
             )
         
-        if interactive:
-            preset, wandb_project, additional = self._gather_interactive_inputs(
-                preset, 
-                wandb_project
-            )
-        else:
-            additional    = []
-            wandb_project = wandb_project or self.cfg.wandb_integration.default_project
+        preset, additional = (
+            self._gather_interactive_inputs(preset) if interactive else (preset, [])
+        )
 
         self._display_preset(preset)
 
@@ -711,13 +686,11 @@ class TrainCommand:
             self._handle_config_issues(interactive, issues)
 
         if interactive:
-            self._request_confirmation(overrides, preset, wandb_project)
+            self._request_confirmation(overrides, preset)
 
         self.ui.print_section("Initializing Training", minor=True)
-        self.ui.print_wandb_info(
-            project = wandb_project,
-            url     = self.system.get_wandb_url(wandb_project)
-        )
+        if self.cfg.wandb.mode != "disabled":
+            self.ui.display_wandb("train", self.cfg.wandb.project)
         self.ui.console.print()
 
         try:

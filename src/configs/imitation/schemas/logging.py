@@ -44,24 +44,3 @@ class LoggingModel(BaseModel, extra="forbid"):
         default     = "10 MB",
         description = "Log file rotation policy (e.g., '500 MB', '12:00')."
     )
-
-
-class WandbModel(BaseModel, extra="forbid"):
-    """
-    Configuration for Weights & Biases experiment tracking.
-
-    These parameters control how training runs are logged and organized for
-    visualization, analysis, and comparison.
-    """
-    entity: Optional[str] = Field(
-        default     = None,
-        description = "The W&B entity (username or team name)."
-    )
-    mode: Literal["online", "offline", "disabled"] = Field(
-        default     = "online",
-        description = "The W&B run mode."
-    )
-    project: str = Field(
-        default     = "thermur",
-        description = "The W&B project name to log runs into."
-    )

@@ -13,7 +13,6 @@ from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
 from torch              import __version__ as torch_version, cuda
-from wandb              import Api, api
 
 import os
 
@@ -36,8 +35,6 @@ class SystemInspector:
         """
         self.cfg               = cfg
         self.messages          = getattr(cfg, 'messages', None)
-        self.wandb_integration = getattr(cfg, 'wandb_integration', None)
-        self._wandb_status     = None
 
     def _get_cuda_info(self) -> dict[str, any]:
         """
@@ -130,48 +127,6 @@ class SystemInspector:
             return version(package_name)
         return default
 
-    def _get_wandb_status(self) -> dict[str, any]:
-        """
-        Get comprehensive wandb status information.
-        
-        Checks installation, API key presence, and user authentication
-        in a single pass. Results are cached for efficiency.
-        
-        Returns:
-            Dictionary with keys:
-            - installed : bool
-            - api_key   : str | None
-            - username  : str | None
-        """
-        if self._wandb_status is not None:
-            return self._wandb_status
-            
-        status = {
-            "installed" : False,
-            "api_key"   : None,
-            "username"  : None,
-        }
-        
-        with suppress(ImportError):
-            __import__('wandb')
-            status["installed"] = True
-            
-        if not status["installed"]:
-            self._wandb_status = status
-            return status
-            
-        status["api_key"] = os.environ.get(
-            self.wandb_integration.api_key_env
-        ) or api.api_key
-        
-        if status["api_key"]:
-            with suppress(Exception):
-                user = Api().viewer
-                status["username"] = user.get("username") if user else None
-                
-        self._wandb_status = status
-        return status
-    
     def _get_wrf_files(self) -> list[Path]:
         """
         Get list of WRF-SFIRE NetCDF files from configured directory.
@@ -185,38 +140,6 @@ class SystemInspector:
             
         return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
 
-    def check_wandb_status(self) -> tuple[str, str]:
-        """
-        Check wandb installation and authentication status.
-
-        Returns:
-            Tuple of (status_message, details_message) with Rich markup
-            indicating the current wandb state and any required actions.
-        """
-        status = self._get_wandb_status()
-        
-        if not status["installed"]:
-            return (
-                "[red]❌ Not Installed[/red]",
-                "[yellow]Run 'poetry install'[/yellow]",
-            )
-
-        if status["username"]:
-            return (
-                "[green]✅ Connected[/green]",
-                f"[cyan]@{status['username']}[/cyan]",
-            )
-
-        if status["api_key"]:
-            return (
-                "[green]✅ API Key Set[/green]",
-                "[white]Ready to track[/white]",
-            )
-
-        return (
-            "[yellow]⚠️  Not Connected[/yellow]",
-            "[yellow]Run 'wandb login'[/yellow]",
-        )
 
     def get_system_info(self) -> dict[str, any]:
         """
@@ -228,13 +151,10 @@ class SystemInspector:
 
         Returns:
             Dictionary containing all system information with keys:
-            - Package versions : mujoco, thermur, torch, wandb_installed
+            - Package versions : mujoco, thermur, torch
             - System info      : platform, python, python_version_info
             - Hardware         : cuda info, memory stats, disk usage
-            - wandb_user if authenticated
         """
-        wandb_status = self._get_wandb_status()
-        
         info = {
             "mujoco"              : self._get_package_version("mujoco"),
             "platform"            : platform(),
@@ -242,8 +162,6 @@ class SystemInspector:
             "python_version_info" : version_info,
             "thermur"             : self._get_package_version("thermur", "dev"),
             "torch"               : torch_version,
-            "wandb_installed"     : wandb_status["installed"],
-            "wandb_user"          : wandb_status["username"],
         }
         
         info.update(self._get_cuda_info())
@@ -253,19 +171,6 @@ class SystemInspector:
         
         return info
 
-    def get_wandb_url(self, project: str) -> str | None:
-        """
-        Generate wandb project URL if user is authenticated.
-
-        Args:
-            project: The wandb project name.
-
-        Returns:
-            Full URL to the wandb project dashboard if authenticated,
-            None otherwise.
-        """
-        username = self._get_wandb_status()["username"]
-        return f"https://wandb.ai/{username}/{project}" if username else None
     
     def resolve_data_path(self, use_sample: bool = False) -> tuple[Path, str]:
         """

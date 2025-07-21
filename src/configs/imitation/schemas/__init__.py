@@ -9,6 +9,6 @@ from .controller    import *
 from .dataset       import *
 from .flock         import *
 from .learning      import *
-from .monitoring    import *
+from .logging       import *
 from .physics       import *
 from .visualization import *

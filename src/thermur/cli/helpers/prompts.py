@@ -103,44 +103,6 @@ class CLIPrompts:
 
         return overrides
     
-    def ask_wandb_project_name(self, default_project: str = "thermur") -> str:
-        """
-        Guides the user in setting a Weights & Biases project name for tracking.
-
-        This prompt explains the purpose of wandb before allowing the user
-        to enter their project name.
-
-        Args:
-            default_project: The default project name to suggest.
-
-        Returns:
-            The final project name for wandb tracking.
-        """
-        self.ui.console.print()
-        self.ui.print_message(
-            message  = "Configure experiment tracking",
-            msg_type = "flock"
-        )
-        self.ui.console.print(
-            f"[grey70]"
-            "wandb will track metrics, logs, and model checkpoints"
-            "[/grey70]"
-        )
-        self.ui.console.print()
-
-        project_name = questionary.text(
-            default     = default_project,
-            instruction = "(press Enter for default)",
-            message     = "Enter wandb project name:",
-            style       = self.thermal_style
-        ).ask()
-
-        self.ui.print_message(
-            message  = f"Project name: [bright_cyan]{project_name}[/bright_cyan]",
-            msg_type = "success"
-        )
-        return project_name
-    
     def confirm(
         self, 
         message : str, 

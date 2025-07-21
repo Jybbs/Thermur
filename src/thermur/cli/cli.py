@@ -32,7 +32,7 @@ class AppContext:
         Initialize the application context with the loaded configuration.
         """
         self.cfg     = cfg
-        self.ui      = ThermurUI(self.cfg.display)
+        self.ui      = ThermurUI(self.cfg.display, self.cfg.messages)
         self.prompts = CLIPrompts(self.cfg, self.ui)
         self.system  = SystemInspector(cfg)
     

@@ -31,7 +31,6 @@ class SafetyFilter:
     def __init__(
         self, 
         agent_count          : int,
-        activation_tolerance : float,
         max_temperature      : float,
         safety               : SafetyModel,
         spatial_dims         : int,
@@ -44,13 +43,12 @@ class SafetyFilter:
 
         Args:
             agent_count          : Number of agents in the flock
-            activation_tolerance : Threshold for determining CBF activation
             max_temperature      : Maximum safe temperature T_max for agents
             safety               : QP solver configuration model
             spatial_dims         : Spatial dimensions (2D or 3D)
         """
         self.activation_count     = 0
-        self.activation_tolerance = activation_tolerance
+        self.activation_tolerance = safety.activation_tolerance
         self.agent_count          = agent_count
         self.max_temperature      = max_temperature
         self.safety               = safety
