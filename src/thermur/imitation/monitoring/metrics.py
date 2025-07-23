@@ -7,15 +7,13 @@ metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
 from pytorch_lightning   import LightningModule
-from scipy.sparse        import csr_matrix
-from scipy.sparse.linalg import eigsh
 from tensordict          import TensorDict
 from torch               import Tensor
 from torchmetrics        import MeanAbsoluteError, MeanSquaredError
 from torchmetrics        import MetricCollection, R2Score, Metric
+from torchmetrics.image  import StructuralSimilarityIndexMeasure
 from typing              import Optional
 
-import numpy as np
 import torch
 
 
@@ -44,7 +42,7 @@ class CohesionMetric(Metric):
         Returns:
             Average λ₂ (Fiedler value) across all graph updates
         """
-        return self.lambda2_sum / self.count if self.count > 0 else torch.tensor(0.0)
+        return torch.where(self.count > 0, self.lambda2_sum / self.count, torch.tensor(0.0))
     
     def update(self, edge_index: Tensor, num_agents: int):
         """
@@ -55,41 +53,31 @@ class CohesionMetric(Metric):
             edge_index : Graph connectivity [2, num_edges] in COO format
             num_agents : Total number of agents in the graph
         """
-        if edge_index.numel() == 0:
+        if edge_index.numel() == 0 or num_agents < 2:
             self.lambda2_sum += 0.0
             self.count += 1
             return
-            
-        edge_index_cpu = edge_index.cpu().numpy()
-        row, col       = edge_index_cpu[0], edge_index_cpu[1]
-        data           = np.ones(len(row))
         
-        adj_matrix = csr_matrix(
-            (data, (row, col)), 
-            shape=(num_agents, num_agents)
-        )
+        device = edge_index.device
+        
+        adj_matrix = torch.zeros((num_agents, num_agents), device=device)
+        adj_matrix[edge_index[0], edge_index[1]] = 1.0
         
         adj_matrix = adj_matrix + adj_matrix.T
-        adj_matrix = (adj_matrix > 0).astype(float)
+        adj_matrix = (adj_matrix > 0).float()
         
-        degrees       = np.array(adj_matrix.sum(axis=1)).flatten()
-        degree_matrix = csr_matrix(
-            (degrees, (range(num_agents), range(num_agents))),
-            shape=(num_agents, num_agents)
-        )
+        degrees = adj_matrix.sum(dim=1)
+        degree_matrix = torch.diag(degrees)
         
         laplacian = degree_matrix - adj_matrix
         
-        if num_agents > 1:
-            try:
-                eigenvalues, _ = eigsh(laplacian, k=min(2, num_agents-1), which='SM')
-                lambda2        = eigenvalues[-1] if len(eigenvalues) > 1 else 0.0
-            except:
-                lambda2 = 0.0
-        else:
-            lambda2 = 0.0
+        try:
+            eigenvalues = torch.linalg.eigvalsh(laplacian)
+            lambda2 = eigenvalues[1] if eigenvalues.numel() > 1 else torch.tensor(0.0, device=device)
+        except:
+            lambda2 = torch.tensor(0.0, device=device)
             
-        self.lambda2_sum += torch.tensor(lambda2)
+        self.lambda2_sum += lambda2
         self.count += 1
 
 
@@ -163,7 +151,7 @@ class ColorAccuracyMetric(Metric):
         Returns:
             MAE between sensed and reconstructed temperatures in Kelvin
         """
-        return self.error_sum / self.count if self.count > 0 else torch.tensor(0.0)
+        return torch.where(self.count > 0, self.error_sum / self.count, torch.tensor(0.0))
     
     def update(self, sensed_temperature: Tensor, displayed_rgb: Optional[Tensor] = None):
         """
@@ -180,7 +168,7 @@ class ColorAccuracyMetric(Metric):
             displayed_rgb = self._temperature_to_rgb(sensed_temperature)
             
         reconstructed_temp = self._rgb_to_temperature(displayed_rgb)
-        error              = torch.abs(sensed_temperature - reconstructed_temp)
+        error              = (sensed_temperature - reconstructed_temp).abs()
         
         self.error_sum += error.sum()
         self.count     += sensed_temperature.numel()
@@ -220,7 +208,7 @@ class EnergyConsumptionMetric(Metric):
         Returns:
             Average power consumption in arbitrary units
         """
-        return self.power_sum / self.count if self.count > 0 else torch.tensor(0.0)
+        return torch.where(self.count > 0, self.power_sum / self.count, torch.tensor(0.0))
     
     def update(self, u_safe: Tensor):
         """
@@ -229,12 +217,12 @@ class EnergyConsumptionMetric(Metric):
         Args:
             u_safe : Safety-filtered control actions [N, 3] (m/s²)
         """
-        gravity_vec         = torch.zeros_like(u_safe)
+        gravity_vec = torch.zeros_like(u_safe)
         gravity_vec[..., 2] = -self.gravity
         
-        thrust           = u_safe - gravity_vec
-        thrust_magnitude = torch.norm(thrust, dim=-1)
-        power            = thrust_magnitude ** self.power_exponent
+        thrust = u_safe - gravity_vec
+        thrust_magnitude = thrust.norm(dim=-1)
+        power = thrust_magnitude.pow(self.power_exponent)
         
         self.power_sum += power.sum()
         self.count     += u_safe.shape[0]
@@ -260,6 +248,13 @@ class LegibilitySSIMMetric(Metric):
         super().__init__()
         self.grid_size = grid_size
         self.sigma     = sigma
+        
+        self.ssim_metric = StructuralSimilarityIndexMeasure(
+            data_range=1.0,
+            kernel_size=11,
+            reduction='elementwise_mean'
+        )
+        
         self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("ssim_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
@@ -269,7 +264,7 @@ class LegibilitySSIMMetric(Metric):
         bounds_max : Tensor,
         positions  : Tensor, 
         velocities : Tensor
-    ) -> np.ndarray:
+    ) -> Tensor:
         """
         Projects 3D positions and velocities onto the x-y plane and applies
         Gaussian kernel density estimation to create a smooth velocity field.
@@ -281,32 +276,35 @@ class LegibilitySSIMMetric(Metric):
             velocities : Agent velocities [N, 3]
             
         Returns:
-            2D numpy array representing the velocity magnitude field
+            2D tensor representing the velocity magnitude field
         """
-        pos_2d = positions[:, :2].cpu().numpy()
-        vel_2d = velocities[:, :2].cpu().numpy()
+        device = positions.device
         
-        bounds_min_2d = bounds_min[:2].cpu().numpy()
-        bounds_max_2d = bounds_max[:2].cpu().numpy()
-        norm_pos      = (pos_2d - bounds_min_2d) / (bounds_max_2d - bounds_min_2d)
-        grid_pos      = norm_pos * (self.grid_size - 1)
+        pos_2d = positions[:, :2]
+        vel_magnitude = velocities[:, :2].norm(dim=1)
         
-        field         = np.zeros((self.grid_size, self.grid_size))
-        vel_magnitude = np.linalg.norm(vel_2d, axis=1)
+        bounds_min_2d = bounds_min[:2]
+        bounds_max_2d = bounds_max[:2]
+        norm_pos = (pos_2d - bounds_min_2d) / (bounds_max_2d - bounds_min_2d)
+        grid_pos = norm_pos * (self.grid_size - 1)
         
-        for gp, vm in zip(grid_pos, vel_magnitude):
-            x, y = int(gp[0]), int(gp[1])
-            if 0 <= x < self.grid_size and 0 <= y < self.grid_size:
-                for dx in range(-3, 4):
-                    for dy in range(-3, 4):
-                        nx, ny = x + dx, y + dy
-                        if 0 <= nx < self.grid_size and 0 <= ny < self.grid_size:
-                            dist_sq        = dx**2 + dy**2
-                            weight         = np.exp(-dist_sq / (2 * self.sigma**2))
-                            field[ny, nx] += vm * weight
+        field = torch.zeros((self.grid_size, self.grid_size), device=device)
         
-        if field.max() > 0:
-            field = field / field.max()
+        grid_x, grid_y = torch.meshgrid(
+            torch.arange(self.grid_size, device=device),
+            torch.arange(self.grid_size, device=device),
+            indexing='xy'
+        )
+        
+        for i in range(positions.shape[0]):
+            gx, gy = grid_pos[i]
+            dist_sq = (grid_x - gx)**2 + (grid_y - gy)**2
+            weight = torch.exp(-dist_sq / (2 * self.sigma**2))
+            field += vel_magnitude[i] * weight
+        
+        field_max = field.max()
+        if field_max > 0:
+            field = field / field_max
             
         return field
     
@@ -317,7 +315,7 @@ class LegibilitySSIMMetric(Metric):
         Returns:
             Average SSIM score in range [0, 1], where 1 indicates perfect match
         """
-        return self.ssim_sum / self.count if self.count > 0 else torch.tensor(0.0)
+        return torch.where(self.count > 0, self.ssim_sum / self.count, torch.tensor(0.0))
     
     def update(
         self, 
@@ -352,19 +350,12 @@ class LegibilitySSIMMetric(Metric):
             bounds_min, bounds_max, positions, wind_field
         )
         
-        mean_swarm = swarm_field.mean()
-        mean_wind  = wind_field_rendered.mean()
-        std_swarm  = swarm_field.std() + 1e-8
-        std_wind   = wind_field_rendered.std() + 1e-8
+        swarm_field_img = swarm_field.unsqueeze(0).unsqueeze(0)
+        wind_field_img = wind_field_rendered.unsqueeze(0).unsqueeze(0)
         
-        covariance = ((swarm_field - mean_swarm) * 
-                     (wind_field_rendered - mean_wind)).mean()
-        ssim_value = ((2 * mean_swarm * mean_wind + 0.01) * 
-                     (2 * covariance + 0.01) / 
-                     ((mean_swarm**2 + mean_wind**2 + 0.01) * 
-                      (std_swarm**2 + std_wind**2 + 0.01)))
+        ssim_value = self.ssim_metric(swarm_field_img, wind_field_img)
         
-        self.ssim_sum += torch.tensor(ssim_value)
+        self.ssim_sum += ssim_value
         self.count    += 1
 
 
@@ -461,9 +452,7 @@ class MetricsCollector:
         Returns:
             CBF activation rate as a float between 0 and 1
         """
-        if self.total_steps == 0:
-            return 0.0
-        return self.cbf_activation_count / self.total_steps
+        return self.cbf_activation_count / max(self.total_steps, 1)
     
     def log_all_metrics(
         self, 
@@ -514,10 +503,7 @@ class MetricsCollector:
         if predictions is not None and targets is not None:
             dim_names = ["x", "y", "z"][:self.output_dim]
             for i, dim in enumerate(dim_names):
-                dim_error = torch.nn.functional.mse_loss(
-                    predictions[..., i], 
-                    targets[..., i]
-                )
+                dim_error = (predictions[..., i] - targets[..., i]).pow(2).mean()
                 module.log(
                     name     = f"{phase}/velocity_{dim}_mse",
                     on_epoch = True,
@@ -568,8 +554,9 @@ class MetricsCollector:
             metrics["color_accuracy_mae"].update(batch["temperature"])
         
         if all(k in batch for k in ["position", "velocity", "wind"]):
-            bounds_min = torch.tensor([0.0, 0.0, 0.0], device=batch["position"].device)
-            bounds_max = torch.tensor([50.0, 50.0, 20.0], device=batch["position"].device)
+            device = batch["position"].device
+            bounds_min = torch.zeros(3, device=device)
+            bounds_max = torch.tensor([50.0, 50.0, 20.0], device=device)
             metrics["legibility_ssim"].update(
                 bounds_min,
                 bounds_max,
@@ -633,7 +620,7 @@ class ThermalSafetyMetric(Metric):
         Returns:
             Fraction of temperature readings that exceeded T_max
         """
-        return self.violations / self.total if self.total > 0 else torch.tensor(0.0)
+        return torch.where(self.total > 0, self.violations / self.total, torch.tensor(0.0))
     
     def update(self, temperature: Tensor):
         """
@@ -645,6 +632,6 @@ class ThermalSafetyMetric(Metric):
         if temperature.dim() > 1:
             temperature = temperature.squeeze(-1)
             
-        violations       = (temperature > self.max_temperature).float().sum()
+        violations       = (temperature > self.max_temperature).sum(dtype=torch.float32)
         self.violations += violations
         self.total      += temperature.numel()

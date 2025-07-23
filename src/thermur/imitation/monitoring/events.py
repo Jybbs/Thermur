@@ -14,7 +14,6 @@ from typing      import Optional
 
 import json
 import time
-import torch
 
 
 @dataclass
@@ -135,17 +134,17 @@ class EventLogger:
                 
             violations_mask = temps > self.max_temperature
             if violations_mask.any():
-                violation_ids = torch.where(violations_mask)[0]
+                violation_ids = violations_mask.nonzero(as_tuple=True)[0]
                 self.log_thermal_violation(
                     violation_ids,
                     batch["position"][violations_mask],
                     temps[violations_mask]
                 )
-                analysis["thermal_violations"] = len(violation_ids)
+                analysis["thermal_violations"] = violation_ids.numel()
             
             near_miss_mask = (temps > self.cbf_threshold) & (~violations_mask)
             if near_miss_mask.any():
-                near_miss_ids = torch.where(near_miss_mask)[0]
+                near_miss_ids = near_miss_mask.nonzero(as_tuple=True)[0]
                 for agent_id in near_miss_ids:
                     self.log_near_miss(
                         int(agent_id.item()),
@@ -153,10 +152,10 @@ class EventLogger:
                         batch["position"][agent_id],
                         temps[agent_id].item()
                     )
-                analysis["near_misses"] = len(near_miss_ids)
+                analysis["near_misses"] = near_miss_ids.numel()
         
         if "cbf_active" in batch and batch["cbf_active"].any():
-            active_ids = torch.where(batch["cbf_active"])[0]
+            active_ids = batch["cbf_active"].nonzero(as_tuple=True)[0]
             if "u_nominal" in batch and "u_safe" in batch:
                 self.log_cbf_activation(
                     active_ids,
@@ -164,7 +163,7 @@ class EventLogger:
                     batch["u_nominal"][active_ids],
                     batch["u_safe"][active_ids]
                 )
-            analysis["cbf_activations"] = len(active_ids)
+            analysis["cbf_activations"] = active_ids.numel()
         
         return analysis
     
@@ -220,7 +219,7 @@ class EventLogger:
         timestamp = self._get_timestamp()
         
         for i in range(agent_ids.shape[0]):
-            control_diff = torch.norm(u_safe[i] - u_nominal[i]).item()
+            control_diff = (u_safe[i] - u_nominal[i]).norm().item()
             
             event = AgentEvent(
                 agent_id   = int(agent_ids[i].item()),
@@ -229,8 +228,8 @@ class EventLogger:
                     "safety_margin"  : (float(safety_margins[i].item()) 
                                        if safety_margins is not None else None),
                     "temperature"    : float(temperatures[i].item()),
-                    "u_nominal_norm" : float(torch.norm(u_nominal[i]).item()),
-                    "u_safe_norm"    : float(torch.norm(u_safe[i]).item())
+                    "u_nominal_norm" : float(u_nominal[i].norm().item()),
+                    "u_safe_norm"    : float(u_safe[i].norm().item())
                 },
                 event_type = "cbf_activation",
                 timestamp  = timestamp
@@ -353,10 +352,10 @@ class EventLogger:
         event = AgentEvent(
             agent_id   = agent_id,
             data       = {
-                "accel_norm"    : float(torch.norm(acceleration).item()),
+                "accel_norm"    : float(acceleration.norm().item()),
                 "jerk_norm"     : float(jerk_norm),
                 "position"      : position.cpu().tolist(),
-                "velocity_norm" : float(torch.norm(velocity).item())
+                "velocity_norm" : float(velocity.norm().item())
             },
             event_type = "trajectory_anomaly",
             timestamp  = self._get_timestamp()
