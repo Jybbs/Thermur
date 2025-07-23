@@ -7,7 +7,6 @@ trajectory collection, and experience replay buffers.
 from config.imitation.schemas.dataset import WRFModel
 from hydra_zen                        import builds
 from omegaconf                        import SI
-from torchrl.collectors               import SyncDataCollector  
 from torchrl.data                     import TensorDictReplayBuffer
 from torchrl.data.replay_buffers      import LazyTensorStorage, SamplerWithoutReplacement
 
