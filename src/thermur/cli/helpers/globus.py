@@ -14,12 +14,12 @@ The manager handles:
 """
 import time
 
-from configs.cli import GlobusSecrets
-from contextlib  import suppress
-from globus_sdk  import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from omegaconf   import DictConfig
-from pathlib     import Path
-from typing      import Optional
+from config.cli.schemas.secrets import GlobusSecrets
+from contextlib                 import suppress
+from globus_sdk                 import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
+from omegaconf                  import DictConfig
+from pathlib                    import Path
+from typing                     import Optional
 
 
 class GlobusManager:
