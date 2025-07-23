@@ -10,18 +10,17 @@ from itertools import filterfalse
 from omegaconf import DictConfig, OmegaConf
 from pathlib   import Path
 from textwrap  import shorten
-from typer     import Context, Exit, Option
+from torch     import compile as torch_compile
+from typer     import Argument, Context, Exit, Option
 
 import subprocess
 
 
 def train(
     ctx: Context,
-
-    overrides: list[str] | None = Option(
-        None,
-        "--config", "-c",
-        help = "Hydra configuration overrides"
+    overrides: list[str] = Argument(
+        default = None,
+        help    = "Hydra configuration overrides (e.g., learning.lr=0.01 flock.num_drones=20)"
     ),
     dry_run: bool = Option(
         False,
@@ -43,6 +42,11 @@ def train(
         "--preset", "-p",
         help = "Configuration preset (quick, standard, large, debug)"
     ),
+    resume: Path | None = Option(
+        None,
+        "--resume", "-r",
+        help = "Resume training from checkpoint file"
+    ),
     sample: bool = Option(
         False,
         "--sample", "-s",
@@ -56,20 +60,23 @@ def train(
     validation, configuration management, and seamless wandb integration.
 
     Examples:
-        thermur train                                   # Interactive training
-        thermur train --preset quick                    # Quick test run
-        thermur train --config hyperparameters.lr=0.01  # Custom learning rate
-        thermur train --no-interactive --force          # Non-interactive mode
-        thermur train --dry-run                         # Validate config without training
+        thermur train                                # Interactive training
+        thermur train --preset quick                 # Quick test run
+        thermur train learning.learning_rate=0.001   # Custom parameters
+        thermur train --no-interactive --force       # Non-interactive mode
+        thermur train --dry-run                      # Validate config without training
+        thermur train --resume checkpoints/last.ckpt # Resume from checkpoint
     """
-    command = TrainCommand(ctx)
+    overrides = overrides or []
+    command   = TrainCommand(ctx)
     command.run(
-        dry_run       = dry_run,
-        force         = force,
-        interactive   = interactive,
-        overrides     = overrides,
-        preset        = preset,
-        sample        = sample
+        dry_run     = dry_run,
+        force       = force,
+        interactive = interactive,
+        overrides   = overrides,
+        preset      = preset,
+        resume      = resume,
+        sample      = sample
     )
 
 
@@ -100,6 +107,7 @@ class TrainCommand:
         base       : list[str] | None,
         data_path  : str,
         preset     : str | None,
+        resume     : Path | None,
     ) -> list[str]:
         """
         Constructs the final override list in the proper order:
@@ -128,7 +136,7 @@ class TrainCommand:
         
         return [
             *preset_override,
-            f"dataset.data_path={data_path}",
+            f"source.data_path={data_path}",
             *(base or []),
             *additional
         ]
@@ -444,6 +452,7 @@ class TrainCommand:
         self,
         dry_run   : bool,
         overrides : list[str],
+        resume    : Path | None,
     ):
         """
         Executes training via hydra-zen launch mechanism.
@@ -468,7 +477,7 @@ class TrainCommand:
 
         task_map = {
             True  : partial(self._dry_run_task, overrides=overrides),
-            False : partial(self._training_task, imports=imports)
+            False : partial(self._training_task, imports=imports, resume=resume)
         }
 
         job = imports["launch"](
@@ -501,15 +510,11 @@ class TrainCommand:
                 description = self.cfg.messages.status["loading_config_sys"],
                 task_id     = task
             )
-            from configs.imitation import (
-                imitation_cfg, 
-                register_imitation_cfgs
-            )
-            from hydra_zen import instantiate, launch
-            from hydra_zen.third_party.pydantic import pydantic_parser
-            from thermur.utils import configure_loguru
-            from thermur.utils import set_seed
-            from thermur.imitation import train_imitation_learning
+            from config.imitation.workloads.imitation import imitation_cfg
+            from config.imitation.workloads.imitation import register_imitation_cfgs
+            from hydra_zen                            import instantiate, launch
+            from hydra_zen.third_party.pydantic       import pydantic_parser
+            from pytorch_lightning                    import seed_everything
 
             progress.update(
                 advance     = 30,
@@ -525,13 +530,11 @@ class TrainCommand:
             )
 
             imports = {
-                "configure_loguru"         : configure_loguru,
-                "imitation_cfg"            : imitation_cfg,
-                "instantiate"              : instantiate,
-                "launch"                   : launch,
-                "pydantic_parser"          : pydantic_parser,
-                "set_seed"                 : set_seed,
-                "train_imitation_learning" : train_imitation_learning
+                "imitation_cfg"   : imitation_cfg,
+                "instantiate"     : instantiate,
+                "launch"          : launch,
+                "pydantic_parser" : pydantic_parser,
+                "seed_everything" : seed_everything
             }
 
             progress.update(
@@ -578,7 +581,12 @@ class TrainCommand:
             )
             raise Exit()
 
-    def _training_task(self, cfg: DictConfig, imports):
+    def _training_task(
+        self, 
+        cfg     : DictConfig, 
+        imports, 
+        resume  : Path | None = None
+    ):
         """
         Executes the training workflow with resolved configuration.
 
@@ -589,6 +597,7 @@ class TrainCommand:
         Args:
             cfg     : Resolved hydra configuration.
             imports : Lazy-loaded training modules.
+            resume  : Optional checkpoint path to resume training from.
 
         Returns:
             Status dictionary indicating successful completion.
@@ -596,8 +605,8 @@ class TrainCommand:
         self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
 
-        imports["configure_loguru"](cfg.logging)
-        imports["set_seed"](cfg.learning.seed)
+        if cfg.learning.seed is not None:
+            imports["seed_everything"](cfg.learning.seed)
         self.ui.console.print()
 
         components = self._instantiate_components(
@@ -605,19 +614,27 @@ class TrainCommand:
             instantiate     = imports["instantiate"],
             pydantic_parser = imports["pydantic_parser"],
         )
-        
-        components |= {
-            "learning" : cfg.learning,
-            "wandb"    : cfg.wandb
-        }
 
         self.ui.print_message(
             message  = self.cfg.messages.components_initialized,
             msg_type = "success"
         )
+        
+        if cfg.learning.compile_model:
+            self.ui.print_message(
+                message  = "Compiling model with PyTorch 2.0 for optimization...",
+                msg_type = "info"
+            )
+            components["policy"] = torch_compile(components["policy"])
+        
         self.ui.console.print()
 
         self.ui.print_section("Training Started")
+        if resume:
+            self.ui.print_message(
+                message  = f"Resuming from checkpoint: {resume}",
+                msg_type = "info"
+            )
         self.ui.print_message(
             message  = self.cfg.messages.monitoring_dynamics,
             msg_type = "thermal"
@@ -628,7 +645,12 @@ class TrainCommand:
         )
         self.ui.console.print()
 
-        imports["train_imitation_learning"](**components)
+        # Lightning's trainer.fit is called directly - no wrapper needed
+        components["trainer"].fit(
+            model      = components["policy"],
+            datamodule = components["data_module"],
+            ckpt_path  = str(resume) if resume else None
+        )
 
         self.ui.console.print()
         self.ui.print_header("Training Complete 🎉")
@@ -642,6 +664,7 @@ class TrainCommand:
         interactive   : bool,
         overrides     : list[str] | None,
         preset        : str | None,
+        resume        : Path | None,
         sample        : bool,
     ):
         """
@@ -680,6 +703,7 @@ class TrainCommand:
             base       = overrides,
             data_path  = self._ensure_data_available(sample),
             preset     = preset,
+            resume     = resume,
         )
 
         if not force and (issues := self.system.validate_overrides(overrides)):
@@ -694,7 +718,7 @@ class TrainCommand:
         self.ui.console.print()
 
         try:
-            self._launch_hydra(dry_run, overrides)
+            self._launch_hydra(dry_run, overrides, resume)
 
         except KeyboardInterrupt:
             self.ui.console.print()
