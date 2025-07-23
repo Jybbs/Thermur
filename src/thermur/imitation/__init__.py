@@ -9,9 +9,12 @@ policy from expert demonstrations. The training process involves:
 3. Minimizing the MSE loss between policy and expert actions
 4. Periodic evaluation and checkpointing
 
-The loss function includes optional regularization terms and can be extended
-with auxiliary objectives for improved learning stability.
+The package is organized into:
+- controller/    : Expert controller implementations (flocking, safety)
+- lightning/     : PyTorch Lightning components (models, data, training)
+- simulation/    : Environment and physics simulation (MuJoCo, XML generation)
+- sources/       : Environmental data sources (WRF-Fire loaders)
+- visualization/ : 3D rendering and monitoring (PyVista-based)
+
+Import components directly from their respective submodules.
 """
-from .train import save_checkpoint, train_imitation_learning
-from .loss      import ImitationLoss
-from .policy    import GNNPolicy
