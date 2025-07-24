@@ -6,13 +6,14 @@ for the training pipeline, including imitation learning losses, core evaluation
 metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
-from pytorch_lightning   import LightningModule
-from tensordict          import TensorDict
-from torch               import Tensor
-from torchmetrics        import MeanAbsoluteError, MeanSquaredError
-from torchmetrics        import MetricCollection, R2Score, Metric
-from torchmetrics.image  import StructuralSimilarityIndexMeasure
-from typing              import Optional
+from config.imitation.schemas.monitoring import MonitoringModel
+from pytorch_lightning                   import LightningModule
+from tensordict                          import TensorDict
+from torch                               import Tensor
+from torchmetrics                        import MeanAbsoluteError, MeanSquaredError
+from torchmetrics                        import MetricCollection, R2Score, Metric
+from torchmetrics.image                  import StructuralSimilarityIndexMeasure
+from typing                              import Optional
 
 import torch
 
@@ -94,17 +95,16 @@ class ColorAccuracyMetric(Metric):
     blue represents cold and red represents hot temperatures.
     """
     
-    def __init__(self, temp_max: float = 473.0, temp_min: float = 273.0):
+    def __init__(self, monitoring: MonitoringModel):
         """
         Initialize the color accuracy metric.
         
         Args:
-            temp_max : Maximum temperature for color mapping (Kelvin)
-            temp_min : Minimum temperature for color mapping (Kelvin)
+            monitoring : Monitoring configuration model
         """
         super().__init__()
-        self.temp_max = temp_max
-        self.temp_min = temp_min
+        self.temp_max = monitoring.color_temp_max
+        self.temp_min = monitoring.color_temp_min
         self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("error_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
@@ -194,17 +194,17 @@ class EnergyConsumptionMetric(Metric):
         - k : power exponent (typically 1.5 for quadrotors)
     """
     
-    def __init__(self, gravity: float = 9.81, power_exponent: float = 1.5):
+    def __init__(self, gravity: float, monitoring: MonitoringModel):
         """
         Initialize the energy metric.
         
         Args:
-            gravity        : Gravitational acceleration (m/s²)
-            power_exponent : Exponent k in the power model
+            gravity    : Gravitational acceleration from physics config
+            monitoring : Monitoring configuration model
         """
         super().__init__()
         self.gravity        = gravity
-        self.power_exponent = power_exponent
+        self.power_exponent = monitoring.power_exponent
         self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("power_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
@@ -246,21 +246,23 @@ class LegibilitySSIMMetric(Metric):
     Uses kernel density estimation to render velocity fields onto 2D grids.
     """
     
-    def __init__(self, grid_size: int = 64, sigma: float = 2.0):
+    def __init__(self, bounds_max: list[float], monitoring: MonitoringModel):
         """
         Initialize the legibility metric.
         
         Args:
-            grid_size : Size of the grid for rendering velocity fields
-            sigma     : Standard deviation for Gaussian kernel in KDE
+            bounds_max : Maximum workspace bounds from physics config
+            monitoring : Monitoring configuration model
         """
         super().__init__()
-        self.grid_size = grid_size
-        self.sigma     = sigma
+        self.bounds_max  = bounds_max
+        self.grid_size   = monitoring.legibility_grid_size
+        self.kernel_size = monitoring.legibility_kernel_size
+        self.sigma       = monitoring.legibility_sigma
         
         self.ssim_metric = StructuralSimilarityIndexMeasure(
             data_range=1.0,
-            kernel_size=11,
+            kernel_size=self.kernel_size,
             reduction='elementwise_mean'
         )
         
@@ -384,51 +386,42 @@ class MetricsCollector:
     
     def __init__(
         self,
+        bounds_max      : list[float],
+        gravity         : float,
         max_temperature : float,
-        output_dim      : int,
-        gravity         : float = 9.81,
-        grid_size       : int   = 64
+        monitoring      : MonitoringModel,
+        output_dim      : int
     ):
         """
         Initialize the metrics collector with all metric instances.
         
         Args:
-            max_temperature : Maximum safe temperature threshold from config
+            bounds_max      : Maximum workspace bounds from physics config
+            gravity         : Gravitational acceleration from physics config
+            max_temperature : Maximum safe temperature from flock config
+            monitoring      : Monitoring configuration model
             output_dim      : Dimension of the policy output
-            gravity         : Gravitational acceleration for energy metric
-            grid_size       : Grid size for SSIM computation
         """
+        self.bounds_max      = bounds_max
+        self.gravity         = gravity
         self.max_temperature = max_temperature
+        self.monitoring      = monitoring
         self.output_dim      = output_dim
         
         self._init_imitation_metrics(output_dim=output_dim)
-        self._init_evaluation_metrics(
-            gravity=gravity,
-            grid_size=grid_size,
-            max_temperature=max_temperature
-        )
+        self._init_evaluation_metrics()
         self._init_runtime_trackers()
     
-    def _init_evaluation_metrics(
-        self,
-        gravity         : float,
-        grid_size       : int,
-        max_temperature : float
-    ):
+    def _init_evaluation_metrics(self):
         """
         Creates TorchMetrics instances for all five core performance metrics.
-        
-        Args:
-            gravity         : Gravitational constant for energy calculations
-            grid_size       : Resolution for SSIM field rendering
-            max_temperature : Temperature threshold for safety violations
         """
         self.train_evaluation = MetricCollection({
-            "avg_power_consumption"  : EnergyConsumptionMetric(gravity),
+            "avg_power_consumption"  : EnergyConsumptionMetric(self.gravity, self.monitoring),
             "cohesion_connectivity"  : CohesionMetric(),
-            "color_accuracy_mae"     : ColorAccuracyMetric(),
-            "legibility_ssim"        : LegibilitySSIMMetric(grid_size),
-            "thermal_violation_rate" : ThermalSafetyMetric(max_temperature),
+            "color_accuracy_mae"     : ColorAccuracyMetric(self.monitoring),
+            "legibility_ssim"        : LegibilitySSIMMetric(self.bounds_max, self.monitoring),
+            "thermal_violation_rate" : ThermalSafetyMetric(self.max_temperature),
         })
         self.val_evaluation = self.train_evaluation.clone(prefix="val_")
     
@@ -569,11 +562,11 @@ class MetricsCollector:
         if all(k in batch for k in ["position", "velocity", "wind"]):
             device = batch["position"].device
             metrics["legibility_ssim"].update(
-                bounds_max=torch.tensor([50.0, 50.0, 20.0], device=device),
-                bounds_min=torch.zeros(3, device=device),
-                positions=batch["position"],
-                velocities=batch["velocity"],
-                wind_field=batch["wind"]
+                bounds_max = torch.tensor(self.bounds_max, device=device),
+                bounds_min = torch.zeros(3, device=device),
+                positions  = batch["position"],
+                velocities = batch["velocity"],
+                wind_field = batch["wind"]
             )
         
         if "edge_index" in batch:
@@ -617,7 +610,7 @@ class ThermalSafetyMetric(Metric):
         Initialize the thermal safety metric.
         
         Args:
-            max_temperature : Maximum safe temperature threshold (Kelvin)
+            max_temperature : Maximum safe temperature from flock config
         """
         super().__init__()
         self.max_temperature = max_temperature

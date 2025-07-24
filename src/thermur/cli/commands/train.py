@@ -648,7 +648,7 @@ class TrainCommand:
         # Lightning's trainer.fit is called directly - no wrapper needed
         components["trainer"].fit(
             model      = components["policy"],
-            datamodule = components["data_module"],
+            datamodule = components["datamodule"],
             ckpt_path  = str(resume) if resume else None
         )
 
