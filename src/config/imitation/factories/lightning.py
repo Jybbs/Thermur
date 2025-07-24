@@ -104,6 +104,24 @@ Saves model checkpoints at regular intervals during training, enabling
 recovery from failures and model selection.
 """
 
+build_datamodule = builds(
+    DataModule,
+    controller              = SI("${controller}"),
+    env                     = SI("${simulation}"),
+    experience              = zen(ExperienceModel),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "DataModuleBuild"
+    }
+)
+"""
+Builder for Lightning data module.
+
+Manages expert demonstration collection and replay buffer for imitation
+learning, wrapping TorchRL components in Lightning's DataModule interface.
+"""
+
 build_early_stopping_callback = builds(
     EarlyStopping,
     mode                    = SI("${monitor.mode}"),
@@ -120,24 +138,6 @@ Builder for early stopping callback.
 
 Monitors training loss and stops training if no improvement is seen,
 preventing overfitting and saving compute resources.
-"""
-
-build_data_module = builds(
-    DataModule,
-    controller              = SI("${controller}"),
-    env                     = SI("${simulation}"),
-    experience              = zen(ExperienceModel),
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.lightning",
-        "cls_name" : "DataModuleBuild"
-    }
-)
-"""
-Builder for Lightning data module.
-
-Manages expert demonstration collection and replay buffer for imitation
-learning, wrapping TorchRL components in Lightning's DataModule interface.
 """
 
 build_lr_monitor_callback = builds(

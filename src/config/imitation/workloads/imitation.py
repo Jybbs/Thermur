@@ -6,6 +6,7 @@ the GNN policy via behavioral cloning from expert demonstrations.
 """
 from ..factories.controller    import *
 from ..factories.lightning     import *
+from ..factories.monitoring    import *
 from ..factories.simulation    import *
 from ..factories.visualization import *
 from hydra_zen                 import make_config, ZenStore
@@ -13,10 +14,12 @@ from hydra_zen                 import make_config, ZenStore
 imitation_cfg = make_config(
     checkpoint  = build_checkpoint,
     controller  = build_controller,
-    data_module = build_data_module,
+    datamodule  = build_datamodule,
+    events      = build_events,
     experience  = build_experience,
     flock       = build_flock,
     hardware    = build_hardware,
+    metrics     = build_metrics,
     monitor     = build_monitor,
     optimizer   = build_optimizer,
     policy      = build_policy,

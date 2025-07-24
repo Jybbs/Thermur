@@ -6,47 +6,17 @@ tracking individual agent decisions, CBF activations, and critical events during
 training and simulation. It integrates with PyTorch Lightning's logging system
 and provides structured outputs for post-hoc analysis.
 """
-from collections       import Counter, defaultdict
-from dataclasses       import dataclass
-from pytorch_lightning import LightningModule
-from tensordict        import TensorDict
-from time              import perf_counter
-from torch             import where
-from typing            import Any
+from collections                         import Counter, defaultdict
+from config.imitation.schemas.monitoring import MonitoringModel
+from pytorch_lightning                   import LightningModule
+from tensordict                          import TensorDict
+from time                                import perf_counter
+from torch                               import where
+from typing                              import Any
 
 import wandb
 
 
-@dataclass
-class Event:
-    """
-    Single event instance with metadata.
-    """
-    data       : dict[str, Any]
-    event_type : str
-    step       : int
-    
-    def to_row(self, columns: list[str]) -> list[Any]:
-        """
-        Convert event to table row format.
-        
-        Args:
-            columns : Column names to extract from data
-            
-        Returns:
-            List of values for W&B table row
-        """
-        return [self.step] + [self.data.get(col) for col in columns]
-
-
-@dataclass
-class EventType:
-    """
-    Configuration for a specific type of event.
-    """
-    columns     : list[str]
-    name        : str
-    rate_metric : str
 
 
 class EventLogger:
@@ -57,52 +27,31 @@ class EventLogger:
     sampling detailed event data to W&B tables for debugging.
     """
     
-    EVENT_TYPES = {
-        "cbf_activation": EventType(
-            columns     = ["agent_id", "temperature", "control_diff", "safety_margin"],
-            name        = "CBF Activations",
-            rate_metric = "events/cbf_activation_rate"
-        ),
-        "near_miss": EventType(
-            columns     = ["agent_id", "temperature", "margin", "position"],
-            name        = "Near Misses",
-            rate_metric = "events/near_miss_rate"
-        ),
-        "thermal_violation": EventType(
-            columns     = ["agent_id", "temperature", "excess", "position"],
-            name        = "Thermal Violations",
-            rate_metric = "events/thermal_violation_rate"
-        ),
-        "topology_change": EventType(
-            columns     = [
-                "agent_id", "neighbors_added", "neighbors_lost", "neighbor_count"
-            ],
-            name        = "Topology Changes",
-            rate_metric = "events/topology_change_rate"
-        )
-    }
     
     def __init__(
         self,
-        cbf_tolerance   : float = 3.0,
-        max_temperature : float = 475.0,
-        sample_every    : int   = 100
+        activation_tolerance : float,
+        max_temperature      : float,
+        monitoring           : MonitoringModel
     ):
         """
         Initialize the event logger.
         
         Args:
-            cbf_tolerance   : Temperature tolerance for CBF activation
-            max_temperature : Maximum safe temperature for thermal events
-            sample_every    : Steps between detailed event sampling
+            activation_tolerance : CBF activation tolerance from safety config
+            max_temperature      : Maximum safe temperature from flock config
+            monitoring           : Monitoring configuration model
         """
-        self.cbf_tolerance   = cbf_tolerance
-        self.cbf_threshold   = max_temperature - cbf_tolerance
+        self.cbf_tolerance   = activation_tolerance
+        self.cbf_threshold   = max_temperature - activation_tolerance
+        self.event_types     = monitoring.event_types
         self.max_temperature = max_temperature
-        self.sample_every    = sample_every
+        self.prefix          = monitoring.prefix
+        self.sample_every    = monitoring.event_sample_every
         
         self.event_buffer = defaultdict(list)
         self.event_counts = Counter()
+        self.event_data   = defaultdict(list)  # Stores event data by type
         self.start_time   = perf_counter()
         self.total_steps  = 0
     
@@ -118,23 +67,26 @@ class EventLogger:
             event_type : Type of event to flush
             module     : Lightning module with logger
         """
-        if not self.event_buffer[event_type]:
+        if not self.event_data[event_type]:
             return
             
-        event_config = self.EVENT_TYPES[event_type]
-        columns = ["step"] + event_config.columns
+        event_config = self.event_types[event_type]
+        columns = ["step"] + event_config["columns"]
         
-        data = [
-            event.to_row(event_config.columns) 
-            for event in self.event_buffer[event_type]
-        ]
+        # Build table data from stored events
+        data = []
+        for event_dict in self.event_data[event_type]:
+            row = [event_dict["step"]]
+            for col in event_config["columns"]:
+                row.append(event_dict.get(col))
+            data.append(row)
         
         table = wandb.Table(columns=columns, data=data)
         module.logger.experiment.log({
-            f"events/{event_type}_details": table
+            f"{self.prefix}{event_type}_details": table
         })
         
-        self.event_buffer[event_type].clear()
+        self.event_data[event_type].clear()
     
     def _log_event(
         self, 
@@ -153,19 +105,17 @@ class EventLogger:
         self.event_counts[event_type] += 1
         
         module.log(
-            name     = self.EVENT_TYPES[event_type].rate_metric,
+            name     = self.prefix + self.event_types[event_type]["rate_metric"],
             on_epoch = True,
             on_step  = True,
             prog_bar = False,
             value    = self.event_counts[event_type] / max(self.total_steps, 1)
         )
         
-        event = Event(
-            data       = event_data,
-            event_type = event_type,
-            step       = module.global_step
-        )
-        self.event_buffer[event_type].append(event)
+        # Store event data with step information
+        event_dict = {"step": module.global_step}
+        event_dict.update(event_data)
+        self.event_data[event_type].append(event_dict)
         
         if (
             module.global_step % self.sample_every == 0
@@ -256,8 +206,8 @@ class EventLogger:
         Args:
             module : Lightning module with logger
         """
-        for event_type in self.EVENT_TYPES:
-            if self.event_buffer[event_type]:
+        for event_type in self.event_types:
+            if self.event_data[event_type]:
                 self._flush_events_to_table(event_type, module)
     
     def get_event_summary(self) -> dict:
