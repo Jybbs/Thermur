@@ -6,181 +6,259 @@ tracking individual agent decisions, CBF activations, and critical events during
 training and simulation. It integrates with PyTorch Lightning's logging system
 and provides structured outputs for post-hoc analysis.
 """
-from dataclasses import dataclass
-from pathlib     import Path
-from tensordict  import TensorDict
-from torch       import Tensor
-from typing      import Optional
+from collections       import Counter, defaultdict
+from dataclasses       import dataclass
+from pytorch_lightning import LightningModule
+from tensordict        import TensorDict
+from time              import perf_counter
+from torch             import where
+from typing            import Any
 
-import json
-import time
+import wandb
 
 
 @dataclass
-class AgentEvent:
+class Event:
     """
-    Encapsulates all information about a discrete event that occurred
-    to a specific agent during simulation or training.
+    Single event instance with metadata.
     """
-    agent_id   : int
-    data       : dict
+    data       : dict[str, Any]
     event_type : str
-    timestamp  : float
+    step       : int
     
-    def to_dict(self) -> dict:
+    def to_row(self, columns: list[str]) -> list[Any]:
         """
-        Convert event to dictionary for serialization.
+        Convert event to table row format.
         
+        Args:
+            columns : Column names to extract from data
+            
         Returns:
-            Dictionary representation suitable for JSON serialization
+            List of values for W&B table row
         """
-        return {
-            "agent_id"   : self.agent_id,
-            "data"       : self.data,
-            "event_type" : self.event_type,
-            "timestamp"  : self.timestamp
-        }
+        return [self.step] + [self.data.get(col) for col in columns]
+
+
+@dataclass
+class EventType:
+    """
+    Configuration for a specific type of event.
+    """
+    columns     : list[str]
+    name        : str
+    rate_metric : str
 
 
 class EventLogger:
     """
-    Tracks and logs agent-level events for debugging and analysis.
+    Unified event logger that tracks both rates and detailed event data.
     
-    This logger captures detailed information about individual agent behaviors,
-    safety system activations, and critical events. It provides structured
-    logging that can be analyzed offline to understand emergent behaviors
-    and debug issues in the swarm.
+    Logs event rates as standard metrics for monitoring trends, while
+    sampling detailed event data to W&B tables for debugging.
     """
     
+    EVENT_TYPES = {
+        "cbf_activation": EventType(
+            columns     = ["agent_id", "temperature", "control_diff", "safety_margin"],
+            name        = "CBF Activations",
+            rate_metric = "events/cbf_activation_rate"
+        ),
+        "near_miss": EventType(
+            columns     = ["agent_id", "temperature", "margin", "position"],
+            name        = "Near Misses",
+            rate_metric = "events/near_miss_rate"
+        ),
+        "thermal_violation": EventType(
+            columns     = ["agent_id", "temperature", "excess", "position"],
+            name        = "Thermal Violations",
+            rate_metric = "events/thermal_violation_rate"
+        ),
+        "topology_change": EventType(
+            columns     = [
+                "agent_id", "neighbors_added", "neighbors_lost", "neighbor_count"
+            ],
+            name        = "Topology Changes",
+            rate_metric = "events/topology_change_rate"
+        )
+    }
+    
     def __init__(
-        self, 
-        buffer_size     : int = 1000,
+        self,
         cbf_tolerance   : float = 3.0,
-        enable_file_log : bool = True,
-        log_dir         : Optional[Path] = None,
-        max_temperature : float = 475.0
+        max_temperature : float = 475.0,
+        sample_every    : int   = 100
     ):
         """
-        Sets up event buffering, file logging, and temperature thresholds
-        for detecting critical events.
+        Initialize the event logger.
         
         Args:
-            buffer_size     : Number of events to buffer before writing
             cbf_tolerance   : Temperature tolerance for CBF activation
-            enable_file_log : Whether to write events to file
-            log_dir         : Directory for saving event logs
             max_temperature : Maximum safe temperature for thermal events
+            sample_every    : Steps between detailed event sampling
         """
-        self.buffer_size     = buffer_size
         self.cbf_tolerance   = cbf_tolerance
         self.cbf_threshold   = max_temperature - cbf_tolerance
-        self.enable_file_log = enable_file_log
-        self.log_dir         = log_dir
         self.max_temperature = max_temperature
+        self.sample_every    = sample_every
         
-        self.event_buffer = []
-        self.event_counts = {}
-        self.start_time   = time.time()
-        
-        if enable_file_log and log_dir:
-            self.log_dir.mkdir(parents=True, exist_ok=True)
-            self.event_file = self.log_dir / "agent_events.jsonl"
+        self.event_buffer = defaultdict(list)
+        self.event_counts = Counter()
+        self.start_time   = perf_counter()
+        self.total_steps  = 0
     
-    def _add_event(self, event: AgentEvent):
+    def _flush_events_to_table(
+        self,
+        event_type : str,
+        module     : LightningModule
+    ):
         """
-        Maintains event counts by type and flushes buffer when full.
+        Push buffered events to W&B table.
         
         Args:
-            event : AgentEvent to log
+            event_type : Type of event to flush
+            module     : Lightning module with logger
         """
-        self.event_buffer.append(event)
-        self.event_counts[event.event_type] = (
-            self.event_counts.get(event.event_type, 0) + 1
+        if not self.event_buffer[event_type]:
+            return
+            
+        event_config = self.EVENT_TYPES[event_type]
+        columns = ["step"] + event_config.columns
+        
+        data = [
+            event.to_row(event_config.columns) 
+            for event in self.event_buffer[event_type]
+        ]
+        
+        table = wandb.Table(columns=columns, data=data)
+        module.logger.experiment.log({
+            f"events/{event_type}_details": table
+        })
+        
+        self.event_buffer[event_type].clear()
+    
+    def _log_event(
+        self, 
+        event_type : str,
+        module     : LightningModule,
+        **event_data
+    ):
+        """
+        Log both rate metrics and sampled event details.
+        
+        Args:
+            event_type   : Type of event from EVENT_TYPES
+            module       : Lightning module for logging
+            **event_data : Event-specific data fields
+        """
+        self.event_counts[event_type] += 1
+        
+        module.log(
+            name     = self.EVENT_TYPES[event_type].rate_metric,
+            on_epoch = True,
+            on_step  = True,
+            prog_bar = False,
+            value    = self.event_counts[event_type] / max(self.total_steps, 1)
         )
         
-        if len(self.event_buffer) >= self.buffer_size:
-            self.flush()
-    
-    def _get_timestamp(self) -> float:
-        """
-        Get elapsed time since logger initialization.
+        event = Event(
+            data       = event_data,
+            event_type = event_type,
+            step       = module.global_step
+        )
+        self.event_buffer[event_type].append(event)
         
-        Returns:
-            Seconds elapsed since logger creation
-        """
-        return time.time() - self.start_time
+        if (
+            module.global_step % self.sample_every == 0
+                and module.logger 
+                and hasattr(module.logger, 'experiment')
+        ):
+            self._flush_events_to_table(event_type, module)
     
-    def analyze_batch(self, batch: TensorDict) -> dict:
+    def analyze_batch(self, batch: TensorDict, module: LightningModule) -> dict:
         """
-        Scans the batch for thermal violations, CBF activations, and
-        near-miss events, logging each occurrence with relevant context.
+        Scan batch for all event types and log them.
         
         Args:
-            batch : TensorDict containing simulation state
+            batch  : TensorDict containing simulation state
+            module : Lightning module for logging
             
         Returns:
             Dictionary with counts of each event type detected
         """
-        analysis = {
-            "cbf_activations"    : 0,
-            "near_misses"        : 0,
-            "thermal_violations" : 0
-        }
-        
-        if "temperature" in batch:
-            temps = batch["temperature"]
-            if temps.dim() > 1:
-                temps = temps.squeeze(-1)
-                
-            violations_mask = temps > self.max_temperature
-            if violations_mask.any():
-                violation_ids = violations_mask.nonzero(as_tuple=True)[0]
-                self.log_thermal_violation(
-                    violation_ids,
-                    batch["position"][violations_mask],
-                    temps[violations_mask]
-                )
-                analysis["thermal_violations"] = violation_ids.numel()
+        if "temperature" not in batch:
+            return {}
             
-            near_miss_mask = (temps > self.cbf_threshold) & (~violations_mask)
-            if near_miss_mask.any():
-                near_miss_ids = near_miss_mask.nonzero(as_tuple=True)[0]
-                for agent_id in near_miss_ids:
-                    self.log_near_miss(
-                        int(agent_id.item()),
-                        self.max_temperature - temps[agent_id].item(),
-                        batch["position"][agent_id],
-                        temps[agent_id].item()
-                    )
-                analysis["near_misses"] = near_miss_ids.numel()
+        self.total_steps += batch["temperature"].shape[0]
+       
+        analysis = Counter()
+        temps    = batch["temperature"].flatten()
         
-        if "cbf_active" in batch and batch["cbf_active"].any():
-            active_ids = batch["cbf_active"].nonzero(as_tuple=True)[0]
-            if "u_nominal" in batch and "u_safe" in batch:
-                self.log_cbf_activation(
-                    active_ids,
-                    batch["temperature"][active_ids],
-                    batch["u_nominal"][active_ids],
-                    batch["u_safe"][active_ids]
+        if (violation_ids := where(temps > self.max_temperature)[0]).numel():
+            for i in range(violation_ids.shape[0]):
+
+                idx = violation_ids[i].item()
+                self._log_event(
+                    agent_id    = idx,
+                    event_type  = "thermal_violation",
+                    excess      = temps[idx].item() - self.max_temperature,
+                    module      = module,
+                    position    = batch["position"][idx].cpu().tolist(),
+                    temperature = temps[idx].item()
                 )
+
+            analysis["thermal_violations"] = violation_ids.numel()
+        
+        if (near_miss_ids := where(
+            (temps > self.cbf_threshold) & (temps <= self.max_temperature)
+        )[0]).numel():
+            [
+                self._log_event(
+                    agent_id    = idx,
+                    event_type  = "near_miss",
+                    margin      = self.max_temperature - temps[idx].item(),
+                    module      = module,
+                    position    = batch["position"][idx].cpu().tolist(),
+                    temperature = temps[idx].item()
+                )
+                for idx in near_miss_ids.tolist()
+            ]
+            analysis["near_misses"] = near_miss_ids.numel()
+        
+        required = {"cbf_active", "u_nominal", "u_safe"}
+        if (required <= batch.keys() and
+            (active_ids := where(batch["cbf_active"])[0]).numel()):
+            
+            for i, agent_id in enumerate(active_ids.tolist()):
+                control_diff = (
+                    batch["u_safe"][agent_id] - batch["u_nominal"][agent_id]
+                ).norm().item()
+                safety_margin = (
+                    self.max_temperature - batch["temperature"][agent_id].item()
+                )
+
+                self._log_event(
+                    agent_id      = agent_id,
+                    control_diff  = control_diff,
+                    event_type    = "cbf_activation",
+                    module        = module,
+                    safety_margin = safety_margin,
+                    temperature   = batch["temperature"][agent_id].item()
+                )
+
             analysis["cbf_activations"] = active_ids.numel()
         
-        return analysis
+        return dict(analysis)
     
-    def flush(self):
+    def flush_all(self, module: LightningModule):
         """
-        Writes all buffered events to the JSON Lines file and clears
-        the buffer. No-op if file logging is disabled.
-        """
-        if not self.enable_file_log or not self.event_buffer:
-            return
-            
-        with open(self.event_file, "a") as f:
-            for event in self.event_buffer:
-                json.dump(event.to_dict(), f)
-                f.write("\n")
+        Flush all remaining events to tables.
         
-        self.event_buffer.clear()
+        Args:
+            module : Lightning module with logger
+        """
+        for event_type in self.EVENT_TYPES:
+            if self.event_buffer[event_type]:
+                self._flush_events_to_table(event_type, module)
     
     def get_event_summary(self) -> dict:
         """
@@ -189,175 +267,16 @@ class EventLogger:
         Returns:
             Dictionary containing event counts and timing information
         """
-        total_events = sum(self.event_counts.values())
         return {
-            "buffer_size"     : len(self.event_buffer),
-            "elapsed_time"    : self._get_timestamp(),
-            "events_by_type"  : self.event_counts.copy(),
-            "total_events"    : total_events
+            "elapsed_time"   : perf_counter() - self.start_time,
+            "events_by_type" : dict(self.event_counts),
+            "total_events"   : sum(self.event_counts.values()),
+            "total_steps"    : self.total_steps
         }
     
-    def log_cbf_activation(
-        self,
-        agent_ids    : Tensor,
-        temperatures : Tensor,
-        u_nominal    : Tensor,
-        u_safe       : Tensor,
-        safety_margins : Optional[Tensor] = None
-    ):
+    def reset_epoch_metrics(self):
         """
-        Records when the CBF safety filter modifies control commands to
-        maintain thermal safety constraints.
-        
-        Args:
-            agent_ids      : IDs of agents where CBF activated [N_active]
-            temperatures   : Current temperatures [N_active]
-            u_nominal      : Nominal control before CBF [N_active, 3]
-            u_safe         : Safe control after CBF [N_active, 3]
-            safety_margins : Optional safety margin values [N_active]
+        Reset counters at epoch boundaries.
         """
-        timestamp = self._get_timestamp()
-        
-        for i in range(agent_ids.shape[0]):
-            control_diff = (u_safe[i] - u_nominal[i]).norm().item()
-            
-            event = AgentEvent(
-                agent_id   = int(agent_ids[i].item()),
-                data       = {
-                    "control_diff"   : float(control_diff),
-                    "safety_margin"  : (float(safety_margins[i].item()) 
-                                       if safety_margins is not None else None),
-                    "temperature"    : float(temperatures[i].item()),
-                    "u_nominal_norm" : float(u_nominal[i].norm().item()),
-                    "u_safe_norm"    : float(u_safe[i].norm().item())
-                },
-                event_type = "cbf_activation",
-                timestamp  = timestamp
-            )
-            self._add_event(event)
-    
-    def log_communication_change(
-        self,
-        agent_id      : int,
-        new_neighbors : list[int],
-        old_neighbors : list[int],
-        position      : Tensor
-    ):
-        """
-        Records when agents gain or lose communication links due to
-        relative motion affecting the proximity-based network.
-        
-        Args:
-            agent_id      : ID of the agent
-            new_neighbors : New neighbor IDs
-            old_neighbors : Previous neighbor IDs
-            position      : Current position of the agent
-        """
-        added   = set(new_neighbors) - set(old_neighbors)
-        removed = set(old_neighbors) - set(new_neighbors)
-        
-        if added or removed:
-            event = AgentEvent(
-                agent_id   = agent_id,
-                data       = {
-                    "neighbor_count"  : len(new_neighbors),
-                    "neighbors_added" : list(added),
-                    "neighbors_lost"  : list(removed),
-                    "position"        : position.cpu().tolist()
-                },
-                event_type = "topology_change",
-                timestamp  = self._get_timestamp()
-            )
-            self._add_event(event)
-    
-    def log_near_miss(
-        self,
-        agent_id    : int,
-        margin      : float,
-        position    : Tensor,
-        temperature : float
-    ):
-        """
-        Records when agents enter the CBF activation zone but haven't
-        yet violated safety constraints.
-        
-        Args:
-            agent_id    : ID of the agent
-            margin      : Temperature margin to safety threshold
-            position    : Current position
-            temperature : Current temperature
-        """
-        event = AgentEvent(
-            agent_id   = agent_id,
-            data       = {
-                "margin"      : float(margin),
-                "position"    : position.cpu().tolist(),
-                "temperature" : float(temperature),
-                "threshold"   : self.cbf_threshold
-            },
-            event_type = "near_miss",
-            timestamp  = self._get_timestamp()
-        )
-        self._add_event(event)
-    
-    def log_thermal_violation(
-        self, 
-        agent_ids    : Tensor,
-        positions    : Tensor,
-        temperatures : Tensor
-    ):
-        """
-        Records critical failures where agents exceeded the maximum safe
-        temperature despite safety measures.
-        
-        Args:
-            agent_ids    : IDs of agents with violations [N_violations]
-            positions    : Positions of violating agents [N_violations, 3]
-            temperatures : Temperatures of violating agents [N_violations]
-        """
-        timestamp = self._get_timestamp()
-        
-        for i in range(agent_ids.shape[0]):
-            event = AgentEvent(
-                agent_id   = int(agent_ids[i].item()),
-                data       = {
-                    "excess"      : float(temperatures[i].item() - self.max_temperature),
-                    "position"    : positions[i].cpu().tolist(),
-                    "temperature" : float(temperatures[i].item())
-                },
-                event_type = "thermal_violation",
-                timestamp  = timestamp
-            )
-            self._add_event(event)
-    
-    def log_trajectory_anomaly(
-        self,
-        acceleration : Tensor,
-        agent_id     : int,
-        jerk_norm    : float,
-        position     : Tensor,
-        velocity     : Tensor
-    ):
-        """
-        Records unusual motion patterns that may indicate control issues
-        or numerical instabilities.
-        
-        Args:
-            acceleration : Current acceleration
-            agent_id     : ID of the agent
-            jerk_norm    : Magnitude of jerk (rate of acceleration change)
-            position     : Current position
-            velocity     : Current velocity
-        """
-        event = AgentEvent(
-            agent_id   = agent_id,
-            data       = {
-                "accel_norm"    : float(acceleration.norm().item()),
-                "jerk_norm"     : float(jerk_norm),
-                "position"      : position.cpu().tolist(),
-                "velocity_norm" : float(velocity.norm().item())
-            },
-            event_type = "trajectory_anomaly",
-            timestamp  = self._get_timestamp()
-        )
-        self._add_event(event)
+        self.event_counts.clear()
+        self.total_steps = 0
