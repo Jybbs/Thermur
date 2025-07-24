@@ -13,7 +13,7 @@ both light and dark themes.
 """
 from .renderers                             import Renderer
 from .sampling                              import GridSampler
-from config.imitation.schemas.visualization import VisualizationModel
+from config.imitation.schemas.visualization import *
 from pyvista                                import Actor, Plotter
 from tensordict                             import TensorDictBase
 from typing                                 import Optional
@@ -45,9 +45,13 @@ class Visualizer:
     
     def __init__(
         self,
+        colors          : ColorModel,
+        display         : DisplayModel,
+        glyphs          : GlyphModel,
+        grids           : GridModel,
         max_temperature : float,
-        simulation      : object,
-        visualization   : VisualizationModel
+        opacity         : OpacityModel,
+        simulation      : object
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -58,17 +62,21 @@ class Visualizer:
         updates and cleanup.
         
         Args:
+            colors          : Color configuration for visualization elements
+            display         : Display settings and element toggles
+            glyphs          : Glyph configuration for agent rendering
+            grids           : Grid configuration for field sampling
             max_temperature : Maximum safe temperature (T_max) for safety visualization
+            opacity         : Opacity configuration for visualization elements
             simulation      : Simulation reference for accessing environment data
-            visualization   : Consolidated visualization configuration model
         """
+        self.colors          = colors
+        self.display         = display
+        self.glyphs          = glyphs
+        self.grids           = grids
         self.max_temperature = max_temperature
+        self.opacity         = opacity
         self.simulation      = simulation
-        self.visualization   = visualization
-        self.colors          = visualization.colors
-        self.glyphs          = visualization.glyphs
-        self.grids           = visualization.grids
-        self.opacity         = visualization.opacity
         self._grid_sampler   = GridSampler(self.grids)
         self._renderer       = Renderer(self.colors, self.glyphs, self.opacity)
         
@@ -94,7 +102,7 @@ class Visualizer:
         The method also initializes the temperature colormap that will be
         used for thermal visualization of agents throughout the simulation.
         """
-        match self.visualization.dark_mode:
+        match self.display.dark_mode:
             case True:
                 theme = pv.themes.DarkTheme()
             case False:
@@ -104,8 +112,8 @@ class Visualizer:
         self._plotter = Plotter(
             lighting    = "three lights",
             off_screen  = False,
-            title       = self.visualization.window_title,
-            window_size = self.visualization.window_size
+            title       = self.display.window_title,
+            window_size = self.display.window_size
         )
         
         self._plotter.camera_position = 'xy'
@@ -148,18 +156,18 @@ class Visualizer:
             
         self._plotter.clear_actors()
         
-        if self.visualization.show_agents:
-            colormap = self._colormap if self.visualization.show_thermal else None
+        if self.display.show_agents:
+            colormap = self._colormap if self.display.show_thermal else None
             self._agent_actors = self._renderer.add_agents(
                 colormap    = colormap,
                 plotter     = self._plotter,
                 position    = position,
-                show_trails = self.visualization.show_trails,
+                show_trails = self.display.show_trails,
                 temperature = temperature,
                 velocity    = velocity
             )
         
-        if self.visualization.show_wind:
+        if self.display.show_wind:
             wind_grid = self._grid_sampler.create_wind_grid(
                 position   = position,
                 simulation = self.simulation
@@ -169,7 +177,7 @@ class Visualizer:
                 wind_grid = wind_grid
             )
         
-        if self.visualization.show_safety:
+        if self.display.show_safety:
             self._safety_actors = self._renderer.add_safety_boundary(
                 grids           = self.grids,
                 max_temperature = self.max_temperature,
@@ -178,7 +186,7 @@ class Visualizer:
                 temperature     = temperature
             )
         
-        if self.visualization.show_graph:
+        if self.display.show_graph:
             self._graph_actors = self._renderer.add_communication_graph(
                 edge_index = edge_index,
                 plotter    = self._plotter,

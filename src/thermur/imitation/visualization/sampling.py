@@ -10,7 +10,7 @@ The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
 from collections                            import namedtuple
-from config.imitation.schemas.visualization import VisualizationModel
+from config.imitation.schemas.visualization import GridModel
 from pyvista                                import Axes, ImageData, PolyData
 from torch                                  import Tensor
 from typing                                 import Any
@@ -36,7 +36,7 @@ class GridSampler:
     simulations while maintaining performance.
     """
     
-    def __init__(self, grid: VisualizationModel):
+    def __init__(self, grid: GridModel):
         """
         Initialize the grid sampler with configuration.
         
