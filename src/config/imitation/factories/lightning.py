@@ -4,22 +4,93 @@ Hydra-zen builders for PyTorch Lightning components.
 This module provides configuration builders for Lightning-specific training
 components including the GNN policy network, data module, trainer, and callbacks.
 """
-from config.imitation.schemas.learning      import LearningModel
+from config.imitation.schemas.learning      import *
+from config.imitation.schemas.wandb         import WandbModel
 from hydra_zen                              import builds, zen
 from omegaconf                              import SI
 from pytorch_lightning                      import Trainer
 from pytorch_lightning.callbacks            import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers              import WandbLogger
-from thermur.imitation.lightning.experience import ExperienceModule
+from thermur.imitation.lightning.experience import DataModule
 from thermur.imitation.lightning.policy     import GNNPolicy
 
 
+build_checkpoint = builds(
+    CheckpointModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "CheckpointBuild"
+    }
+)
+"""
+Builder for checkpoint configuration.
+
+Controls model checkpoint saving frequency, location, and retention policy.
+"""
+
+build_experience = builds(
+    ExperienceModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "ExperienceBuild"
+    }
+)
+"""
+Builder for experience data configuration.
+
+Manages batch sizes, buffer capacity, and data collection parameters.
+"""
+
+build_hardware = builds(
+    HardwareModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "HardwareBuild"
+    }
+)
+"""
+Builder for hardware configuration.
+
+Specifies compute resources, precision, and distributed training strategy.
+"""
+
+build_optimizer = builds(
+    OptimizerModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "OptimizerBuild"
+    }
+)
+"""
+Builder for optimizer configuration.
+
+Sets learning rate, weight decay, gradient clipping, and scheduling parameters.
+"""
+
+build_monitor = builds(
+    MonitorModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "MonitorBuild"
+    }
+)
+"""
+Builder for monitoring configuration.
+
+Controls logging, progress tracking, early stopping, and profiling settings.
+"""
+
 build_checkpoint_callback = builds(
     ModelCheckpoint,
-    dirpath                 = SI("${learning.dirpath}"),
-    every_n_train_steps     = SI("${learning.every_n_train_steps}"),
-    filename                = SI("${learning.filename}"),
-    save_last               = SI("${learning.save_last}"),
+    dirpath                 = SI("${checkpoint.dirpath}"),
+    every_n_train_steps     = SI("${checkpoint.every_n_train_steps}"),
+    filename                = SI("${checkpoint.filename}"),
+    save_last               = SI("${checkpoint.save_last}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -35,9 +106,9 @@ recovery from failures and model selection.
 
 build_early_stopping_callback = builds(
     EarlyStopping,
-    mode                    = SI("${learning.mode}"),
-    monitor                 = SI("${learning.monitor}"),
-    patience                = SI("${learning.patience}"),
+    mode                    = SI("${monitor.mode}"),
+    monitor                 = SI("${monitor.monitor}"),
+    patience                = SI("${monitor.patience}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -51,9 +122,27 @@ Monitors training loss and stops training if no improvement is seen,
 preventing overfitting and saving compute resources.
 """
 
+build_data_module = builds(
+    DataModule,
+    controller              = SI("${controller}"),
+    env                     = SI("${simulation}"),
+    experience              = zen(ExperienceModel),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "DataModuleBuild"
+    }
+)
+"""
+Builder for Lightning data module.
+
+Manages expert demonstration collection and replay buffer for imitation
+learning, wrapping TorchRL components in Lightning's DataModule interface.
+"""
+
 build_lr_monitor_callback = builds(
     LearningRateMonitor,
-    logging_interval        = SI("${learning.logging_interval}"),
+    logging_interval        = SI("${monitor.logging_interval}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -67,42 +156,10 @@ Tracks learning rate changes during training, particularly useful when
 using schedulers like ReduceLROnPlateau.
 """
 
-build_data_module = builds(
-    ExperienceModule,
-    env                     = SI("${simulation}"),
-    learning                = zen(LearningModel),
-    policy                  = SI("${controller}"),
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.lightning",
-        "cls_name" : "DataModuleBuild"
-    }
-)
-"""
-Builder for experience data module.
-
-Manages expert demonstration collection and replay buffer for imitation
-learning, wrapping TorchRL components in Lightning's DataModule interface.
-"""
-
-build_learning = builds(
-    LearningModel,
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.lightning",
-        "cls_name" : "LearningBuild"
-    }
-)
-"""
-Builder for learning configuration.
-
-Creates a Pydantic-validated learning configuration that manages training
-hyperparameters, batch sizes, and optimization settings.
-"""
-
 build_policy = builds(
     GNNPolicy,
-    learning                = zen(LearningModel),
+    architecture            = zen(ArchitectureModel),
+    optimizer               = zen(OptimizerModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -116,29 +173,45 @@ Creates a permutation-equivariant GNN that processes the flock graph
 structure to output nominal control actions u_nom for each agent.
 """
 
+build_wandb = builds(
+    WandbModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.config.imitation.factories.lightning",
+        "cls_name" : "WandbBuild"
+    }
+)
+"""
+Builder for W&B experiment tracking configuration.
+
+Creates a validated configuration that controls how Lightning integrates
+with Weights & Biases for metric logging, hyperparameter tracking, and
+experiment organization during training.
+"""
+
 build_trainer = builds(
     Trainer,
-    accelerator             = SI("${learning.accelerator}"),
+    accelerator             = SI("${hardware.accelerator}"),
     callbacks               = [
         build_checkpoint_callback, 
         build_early_stopping_callback,
         build_lr_monitor_callback
     ],
-    devices                 = SI("${learning.devices}"),
-    enable_model_summary    = SI("${learning.enable_model_summary}"),
-    enable_progress_bar     = SI("${learning.enable_progress_bar}"),
-    gradient_clip_val       = SI("${learning.gradient_clip_val}"),
-    log_every_n_steps       = SI("${learning.log_every_n_steps}"),
+    devices                 = SI("${hardware.devices}"),
+    enable_model_summary    = SI("${monitor.enable_model_summary}"),
+    enable_progress_bar     = SI("${monitor.enable_progress_bar}"),
+    gradient_clip_val       = SI("${optimizer.gradient_clip_val}"),
+    log_every_n_steps       = SI("${monitor.log_every_n_steps}"),
     logger                  = builds(
         WandbLogger,
         log_model   = "all",
         mode        = SI("${wandb.mode}"),
         project     = SI("${wandb.project}"),
-        save_dir    = SI("${learning.dirpath}")
+        save_dir    = SI("${checkpoint.dirpath}")
     ),
-    precision               = SI("${learning.precision}"),
-    profiler                = SI("${learning.profiler}"),
-    strategy                = SI("${learning.strategy}"),
+    precision               = SI("${hardware.precision}"),
+    profiler                = SI("${monitor.profiler}"),
+    strategy                = SI("${hardware.strategy}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
