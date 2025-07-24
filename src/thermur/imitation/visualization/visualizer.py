@@ -45,13 +45,12 @@ class Visualizer:
     
     def __init__(
         self,
-        colors          : ColorModel,
-        display         : DisplayModel,
-        glyphs          : GlyphModel,
-        grids           : GridModel,
-        max_temperature : float,
-        opacity         : OpacityModel,
-        simulation      : object
+        colors     : ColorModel,
+        display    : DisplayModel,
+        glyphs     : GlyphModel,
+        grids      : GridModel,
+        opacity    : OpacityModel,
+        simulation : object
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -66,19 +65,17 @@ class Visualizer:
             display         : Display settings and element toggles
             glyphs          : Glyph configuration for agent rendering
             grids           : Grid configuration for field sampling
-            max_temperature : Maximum safe temperature (T_max) for safety visualization
             opacity         : Opacity configuration for visualization elements
             simulation      : Simulation reference for accessing environment data
         """
-        self.colors          = colors
-        self.display         = display
-        self.glyphs          = glyphs
-        self.grids           = grids
-        self.max_temperature = max_temperature
-        self.opacity         = opacity
-        self.simulation      = simulation
-        self._grid_sampler   = GridSampler(self.grids)
-        self._renderer       = Renderer(self.colors, self.glyphs, self.opacity)
+        self.colors        = colors
+        self.display       = display
+        self.glyphs        = glyphs
+        self.grids         = grids
+        self.opacity       = opacity
+        self.simulation    = simulation
+        self._grid_sampler = GridSampler(self.grids)
+        self._renderer     = Renderer(self.colors, self.glyphs, self.opacity)
         
         self._plotter       : Plotter      = None
         self._agent_actors  : list[Actor]  = None
@@ -180,7 +177,7 @@ class Visualizer:
         if self.display.show_safety:
             self._safety_actors = self._renderer.add_safety_boundary(
                 grids           = self.grids,
-                max_temperature = self.max_temperature,
+                max_temperature = self.simulation.flock.max_temperature,
                 plotter         = self._plotter,
                 position        = position,
                 temperature     = temperature

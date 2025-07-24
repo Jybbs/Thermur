@@ -6,16 +6,17 @@ This module provides a physics-based controller that can be used to generate
 an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
-from .safety    import SafetyFilter
-from pydantic   import BaseModel
-from tensordict import TensorDict
-from torch      import Tensor
+from .safety                             import SafetyFilter
+from config.imitation.schemas.controller import ControllerModel
+from config.imitation.schemas.flock      import FlockModel
+from tensordict                          import TensorDict
+from torch                               import Tensor
 
 import torch
 import torch.nn.functional as F
 
 
-class ExpertFlockingController:
+class FlockController:
     """
     Calculates the nominal control action `𝐮_nom` using potential fields.
 
@@ -32,23 +33,23 @@ class ExpertFlockingController:
 
     def __init__(
         self,
-        agent_properties : BaseModel,
-        control          : BaseModel,
-        safety_filter    : SafetyFilter
+        control       : ControllerModel,
+        flock         : FlockModel,
+        safety_filter : SafetyFilter
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            agent_properties : Contains agent-specific properties like T_max.
-            control          : Contains both Reynolds weights and numerical parameters
-                               for stable force calculations.
-            safety_filter    : Safety filter that applies a CBF to enforce 
-                               thermal safety constraints.
+            control       : Contains both Reynolds weights and numerical parameters
+                            for stable force calculations.
+            flock         : Flock configuration containing agent properties.
+            safety_filter : Safety filter that applies a CBF to enforce 
+                            thermal safety constraints.
         """
-        self.agent_properties = agent_properties
-        self.control          = control
-        self.safety_filter    = safety_filter
+        self.control       = control
+        self.flock         = flock
+        self.safety_filter = safety_filter
         self._reset_shared_state()
 
     def _compute_alignment(self, velocity: Tensor) -> Tensor:
@@ -208,7 +209,7 @@ class ExpertFlockingController:
         """
         temperature = self._ensure_1d_temperature(temperature)
         t_margin    = torch.clamp(
-            input = self.agent_properties.max_temperature - temperature,
+            input = self.flock.max_temperature - temperature,
             min   = self.control.epsilon
         )
 
@@ -377,7 +378,7 @@ class ExpertFlockingController:
         # Scale by normalized temperature
         norm_temp = torch.divide(
             input = self._ensure_1d_temperature(temperature),
-            other = self.agent_properties.max_temperature
+            other = self.flock.max_temperature
         )
         return vertical * norm_temp.unsqueeze(1)
     

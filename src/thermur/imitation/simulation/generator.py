@@ -14,11 +14,11 @@ from typing    import Any
 import mujoco as mj
 
 
-class FlockBuilder:
+class XMLGenerator:
     """
-    Dynamically generates MuJoCo models for multi-agent flock simulations.
+    Dynamically generates MuJoCo XML models for multi-agent flock simulations.
     
-    This builder encapsulates the logic for creating multi-agent MuJoCo
+    This generator encapsulates the logic for creating multi-agent MuJoCo
     simulations with configurable agent counts and spatial dimensions.
     It provides a clean interface for generating XML models and loading
     them into MuJoCo.

@@ -5,7 +5,7 @@ This module provides a comprehensive data loader for WRF-Fire NetCDF outputs,
 handling temperature, wind, and fire-specific variables with efficient 
 interpolation and gradient computation.
 """
-from config.imitation.schemas.dataset import WRFModel
+from config.imitation.schemas.loader  import LoaderModel
 from config.imitation.schemas.physics import PhysicsModel
 from numpy                            import ndarray, zeros
 from torch                            import Tensor
@@ -35,27 +35,25 @@ class WRFDataSource:
     """
     def __init__(
         self, 
-        data_path : str,
-        physics   : PhysicsModel,
-        wrf_data  : WRFModel
+        physics : PhysicsModel,
+        wrf     : LoaderModel
     ):
         """
         Loads the dataset from the specified path and initializes configuration.
         
         Args:
-            data_path : Path to the WRF-Fire NetCDF dataset file
-            physics   : Physics configuration model with interpolation settings
-            wrf_data  : WRF data configuration for variable names
+            physics : Physics configuration model with interpolation settings
+            wrf     : WRF configuration model with data path and variable names
         """
-        self.dataset    = open_dataset(data_path, cache=True)
+        self.dataset    = open_dataset(wrf.data_path, cache=True)
         self.coord_vars = list(self.dataset.coords)
         self.physics    = physics
-        self.wrf_data   = wrf_data
+        self.wrf        = wrf
         
         self.temp_var = physics.temperature_variable
-        self.u_var    = wrf_data.u_wind_variable
-        self.v_var    = wrf_data.v_wind_variable
-        self.w_var    = wrf_data.w_wind_variable
+        self.u_var    = wrf.u_wind_variable
+        self.v_var    = wrf.v_wind_variable
+        self.w_var    = wrf.w_wind_variable
 
     def _add_domain_noise(self, data: Tensor, noise_std: float) -> Tensor:
         """
@@ -70,7 +68,7 @@ class WRFDataSource:
         """
         return (
             data + torch.randn_like(data) * noise_std
-            if self.wrf_data.domain_randomization and noise_std > 0
+            if self.wrf.domain_randomization and noise_std > 0
             else data
         )
 
@@ -252,7 +250,7 @@ class WRFDataSource:
         coords_dict = self._transform_coordinates(positions)
         coords_2d   = {k: v for k, v in coords_dict.items() if k != self.physics.z_dimension}
         
-        heat_flux = self._interpolate_field(coords_2d, self.wrf_data.fire_heat_variable)
+        heat_flux = self._interpolate_field(coords_2d, self.wrf.fire_heat_variable)
         return torch.nan_to_num(
             Tensor(heat_flux.reshape(-1, 1), device=positions.device),
             nan = 0.0
@@ -301,7 +299,7 @@ class WRFDataSource:
         
         temperatures = self._add_domain_noise(
             temperatures, 
-            self.wrf_data.temperature_noise_std
+            self.wrf.temperature_noise_std
         )
         
         return temperatures, gradients
@@ -341,4 +339,4 @@ class WRFDataSource:
         
         wind_values = torch.nan_to_num(wind_values, 0.0)
 
-        return self._add_domain_noise(wind_values, self.wrf_data.wind_noise_std)
+        return self._add_domain_noise(wind_values, self.wrf.wind_noise_std)

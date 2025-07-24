@@ -10,7 +10,7 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
-from config.imitation.schemas.learning import LearningModel
+from config.imitation.schemas.learning import ArchitectureModel, OptimizerModel
 from pytorch_lightning                 import LightningModule
 from tensordict                        import TensorDict
 from torch                             import Tensor
@@ -47,36 +47,43 @@ class GNNPolicy(LightningModule):
     3.  Decoder: A final MLP that maps the agent's processed hidden state
         back to a tangible control action (a 3D velocity vector).
     """
-    def __init__(self, learning: LearningModel):
+    def __init__(
+        self, 
+        architecture : ArchitectureModel, 
+        optimizer    : OptimizerModel
+    ):
         """
         Initializes the GNN policy network.
 
         Args:
-            learning: A learning configuration instance containing architectural 
-                      hyperparameters like hidden dimension, number of layers, 
-                      activation function, and I/O dimensions.
+            architecture : Configuration for GNN architecture including hidden 
+                           dimensions, number of layers, activation function, and 
+                           I/O dimensions.
+            optimizer    : Configuration for optimization including learning rate,
+                           weight decay, and gradient clipping.
         """
         super().__init__()
-        self.learning    = learning
+        self.architecture = architecture
+        self.optimizer    = optimizer
         self.save_hyperparameters()
-        self.activation  = getattr(torch.nn, learning.activation)()
-        self.convs       = self._build_module_list(GCNConv, learning)
-        self.grus        = self._build_module_list(GRUCell, learning)
-        self.decoder     = Linear(learning.hidden_dim, learning.output_dim)
-        self.encoder     = Linear(learning.input_dim,  learning.hidden_dim)
+        self.activation  = getattr(torch.nn, architecture.activation)()
+        self.convs       = self._build_module_list(architecture, GCNConv)
+        self.grus        = self._build_module_list(architecture, GRUCell)
+        self.decoder     = Linear(architecture.hidden_dim, architecture.output_dim)
+        self.encoder     = Linear(architecture.input_dim,  architecture.hidden_dim)
         
         self.train_metrics = MetricCollection({
             "mse"          : MeanSquaredError(),
             "rmse"         : MeanSquaredError(squared=False),
             "mae"          : MeanAbsoluteError(),
-            "r2"           : R2Score(num_outputs=learning.output_dim),
+            "r2"           : R2Score(num_outputs=architecture.output_dim),
         })
         self.val_metrics = self.train_metrics.clone(prefix="val_")
     
     def _build_module_list(
         self, 
-        module_type : Type[Module], 
-        learning    : LearningModel
+        architecture : ArchitectureModel,
+        module_type  : Type[Module]
     ) -> ModuleList:
         """
         Creates a stack of neural network modules of the specified type.
@@ -93,9 +100,9 @@ class GNNPolicy(LightningModule):
         Returns:
             ModuleList containing num_layers of the specified module type
         """
-        dim = learning.hidden_dim
+        dim = architecture.hidden_dim
         return ModuleList([
-            module_type(dim, dim) for _ in range(learning.num_layers)
+            module_type(dim, dim) for _ in range(architecture.num_layers)
         ])
     
     def _compute_loss_and_log(
@@ -138,7 +145,7 @@ class GNNPolicy(LightningModule):
             prog_bar   = False
         )
         
-        dim_names = ["x", "y", "z"][:self.learning.output_dim]
+        dim_names = ["x", "y", "z"][:self.architecture.output_dim]
         for i, dim in enumerate(dim_names):
             dim_error = mse_loss(predictions[..., i], targets[..., i])
             self.log(
@@ -162,8 +169,8 @@ class GNNPolicy(LightningModule):
         """
         optimizer = AdamW(
             params       = self.parameters(),
-            lr           = self.learning.learning_rate,
-            weight_decay = self.learning.weight_decay
+            lr           = self.optimizer.learning_rate,
+            weight_decay = self.optimizer.weight_decay
         )
         
         return {

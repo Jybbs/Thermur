@@ -17,7 +17,6 @@ build_visualizer = builds(
     display                 = zen(DisplayModel),
     glyphs                  = zen(GlyphModel),
     grids                   = zen(GridModel),
-    max_temperature         = SI("${flock.max_temperature}"),
     opacity                 = zen(OpacityModel),
     simulation              = SI("${simulation}"),
     populate_full_signature = True,

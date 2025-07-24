@@ -49,10 +49,10 @@ class SafetyFilter:
         """
         self.activation_count     = 0
         self.activation_tolerance = safety.activation_tolerance
-        self.agent_count          = agent_count
-        self.max_temperature      = max_temperature
+        self.agent_count          = flock.agent_count
+        self.max_temperature      = flock.max_temperature
         self.safety               = safety
-        self.spatial_dims         = spatial_dims
+        self.spatial_dims         = flock.spatial_dims
         self.total_queries        = 0
         self.Q                    = torch.eye(self.spatial_dims, torch.float32, "cpu")
 
