@@ -5,7 +5,7 @@ This module defines the configuration builder for the visualization component,
 creating a Hydra-compatible config that instantiates the Visualizer with
 parameters validated by the VisualizationModel Pydantic model.
 """
-from config.imitation.schemas.visualization     import VisualizationModel
+from config.imitation.schemas.visualization     import ColorModel, DisplayModel, GlyphModel, GridModel, OpacityModel
 from hydra_zen                                  import builds, zen
 from omegaconf                                  import SI
 from thermur.imitation.visualization.visualizer import Visualizer
@@ -13,9 +13,12 @@ from thermur.imitation.visualization.visualizer import Visualizer
 
 build_visualizer = builds(
     Visualizer,
-    max_temperature         = SI("${flock.max_temperature}"),
+    colors                  = zen(ColorModel),
+    display                 = zen(DisplayModel),
+    glyphs                  = zen(GlyphModel),
+    grids                   = zen(GridModel),
+    opacity                 = zen(OpacityModel),
     simulation              = SI("${simulation}"),
-    visualization           = zen(VisualizationModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.visualization",
@@ -23,8 +26,12 @@ build_visualizer = builds(
     }
 )
 """
-Builder for the flock visualization system.
+Builder for real-time 3D visualization system.
 
-Provides real-time rendering of agent positions, temperature fields,
-and safety boundaries for monitoring training progress and behavior.
+Creates an interactive PyVista-based renderer that displays the multi-agent flock
+navigating through dynamic temperature fields. Visualizes agent positions as glyphs,
+temperature distributions as volumetric heatmaps, safety boundaries as isosurfaces,
+and communication topology as edge connections. Supports customizable color mappings,
+transparency settings, camera controls, and video export for training diagnostics
+and paper figures. Essential for debugging emergent behaviors and safety violations.
 """

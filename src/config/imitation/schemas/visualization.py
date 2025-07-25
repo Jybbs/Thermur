@@ -58,6 +58,51 @@ class ColorModel(BaseModel, extra="forbid"):
     )
 
 
+class DisplayModel(BaseModel, extra="forbid"):
+    """
+    Configures display settings and toggles for visualization elements.
+    
+    These settings control the overall appearance and which elements
+    are shown in the 3D visualization window.
+    """
+    dark_mode: bool = Field(
+        default     = True,
+        description = "Whether to use a dark theme with black background."
+    )
+    show_agents: bool = Field(
+        default     = True,
+        description = "Whether to render the flock agents as 3D glyphs."
+    )
+    show_graph: bool = Field(
+        default     = True,
+        description = "Whether to visualize the flock's communication graph connectivity."
+    )
+    show_safety: bool = Field(
+        default     = True,
+        description = "Whether to visualize the thermal safety boundary (T_max isosurface)."
+    )
+    show_thermal: bool = Field(
+        default     = True,
+        description = "Whether to color agents based on their sensed temperature."
+    )
+    show_trails: bool = Field(
+        default     = True,
+        description = "Whether to show motion trails behind agents."
+    )
+    show_wind: bool = Field(
+        default     = True,
+        description = "Whether to visualize the wind field with vector glyphs."
+    )
+    window_size: tuple[PositiveInt, PositiveInt] = Field(
+        default     = (1024, 768),
+        description = "Size of the visualization window in pixels (width, height)."
+    )
+    window_title: str = Field(
+        default     = "Thermur Simulation",
+        description = "Title displayed in the visualization window frame."
+    )
+
+
 class GlyphModel(BaseModel, extra="forbid"):
     """
     Configures glyph rendering parameters for agent visualization.
@@ -130,66 +175,4 @@ class OpacityModel(BaseModel, extra="forbid"):
     wind: UnitFloat = Field(
         default     = 0.8,
         description = "Opacity of wind field arrows."
-    )
-
-
-class VisualizationModel(BaseModel, extra="forbid"):
-    """
-    Configures the 3D visualization settings for the simulation.
-    
-    Controls rendering of flock state, thermal conditions, wind fields, and other
-    simulation elements for debugging, assessment, and analysis purposes. Most
-    options can be toggled at runtime.
-    """
-    colors: ColorModel = Field(
-        default_factory = ColorModel,
-        description     = "Color configuration for visualization elements."
-    )
-    dark_mode: bool = Field(
-        default     = True,
-        description = "Whether to use a dark theme with black background."
-    )
-    glyphs: GlyphModel = Field(
-        default_factory = GlyphModel,
-        description     = "Glyph configuration for agent rendering."
-    )
-    grids: GridModel = Field(
-        default_factory = GridModel,
-        description     = "Grid configuration for field sampling."
-    )
-    opacity: OpacityModel = Field(
-        default_factory = OpacityModel,
-        description     = "Opacity configuration for visualization elements."
-    )
-    show_agents: bool = Field(
-        default     = True,
-        description = "Whether to render the flock agents as 3D glyphs."
-    )
-    show_graph: bool = Field(
-        default     = True,
-        description = "Whether to visualize the flock's communication graph connectivity."
-    )
-    show_safety: bool = Field(
-        default     = True,
-        description = "Whether to visualize the thermal safety boundary (T_max isosurface)."
-    )
-    show_thermal: bool = Field(
-        default     = True,
-        description = "Whether to color agents based on their sensed temperature."
-    )
-    show_trails: bool = Field(
-        default     = True,
-        description = "Whether to show motion trails behind agents."
-    )
-    show_wind: bool = Field(
-        default     = True,
-        description = "Whether to visualize the wind field with vector glyphs."
-    )
-    window_size: tuple[PositiveInt, PositiveInt] = Field(
-        default     = (1024, 768),
-        description = "Size of the visualization window in pixels (width, height)."
-    )
-    window_title: str = Field(
-        default     = "Thermur Simulation",
-        description = "Title displayed in the visualization window frame."
     )

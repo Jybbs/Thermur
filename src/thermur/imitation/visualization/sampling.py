@@ -10,14 +10,11 @@ The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
 from collections                            import namedtuple
-from config.imitation.schemas.visualization import VisualizationModel
+from config.imitation.schemas.visualization import GridModel
+from numpy                                  import array, ndarray
 from pyvista                                import Axes, ImageData, PolyData
-from torch                                  import Tensor
+from torch                                  import from_numpy, Tensor
 from typing                                 import Any
-
-import numpy   as np
-import pyvista as pv
-import torch
 
 
 Bounds = namedtuple('Bounds', ['min', 'max'])
@@ -36,7 +33,7 @@ class GridSampler:
     simulations while maintaining performance.
     """
     
-    def __init__(self, grid: VisualizationModel):
+    def __init__(self, grid: GridModel):
         """
         Initialize the grid sampler with configuration.
         
@@ -45,7 +42,7 @@ class GridSampler:
         """
         self.grid = grid
     
-    def compute_grid_bounds(self, position: Tensor) -> tuple[np.ndarray, np.ndarray]:
+    def compute_grid_bounds(self, position: Tensor) -> tuple[ndarray, ndarray]:
         """
         Compute the bounding box for a grid based on agent positions.
         
@@ -62,31 +59,30 @@ class GridSampler:
         positions  = position.detach().cpu().numpy()
         min_bounds = positions.min(axis=0) - self.grid.padding
         max_bounds = positions.max(axis=0) + self.grid.padding
+        
         return min_bounds, max_bounds
     
     def create_coordinate_axes(
         self,
         labels : tuple[str, str, str] = ("X", "Y", "Z"),
-        origin : tuple[float, float, float] = (0, 0, 0),
         scale  : float = 1.0
     ) -> Axes:
         """
         Create coordinate axes for orientation reference.
         
         Creates XYZ coordinate axes for the visualization to provide spatial 
-        reference and orientation. The axes are centered at the specified origin
-        and scaled according to the scale parameter. This helps orient viewers
-        in 3D space and provides a sense of scale to the visualization.
+        reference and orientation. The axes are scaled according to the scale 
+        parameter. This helps orient viewers in 3D space and provides a sense 
+        of scale to the visualization.
         
         Args:
             labels : Labels for each axis (X, Y, Z)
-            origin : Origin point for the axes in 3D space
             scale  : Size scaling factor for the axes
             
         Returns:
             PyVista axes object configured for the coordinate reference
         """
-        return pv.Axes(
+        return Axes(
             actor_scale = scale,
             show_actor  = True,
             x_label     = labels[0],
@@ -112,18 +108,17 @@ class GridSampler:
             
         Returns:
             PyVista UniformGrid with temperature scalar field data
-        """
-            
+        """ 
         min_bounds, max_bounds = self.compute_grid_bounds(position)
         
-        resolution = np.array(self.grid.temperature_resolution)
-        grid       = pv.ImageData(
+        resolution = array(self.grid.temperature_resolution)
+        grid       = ImageData(
             dimensions = self.grid.temperature_resolution,
             origin     = min_bounds,
             spacing    = (max_bounds - min_bounds) / (resolution - 1)
         )
         
-        grid_tensor         = torch.from_numpy(grid.points).float()
+        grid_tensor         = from_numpy(grid.points).float()
         temps, _            = environment.data_source.query_thermal(grid_tensor)
         grid["temperature"] = temps.cpu().numpy().ravel()
         
@@ -148,18 +143,17 @@ class GridSampler:
         Returns:
             PyVista PolyData with wind vector field data at each grid point
         """
-            
         min_bounds, max_bounds = self.compute_grid_bounds(position)
         resolution = self.grid.wind_resolution
         
-        spacing_grid = pv.ImageData(
+        spacing_grid = ImageData(
             dimensions = (resolution, resolution, resolution),
             origin     = min_bounds,
             spacing    = (max_bounds - min_bounds) / (resolution - 1)
         )
         
-        wind_grid                  = pv.PolyData(spacing_grid.points)
-        grid_tensor                = torch.from_numpy(wind_grid.points).float()
+        wind_grid                  = PolyData(spacing_grid.points)
+        grid_tensor                = from_numpy(wind_grid.points).float()
         wind_vectors               = simulation.data_source.query_wind(grid_tensor)
         wind_grid["wind_velocity"] = wind_vectors.cpu().numpy()
         

@@ -5,9 +5,9 @@ This module wraps TorchRL's trajectory collection and replay buffer components
 into a Lightning DataModule, managing the flow of expert demonstrations
 during imitation learning.
 """
-from config.imitation.schemas.learning        import LearningModel
+from config.imitation.schemas.learning        import ExperienceModel
 from pytorch_lightning                        import LightningDataModule
-from thermur.imitation.controller.flocking    import ExpertFlockingController
+from thermur.imitation.controller.flock       import FlockController
 from thermur.imitation.simulation.environment import SimulationEnv
 from torch.utils.data                         import DataLoader
 from torchrl.collectors                       import SyncDataCollector
@@ -16,7 +16,7 @@ from torchrl.data.replay_buffers              import LazyTensorStorage, SamplerW
 from typing                                   import Optional
 
 
-class ExperienceModule(LightningDataModule):
+class DataModule(LightningDataModule):
     """
     Lightning DataModule for managing expert demonstration data.
     
@@ -34,22 +34,22 @@ class ExperienceModule(LightningDataModule):
     
     def __init__(
         self,
-        env      : SimulationEnv,
-        learning : LearningModel,
-        policy   : ExpertFlockingController
+        controller : FlockController,
+        env        : SimulationEnv,
+        experience : ExperienceModel
     ):
         """
         Initialize the experience module.
         
         Args:
-            env      : The flocking environment for trajectory collection
-            learning : Learning configuration with batch sizes and buffer settings
-            policy   : The expert controller to collect demonstrations from
+            controller : The expert controller policy that generates actions
+            env        : The simulation environment for data collection
+            experience : Experience data configuration with batch sizes and buffer settings
         """
         super().__init__()
-        self.env      = env
-        self.learning = learning
-        self.policy   = policy
+        self.controller = controller
+        self.env        = env
+        self.experience = experience
         
         self.buffer    : Optional[TensorDictReplayBuffer] = None
         self.collector : Optional[SyncDataCollector]      = None
@@ -69,17 +69,17 @@ class ExperienceModule(LightningDataModule):
             
         self.collector = SyncDataCollector(
             create_env_fn       = lambda: self.env,
-            frames_per_batch    = self.learning.frames_per_batch,
-            max_frames_per_traj = self.learning.max_frames_per_traj,
-            policy              = self.policy,
-            total_frames        = self.learning.total_frames
+            frames_per_batch    = self.experience.frames_per_batch,
+            max_frames_per_traj = self.experience.max_frames_per_traj,
+            policy              = self.controller,
+            total_frames        = self.experience.total_frames
         )
         
         self.buffer = TensorDictReplayBuffer(
-            batch_size = self.learning.batch_size,
-            prefetch   = self.learning.prefetch,
+            batch_size = self.experience.batch_size,
+            prefetch   = self.experience.prefetch,
             sampler    = SamplerWithoutReplacement(),
-            storage    = LazyTensorStorage(self.learning.buffer_size)
+            storage    = LazyTensorStorage(self.experience.buffer_size)
         )
     
     def teardown(self, stage: str):
@@ -108,9 +108,9 @@ class ExperienceModule(LightningDataModule):
             raise RuntimeError("DataModule not properly set up. Call setup('fit')")
             
         return ExperienceDataLoader(
-            buffer    = self.buffer,
-            collector = self.collector,
-            learning  = self.learning
+            buffer     = self.buffer,
+            collector  = self.collector,
+            experience = self.experience
         )
     
 
@@ -126,21 +126,21 @@ class ExperienceDataLoader(DataLoader):
     
     def __init__(
         self,
-        buffer    : TensorDictReplayBuffer,
-        collector : SyncDataCollector,
-        learning  : LearningModel
+        buffer     : TensorDictReplayBuffer,
+        collector  : SyncDataCollector,
+        experience : ExperienceModel
     ):
         """
         Initialize the experience dataloader.
         
         Args:
-            buffer    : The replay buffer for experience storage
-            collector : The trajectory collector
-            learning  : Learning configuration
+            buffer     : The replay buffer for experience storage
+            collector  : The trajectory collector
+            experience : Experience data configuration
         """
-        self.buffer    = buffer
-        self.collector = collector
-        self.learning  = learning
+        self.buffer     = buffer
+        self.collector  = collector
+        self.experience = experience
     
     def __iter__(self):
         """
@@ -152,7 +152,7 @@ class ExperienceDataLoader(DataLoader):
         for data in self.collector:
             self.buffer.extend(data.cpu())
             
-            if len(self.buffer) >= self.learning.batch_size:
+            if len(self.buffer) >= self.experience.batch_size:
                 yield self.buffer.sample()
     
     def __len__(self) -> int:
@@ -161,4 +161,4 @@ class ExperienceDataLoader(DataLoader):
         
         Calculates based on total frames and frames per batch.
         """
-        return self.learning.total_frames // self.learning.frames_per_batch
+        return self.experience.total_frames // self.experience.frames_per_batch

@@ -11,7 +11,8 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from .builder                         import FlockBuilder
+from .generator                       import XMLGenerator
+from .loader                          import WRFDataSource
 from config.imitation.schemas.flock   import FlockModel
 from config.imitation.schemas.physics import PhysicsModel
 from operator                         import itemgetter
@@ -19,7 +20,6 @@ from tensordict                       import TensorDictBase
 from torch                            import bool, cdist, float32, inf, int64, nonzero, Tensor
 from torchrl.data                     import Bounded, Composite, Unbounded
 from torchrl.envs                     import EnvBase
-from typing                           import Any
 
 import math
 import mujoco as mj
@@ -42,22 +42,22 @@ class SimulationEnv(EnvBase):
 
     def __init__(
         self,
-        data_source : Any,
-        flock       : FlockModel,
-        physics     : PhysicsModel,
+        flock   : FlockModel,
+        loader  : WRFDataSource,
+        physics : PhysicsModel,
     ):
         """
         Initializes the Thermur environment with dependency injection.
 
         Args:
-            data_source : A callable that provides environmental data queries.
-            flock       : Flock parameters configuration.
-            physics     : Physics simulation configuration.
+            flock   : Flock parameters configuration.
+            loader  : WRF data source providing environmental data queries.
+            physics : Physics simulation configuration.
         """
         super().__init__(device="cpu")
         self.action_spec      = self._create_action_space()
-        self.data_source      = data_source
         self.flock            = flock
+        self.loader           = loader
         self.observation_spec = self._create_observation_space()
         self.physics_model    = self._initialize_physics(physics)
     
@@ -145,7 +145,7 @@ class SimulationEnv(EnvBase):
         
         return Composite(**bounded_tensors, **unbounded_tensors)
     
-    def _extract_agent_states(self, data) -> tuple:
+    def _extract_agent_states(self, data: mj.MjData) -> tuple:
         """
         Extracts the position and velocity states for all agents from MuJoCo data.
         
@@ -254,12 +254,12 @@ class SimulationEnv(EnvBase):
         Returns:
             A dictionary containing the MuJoCo model and data instances.
         """
-        builder = FlockBuilder(physics.assets_dir)
-        xml_string = builder.generate_xml(
+        generator  = XMLGenerator(physics.assets_dir)
+        xml_string = generator.generate_xml(
             shape           = self.flock.shape,
             simulation_step = physics.simulation_step
         )
-        return builder.load_model(xml_string)
+        return generator.load_model(xml_string)
 
     def _make_spec(self, td_params: TensorDictBase):
         """
@@ -271,7 +271,11 @@ class SimulationEnv(EnvBase):
         """
         pass
 
-    def _reset(self, tensordict=None, **kwargs) -> TensorDictBase:
+    def _reset(
+        self, 
+        tensordict = None, 
+        **kwargs
+    ) -> TensorDictBase:
         """
         Resets the environment to an initial state for a new episode.
 
@@ -310,8 +314,8 @@ class SimulationEnv(EnvBase):
         })
         
         positions             = initial_observation["position"]
-        temperature, gradient = self.data_source.query_thermal(positions)
-        wind                  = self.data_source.query_wind(positions)
+        temperature, gradient = self.loader.query_thermal(positions)
+        wind                  = self.loader.query_wind(positions)
         
         initial_observation.update(
             {
@@ -385,8 +389,8 @@ class SimulationEnv(EnvBase):
         mj.mj_step(model, data)
         
         position, velocity    = self._extract_agent_states(data)
-        temperature, gradient = self.data_source.query_thermal(position)
-        wind                  = self.data_source.query_wind(position)
+        temperature, gradient = self.loader.query_thermal(position)
+        wind                  = self.loader.query_wind(position)
         edge_index            = self._compute_edge_index(
             position = position,
             radius   = self.flock.communication_range

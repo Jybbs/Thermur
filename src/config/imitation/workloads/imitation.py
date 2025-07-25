@@ -5,28 +5,34 @@ This module defines the top-level configuration structure for training
 the GNN policy via behavioral cloning from expert demonstrations.
 """
 from ..factories.controller    import *
-from ..factories.flock         import *
 from ..factories.lightning     import *
+from ..factories.monitoring    import *
 from ..factories.simulation    import *
-from ..factories.source        import *
 from ..factories.visualization import *
-from ..factories.wandb         import *
 from hydra_zen                 import make_config, ZenStore
 
 imitation_cfg = make_config(
-    controller        = build_controller,
-    data_module       = build_data_module,
-    experience_buffer = build_experience_buffer,
-    flock             = build_flock,
-    learning          = build_learning,
-    physics           = build_physics,
-    policy            = build_policy,
-    simulation        = build_simulation,
-    source            = build_source,
-    trainer           = build_trainer,
-    visualizer        = build_visualizer,
-    wandb             = build_wandb,
-    defaults          = ["_self_"],
+    architecture = build_architecture,
+    checkpoint   = build_checkpoint,
+    controller   = build_controller,
+    datamodule   = build_datamodule,
+    events       = build_events,
+    experience   = build_experience,
+    flock        = build_flock,
+    hardware     = build_hardware,
+    loader       = build_loader,
+    logger       = build_logger,
+    metrics      = build_metrics,
+    monitoring   = build_monitoring,
+    optimizer    = build_optimizer,
+    physics      = build_physics,
+    policy       = build_policy,
+    safety       = build_safety,
+    simulation   = build_simulation,
+    trainer      = build_trainer,
+    visualizer   = build_visualizer,
+    wandb        = build_wandb,
+    defaults     = ["_self_"],
 )
     
 

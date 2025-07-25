@@ -32,6 +32,13 @@ class WandbModel(BaseModel, extra="forbid"):
             "authentication - keeps credentials out of config files."
         )
     )
+    log_model: Literal["all", "false"] | bool = Field(
+        default     = "all",
+        description = (
+            "Model checkpoint logging policy - 'all' saves every checkpoint, "
+            "'false' or False disables model logging to save bandwidth."
+        )
+    )
     mode: Literal["online", "offline", "disabled"] = Field(
         default     = "online",
         description = (

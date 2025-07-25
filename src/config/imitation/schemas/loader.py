@@ -1,16 +1,16 @@
 """
-Dataset configuration schema.
+Loader configuration schema.
 
-This module defines the configuration for simulation datasets, including both
-download parameters and data structure definitions for the NetCDF files.
+This module defines the configuration for WRF data loading, including
+NetCDF file parameters and processing options.
 """
 from pydantic import BaseModel, Field, FilePath, NonNegativeFloat
 from typing   import Optional
 
 
-class WRFModel(BaseModel, extra="forbid"):
+class LoaderModel(BaseModel, extra="forbid"):
     """
-    Configuration for WRF dataset management.
+    Configuration for WRF data loader.
     
     This model defines data structure parameters (variable names, processing 
     options) and caching configuration for the Moisseeva (2020) dataset.
