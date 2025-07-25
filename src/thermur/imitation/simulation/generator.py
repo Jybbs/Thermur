@@ -70,33 +70,7 @@ class XMLGenerator:
             self.flock_template
         )
     
-    def _calculate_initial_position(
-        self, 
-        agent_idx    : int, 
-        spatial_dims : int
-    ) -> str:
-        """
-        Calculate the initial position for an agent to prevent collisions.
-        
-        Distributes agents along the Y-axis with sufficient spacing to
-        prevent initial overlaps. The spacing is designed to work with
-        the default drone geometry size.
-        
-        Args:
-            agent_idx    : Zero-based index of the agent
-            spatial_dims : Number of spatial dimensions (2 or 3)
-            
-        Returns:
-            Position string formatted for MuJoCo XML (space-separated values)
-        """
-        offset = 0.3 * agent_idx
-        return f"0 {offset} 0" if spatial_dims == 3 else f"0 {offset}"
-    
-    def _generate_actuators(
-        self, 
-        agent_idx    : int, 
-        spatial_dims : int
-    ) -> list[str]:
+    def _generate_actuators(self, agent_idx: int, spatial_dims: int) -> list[str]:
         """
         Generate velocity actuator definitions for one agent's control.
         
@@ -142,12 +116,8 @@ class XMLGenerator:
         """
         replacements = [
             ("$AGENT_ID$", str(agent_idx)),
-            ("$POSITION$", self._calculate_initial_position(
-                agent_idx, spatial_dims
-            )),
-            ("<!-- JOINTS_XML -->", self._generate_joints(
-                agent_idx, spatial_dims
-            ))
+            ("$POSITION$", self._get_initial_position(agent_idx, spatial_dims)),
+            ("<!-- JOINTS_XML -->", self._generate_joints(agent_idx, spatial_dims))
         ]
         
         return reduce(
@@ -185,6 +155,24 @@ class XMLGenerator:
             for j, axis in enumerate(axes)
         )
     
+    def _get_initial_position(self, agent_idx: int, spatial_dims: int) -> str:
+        """
+        Calculate the initial position for an agent to prevent collisions.
+        
+        Distributes agents along the Y-axis with sufficient spacing to
+        prevent initial overlaps. The spacing is designed to work with
+        the default drone geometry size.
+        
+        Args:
+            agent_idx    : Zero-based index of the agent
+            spatial_dims : Number of spatial dimensions (2 or 3)
+            
+        Returns:
+            Position string formatted for MuJoCo XML (space-separated values)
+        """
+        offset = 0.3 * agent_idx
+        return f"0 {offset} 0" if spatial_dims == 3 else f"0 {offset}"
+    
     def _load_templates(self) -> tuple[str, str]:
         """
         Load XML templates from the assets directory.
@@ -198,7 +186,6 @@ class XMLGenerator:
             read(self.assets_dir / "flock.xml")
         )
 
-    
     def generate_xml(
         self,
         shape           : tuple[int, int],

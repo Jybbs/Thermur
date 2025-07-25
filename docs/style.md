@@ -16,35 +16,19 @@ This document outlines the coding style and conventions used in the Thermur proj
 ### Module Structure
 
 - Organize modules by functionality, with related code grouped together
-- Use `__init__.py` files to re-export key components for simplified imports
-- Define `__all__` lists in `__init__.py` files to control what gets imported with `from x import *`
+- Keep imports at the usage site rather than re-exporting through `__init__.py`
+- Avoid `__all__` declarations and `from x import *` patterns
 - Place high-level functionality in the root of the package, with utilities in submodules
 
 ```python
-# ✅ Good __init__.py with re-exports and __all__
+# ✅ Good module organization
 """
 Hydra-zen configuration factories for imitation learning components.
 
 This package provides builders that create Hydra-compatible configurations
 for instantiating components needed for imitation learning training.
 """
-from .collector   import build_collector
-from .environment import build_environment
-from .flocking    import build_flocking_controller
-from .loss        import build_loss
-from .optimizer   import build_optimizer
-from .policy      import build_policy
-from .replay      import build_replay_buffer
-
-__all__ = [
-    "build_collector",
-    "build_environment",
-    "build_flocking_controller",
-    "build_loss",
-    "build_optimizer",
-    "build_policy",
-    "build_replay_buffer",
-]
+# Keep this file minimal - users import directly from submodules
 ```
 
 ### Package Responsibility
@@ -164,23 +148,26 @@ The nominal control action is then 𝐮_nom^(i) = -∇ₓᵢU(𝐒ₜ)
 
 ### Import Structure
 
-- Group imports by category in this order:
-  1. Imports of entire packages
-  2. Module-specific imports within packages
-- For each group, imports should be alphabetized
-- Use `from` imports after direct imports
+- Alphabetize all imports, with `from` imports typically appearing before standalone `import` statements due to alphabetical ordering
 - Align import statements for readability with a single space between the longest import and its preceding `from` package
+- Group related imports visually with blank lines if it improves clarity
 - Avoid unnecessary imports; only import what you use
 
 ```python
 # ✅ Correct structure and alignment
+from collections                         import Counter, defaultdict
+from config.imitation.schemas.monitoring import MonitoringModel
+from pathlib                             import Path
+from pytorch_lightning                   import LightningModule
+from tensordict                          import TensorDict, TensorDictBase
+from time                                import perf_counter
+from torch                               import where
+from torchrl.envs                        import EnvBase
+from typing                              import Any, Callable, Optional
+
 import mujoco
 import torch
-
-from pathlib      import Path
-from tensordict   import TensorDictBase
-from torchrl.envs import EnvBase
-from typing       import Callable, Optional
+import wandb
 ```
 
 ### Variable Naming

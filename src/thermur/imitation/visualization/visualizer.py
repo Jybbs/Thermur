@@ -14,11 +14,9 @@ both light and dark themes.
 from .renderers                             import Renderer
 from .sampling                              import GridSampler
 from config.imitation.schemas.visualization import *
-from pyvista                                import Actor, Plotter
+from pyvista                                import Actor, global_theme, Plotter, themes
 from tensordict                             import TensorDictBase
 from typing                                 import Optional
-
-import pyvista as pv
 
 
 class Visualizer:
@@ -77,12 +75,12 @@ class Visualizer:
         self._grid_sampler = GridSampler(self.grids)
         self._renderer     = Renderer(self.colors, self.glyphs, self.opacity)
         
-        self._plotter       : Plotter      = None
-        self._agent_actors  : list[Actor]  = None
-        self._wind_actors   : list[Actor]  = None
-        self._safety_actors : list[Actor]  = None
-        self._graph_actors  : list[Actor]  = None
-        self._colormap      : str          = None
+        self._plotter       : Plotter     = None
+        self._agent_actors  : list[Actor] = None
+        self._wind_actors   : list[Actor] = None
+        self._safety_actors : list[Actor] = None
+        self._graph_actors  : list[Actor] = None
+        self._colormap      : str         = None
         
         self._initialize_plotter()
     
@@ -101,10 +99,10 @@ class Visualizer:
         """
         match self.display.dark_mode:
             case True:
-                theme = pv.themes.DarkTheme()
+                theme = themes.DarkTheme()
             case False:
-                theme = pv.themes.DocumentTheme()
-        pv.global_theme.load_theme(theme)
+                theme = themes.DocumentTheme()
+        global_theme.load_theme(theme)
         
         self._plotter = Plotter(
             lighting    = "three lights",

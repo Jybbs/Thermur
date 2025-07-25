@@ -155,57 +155,6 @@ class HardwareModel(BaseModel, extra="forbid"):
     )
 
 
-class MonitorModel(BaseModel, extra="forbid"):
-    """
-    Training monitoring and early stopping configuration.
-    
-    Controls logging, progress tracking, early stopping, and profiling
-    to monitor training progress and prevent overfitting.
-    """
-    enable_model_summary: bool = Field(
-        default     = True,
-        description = (
-            "Display comprehensive model architecture summary including parameter "
-            "counts and layer shapes before training begins."
-        )
-    )
-    enable_progress_bar: bool = Field(
-        default     = True,
-        description = "Show real-time progress bar with loss metrics during training."
-    )
-    log_every_n_steps: PositiveInt = Field(
-        default     = 50,
-        description = "Frequency of metric logging to track training progress."
-    )
-    logging_interval: Literal["step", "epoch"] = Field(
-        default     = "step",
-        description = "Interval for learning rate logging (step or epoch)."
-    )
-    mode: Literal["min", "max"] = Field(
-        default     = "min",
-        description = (
-            "Optimization direction for monitored metric (minimize or maximize)."
-        )
-    )
-    monitor: str = Field(
-        default     = "train/loss",
-        description = "Metric name to track for checkpointing and early stopping."
-    )
-    patience: PositiveInt = Field(
-        default     = 10,
-        description = (
-            "Number of epochs without validation improvement before early stopping "
-            "triggers to prevent overfitting and save compute."
-        )
-    )
-    profiler: Optional[Literal["simple", "advanced"]] = Field(
-        default     = None,
-        description = (
-            "Lightning profiler for performance analysis. 'simple' tracks basic "
-            "metrics, 'advanced' provides detailed profiling with Chrome tracing."
-        )
-    )
-
 
 class OptimizerModel(BaseModel, extra="forbid"):
     """
@@ -218,6 +167,13 @@ class OptimizerModel(BaseModel, extra="forbid"):
     
     where π_θ is the learned GNN policy and π* is the expert controller.
     """
+    early_stopping_patience: PositiveInt = Field(
+        default     = 10,
+        description = (
+            "Number of epochs without validation improvement before early stopping "
+            "triggers to prevent overfitting and save compute."
+        )
+    )
     gradient_clip_val: PositiveFloat = Field(
         default     = 1.0,
         description = (
@@ -241,6 +197,23 @@ class OptimizerModel(BaseModel, extra="forbid"):
         description = (
             "Number of epochs with no improvement before reducing learning rate. "
             "Works with ReduceLROnPlateau scheduler."
+        )
+    )
+    lr_scheduler_verbose: bool = Field(
+        default     = True,
+        description = (
+            "Whether ReduceLROnPlateau scheduler prints messages when learning "
+            "rate is reduced."
+        )
+    )
+    metric: str = Field(
+        default     = "train/loss",
+        description = "Metric name to track for checkpointing and early stopping."
+    )
+    mode: Literal["min", "max"] = Field(
+        default     = "min",
+        description = (
+            "Optimization direction for monitored metric (minimize or maximize)."
         )
     )
     seed: Optional[NonNegativeInt] = Field(
