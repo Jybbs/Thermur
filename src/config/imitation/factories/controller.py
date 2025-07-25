@@ -13,6 +13,27 @@ from thermur.imitation.controller.flock  import FlockController
 from thermur.imitation.controller.safety import SafetyFilter
 
 
+build_controller = builds(
+    FlockController,
+    control                 = zen(ControllerModel),
+    flock                   = SI("${flock}"),
+    safety                  = SI("${safety}"),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.flocking",
+        "cls_name" : "FlockingControllerBuild"
+    }
+)
+"""
+Builder for expert demonstration controller.
+
+Orchestrates multi-agent flocking behavior using Reynolds' three rules (cohesion,
+separation, alignment) augmented with thermal-aware navigation. Generates optimal
+trajectories by computing potential field gradients that balance social forces
+with environmental hazard avoidance. The controller's output serves as ground
+truth for imitation learning, teaching the neural policy safe collective behavior.
+"""
+
 build_flock = builds(
     FlockModel,
     populate_full_signature = True,
@@ -22,30 +43,29 @@ build_flock = builds(
     }
 )
 """
-Builder for flock configuration.
+Builder for multi-agent flock configuration.
 
-Creates a Pydantic-validated flock configuration that defines agent properties
-including count, spatial dimensions, and temperature constraints.
+Defines the collective properties of the drone swarm including population size,
+communication topology parameters, spatial operating dimensions, thermal tolerance
+limits, and heat dissipation dynamics. The communication range determines dynamic
+graph connectivity, while thermal parameters establish safety boundaries for the
+Control Barrier Function that prevents agent overheating in wildfire scenarios.
 """
 
-build_controller = builds(
-    FlockController,
-    control                 = zen(ControllerModel),
-    flock                   = SI("${flock}"),
-    safety_filter           = builds(
-        SafetyFilter,
-        flock  = SI("${flock}"),
-        safety = zen(SafetyModel),
-    ),
+build_safety = builds(
+    SafetyModel,
     populate_full_signature = True,
     zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.flocking",
-        "cls_name" : "FlockingControllerBuild"
+        "module"   : "src.configs.imitation.factories.controller",
+        "cls_name" : "SafetyBuild"
     }
 )
 """
-Builder for the expert flocking controller.
+Builder for Control Barrier Function safety configuration.
 
-Implements Reynolds rules augmented with thermal avoidance to generate
-expert demonstrations for imitation learning in wildfire scenarios.
+Specifies parameters for the real-time safety filter that modifies control actions
+to guarantee thermal safety. Includes CBF relaxation terms (α), activation thresholds,
+quadratic program solver settings (tolerance, iterations), and fallback strategies
+for numerical edge cases. Critical for maintaining hard safety guarantees during
+both expert demonstration collection and learned policy deployment.
 """
