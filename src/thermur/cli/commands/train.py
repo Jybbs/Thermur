@@ -136,7 +136,7 @@ class TrainCommand:
         
         return [
             *preset_override,
-            f"source.data_path={data_path}",
+            f"+simulation.loader.wrf.data_path={data_path}",
             *(base or []),
             *additional
         ]
@@ -605,8 +605,8 @@ class TrainCommand:
         self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
 
-        if cfg.learning.seed is not None:
-            imports["seed_everything"](cfg.learning.seed)
+        if cfg.optimizer.seed is not None:
+            imports["seed_everything"](cfg.optimizer.seed)
         self.ui.console.print()
 
         components = self._instantiate_components(
@@ -620,7 +620,7 @@ class TrainCommand:
             msg_type = "success"
         )
         
-        if cfg.learning.compile_model:
+        if cfg.hardware.compile_model:
             self.ui.print_message(
                 message  = "Compiling model with PyTorch 2.0 for optimization...",
                 msg_type = "info"
@@ -648,7 +648,7 @@ class TrainCommand:
         # Lightning's trainer.fit is called directly - no wrapper needed
         components["trainer"].fit(
             model      = components["policy"],
-            datamodule = components["data_module"],
+            datamodule = components["datamodule"],
             ckpt_path  = str(resume) if resume else None
         )
 

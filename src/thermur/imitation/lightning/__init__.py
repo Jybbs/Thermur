@@ -11,6 +11,8 @@ The module includes:
   batch sampling during training
 - GNNPolicy: A LightningModule implementing the graph neural network that
   learns decentralized control policies from expert demonstrations
+- Monitoring callbacks: Lightning callbacks for metrics collection and event
+  logging that integrate seamlessly with the training loop
 - Training utilities: High-level functions that coordinate Lightning's Trainer
   with the policy and data modules
 

@@ -46,6 +46,13 @@ class PhysicsModel(BaseModel, extra="forbid"):
         default     = 20.0,
         description = "Default temperature T_default when interpolation fails."
     )
+    gravity: PositiveFloat = Field(
+        default     = 9.81,
+        description = (
+            "Gravitational acceleration g in m/s². Used for physics calculations "
+            "and energy consumption estimation."
+        )
+    )
     simulation_step: PositiveFloat = Field(
         default     = 0.05,
         description = "Physics simulation timestep Δt in seconds."

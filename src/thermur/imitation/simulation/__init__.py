@@ -1,15 +1,13 @@
 """
-MuJoCo-based simulation environment for drone flocks.
+Simulation environment for thermally-aware drone flocks.
 
-This package provides the physics simulation for training and evaluation. The
-environment models N quadrotor agents navigating through thermal fields while
-maintaining flocking behavior. Key features include:
+This package provides the core simulation components for training and evaluating
+multi-agent flocking policies in wildfire scenarios. The main components include:
 
-- Dynamic graph topology based on communication range
-- Realistic thermal field generation with configurable hazards
-- Vectorized physics integration for efficient parallel simulation
-- TorchRL-compatible interface for seamless integration with learning algorithms
+- SimulationEnv: TorchRL-compatible environment managing agent physics and observations
+- WRFDataSource: Loader for environmental data (wind, temperature fields)
+- XMLGenerator: Dynamic MuJoCo model generation for N-agent systems
 
-The edge index computation uses spatial proximity to determine the communication
-graph G_t at each timestep, enabling decentralized coordination.
+The simulation integrates rigid-body physics (MuJoCo) with dynamic environmental
+hazards, providing a realistic testbed for thermal-aware navigation policies.
 """

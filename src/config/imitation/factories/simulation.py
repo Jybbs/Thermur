@@ -8,12 +8,12 @@ parameters from the PhysicsModel Pydantic model.
 The environment follows dependency injection principles, so all dependencies
 are provided as arguments rather than imported directly.
 """
+from config.imitation.schemas.loader          import LoaderModel
 from config.imitation.schemas.physics         import PhysicsModel
-from hydra_zen                                import builds
+from hydra_zen                                import builds, zen
 from omegaconf                                import SI
 from thermur.imitation.simulation.environment import SimulationEnv
-from thermur.imitation.sources.loaders        import WRFDataSource
-
+from thermur.imitation.simulation.loader      import WRFDataSource
 
 build_physics = builds(
     PhysicsModel,
@@ -26,28 +26,33 @@ build_physics = builds(
 """
 Builder for physics configuration.
 
-Defines physical simulation parameters and thermal constraints for
-the environment.
+Defines the physical constraints and dynamics of the simulation environment,
+including gravitational acceleration, spatial boundaries, time discretization,
+and temperature thresholds used throughout the simulation and metrics.
 """
 
-build_data_source = builds(
-        WRFDataSource,
-        data_path               = SI("${source.data_path}"),
-        physics                 = SI("${physics}"),
-        wrf_data                = SI("${source}"),
-        populate_full_signature = True,
-    )
+build_loader = builds(
+    WRFDataSource,
+    physics                 = SI("${physics}"),
+    wrf                     = zen(LoaderModel),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.simulation",
+        "cls_name" : "LoaderBuild"
+    }
+)
 """
-Builder for the environmental data source.
+Builder for WRF-Fire data loader.
 
-Loads and interpolates time-varying temperature and wind field data
-from external wildfire simulations (e.g., WRF-Fire outputs).
+Configures the data pipeline that ingests NetCDF files from wildfire simulations,
+extracting temperature fields, wind vectors, and fire heat flux. Supports domain
+randomization and noise injection for robust policy training.
 """
 
 build_simulation = builds(
     SimulationEnv,
-    data_source             = build_data_source,
     flock                   = SI("${flock}"),
+    loader                  = SI("${loader}"),
     physics                 = SI("${physics}"),
     populate_full_signature = True,
     zen_dataclass           = {
@@ -56,8 +61,10 @@ build_simulation = builds(
     }
 )
 """
-Builder for the main simulation environment.
+Builder for the MuJoCo simulation environment.
 
-Creates a TorchRL-compatible environment managing multi-agent flock dynamics
-within MuJoCo physics, integrating real-time environmental hazards.
+Orchestrates the complete simulation pipeline: initializes the flock formation,
+steps the physics engine, queries environmental hazards from WRF data, computes
+agent observations including temperature gradients, and maintains the dynamic
+communication graph based on proximity.
 """

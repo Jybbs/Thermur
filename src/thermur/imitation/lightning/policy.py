@@ -10,19 +10,18 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
-from config.imitation.schemas.learning import LearningModel
-from pytorch_lightning                 import LightningModule
-from tensordict                        import TensorDict
-from torch                             import Tensor
-from torch.nn                          import GRUCell, Linear, Module, ModuleList
-from torch.nn.functional               import mse_loss
-from torch.optim                       import AdamW
-from torch.optim.lr_scheduler          import ReduceLROnPlateau
-from torch_geometric.data              import Data
-from torch_geometric.nn                import GCNConv
-from torchmetrics                      import MeanAbsoluteError, MeanSquaredError
-from torchmetrics                      import MetricCollection, R2Score
-from typing                            import Type
+from config.imitation.schemas.learning    import ArchitectureModel, OptimizerModel
+from pytorch_lightning                    import LightningModule
+from tensordict                           import TensorDict
+from thermur.imitation.monitoring.metrics import MetricsCollector
+from torch                                import Tensor
+from torch.nn                             import GRUCell, Linear, Module, ModuleList
+from torch.nn.functional                  import mse_loss
+from torch.optim                          import AdamW
+from torch.optim.lr_scheduler             import ReduceLROnPlateau
+from torch_geometric.data                 import Data
+from torch_geometric.nn                   import GCNConv
+from typing                               import Type
 
 import torch
 
@@ -47,36 +46,39 @@ class GNNPolicy(LightningModule):
     3.  Decoder: A final MLP that maps the agent's processed hidden state
         back to a tangible control action (a 3D velocity vector).
     """
-    def __init__(self, learning: LearningModel):
+    def __init__(
+        self, 
+        architecture : ArchitectureModel,
+        metrics      : MetricsCollector,
+        optimizer    : OptimizerModel
+    ):
         """
         Initializes the GNN policy network.
 
         Args:
-            learning: A learning configuration instance containing architectural 
-                      hyperparameters like hidden dimension, number of layers, 
-                      activation function, and I/O dimensions.
+            architecture : Configuration for GNN architecture including hidden 
+                           dimensions, number of layers, activation function, and 
+                           I/O dimensions.
+            metrics      : Centralized metrics collection and management system.
+            optimizer    : Configuration for optimization including learning rate,
+                           weight decay, and gradient clipping.
         """
         super().__init__()
-        self.learning    = learning
-        self.save_hyperparameters()
-        self.activation  = getattr(torch.nn, learning.activation)()
-        self.convs       = self._build_module_list(GCNConv, learning)
-        self.grus        = self._build_module_list(GRUCell, learning)
-        self.decoder     = Linear(learning.hidden_dim, learning.output_dim)
-        self.encoder     = Linear(learning.input_dim,  learning.hidden_dim)
-        
-        self.train_metrics = MetricCollection({
-            "mse"          : MeanSquaredError(),
-            "rmse"         : MeanSquaredError(squared=False),
-            "mae"          : MeanAbsoluteError(),
-            "r2"           : R2Score(num_outputs=learning.output_dim),
-        })
-        self.val_metrics = self.train_metrics.clone(prefix="val_")
+        self.architecture = architecture
+        self.metrics      = metrics
+        self.optimizer    = optimizer
+
+        self.save_hyperparameters(ignore=["metrics"])
+        self.activation = getattr(torch.nn, architecture.activation)()
+        self.convs      = self._build_module_list(architecture, GCNConv)
+        self.grus       = self._build_module_list(architecture, GRUCell)
+        self.decoder    = Linear(architecture.hidden_dim, architecture.output_dim)
+        self.encoder    = Linear(architecture.input_dim,  architecture.hidden_dim)
     
     def _build_module_list(
         self, 
-        module_type : Type[Module], 
-        learning    : LearningModel
+        architecture : ArchitectureModel,
+        module_type  : Type[Module]
     ) -> ModuleList:
         """
         Creates a stack of neural network modules of the specified type.
@@ -93,9 +95,9 @@ class GNNPolicy(LightningModule):
         Returns:
             ModuleList containing num_layers of the specified module type
         """
-        dim = learning.hidden_dim
+        dim = architecture.hidden_dim
         return ModuleList([
-            module_type(dim, dim) for _ in range(learning.num_layers)
+            module_type(dim, dim) for _ in range(architecture.num_layers)
         ])
     
     def _compute_loss_and_log(
@@ -121,31 +123,19 @@ class GNNPolicy(LightningModule):
         targets     = batch["action"]
         loss        = mse_loss(predictions, targets)
         
-        self.log(
-            name     = f"{phase}/loss",
-            on_epoch = True,
-            on_step  = phase == "train",
-            prog_bar = True,
-            value    = loss
+        self.metrics.update_imitation_metrics(
+            phase       = phase,
+            predictions = predictions,
+            targets     = targets
         )
         
-        metrics = self.train_metrics if phase == "train" else self.val_metrics
-        metrics.update(predictions, targets)
-        self.log_dict(
-            dictionary = metrics,
-            on_epoch   = True,
-            on_step    = phase == "train",
-            prog_bar   = False
+        self.metrics.log_all_metrics(
+            module      = self,
+            phase       = phase,
+            loss        = loss,
+            predictions = predictions,
+            targets     = targets
         )
-        
-        dim_names = ["x", "y", "z"][:self.learning.output_dim]
-        for i, dim in enumerate(dim_names):
-            dim_error = mse_loss(predictions[..., i], targets[..., i])
-            self.log(
-                name     = f"{phase}/velocity_{dim}_mse",
-                on_epoch = True,
-                value    = dim_error
-            )
         
         return loss
 
@@ -162,20 +152,20 @@ class GNNPolicy(LightningModule):
         """
         optimizer = AdamW(
             params       = self.parameters(),
-            lr           = self.learning.learning_rate,
-            weight_decay = self.learning.weight_decay
+            lr           = self.optimizer.learning_rate,
+            weight_decay = self.optimizer.weight_decay
         )
         
         return {
             "optimizer"    : optimizer,
             "lr_scheduler" : {
-                "monitor"   : self.learning.monitor.replace("train", "val"),
+                "monitor"   : self.optimizer.metric.replace("train", "val"),
                 "scheduler" : ReduceLROnPlateau(
-                    factor    = self.learning.lr_factor,
-                    mode      = self.learning.mode,
+                    factor    = self.optimizer.lr_factor,
+                    mode      = self.optimizer.mode,
                     optimizer = optimizer,
-                    patience  = self.learning.lr_patience,
-                    verbose   = True
+                    patience  = self.optimizer.lr_patience,
+                    verbose   = self.optimizer.lr_scheduler_verbose
                 )
             }
         }
@@ -214,8 +204,8 @@ class GNNPolicy(LightningModule):
         """
         Executes a single training step using behavioral cloning loss.
         
-        Note: In PyTorch Lightning, the model defines its own training logic.
-        This is Lightning's standard pattern - the model knows how to train itself,
+        In PyTorch Lightning, the model defines its own training logic. This is 
+        Lightning's standard pattern, in that the model knows how to train itself, 
         eliminating the need for external training loops.
         
         Args:

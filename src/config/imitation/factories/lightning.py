@@ -4,22 +4,95 @@ Hydra-zen builders for PyTorch Lightning components.
 This module provides configuration builders for Lightning-specific training
 components including the GNN policy network, data module, trainer, and callbacks.
 """
-from config.imitation.schemas.learning      import LearningModel
+from config.imitation.schemas.learning      import *
+from config.imitation.schemas.wandb         import WandbModel
 from hydra_zen                              import builds, zen
 from omegaconf                              import SI
 from pytorch_lightning                      import Trainer
 from pytorch_lightning.callbacks            import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers              import WandbLogger
-from thermur.imitation.lightning.experience import ExperienceModule
+from thermur.imitation.lightning.callback   import MonitoringCallback
+from thermur.imitation.lightning.experience import DataModule
 from thermur.imitation.lightning.policy     import GNNPolicy
 
 
+build_checkpoint = builds(
+    CheckpointModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "CheckpointBuild"
+    }
+)
+"""
+Builder for model persistence configuration.
+
+Manages checkpoint saving strategy including frequency (every N steps/epochs),
+file naming patterns, directory structure, and retention policies. Ensures training
+can resume after interruptions and facilitates model selection by preserving best
+and latest checkpoints. Integrates with W&B for checkpoint versioning and backup.
+"""
+
+build_experience = builds(
+    ExperienceModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "ExperienceBuild"
+    }
+)
+"""
+Builder for experience replay configuration.
+
+Controls expert demonstration storage and sampling including buffer capacity,
+batch dimensions, trajectory segmentation, and prefetch optimization. Balances
+memory usage against data diversity by managing how many frames to collect before
+training begins and how to sample mini-batches that preserve temporal correlations
+while ensuring stable gradient estimates during behavioral cloning.
+"""
+
+build_hardware = builds(
+    HardwareModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "HardwareBuild"
+    }
+)
+"""
+Builder for computational resource allocation.
+
+Optimizes training for available hardware by configuring device placement (CPU/GPU),
+mixed precision training (fp16/bf16 for memory efficiency), distributed strategies
+(DDP, FSDP), and model compilation options. Automatically detects CUDA availability
+and adjusts batch sizes and gradient accumulation to maximize throughput while
+preventing out-of-memory errors on resource-constrained systems.
+"""
+
+build_optimizer = builds(
+    OptimizerModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "OptimizerBuild"
+    }
+)
+"""
+Builder for optimization strategy configuration.
+
+Defines the gradient descent algorithm (AdamW) hyperparameters including learning
+rate, weight decay regularization, gradient clipping thresholds, and adaptive
+scheduling policies (ReduceLROnPlateau). Includes early stopping patience to
+prevent overfitting and learning rate warmup for stable convergence. Critical
+for balancing exploration vs exploitation during behavioral cloning.
+"""
+
 build_checkpoint_callback = builds(
     ModelCheckpoint,
-    dirpath                 = SI("${learning.dirpath}"),
-    every_n_train_steps     = SI("${learning.every_n_train_steps}"),
-    filename                = SI("${learning.filename}"),
-    save_last               = SI("${learning.save_last}"),
+    dirpath                 = SI("${checkpoint.dirpath}"),
+    every_n_train_steps     = SI("${checkpoint.every_n_train_steps}"),
+    filename                = SI("${checkpoint.filename}"),
+    save_last               = SI("${checkpoint.save_last}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -27,51 +100,20 @@ build_checkpoint_callback = builds(
     }
 )
 """
-Builder for model checkpointing callback.
+Builder for Lightning checkpoint callback.
 
-Saves model checkpoints at regular intervals during training, enabling
-recovery from failures and model selection.
+Automates model persistence by saving checkpoints at specified intervals (steps
+or epochs) with configurable naming schemes. Monitors validation metrics to
+preserve best-performing models while maintaining recent checkpoints for recovery.
+Integrates with PyTorch Lightning's fault-tolerant training to enable seamless
+resumption after hardware failures or preemption.
 """
 
-build_early_stopping_callback = builds(
-    EarlyStopping,
-    mode                    = SI("${learning.mode}"),
-    monitor                 = SI("${learning.monitor}"),
-    patience                = SI("${learning.patience}"),
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.lightning",
-        "cls_name" : "EarlyStoppingCallbackBuild"
-    }
-)
-"""
-Builder for early stopping callback.
-
-Monitors training loss and stops training if no improvement is seen,
-preventing overfitting and saving compute resources.
-"""
-
-build_lr_monitor_callback = builds(
-    LearningRateMonitor,
-    logging_interval        = SI("${learning.logging_interval}"),
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.lightning",
-        "cls_name" : "LRMonitorCallbackBuild"
-    }
-)
-"""
-Builder for learning rate monitor callback.
-
-Tracks learning rate changes during training, particularly useful when
-using schedulers like ReduceLROnPlateau.
-"""
-
-build_data_module = builds(
-    ExperienceModule,
+build_datamodule = builds(
+    DataModule,
+    controller              = SI("${controller}"),
     env                     = SI("${simulation}"),
-    learning                = zen(LearningModel),
-    policy                  = SI("${controller}"),
+    experience              = zen(ExperienceModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -79,30 +121,100 @@ build_data_module = builds(
     }
 )
 """
-Builder for experience data module.
+Builder for behavioral cloning data pipeline.
 
-Manages expert demonstration collection and replay buffer for imitation
-learning, wrapping TorchRL components in Lightning's DataModule interface.
+Bridges TorchRL's replay buffer with Lightning's data loading interface to stream
+expert demonstrations during training. Manages parallel trajectory collection from
+the physics-based controller, efficient batch sampling that preserves temporal
+structure, and memory-mapped storage for large demonstration datasets. Handles
+dynamic graph padding for variable agent counts across episodes.
 """
 
-build_learning = builds(
-    LearningModel,
+build_early_stopping_callback = builds(
+    EarlyStopping,
+    mode                    = SI("${optimizer.mode}"),
+    monitor                 = SI("${optimizer.metric}"),
+    patience                = SI("${optimizer.early_stopping_patience}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
-        "cls_name" : "LearningBuild"
+        "cls_name" : "EarlyStoppingCallbackBuild"
     }
 )
 """
-Builder for learning configuration.
+Builder for training termination callback.
 
-Creates a Pydantic-validated learning configuration that manages training
-hyperparameters, batch sizes, and optimization settings.
+Implements patience-based early stopping by monitoring validation metrics (loss,
+accuracy) for sustained improvement. Prevents overfitting by halting training
+when the model stops learning, saving computational resources and avoiding
+degeneracy. Configurable patience window and improvement thresholds balance
+between premature stopping and wasteful overtraining.
+"""
+
+build_logger = builds(
+    WandbLogger,
+    log_model               = SI("${wandb.log_model}"),
+    mode                    = SI("${wandb.mode}"),
+    project                 = SI("${wandb.project}"),
+    save_dir                = SI("${checkpoint.dirpath}"),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "LoggerBuild"
+    }
+)
+"""
+Builder for Weights & Biases experiment logger.
+
+Establishes connection to W&B cloud service for comprehensive experiment tracking
+including hyperparameter logging, real-time metric visualization, model artifact
+versioning, and collaborative dashboards. Configures project organization, run
+naming conventions, and offline fallback modes for air-gapped environments.
+Essential for experiment reproducibility and team collaboration.
+"""
+
+build_lr_monitor_callback = builds(
+    LearningRateMonitor,
+    logging_interval        = SI("${monitoring.logging_interval}"),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "LRMonitorCallbackBuild"
+    }
+)
+"""
+Builder for learning rate tracking callback.
+
+Monitors and logs learning rate evolution throughout training, capturing scheduler
+dynamics (plateaus, reductions, warmup). Critical for debugging convergence issues
+and understanding when the model transitions between exploration and exploitation
+phases. Integrates with tensorboard and W&B for visualization of LR schedules
+alongside loss curves.
+"""
+
+build_architecture = builds(
+    ArchitectureModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "ArchitectureBuild"
+    }
+)
+"""
+Builder for Graph Neural Network architecture specification.
+
+Configures the permutation-equivariant GNN that processes dynamic agent graphs
+to predict control actions. Defines layer depth, hidden dimensionality, activation
+functions (ReLU, SiLU, GELU), and message-passing mechanics. The architecture must
+handle variable-sized graphs as agents enter/exit communication range, making
+equivariance critical for generalization across different flock configurations.
 """
 
 build_policy = builds(
     GNNPolicy,
-    learning                = zen(LearningModel),
+    architecture            = SI("${architecture}"),
+    metrics                 = SI("${metrics}"),
+    optimizer               = zen(OptimizerModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -110,35 +222,71 @@ build_policy = builds(
     }
 )
 """
-Builder for the Graph Neural Network policy.
+Builder for imitation learning policy network.
 
-Creates a permutation-equivariant GNN that processes the flock graph
-structure to output nominal control actions u_nom for each agent.
+Constructs the core Graph Neural Network that maps agent observations (positions,
+velocities, temperatures) to control actions via message-passing on the dynamic
+communication graph. Implements behavioral cloning loss functions, metric tracking,
+and optimization schedules. The GNN's equivariance ensures consistent behavior
+regardless of agent ordering, critical for sim-to-real transfer.
+"""
+
+build_monitoring_callback = builds(
+    MonitoringCallback,
+    events                  = SI("${events}"),
+    metrics                 = SI("${metrics}"),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "MonitoringCallbackBuild"
+    }
+)
+"""
+Builder for unified monitoring callback.
+
+Consolidates metrics collection and event logging into a single Lightning callback
+that orchestrates all monitoring activities. Tracks training/validation losses,
+physical metrics (energy, control smoothness), safety events (CBF activations,
+thermal violations), and visual quality indicators. Handles metric aggregation
+across distributed training and manages tensorboard/W&B logging interfaces.
+"""
+
+build_wandb = builds(
+    WandbModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.config.imitation.factories.lightning",
+        "cls_name" : "WandbBuild"
+    }
+)
+"""
+Builder for Weights & Biases integration settings.
+
+Configures the W&B service connection including project naming, run grouping,
+API authentication, and cloud synchronization modes. Controls artifact logging
+policies for model checkpoints, visualization outputs, and configuration files.
+Supports offline mode for secure environments and manages bandwidth usage through
+selective metric/media logging. Foundation for experiment tracking ecosystem.
 """
 
 build_trainer = builds(
     Trainer,
-    accelerator             = SI("${learning.accelerator}"),
+    accelerator             = SI("${hardware.accelerator}"),
     callbacks               = [
         build_checkpoint_callback, 
         build_early_stopping_callback,
-        build_lr_monitor_callback
+        build_lr_monitor_callback,
+        build_monitoring_callback
     ],
-    devices                 = SI("${learning.devices}"),
-    enable_model_summary    = SI("${learning.enable_model_summary}"),
-    enable_progress_bar     = SI("${learning.enable_progress_bar}"),
-    gradient_clip_val       = SI("${learning.gradient_clip_val}"),
-    log_every_n_steps       = SI("${learning.log_every_n_steps}"),
-    logger                  = builds(
-        WandbLogger,
-        log_model   = "all",
-        mode        = SI("${wandb.mode}"),
-        project     = SI("${wandb.project}"),
-        save_dir    = SI("${learning.dirpath}")
-    ),
-    precision               = SI("${learning.precision}"),
-    profiler                = SI("${learning.profiler}"),
-    strategy                = SI("${learning.strategy}"),
+    devices                 = SI("${hardware.devices}"),
+    enable_model_summary    = SI("${monitoring.enable_model_summary}"),
+    enable_progress_bar     = SI("${monitoring.enable_progress_bar}"),
+    gradient_clip_val       = SI("${optimizer.gradient_clip_val}"),
+    log_every_n_steps       = SI("${monitoring.log_every_n_steps}"),
+    logger                  = SI("${logger}"),
+    precision               = SI("${hardware.precision}"),
+    profiler                = SI("${monitoring.profiler}"),
+    strategy                = SI("${hardware.strategy}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -146,9 +294,12 @@ build_trainer = builds(
     }
 )
 """
-Builder for PyTorch Lightning Trainer.
+Builder for PyTorch Lightning training orchestrator.
 
-Configures the Lightning Trainer with automatic mixed precision, gradient
-clipping, logging, and checkpointing. Handles all training loop boilerplate
-including device placement, backward passes, and metric tracking.
+Centralizes all training loop configuration including hardware allocation, mixed
+precision settings, gradient accumulation strategies, distributed training backends,
+and callback scheduling. Manages the complex interplay between data loading, forward
+passes, loss computation, backpropagation, optimizer steps, and metric logging.
+Provides fault tolerance, automatic batching, and profiling hooks while abstracting
+away PyTorch boilerplate for cleaner scientific code.
 """
