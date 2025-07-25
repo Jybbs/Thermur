@@ -26,8 +26,12 @@ build_visualizer = builds(
     }
 )
 """
-Builder for the flock visualization system.
+Builder for real-time 3D visualization system.
 
-Provides real-time rendering of agent positions, temperature fields,
-and safety boundaries for monitoring training progress and behavior.
+Creates an interactive PyVista-based renderer that displays the multi-agent flock
+navigating through dynamic temperature fields. Visualizes agent positions as glyphs,
+temperature distributions as volumetric heatmaps, safety boundaries as isosurfaces,
+and communication topology as edge connections. Supports customizable color mappings,
+transparency settings, camera controls, and video export for training diagnostics
+and paper figures. Essential for debugging emergent behaviors and safety violations.
 """

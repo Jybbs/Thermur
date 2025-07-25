@@ -136,7 +136,7 @@ class TrainCommand:
         
         return [
             *preset_override,
-            f"simulation.loader.wrf.data_path={data_path}",
+            f"+simulation.loader.wrf.data_path={data_path}",
             *(base or []),
             *additional
         ]

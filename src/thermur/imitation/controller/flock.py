@@ -7,7 +7,7 @@ an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
 from .safety                             import SafetyFilter
-from config.imitation.schemas.controller import ControllerModel
+from config.imitation.schemas.controller import ControllerModel, SafetyModel
 from config.imitation.schemas.flock      import FlockModel
 from tensordict                          import TensorDict
 from torch                               import Tensor
@@ -33,23 +33,23 @@ class FlockController:
 
     def __init__(
         self,
-        control       : ControllerModel,
-        flock         : FlockModel,
-        safety_filter : SafetyFilter
+        control : ControllerModel,
+        flock   : FlockModel,
+        safety  : SafetyModel
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            control       : Contains both Reynolds weights and numerical parameters
-                            for stable force calculations.
-            flock         : Flock configuration containing agent properties.
-            safety_filter : Safety filter that applies a CBF to enforce 
-                            thermal safety constraints.
+            control : Contains both Reynolds weights and numerical parameters
+                      for stable force calculations.
+            flock   : Flock configuration containing agent properties.
+            safety  : Safety configuration for CBF parameters.
         """
-        self.control       = control
-        self.flock         = flock
-        self.safety_filter = safety_filter
+        self.control         = control
+        self.flock           = flock
+        self.max_temperature = flock.max_temperature
+        self.safety_filter   = SafetyFilter(flock, safety)
         self._reset_shared_state()
 
     def _compute_alignment(self, velocity: Tensor) -> Tensor:
@@ -209,7 +209,7 @@ class FlockController:
         """
         temperature = self._ensure_1d_temperature(temperature)
         t_margin    = torch.clamp(
-            input = self.flock.max_temperature - temperature,
+            input = self.max_temperature - temperature,
             min   = self.control.epsilon
         )
 
@@ -378,7 +378,7 @@ class FlockController:
         # Scale by normalized temperature
         norm_temp = torch.divide(
             input = self._ensure_1d_temperature(temperature),
-            other = self.flock.max_temperature
+            other = self.max_temperature
         )
         return vertical * norm_temp.unsqueeze(1)
     

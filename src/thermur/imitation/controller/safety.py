@@ -8,6 +8,7 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 """
 from __future__                          import annotations
 from config.imitation.schemas.controller import SafetyModel
+from config.imitation.schemas.flock      import FlockModel
 from qpth.qp                             import QPFunction
 from tensordict                          import TensorDict
 from torch                               import Tensor
@@ -30,10 +31,8 @@ class SafetyFilter:
 
     def __init__(
         self, 
-        agent_count          : int,
-        max_temperature      : float,
-        safety               : SafetyModel,
-        spatial_dims         : int,
+        flock  : FlockModel,
+        safety : SafetyModel,
     ):
         """
         Initializes the safety filter with thermal barrier configuration.
@@ -42,17 +41,15 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            agent_count          : Number of agents in the flock
-            max_temperature      : Maximum safe temperature T_max for agents
-            safety               : QP solver configuration model
-            spatial_dims         : Spatial dimensions (2D or 3D)
+            flock  : Flock configuration model containing agent properties
+            safety : QP solver configuration model
         """
         self.activation_count     = 0
         self.activation_tolerance = safety.activation_tolerance
-        self.agent_count          = agent_count
-        self.max_temperature      = max_temperature
+        self.agent_count          = flock.agent_count
+        self.max_temperature      = flock.max_temperature
         self.safety               = safety
-        self.spatial_dims         = spatial_dims
+        self.spatial_dims         = flock.spatial_dims
         self.total_queries        = 0
         self.Q                    = torch.eye(self.spatial_dims, dtype=torch.float32)
 
