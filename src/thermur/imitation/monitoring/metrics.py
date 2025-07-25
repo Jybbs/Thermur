@@ -49,7 +49,11 @@ class CohesionMetric(Metric):
                 else torch.tensor(0.0)
         )
     
-    def update(self, edge_index: Tensor, num_agents: int):
+    def update(
+        self,
+        edge_index : Tensor,
+        num_agents : int
+    ):
         """
         Computes the second smallest eigenvalue of the graph Laplacian matrix:
         L = D - A, where D is the degree matrix and A is the adjacency matrix.
@@ -88,7 +92,7 @@ class CohesionMetric(Metric):
 
 class ColorAccuracyMetric(Metric):
     """
-    Measures the Mean Absolute Error between sensed and displayed temperatures.
+    Measures the Mean Absolute Error (mae_color) between sensed and displayed temperatures.
     
     This metric quantifies how accurately the swarm can display temperature
     information through their RGB LEDs, using a heat colormap mapping where
@@ -183,7 +187,7 @@ class ColorAccuracyMetric(Metric):
 
 class EnergyConsumptionMetric(Metric):
     """
-    Estimates power consumption based on control inputs.
+    Estimates average power consumption based on control inputs.
     
     Uses a simplified quadrotor power model:
     P ∝ ||u_safe - g||^k
@@ -194,7 +198,11 @@ class EnergyConsumptionMetric(Metric):
         - k : power exponent (typically 1.5 for quadrotors)
     """
     
-    def __init__(self, gravity: float, monitoring: MonitoringModel):
+    def __init__(
+        self,
+        gravity    : float,
+        monitoring : MonitoringModel
+    ):
         """
         Initialize the energy metric.
         
@@ -239,14 +247,18 @@ class EnergyConsumptionMetric(Metric):
 
 class LegibilitySSIMMetric(Metric):
     """
-    Computes Structural Similarity Index (SSIM) between swarm and wind fields.
+    Computes Structural Similarity Index Measure (ssim) between swarm and wind fields.
     
     This metric measures how well the swarm's collective motion pattern matches
     the underlying wind field, quantifying the visual "legibility" of the display.
     Uses kernel density estimation to render velocity fields onto 2D grids.
     """
     
-    def __init__(self, bounds_max: list[float], monitoring: MonitoringModel):
+    def __init__(
+        self,
+        bounds_max : list[float],
+        monitoring : MonitoringModel
+    ):
         """
         Initialize the legibility metric.
         
@@ -338,7 +350,8 @@ class LegibilitySSIMMetric(Metric):
         """
         Computes a simplified SSIM using luminance and contrast terms:
         
-        SSIM = (2*μ_x*μ_y + C1)(2*σ_xy + C2) / ((μ_x² + μ_y² + C1)(σ_x² + σ_y² + C2))
+        SSIM = (2*μ_x*μ_y + C1)(2*σ_xy + C2) / 
+               ((μ_x² + μ_y² + C1)(σ_x² + σ_y² + C2))
         
         where:
             - μ_x, μ_y : mean values of swarm and wind fields
@@ -417,11 +430,11 @@ class MetricsCollector:
         Creates TorchMetrics instances for all five core performance metrics.
         """
         self.train_evaluation = MetricCollection({
-            "avg_power_consumption"  : EnergyConsumptionMetric(self.gravity, self.monitoring),
-            "cohesion_connectivity"  : CohesionMetric(),
-            "color_accuracy_mae"     : ColorAccuracyMetric(self.monitoring),
-            "legibility_ssim"        : LegibilitySSIMMetric(self.bounds_max, self.monitoring),
-            "thermal_violation_rate" : ThermalSafetyMetric(self.max_temperature),
+            "avg_power"  : EnergyConsumptionMetric(self.gravity, self.monitoring),
+            "λ₂"         : CohesionMetric(),
+            "mae_color"  : ColorAccuracyMetric(self.monitoring),
+            "ssim"       : LegibilitySSIMMetric(self.bounds_max, self.monitoring),
+            "tvr"        : ThermalSafetyMetric(self.max_temperature),
         })
         self.val_evaluation = self.train_evaluation.clone(prefix="val_")
     
@@ -436,7 +449,7 @@ class MetricsCollector:
             "mae"  : MeanAbsoluteError(),
             "mse"  : MeanSquaredError(),
             "r2"   : R2Score(num_outputs=output_dim),
-            "rmse" : MeanSquaredError(squared=False),
+            "rmse" : MeanSquaredError(False),
         })
         self.val_imitation = self.train_imitation.clone(prefix="val_")
     
@@ -483,43 +496,53 @@ class MetricsCollector:
         is_train = phase == "train"
         
         def log_metric(name, value, on_step=None, prog_bar=False):
+            """
+            Helper to log metrics with consistent settings.
+            
+            Args:
+                name     : Metric name with phase prefix (e.g., "train/loss")
+                value    : Scalar metric value to log
+                on_step  : Whether to log per step (defaults to is_train)
+                prog_bar : Whether to show in progress bar
+            """
             module.log(
                 name     = name,
                 value    = value,
                 on_epoch = True,
-                on_step  = on_step if on_step is not None else is_train,
+                on_step  = is_train if on_step is None else on_step,
                 prog_bar = prog_bar
             )
         
         if loss is not None:
-            log_metric(f"{phase}/loss", loss, prog_bar=True)
+            log_metric(
+                name     = f"{phase}/loss",
+                prog_bar = True,
+                value    = loss
+            )
         
         for metrics, on_step in [
-            (self.train_imitation if is_train else self.val_imitation, is_train),
+            (self.train_imitation  if is_train else self.val_imitation,  is_train),
             (self.train_evaluation if is_train else self.val_evaluation, False)
         ]:
             module.log_dict(
                 dictionary = metrics,
                 on_epoch   = True,
-                on_step    = on_step,
-                prog_bar   = False
+                on_step    = on_step
             )
         
         if predictions is not None and targets is not None:
-            [
+            for i, dim in enumerate(["x", "y", "z"][:self.output_dim]):
                 log_metric(
-                    f"{phase}/velocity_{dim}_mse",
-                    (predictions[..., i] - targets[..., i]).pow(2).mean(),
-                    on_step=False
+                    name    = f"{phase}/velocity_{dim}_mse",
+                    on_step = False,
+                    value   = (predictions[..., i] - targets[..., i]).pow(2).mean()
                 )
-                for i, dim in enumerate(["x", "y", "z"][:self.output_dim])
-            ]
         
         if is_train:
             log_metric(
-                "train/cbf_activation_rate",
-                self.get_cbf_activation_rate(),
-                on_step=False
+                name    = "train/cbf_activation_rate",
+                on_step = False,
+                value   = self.get_cbf_activation_rate()
             )
     
     def log_cbf_activation(self, batch: TensorDict):
@@ -541,7 +564,11 @@ class MetricsCollector:
         self.cbf_activation_count = 0
         self.total_steps          = 0
     
-    def update_evaluation_metrics(self, batch: TensorDict, phase: str):
+    def update_evaluation_metrics(
+        self,
+        batch : TensorDict,
+        phase : str
+    ):
         """
         Extract relevant fields from batch and update each metric.
         
@@ -556,12 +583,12 @@ class MetricsCollector:
         )
         
         if "temperature" in batch:
-            metrics["thermal_violation_rate"].update(temperature=batch["temperature"])
-            metrics["color_accuracy_mae"].update(batch["temperature"])
+            metrics["tvr"].update(temperature=batch["temperature"])
+            metrics["mae_color"].update(batch["temperature"])
         
         if all(k in batch for k in ["position", "velocity", "wind"]):
             device = batch["position"].device
-            metrics["legibility_ssim"].update(
+            metrics["ssim"].update(
                 bounds_max = torch.tensor(self.bounds_max, device=device),
                 bounds_min = torch.zeros(3, device=device),
                 positions  = batch["position"],
@@ -570,13 +597,13 @@ class MetricsCollector:
             )
         
         if "edge_index" in batch:
-            metrics["cohesion_connectivity"].update(
+            metrics["λ₂"].update(
                 edge_index=batch["edge_index"], 
                 num_agents=batch.get("position", torch.empty(0)).shape[0]
             )
         
         if u_control := batch.get("u_safe") or batch.get("action"):
-            metrics["avg_power_consumption"].update(u_safe=u_control)
+            metrics["avg_power"].update(u_safe=u_control)
     
     def update_imitation_metrics(
         self,
@@ -592,13 +619,15 @@ class MetricsCollector:
             predictions : Model predictions [batch_size, output_dim]
             targets     : Expert actions [batch_size, output_dim]
         """
-        imitation_metrics = self.train_imitation if phase == "train" else self.val_imitation
+        imitation_metrics = (
+            self.train_imitation if phase == "train" else self.val_imitation
+        )
         imitation_metrics.update(predictions, targets)
 
 
 class ThermalSafetyMetric(Metric):
     """
-    Tracks the rate of thermal safety violations P(T_agent > T_max).
+    Tracks the thermal violation rate (TVR): P(T_agent > T_max).
     
     This metric monitors how often agents exceed the maximum safe temperature
     threshold, which is critical for mission success and agent survival.

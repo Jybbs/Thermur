@@ -145,7 +145,7 @@ class SimulationEnv(EnvBase):
         
         return Composite(**bounded_tensors, **unbounded_tensors)
     
-    def _extract_agent_states(self, data) -> tuple:
+    def _extract_agent_states(self, data: mj.MjData) -> tuple:
         """
         Extracts the position and velocity states for all agents from MuJoCo data.
         
@@ -271,7 +271,11 @@ class SimulationEnv(EnvBase):
         """
         pass
 
-    def _reset(self, tensordict=None, **kwargs) -> TensorDictBase:
+    def _reset(
+        self, 
+        tensordict = None, 
+        **kwargs
+    ) -> TensorDictBase:
         """
         Resets the environment to an initial state for a new episode.
 

@@ -7,7 +7,7 @@ The models configure both aggregate metrics and individual agent behavior
 monitoring throughout training and evaluation.
 """
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
-from typing   import Any
+from typing   import Any, Literal, Optional
 
 
 class MonitoringModel(BaseModel, extra="forbid"):
@@ -31,6 +31,17 @@ class MonitoringModel(BaseModel, extra="forbid"):
             "Minimum temperature for color mapping in Kelvin. Values below this "
             "are clamped to minimum intensity (blue in heat colormap)."
         )
+    )
+    enable_model_summary: bool = Field(
+        default     = True,
+        description = (
+            "Display comprehensive model architecture summary including parameter "
+            "counts and layer shapes before training begins."
+        )
+    )
+    enable_progress_bar: bool = Field(
+        default     = True,
+        description = "Show real-time progress bar with loss metrics during training."
     )
     event_sample_every: PositiveInt = Field(
         default     = 100,
@@ -89,6 +100,14 @@ class MonitoringModel(BaseModel, extra="forbid"):
             "fields. Controls smoothness of the rendered field."
         )
     )
+    log_every_n_steps: PositiveInt = Field(
+        default     = 50,
+        description = "Frequency of metric logging to track training progress."
+    )
+    logging_interval: Literal["step", "epoch"] = Field(
+        default     = "step",
+        description = "Interval for learning rate logging (step or epoch)."
+    )
     power_exponent: PositiveFloat = Field(
         default     = 1.5,
         description = (
@@ -101,5 +120,12 @@ class MonitoringModel(BaseModel, extra="forbid"):
         description = (
             "Prefix for event rate metrics in the logging namespace. Helps organize "
             "metrics in tools like Weights & Biases."
+        )
+    )
+    profiler: Optional[Literal["simple", "advanced"]] = Field(
+        default     = None,
+        description = (
+            "Lightning profiler for performance analysis. 'simple' tracks basic "
+            "metrics, 'advanced' provides detailed profiling with Chrome tracing."
         )
     )

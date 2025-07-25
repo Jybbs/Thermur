@@ -11,6 +11,7 @@ from omegaconf                              import SI
 from pytorch_lightning                      import Trainer
 from pytorch_lightning.callbacks            import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers              import WandbLogger
+from thermur.imitation.lightning.callback   import MonitoringCallback
 from thermur.imitation.lightning.experience import DataModule
 from thermur.imitation.lightning.policy     import GNNPolicy
 
@@ -71,20 +72,6 @@ Builder for optimizer configuration.
 Sets learning rate, weight decay, gradient clipping, and scheduling parameters.
 """
 
-build_monitor = builds(
-    MonitorModel,
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.lightning",
-        "cls_name" : "MonitorBuild"
-    }
-)
-"""
-Builder for monitoring configuration.
-
-Controls logging, progress tracking, early stopping, and profiling settings.
-"""
-
 build_checkpoint_callback = builds(
     ModelCheckpoint,
     dirpath                 = SI("${checkpoint.dirpath}"),
@@ -124,9 +111,9 @@ learning, wrapping TorchRL components in Lightning's DataModule interface.
 
 build_early_stopping_callback = builds(
     EarlyStopping,
-    mode                    = SI("${monitor.mode}"),
-    monitor                 = SI("${monitor.monitor}"),
-    patience                = SI("${monitor.patience}"),
+    mode                    = SI("${optimizer.mode}"),
+    monitor                 = SI("${optimizer.metric}"),
+    patience                = SI("${optimizer.early_stopping_patience}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -142,7 +129,7 @@ preventing overfitting and saving compute resources.
 
 build_lr_monitor_callback = builds(
     LearningRateMonitor,
-    logging_interval        = SI("${monitor.logging_interval}"),
+    logging_interval        = SI("${monitoring.logging_interval}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -159,6 +146,7 @@ using schedulers like ReduceLROnPlateau.
 build_policy = builds(
     GNNPolicy,
     architecture            = zen(ArchitectureModel),
+    metrics                 = SI("${metrics}"),
     optimizer               = zen(OptimizerModel),
     populate_full_signature = True,
     zen_dataclass           = {
@@ -171,6 +159,26 @@ Builder for the Graph Neural Network policy.
 
 Creates a permutation-equivariant GNN that processes the flock graph
 structure to output nominal control actions u_nom for each agent.
+"""
+
+build_monitoring_callback = builds(
+    MonitoringCallback,
+    events                  = SI("${events}"),
+    metrics                 = SI("${metrics}"),
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.lightning",
+        "cls_name" : "MonitoringCallbackBuild"
+    }
+)
+"""
+Builder for unified monitoring callback.
+
+Creates a single Lightning callback that handles both metrics collection
+and event logging, reducing code duplication and simplifying integration.
+
+Creates a Lightning callback that integrates MetricsCollector into the training
+loop, updating evaluation metrics and handling epoch boundaries.
 """
 
 build_wandb = builds(
@@ -195,13 +203,14 @@ build_trainer = builds(
     callbacks               = [
         build_checkpoint_callback, 
         build_early_stopping_callback,
-        build_lr_monitor_callback
+        build_lr_monitor_callback,
+        SI("${monitoring_callback}")
     ],
     devices                 = SI("${hardware.devices}"),
-    enable_model_summary    = SI("${monitor.enable_model_summary}"),
-    enable_progress_bar     = SI("${monitor.enable_progress_bar}"),
+    enable_model_summary    = SI("${monitoring.enable_model_summary}"),
+    enable_progress_bar     = SI("${monitoring.enable_progress_bar}"),
     gradient_clip_val       = SI("${optimizer.gradient_clip_val}"),
-    log_every_n_steps       = SI("${monitor.log_every_n_steps}"),
+    log_every_n_steps       = SI("${monitoring.log_every_n_steps}"),
     logger                  = builds(
         WandbLogger,
         log_model   = "all",
@@ -210,7 +219,7 @@ build_trainer = builds(
         save_dir    = SI("${checkpoint.dirpath}")
     ),
     precision               = SI("${hardware.precision}"),
-    profiler                = SI("${monitor.profiler}"),
+    profiler                = SI("${monitoring.profiler}"),
     strategy                = SI("${hardware.strategy}"),
     populate_full_signature = True,
     zen_dataclass           = {

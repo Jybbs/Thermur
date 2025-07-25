@@ -12,11 +12,8 @@ from pytorch_lightning                   import LightningModule
 from tensordict                          import TensorDict
 from time                                import perf_counter
 from torch                               import where
-from typing                              import Any
 
 import wandb
-
-
 
 
 class EventLogger:
@@ -51,7 +48,7 @@ class EventLogger:
         
         self.event_buffer = defaultdict(list)
         self.event_counts = Counter()
-        self.event_data   = defaultdict(list)  # Stores event data by type
+        self.event_data   = defaultdict(list) 
         self.start_time   = perf_counter()
         self.total_steps  = 0
     
@@ -71,17 +68,16 @@ class EventLogger:
             return
             
         event_config = self.event_types[event_type]
-        columns = ["step"] + event_config["columns"]
+        columns      = ["step"] + event_config["columns"]
         
-        # Build table data from stored events
-        data = []
-        for event_dict in self.event_data[event_type]:
-            row = [event_dict["step"]]
-            for col in event_config["columns"]:
-                row.append(event_dict.get(col))
-            data.append(row)
+        data = [
+            [event_dict["step"]] + [
+                event_dict.get(col) for col in event_config["columns"]
+            ]
+            for event_dict in self.event_data[event_type]
+        ]
         
-        table = wandb.Table(columns=columns, data=data)
+        table = wandb.Table(columns, data)
         module.logger.experiment.log({
             f"{self.prefix}{event_type}_details": table
         })
@@ -106,13 +102,11 @@ class EventLogger:
         
         module.log(
             name     = self.prefix + self.event_types[event_type]["rate_metric"],
+            value    = self.event_counts[event_type] / max(self.total_steps, 1),
             on_epoch = True,
-            on_step  = True,
-            prog_bar = False,
-            value    = self.event_counts[event_type] / max(self.total_steps, 1)
+            on_step  = True
         )
         
-        # Store event data with step information
         event_dict = {"step": module.global_step}
         event_dict.update(event_data)
         self.event_data[event_type].append(event_dict)
@@ -124,7 +118,11 @@ class EventLogger:
         ):
             self._flush_events_to_table(event_type, module)
     
-    def analyze_batch(self, batch: TensorDict, module: LightningModule) -> dict:
+    def analyze_batch(
+        self, 
+        batch  : TensorDict, 
+        module : LightningModule
+    ) -> dict[str, int]:
         """
         Scan batch for all event types and log them.
         
@@ -144,9 +142,7 @@ class EventLogger:
         temps    = batch["temperature"].flatten()
         
         if (violation_ids := where(temps > self.max_temperature)[0]).numel():
-            for i in range(violation_ids.shape[0]):
-
-                idx = violation_ids[i].item()
+            for idx in violation_ids.tolist():
                 self._log_event(
                     agent_id    = idx,
                     event_type  = "thermal_violation",
@@ -155,13 +151,12 @@ class EventLogger:
                     position    = batch["position"][idx].cpu().tolist(),
                     temperature = temps[idx].item()
                 )
-
             analysis["thermal_violations"] = violation_ids.numel()
         
         if (near_miss_ids := where(
             (temps > self.cbf_threshold) & (temps <= self.max_temperature)
         )[0]).numel():
-            [
+            for idx in near_miss_ids.tolist():
                 self._log_event(
                     agent_id    = idx,
                     event_type  = "near_miss",
@@ -170,15 +165,13 @@ class EventLogger:
                     position    = batch["position"][idx].cpu().tolist(),
                     temperature = temps[idx].item()
                 )
-                for idx in near_miss_ids.tolist()
-            ]
             analysis["near_misses"] = near_miss_ids.numel()
         
         required = {"cbf_active", "u_nominal", "u_safe"}
         if (required <= batch.keys() and
             (active_ids := where(batch["cbf_active"])[0]).numel()):
             
-            for i, agent_id in enumerate(active_ids.tolist()):
+            for agent_id in active_ids.tolist():
                 control_diff = (
                     batch["u_safe"][agent_id] - batch["u_nominal"][agent_id]
                 ).norm().item()
