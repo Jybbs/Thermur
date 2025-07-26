@@ -7,8 +7,7 @@ an 'optimal' trajectory dataset. A neural network policy can then be trained
 via imitation learning to replicate this expert behavior.
 """
 from .safety                             import SafetyFilter
-from config.imitation.schemas.controller import ControllerModel, SafetyModel
-from config.imitation.schemas.flock      import FlockModel
+from config.imitation.schemas.controller import ControllerModel, FlockModel, SafetyModel
 from tensordict                          import TensorDict
 from torch                               import Tensor
 

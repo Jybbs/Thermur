@@ -5,15 +5,15 @@ This module wraps TorchRL's trajectory collection and replay buffer components
 into a Lightning DataModule, managing the flow of expert demonstrations
 during imitation learning.
 """
-from config.imitation.schemas.learning        import ExperienceModel
-from pytorch_lightning                        import LightningDataModule
-from thermur.imitation.controller.flock       import FlockController
-from thermur.imitation.simulation.environment import SimulationEnv
-from torch.utils.data                         import DataLoader
-from torchrl.collectors                       import SyncDataCollector
-from torchrl.data                             import TensorDictReplayBuffer
-from torchrl.data.replay_buffers              import LazyTensorStorage, SamplerWithoutReplacement
-from typing                                   import Optional
+from config.imitation.schemas.lightning import ExperienceModel
+from pytorch_lightning                  import LightningDataModule
+from thermur.imitation.controller       import FlockController
+from thermur.imitation.simulation       import SimulationEnv
+from torch.utils.data                   import DataLoader
+from torchrl.collectors                 import SyncDataCollector
+from torchrl.data                       import TensorDictReplayBuffer
+from torchrl.data.replay_buffers        import LazyTensorStorage, SamplerWithoutReplacement
+from typing                             import Optional
 
 
 class DataModule(LightningDataModule):

@@ -27,29 +27,50 @@ class LoaderModel(BaseModel, extra="forbid"):
     )
     domain_randomization: bool = Field(
         default     = True,
-        description = "Enable domain randomization for robustness."
+        description = (
+            "Enable stochastic environmental variations including wind perturbations "
+            "and temperature noise to improve policy generalization."
+        )
     )
     fire_heat_variable: str = Field(
         default     = "GRNHFX",
-        description = "NetCDF variable name for ground heat flux from fire."
+        description = (
+            "NetCDF variable identifier for ground-level heat flux from wildfire "
+            "combustion, measured in W/m² in WRF-Fire outputs."
+        )
     )
     temperature_noise_std: NonNegativeFloat = Field(
         default     = 0.5,
-        description = "Standard deviation of Gaussian noise added to temperature."
+        description = (
+            "Temperature noise standard deviation σ_T in Kelvin for domain "
+            "randomization, simulating measurement uncertainty and turbulence."
+        )
     )
     u_wind_variable: str = Field(
         default     = "U",
-        description = "NetCDF variable name for x-wind component."
+        description = (
+            "NetCDF variable identifier for eastward wind component U on staggered "
+            "Arakawa-C grid, requiring interpolation to cell centers."
+        )
     )
     v_wind_variable: str = Field(
         default     = "V",
-        description = "NetCDF variable name for y-wind component."
+        description = (
+            "NetCDF variable identifier for northward wind component V on staggered "
+            "Arakawa-C grid, requiring interpolation to cell centers."
+        )
     )
     w_wind_variable: str = Field(
         default     = "W", 
-        description = "NetCDF variable name for z-wind component."
+        description = (
+            "NetCDF variable identifier for vertical wind component W, critical "
+            "for modeling thermal updrafts and fire-induced convection."
+        )
     )
     wind_noise_std: NonNegativeFloat = Field(
         default     = 0.1,
-        description = "Standard deviation of noise added to wind vectors."
+        description = (
+            "Wind noise standard deviation σ_w in m/s for stochastic perturbations, "
+            "modeling atmospheric turbulence and measurement uncertainty."
+        )
     )

@@ -8,12 +8,10 @@ parameters from the PhysicsModel Pydantic model.
 The environment follows dependency injection principles, so all dependencies
 are provided as arguments rather than imported directly.
 """
-from config.imitation.schemas.loader          import LoaderModel
-from config.imitation.schemas.physics         import PhysicsModel
-from hydra_zen                                import builds, zen
-from omegaconf                                import SI
-from thermur.imitation.simulation.environment import SimulationEnv
-from thermur.imitation.simulation.loader      import WRFDataSource
+from config.imitation.schemas.simulation import *
+from hydra_zen                           import builds, zen
+from omegaconf                           import SI
+from thermur.imitation.simulation        import SimulationEnv, WRFDataSource
 
 build_physics = builds(
     PhysicsModel,

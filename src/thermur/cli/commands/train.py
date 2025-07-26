@@ -130,7 +130,7 @@ class TrainCommand:
         """
         preset_override = (
             [f"+preset={preset}"] 
-            if preset and preset in self.cfg.presets.presets 
+            if preset and preset in self.cfg.prompts.presets 
             else []
         )
         
@@ -203,7 +203,7 @@ class TrainCommand:
         meta_info = []
         if preset_overrides:
             preset = preset_overrides[0].split("=")[1]
-            emoji  = self.cfg.presets.presets.get(preset, {}).get('emoji', '')
+            emoji  = self.cfg.prompts.presets.get(preset, {}).get('emoji', '')
             meta_info.append(f"Preset: {emoji} {preset}")
         
         meta_info.append(f"Overrides: {len(overrides)}")
@@ -224,7 +224,7 @@ class TrainCommand:
             preset : Selected preset name.
         """
         if preset:
-            preset_emoji = self.cfg.presets.presets.get(preset, {}).get(
+            preset_emoji = self.cfg.prompts.presets.get(preset, {}).get(
                 'emoji', 
                 preset
             )
@@ -565,7 +565,7 @@ class TrainCommand:
             Exit: If the user declines to proceed with training.
         """
         system_info = self.system.get_system_info()
-        preset_info = self.cfg.presets.presets.get(preset, {}) if preset else {}
+        preset_info = self.cfg.prompts.presets.get(preset, {}) if preset else {}
         
         summary_data = {
             "gpu_available" : system_info.get("cuda", False),

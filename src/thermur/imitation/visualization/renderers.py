@@ -12,7 +12,7 @@ vectorized operations where possible and PyVista's optimized rendering
 pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
-from config.imitation.schemas.visualization import ColorModel, GlyphModel, GridModel, OpacityModel
+from config.imitation.schemas.visualization import *
 from contextlib                             import suppress
 from pyvista                                import Actor, ImageData, Plotter, PolyData
 from torch                                  import Tensor
