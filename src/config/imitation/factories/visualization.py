@@ -5,10 +5,10 @@ This module defines the configuration builder for the visualization component,
 creating a Hydra-compatible config that instantiates the Visualizer with
 parameters validated by the VisualizationModel Pydantic model.
 """
-from config.imitation.schemas.visualization     import ColorModel, DisplayModel, GlyphModel, GridModel, OpacityModel
-from hydra_zen                                  import builds, zen
-from omegaconf                                  import SI
-from thermur.imitation.visualization.visualizer import Visualizer
+from config.imitation.schemas.visualization import *
+from hydra_zen                              import builds, zen
+from omegaconf                              import SI
+from thermur.imitation.visualization        import Visualizer
 
 
 build_visualizer = builds(

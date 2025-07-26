@@ -6,7 +6,7 @@ for the training pipeline, including imitation learning losses, core evaluation
 metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
-from config.imitation.schemas.monitoring import MonitoringModel
+from config.imitation.schemas.monitoring import MetricsModel
 from pytorch_lightning                   import LightningModule
 from tensordict                          import TensorDict
 from torch                               import Tensor
@@ -99,7 +99,7 @@ class ColorAccuracyMetric(Metric):
     blue represents cold and red represents hot temperatures.
     """
     
-    def __init__(self, monitoring: MonitoringModel):
+    def __init__(self, metrics: MetricsModel):
         """
         Initialize the color accuracy metric.
         
@@ -107,8 +107,8 @@ class ColorAccuracyMetric(Metric):
             monitoring : Monitoring configuration model
         """
         super().__init__()
-        self.temp_max = monitoring.color_temp_max
-        self.temp_min = monitoring.color_temp_min
+        self.temp_max = metrics.color_temp_max
+        self.temp_min = metrics.color_temp_min
         self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("error_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
@@ -201,7 +201,7 @@ class EnergyConsumptionMetric(Metric):
     def __init__(
         self,
         gravity    : float,
-        monitoring : MonitoringModel
+        metrics    : MetricsModel
     ):
         """
         Initialize the energy metric.
@@ -212,7 +212,7 @@ class EnergyConsumptionMetric(Metric):
         """
         super().__init__()
         self.gravity        = gravity
-        self.power_exponent = monitoring.power_exponent
+        self.power_exponent = metrics.power_exponent
         self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("power_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
@@ -257,7 +257,7 @@ class LegibilitySSIMMetric(Metric):
     def __init__(
         self,
         bounds_max : list[float],
-        monitoring : MonitoringModel
+        metrics    : MetricsModel
     ):
         """
         Initialize the legibility metric.
@@ -268,9 +268,9 @@ class LegibilitySSIMMetric(Metric):
         """
         super().__init__()
         self.bounds_max  = bounds_max
-        self.grid_size   = monitoring.legibility_grid_size
-        self.kernel_size = monitoring.legibility_kernel_size
-        self.sigma       = monitoring.legibility_sigma
+        self.grid_size   = metrics.legibility_grid_size
+        self.kernel_size = metrics.legibility_kernel_size
+        self.sigma       = metrics.legibility_sigma
         
         self.ssim_metric = StructuralSimilarityIndexMeasure(
             data_range=1.0,
@@ -402,7 +402,7 @@ class MetricsCollector:
         bounds_max      : list[float],
         gravity         : float,
         max_temperature : float,
-        monitoring      : MonitoringModel,
+        metrics         : MetricsModel,
         output_dim      : int
     ):
         """

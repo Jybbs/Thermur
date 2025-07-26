@@ -1,8 +1,8 @@
 """
-Learning system models.
+Policy network and training configuration.
 
-This module defines the decomposed configuration models for imitation learning,
-including training hyperparameters, data handling, and network architecture.
+This module defines configuration models for the GNN policy architecture,
+optimization settings, hardware configuration, and model checkpointing.
 """
 from pathlib  import Path
 from pydantic import BaseModel, Field, NonNegativeFloat
@@ -24,29 +24,38 @@ class ArchitectureModel(BaseModel, extra="forbid"):
     """
     activation: Literal["ReLU", "SiLU", "Tanh"] = Field(
         default     = "SiLU",
-        description = "Nonlinearity σ(·) used in GNN message passing MLPs."
+        description = (
+            "Activation function σ(·) applied after linear transformations in message "
+            "passing MLPs, with SiLU providing smooth gradients for stable training."
+        )
     )
     hidden_dim: PositiveInt = Field(
         default     = 64,
-        description = "Dimensionality d_h of hidden node embeddings h_i."
+        description = (
+            "Hidden state dimensionality d_h for node embeddings h_i^(l) at each "
+            "message passing layer, balancing expressiveness against memory usage."
+        )
     )
     input_dim: PositiveInt = Field(
         default     = 11,
         description = (
-            "Dimensionality d_in of input features "
-            "[position(3) + velocity(3) + temperature(1) + temp_grad(3) + energy(1)]."
+            "Input feature dimensionality d_in = 11 encoding agent state as concatenated "
+            "vector [position(3), velocity(3), temperature(1), temp_gradient(3), energy(1)]."
         )
     )
     num_layers: PositiveInt = Field(
         default     = 3,
         description = (
-            "Number of message passing layers L. Receptive field grows as "
-            "r = L · r_comm where r_comm is communication range."
+            "Message passing depth L determining multi-hop receptive field radius "
+            "r = L × R_comm for aggregating information from distant neighbors."
         )
     )
     output_dim: PositiveInt = Field(
         default     = 3,
-        description = "Dimensionality d_out of output actions (velocity commands)."
+        description = (
+            "Output action dimensionality d_out matching spatial dimensions for velocity "
+            "commands u_i ∈ ℝ^3 sent to low-level flight controllers."
+        )
     )
 
 
@@ -59,15 +68,24 @@ class CheckpointModel(BaseModel, extra="forbid"):
     """
     dirpath: Path = Field(
         default     = Path("checkpoints"),
-        description = "Directory path for saving training checkpoints."
+        description = (
+            "Directory path for saving model checkpoints during training, enabling "
+            "recovery from interruptions and model comparison across runs."
+        )
     )
     every_n_train_steps: PositiveInt = Field(
         default     = 25_000,
-        description = "Frequency in training steps for saving model checkpoints."
+        description = (
+            "Step interval between checkpoint saves, balancing storage costs with "
+            "recovery granularity for long training runs on large datasets."
+        )
     )
     filename: str = Field(
         default     = "checkpoint-{step}",
-        description = "Template for checkpoint filenames with step number placeholder."
+        description = (
+            "Filename template with {step} placeholder for organizing checkpoints "
+            "chronologically, supporting automated model selection pipelines."
+        )
     )
     save_last: bool = Field(
         default     = True,
@@ -75,42 +93,6 @@ class CheckpointModel(BaseModel, extra="forbid"):
             "Always save the final model checkpoint at training completion regardless "
             "of whether it achieved the best validation metric."
         )
-    )
-
-
-class ExperienceModel(BaseModel, extra="forbid"):
-    """
-    Experience data handling and batching configuration.
-    
-    Manages how experience data is collected, stored, and sampled during
-    imitation learning from expert demonstrations.
-    """
-    batch_size: PositiveInt = Field(
-        default     = 256,
-        description = "Number of transitions B per training batch."
-    )
-    buffer_size: PositiveInt = Field(
-        default     = 50_000,
-        description = "Maximum transitions |𝒟| to store in replay buffer."
-    )
-    frames_per_batch: PositiveInt = Field(
-        default     = 1024,
-        description = "Number of frames N_batch to collect per training iteration."
-    )
-    max_frames_per_traj: int = Field(
-        default     = -1,
-        description = (
-            "Maximum frames per trajectory before episode reset. Use -1 for infinite "
-            "episodes that only reset when environment signals done."
-        )
-    )
-    prefetch: NonNegativeInt = Field(
-        default     = 8,
-        description = "Number of batches to prefetch for GPU efficiency."
-    )
-    total_frames: PositiveInt = Field(
-        default     = 200_000,
-        description = "Total environment frames T to collect during training."
     )
 
 
@@ -155,7 +137,6 @@ class HardwareModel(BaseModel, extra="forbid"):
     )
 
 
-
 class OptimizerModel(BaseModel, extra="forbid"):
     """
     Optimization and learning rate configuration.
@@ -183,7 +164,10 @@ class OptimizerModel(BaseModel, extra="forbid"):
     )
     learning_rate: PositiveFloat = Field(
         default     = 3e-4,
-        description = "Learning rate α for the AdamW optimizer."
+        description = (
+            "Initial learning rate α for AdamW optimizer, controlling step size "
+            "in parameter space during gradient descent optimization."
+        )
     )
     lr_factor: PositiveFloat = Field(
         default     = 0.5,
@@ -208,7 +192,10 @@ class OptimizerModel(BaseModel, extra="forbid"):
     )
     metric: str = Field(
         default     = "train/loss",
-        description = "Metric name to track for checkpointing and early stopping."
+        description = (
+            "PyTorch Lightning metric key monitored for model selection, early "
+            "stopping, and learning rate scheduling decisions during training."
+        )
     )
     mode: Literal["min", "max"] = Field(
         default     = "min",
@@ -225,5 +212,8 @@ class OptimizerModel(BaseModel, extra="forbid"):
     )
     weight_decay: NonNegativeFloat = Field(
         default     = 1e-5,
-        description = "L2 regularization coefficient λ for weight decay."
+        description = (
+            "L2 regularization coefficient λ penalizing large weights to improve "
+            "generalization and prevent overfitting to training demonstrations."
+        )
     )

@@ -10,18 +10,18 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
-from config.imitation.schemas.learning    import ArchitectureModel, OptimizerModel
-from pytorch_lightning                    import LightningModule
-from tensordict                           import TensorDict
-from thermur.imitation.monitoring.metrics import MetricsCollector
-from torch                                import Tensor
-from torch.nn                             import GRUCell, Linear, Module, ModuleList
-from torch.nn.functional                  import mse_loss
-from torch.optim                          import AdamW
-from torch.optim.lr_scheduler             import ReduceLROnPlateau
-from torch_geometric.data                 import Data
-from torch_geometric.nn                   import GCNConv
-from typing                               import Type
+from config.imitation.schemas.lightning import ArchitectureModel, OptimizerModel
+from pytorch_lightning                  import LightningModule
+from tensordict                         import TensorDict
+from thermur.imitation.monitoring       import MetricsCollector
+from torch                              import Tensor
+from torch.nn                           import GRUCell, Linear, Module, ModuleList
+from torch.nn.functional                import mse_loss
+from torch.optim                        import AdamW
+from torch.optim.lr_scheduler           import ReduceLROnPlateau
+from torch_geometric.data               import Data
+from torch_geometric.nn                 import GCNConv
+from typing                             import Type
 
 import torch
 

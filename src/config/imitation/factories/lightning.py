@@ -4,16 +4,13 @@ Hydra-zen builders for PyTorch Lightning components.
 This module provides configuration builders for Lightning-specific training
 components including the GNN policy network, data module, trainer, and callbacks.
 """
-from config.imitation.schemas.learning      import *
-from config.imitation.schemas.wandb         import WandbModel
-from hydra_zen                              import builds, zen
-from omegaconf                              import SI
-from pytorch_lightning                      import Trainer
-from pytorch_lightning.callbacks            import EarlyStopping, LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.loggers              import WandbLogger
-from thermur.imitation.lightning.callback   import MonitoringCallback
-from thermur.imitation.lightning.experience import DataModule
-from thermur.imitation.lightning.policy     import GNNPolicy
+from config.imitation.schemas.lightning import *
+from hydra_zen                          import builds, zen
+from omegaconf                          import SI
+from pytorch_lightning                  import Trainer
+from pytorch_lightning.callbacks        import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers          import WandbLogger
+from thermur.imitation.lightning        import DataModule, GNNPolict, MonitoringCallback
 
 
 build_checkpoint = builds(

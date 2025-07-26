@@ -38,7 +38,6 @@ class CLIPrompts:
         self.cfg      = cfg
         self.cli      = cfg.cli
         self.messages = cfg.messages
-        self.presets  = cfg.presets
         self.prompts  = cfg.prompts
         self.ui       = ui
         self.thermal_style = questionary.Style.from_dict(
@@ -198,7 +197,7 @@ class CLIPrompts:
             title   = "Available Presets"
         )
 
-        preset_cfgs = self.presets.presets
+        preset_cfgs = self.prompts.presets
         for name, config in preset_cfgs.items():
             display_name = f"{config['emoji']} {config['name']}"
             if name == "custom":
@@ -219,7 +218,7 @@ class CLIPrompts:
                 title = preset_cfgs[name]['emoji'], 
                 value = name
             )
-            for name in self.presets.presets.keys()
+            for name in self.prompts.presets.keys()
             if name != 'custom'
         ]
         choices.extend([

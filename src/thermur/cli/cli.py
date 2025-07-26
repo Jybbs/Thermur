@@ -9,15 +9,8 @@ from config.cli.workloads.cli       import cli_cfg
 from functools                      import cached_property
 from hydra_zen                      import instantiate
 from hydra_zen.third_party.pydantic import pydantic_parser
-from thermur.cli.commands.download  import download
-from thermur.cli.commands.info      import info
-from thermur.cli.commands.monitor   import monitor
-from thermur.cli.commands.train     import train
-from thermur.cli.commands.validate  import validate
-from thermur.cli.helpers.globus     import GlobusManager
-from thermur.cli.helpers.prompts    import CLIPrompts
-from thermur.cli.helpers.system     import SystemInspector
-from thermur.cli.helpers.ui         import ThermurUI
+from thermur.cli.commands           import download, info, monitor, train, validate
+from thermur.cli.helpers            import CLIPrompts, GlobusManager, SystemInspector, ThermurUI
 from typer                          import Context, Exit, Option, Typer
 
 cfg = instantiate(

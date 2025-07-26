@@ -6,18 +6,17 @@ system, including metric collection and event logging. These builders integrate
 with PyTorch Lightning's logging infrastructure and Weights & Biases for
 tracking training progress and agent behavior.
 """
-from config.imitation.schemas.monitoring  import MonitoringModel
-from hydra_zen                            import builds
-from omegaconf                            import SI
-from thermur.imitation.monitoring.events  import EventLogger
-from thermur.imitation.monitoring.metrics import MetricsCollector
+from config.imitation.schemas.monitoring import *
+from hydra_zen                           import builds, zen
+from omegaconf                           import SI
+from thermur.imitation.monitoring        import EventLogger, MetricsCollector
 
 
 build_events = builds(
     EventLogger,
     activation_tolerance    = SI("${safety.activation_tolerance}"),
     max_temperature         = SI("${flock.max_temperature}"),
-    monitoring              = SI("${monitoring}"),
+    events                  = zen(EventsModel),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.monitoring",
@@ -38,7 +37,7 @@ build_metrics = builds(
     bounds_max              = SI("${physics.bounds_max}"),
     gravity                 = SI("${physics.gravity}"),
     max_temperature         = SI("${flock.max_temperature}"),
-    monitoring              = SI("${monitoring}"),
+    metrics                 = zen(MetricsModel),
     output_dim              = SI("${architecture.output_dim}"),
     populate_full_signature = True,
     zen_dataclass           = {
@@ -55,19 +54,3 @@ measures (SSIM, TVR), and aggregate performance indicators. Integrates seamlessl
 with PyTorch Lightning's logging infrastructure and Weights & Biases dashboards.
 """
 
-build_monitoring = builds(
-    MonitoringModel,
-    populate_full_signature = True,
-    zen_dataclass           = {
-        "module"   : "src.configs.imitation.factories.monitoring",
-        "cls_name" : "MonitoringBuild"
-    }
-)
-"""
-Builder for unified monitoring configuration.
-
-Configures the entire monitoring ecosystem including metric collection frequencies,
-event detection thresholds, visualization parameters (grid sizes, color mappings),
-profiling options, and integration with external logging services. Controls both
-real-time training feedback and post-hoc analysis capabilities.
-"""

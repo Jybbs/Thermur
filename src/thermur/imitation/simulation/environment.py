@@ -11,15 +11,15 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from .generator                       import XMLGenerator
-from .loader                          import WRFDataSource
-from config.imitation.schemas.flock   import FlockModel
-from config.imitation.schemas.physics import PhysicsModel
-from operator                         import itemgetter
-from tensordict                       import TensorDictBase
-from torch                            import bool, cdist, float32, inf, int64, nonzero, Tensor
-from torchrl.data                     import Bounded, Composite, Unbounded
-from torchrl.envs                     import EnvBase
+from .generator                          import XMLGenerator
+from .loader                             import WRFDataSource
+from config.imitation.schemas.controller import FlockModel
+from config.imitation.schemas.simulation import PhysicsModel
+from operator                            import itemgetter
+from tensordict                          import TensorDictBase
+from torch                               import bool, cdist, float32, inf, int64, nonzero, Tensor
+from torchrl.data                        import Bounded, Composite, Unbounded
+from torchrl.envs                        import EnvBase
 
 import math
 import mujoco as mj

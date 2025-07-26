@@ -7,7 +7,7 @@ training and simulation. It integrates with PyTorch Lightning's logging system
 and provides structured outputs for post-hoc analysis.
 """
 from collections                         import Counter, defaultdict
-from config.imitation.schemas.monitoring import MonitoringModel
+from config.imitation.schemas.monitoring import EventsModel
 from pytorch_lightning                   import LightningModule
 from tensordict                          import TensorDict
 from time                                import perf_counter
@@ -29,7 +29,7 @@ class EventLogger:
         self,
         activation_tolerance : float,
         max_temperature      : float,
-        monitoring           : MonitoringModel
+        events               : EventsModel
     ):
         """
         Initialize the event logger.
@@ -41,10 +41,10 @@ class EventLogger:
         """
         self.cbf_tolerance   = activation_tolerance
         self.cbf_threshold   = max_temperature - activation_tolerance
-        self.event_types     = monitoring.event_types
+        self.event_types     = events.event_types
         self.max_temperature = max_temperature
-        self.prefix          = monitoring.prefix
-        self.sample_every    = monitoring.event_sample_every
+        self.prefix          = events.prefix
+        self.sample_every    = events.event_sample_every
         
         self.event_buffer = defaultdict(list)
         self.event_counts = Counter()
