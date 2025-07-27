@@ -1,21 +1,23 @@
 """
-Implements the 'expert' flocking controller based on classic Reynolds rules
+Implements the expert controller based on classic Reynolds rules
 and thermal-aware potential fields.
 
-This module provides a physics-based controller that can be used to generate
-an 'optimal' trajectory dataset. A neural network policy can then be trained
-via imitation learning to replicate this expert behavior.
+This module provides a physics-based expert controller that generates
+optimal trajectory datasets for imitation learning. The expert combines
+Reynolds flocking rules with thermal constraints to demonstrate safe
+collective behavior.
 """
-from .safety                             import SafetyFilter
-from config.imitation.schemas.controller import ControllerModel, FlockModel, SafetyModel
-from tensordict                          import TensorDict
-from torch                               import Tensor
+from .safety                     import SafetyFilter
+from config.imitation.controller import ExpertModel, FlockModel
+from tensordict                  import TensorDict
+from torch                       import Tensor
+from typing                      import Optional
 
 import torch
 import torch.nn.functional as F
 
 
-class FlockController:
+class ExpertController:
     """
     Calculates the nominal control action `𝐮_nom` using potential fields.
 
@@ -32,23 +34,24 @@ class FlockController:
 
     def __init__(
         self,
-        control : ControllerModel,
-        flock   : FlockModel,
-        safety  : SafetyModel
+        expert        : ExpertModel,
+        flock         : FlockModel,
+        safety_filter : Optional[SafetyFilter] = None
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            control : Contains both Reynolds weights and numerical parameters
-                      for stable force calculations.
-            flock   : Flock configuration containing agent properties.
-            safety  : Safety configuration for CBF parameters.
+            expert        : Contains both Reynolds weights and numerical parameters
+                            for stable force calculations.
+            flock         : Flock configuration containing agent properties.
+            safety_filter : Optional safety filter for CBF-based control limiting.
+                            If None, no safety filtering is applied.
         """
-        self.control         = control
+        self.expert          = expert
         self.flock           = flock
         self.max_temperature = flock.max_temperature
-        self.safety_filter   = SafetyFilter(flock, safety)
+        self.safety_filter   = safety_filter
         self._reset_shared_state()
 
     def _compute_alignment(self, velocity: Tensor) -> Tensor:
@@ -159,10 +162,10 @@ class FlockController:
         )
 
         # Apply minimum distance and calculate repulsion
-        distance  = torch.clamp(distance, self.control.min_distance)
+        distance  = torch.clamp(distance, self.expert.min_distance)
         repulsion = torch.divide(
             input = rel_pos, 
-            other = distance.pow(2) + self.control.epsilon
+            other = distance.pow(2) + self.expert.epsilon
         )
 
         # Sum repulsion vectors for each agent
@@ -209,11 +212,11 @@ class FlockController:
         temperature = self._ensure_1d_temperature(temperature)
         t_margin    = torch.clamp(
             input = self.max_temperature - temperature,
-            min   = self.control.epsilon
+            min   = self.expert.epsilon
         )
 
         magnitude = torch.divide(
-            input = self.control.temperature_scaling, 
+            input = self.expert.temperature_scaling, 
             other = t_margin
         )
 
@@ -283,7 +286,7 @@ class FlockController:
         temp_diff     = temperature[self._edge_target] - temperature[self._edge_source]
         
         # Sum weighted positions and count significant neighbors
-        sig_mask   = torch.abs(temp_diff) > self.control.epsilon
+        sig_mask   = torch.abs(temp_diff) > self.expert.epsilon
         grad_sum   = torch.zeros_like(position)
         sig_counts = torch.bincount(
             input     = self._edge_source[sig_mask],
@@ -406,17 +409,20 @@ class FlockController:
 
         # Compute the nominal control based on Reynolds rules and thermal potential
         forces = [
-            (self.control.w_cohesion,   self._compute_cohesion(flock["position"])),
-            (self.control.w_separation, self._compute_separation(flock["position"])),
-            (self.control.w_alignment,  self._compute_alignment(flock["velocity"])),
-            (self.control.w_thermal,    self._compute_thermal(
+            (self.expert.w_cohesion,   self._compute_cohesion(flock["position"])),
+            (self.expert.w_separation, self._compute_separation(flock["position"])),
+            (self.expert.w_alignment,  self._compute_alignment(flock["velocity"])),
+            (self.expert.w_thermal,    self._compute_thermal(
                 gradient    = flock.get("gradient", None),
                 position    = flock["position"],
                 temperature = flock["temperature"]
             ))
         ]
         
-        return self.safety_filter.filter(
-            flock     = flock, 
-            u_nominal = sum(weight * force for weight, force in forces)
+        u_nominal = sum(weight * force for weight, force in forces)
+        
+        return (
+            self.safety_filter.filter(flock, u_nominal)
+            if self.safety_filter is not None
+            else u_nominal
         )

@@ -6,10 +6,10 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from config.imitation.schemas.controller import FlockModel, SafetyModel
-from qpth.qp                             import QPFunction
-from tensordict                          import TensorDict
-from torch                               import Tensor
+from config.imitation.controller import FlockModel, SafetyModel
+from qpth.qp                     import QPFunction
+from tensordict                  import TensorDict
+from torch                       import Tensor
 
 import torch
 
@@ -47,9 +47,8 @@ class SafetyFilter:
         self.agent_count          = flock.agent_count
         self.max_temperature      = flock.max_temperature
         self.safety               = safety
-        self.spatial_dims         = flock.spatial_dims
         self.total_queries        = 0
-        self.Q                    = torch.eye(self.spatial_dims, dtype=torch.float32)
+        self.Q                    = torch.eye(3, dtype=torch.float32)  # Always 3D
 
     def _evaluate_barrier(self, flock: TensorDict) -> tuple[Tensor, Tensor]:
         """
