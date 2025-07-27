@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat, Positive
 from typing   import Literal
 
 
-class ControllerModel(BaseModel, extra="forbid"):
+class ExpertModel(BaseModel, extra="forbid"):
     """
     Unified control system configuration for expert flocking behavior.
     
@@ -36,13 +36,6 @@ class ControllerModel(BaseModel, extra="forbid"):
         description = (
             "Numerical stability constant ε preventing division by zero in "
             "potential gradient calculations, particularly for separation forces."
-        )
-    )
-    gradient_step: PositiveFloat = Field(
-        default     = 0.1,
-        description = (
-            "Finite difference step size δ in meters for computing thermal "
-            "gradients via ∇T ≈ [T(𝐱+δê) - T(𝐱-δê)]/2δ approximation."
         )
     )
     min_distance: PositiveFloat = Field(
@@ -157,13 +150,6 @@ class FlockModel(BaseModel, extra="forbid"):
             "C = {𝐱 | T(𝐱) ≤ T_max} enforced by Control Barrier Functions."
         )
     )
-    spatial_dims: Literal[2, 3] = Field(
-        default     = 3,
-        description = (
-            "Dimensionality d ∈ {2,3} of the workspace ℝ^d, affecting state space "
-            "size and computational complexity of collision detection algorithms."
-        )
-    )
     thermal_time_constant: PositiveFloat = Field(
         default     = 5.0,
         description = (
@@ -171,23 +157,6 @@ class FlockModel(BaseModel, extra="forbid"):
             "temperature evolution dynamics via T_core ≈ T_skin - τ·dT_skin/dt."
         )
     )
-    
-    @property
-    def shape(self) -> tuple[int, int]:
-        """
-        Returns (agent_count, spatial_dims) for common tensor shape operations.
-        """
-        return (self.agent_count, self.spatial_dims)
-    
-    @property
-    def state_size(self) -> int:
-        """
-        Total number of scalar values needed to represent all agent states.
-        
-        Used for flattened state arrays in MuJoCo where positions and velocities
-        are stored as contiguous 1D arrays of size agent_count * spatial_dims.
-        """
-        return self.agent_count * self.spatial_dims
 
 
 class SafetyModel(BaseModel, extra="forbid"):
@@ -238,12 +207,5 @@ class SafetyModel(BaseModel, extra="forbid"):
         description = (
             "Fallback strategy when QP fails: 'zero' applies zero control for safety, "
             "'nominal' uses unfiltered input, 'raise' propagates exception for debugging."
-        )
-    )
-    qp_verbose: bool = Field(
-        default     = False,
-        description = (
-            "Enable detailed quadratic program solver logging including iteration counts, "
-            "constraint violations, and convergence metrics for algorithm debugging."
         )
     )
