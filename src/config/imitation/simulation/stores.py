@@ -1,116 +1,56 @@
 """
-Configuration for simulation environment and physics.
+Simulation configuration stores using hydra-zen.
 
-This module provides hydra-zen configurations for the MuJoCo simulation
-environment, WRF data loading, and physics parameters using the store pattern.
+This module provides store-based configurations for simulation components
+using hydra-zen's decorator pattern. Each component is registered as a separate
+build that can be referenced and overridden independently via Hydra's CLI.
+
+The stores follow a flat structure where each component (data_source, env)
+is defined as a function decorated with @simulation(name=...). This allows
+for clean interpolation references like ${simulation.data_source} without
+nested builds, improving configuration clarity and override flexibility.
 """
-from hydra_zen import store, builds
+from .schemas                     import *
+from config.utils.zen             import store, build
 from thermur.imitation.simulation import SimulationEnv, WRFDataSource
 
-# Import schemas for validation
-from . import LoaderModel, PhysicsModel
-from ..controller import FlockModel
-
-# Pre-configure group for all simulation configs
 simulation = store(group="simulation")
+loader     = LoaderModel()
+physics    = PhysicsModel()
 
-@simulation(name="default")
-def default():
+
+@simulation(name="wrf")
+def wrf_build():
     """
-    Standard simulation configuration.
-    """
-    # Use Pydantic models for validation and defaults
-    physics = PhysicsModel()
-    loader = LoaderModel()
-    flock = FlockModel()
+    Builder for WRF data source.
     
-    return dict(
-        env=builds(SimulationEnv,
-            # Physics parameters
-            simulation_step=physics.simulation_step,
-            gravity=physics.gravity,
-            bounds_min=physics.bounds_min,
-            bounds_max=physics.bounds_max,
-            
-            # Flock parameters
-            agent_count=flock.agent_count,
-            communication_range=flock.communication_range,
-            formation_scale_factor=flock.formation_scale_factor,
-            initial_formation=flock.initial_formation,
-            max_temperature=flock.max_temperature,
-            thermal_time_constant=flock.thermal_time_constant,
-            spatial_dims=flock.spatial_dims,
-            
-            # Data source
-            data_source=builds(WRFDataSource,
-                data_path=loader.data_path,
-                temperature_variable=physics.temperature_variable,
-                x_dimension=physics.x_dimension,
-                y_dimension=physics.y_dimension,
-                z_dimension=physics.z_dimension,
-                u_wind_variable=loader.u_wind_variable,
-                v_wind_variable=loader.v_wind_variable,
-                w_wind_variable=loader.w_wind_variable,
-                fire_heat_variable=loader.fire_heat_variable,
-                domain_randomization=loader.domain_randomization,
-                temperature_noise_std=loader.temperature_noise_std,
-                wind_noise_std=loader.wind_noise_std,
-                fallback_temperature=physics.fallback_temperature,
-                epsilon=physics.epsilon
-            ),
-            
-            # MuJoCo assets
-            assets_dir=physics.assets_dir
-        )
+    Creates a data loader that reads WRF-Fire NetCDF files and provides
+    thermal field interpolation for the simulation environment. Supports
+    both real WRF data and synthetic test data.
+    """
+    return build(
+        WRFDataSource,
+        loader  = loader,
+        physics = physics
     )
 
-@simulation(name="debug")
-def debug():
+@simulation(name="env")
+def env_build():
     """
-    Debug simulation configuration.
-    """
-    # Debug configurations with overrides
-    physics = PhysicsModel(simulation_step=0.1)  # Faster timestep
-    loader = LoaderModel(domain_randomization=False)  # No randomization
-    flock = FlockModel(
-        agent_count=3,
-        communication_range=10.0,
-        formation_scale_factor=0.3
-    )
+    Builder for the MuJoCo simulation environment.
     
-    return dict(
-        env=builds(SimulationEnv,
-            # Physics parameters
-            simulation_step=physics.simulation_step,
-            gravity=physics.gravity,
-            bounds_min=physics.bounds_min,
-            bounds_max=physics.bounds_max,
-            
-            # Small flock for testing
-            agent_count=flock.agent_count,
-            communication_range=flock.communication_range,
-            formation_scale_factor=flock.formation_scale_factor,
-            initial_formation=flock.initial_formation,
-            max_temperature=flock.max_temperature,
-            thermal_time_constant=flock.thermal_time_constant,
-            spatial_dims=flock.spatial_dims,
-            
-            # Synthetic data source for testing
-            data_source=builds(WRFDataSource,
-                synthetic=True,  # Use synthetic data
-                temperature_variable=physics.temperature_variable,
-                x_dimension=physics.x_dimension,
-                y_dimension=physics.y_dimension,
-                z_dimension=physics.z_dimension,
-                fallback_temperature=physics.fallback_temperature,
-                epsilon=physics.epsilon,
-                domain_randomization=loader.domain_randomization
-            ),
-            
-            # MuJoCo assets
-            assets_dir=physics.assets_dir,
-            
-            # Debug settings
-            headless=True  # No visualization for speed
-        )
+    Creates the primary simulation environment that manages drone physics,
+    thermal field interactions, and multi-agent dynamics. The environment
+    integrates MuJoCo for rigid body dynamics with WRF data for realistic
+    thermal conditions.
+    
+    References:
+    - ${simulation.wrf}: WRF data source for thermal fields
+    - ${controller.flock}: Flock configuration from controller domain
+    """
+    return build(
+        SimulationEnv,
+        flock   = "${controller.flock}",
+        physics = physics,
+        wrf     = "${simulation.wrf}"
     )

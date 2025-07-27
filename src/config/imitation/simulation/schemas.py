@@ -34,39 +34,11 @@ class LoaderModel(BaseModel, extra="forbid"):
             "and temperature noise to improve policy generalization."
         )
     )
-    fire_heat_variable: str = Field(
-        default     = "GRNHFX",
-        description = (
-            "NetCDF variable identifier for ground-level heat flux from wildfire "
-            "combustion, measured in W/m² in WRF-Fire outputs."
-        )
-    )
     temperature_noise_std: NonNegativeFloat = Field(
         default     = 0.5,
         description = (
             "Temperature noise standard deviation σ_T in Kelvin for domain "
             "randomization, simulating measurement uncertainty and turbulence."
-        )
-    )
-    u_wind_variable: str = Field(
-        default     = "U",
-        description = (
-            "NetCDF variable identifier for eastward wind component U on staggered "
-            "Arakawa-C grid, requiring interpolation to cell centers."
-        )
-    )
-    v_wind_variable: str = Field(
-        default     = "V",
-        description = (
-            "NetCDF variable identifier for northward wind component V on staggered "
-            "Arakawa-C grid, requiring interpolation to cell centers."
-        )
-    )
-    w_wind_variable: str = Field(
-        default     = "W",
-        description = (
-            "NetCDF variable identifier for vertical wind component W, critical "
-            "for modeling thermal updrafts and fire-induced convection."
         )
     )
     wind_noise_std: NonNegativeFloat = Field(
@@ -144,33 +116,5 @@ class PhysicsModel(BaseModel, extra="forbid"):
         description = (
             "Integration timestep Δt in seconds for MuJoCo physics solver, "
             "balancing accuracy with real-time computational constraints."
-        )
-    )
-    temperature_variable: str = Field(
-        default     = "temperature",
-        description = (
-            "NetCDF variable identifier for temperature field data, matching "
-            "the naming convention in WRF-Fire output files."
-        )
-    )
-    x_dimension: str = Field(
-        default     = "x",
-        description = (
-            "NetCDF dimension identifier for east-west spatial coordinate, "
-            "typically 'x' or 'west_east' depending on data source."
-        )
-    )
-    y_dimension: str = Field(
-        default     = "y",
-        description = (
-            "NetCDF dimension identifier for north-south spatial coordinate, "
-            "typically 'y' or 'south_north' depending on data source."
-        )
-    )
-    z_dimension: str = Field(
-        default     = "z",
-        description = (
-            "NetCDF dimension identifier for vertical spatial coordinate, "
-            "typically 'z' or 'bottom_top' for atmospheric data."
         )
     )
