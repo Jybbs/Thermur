@@ -13,6 +13,7 @@ controller = store(group="controller")
 expert     = ExpertModel()
 flock      = FlockModel()
 safety     = SafetyModel()
+thresholds = ThresholdsModel()
 
 @controller(name="expert")
 def expert_build():
@@ -35,7 +36,8 @@ def expert_build():
         ExpertController,
         expert        = expert,
         flock         = flock,
-        safety_filter = "${controller.safety}"
+        safety_filter = "${controller.safety}",
+        thresholds    = thresholds
     )
 
 @controller(name="safety")
@@ -55,6 +57,18 @@ def safety_build():
     """
     return build(
         SafetyFilter,
-        flock  = flock,
-        safety = safety
+        flock      = flock,
+        safety     = safety,
+        thresholds = thresholds
     )
+
+@controller(name="thresholds")
+def thresholds_build():
+    """
+    Builder for safety threshold configuration.
+    
+    Provides centralized threshold values that are used across multiple
+    domains to ensure consistency in thermal safety limits and control
+    intervention detection.
+    """
+    return thresholds

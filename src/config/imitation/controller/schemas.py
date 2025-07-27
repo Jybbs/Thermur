@@ -143,13 +143,6 @@ class FlockModel(BaseModel, extra="forbid"):
             "topology and convergence dynamics of the flocking controller."
         )
     )
-    max_temperature: PositiveFloat = Field(
-        default     = 475.0,
-        description = (
-            "Critical temperature threshold T_max in Kelvin defining the safety set "
-            "C = {𝐱 | T(𝐱) ≤ T_max} enforced by Control Barrier Functions."
-        )
-    )
     thermal_time_constant: PositiveFloat = Field(
         default     = 5.0,
         description = (
@@ -167,13 +160,6 @@ class SafetyModel(BaseModel, extra="forbid"):
     into a single configuration for the safety filtering system that
     ensures all control commands respect thermal constraints.
     """
-    activation_tolerance: NonNegativeFloat = Field(
-        default     = 3.0,
-        description = (
-            "Control deviation threshold in m/s for detecting CBF interventions, used "
-            "to track when safety filter modifies nominal commands by ||u* - u_nom|| > δ."
-        )
-    )
     cbf_alpha: PositiveFloat = Field(
         default     = 2.5,
         description = (
@@ -207,5 +193,29 @@ class SafetyModel(BaseModel, extra="forbid"):
         description = (
             "Fallback strategy when QP fails: 'zero' applies zero control for safety, "
             "'nominal' uses unfiltered input, 'raise' propagates exception for debugging."
+        )
+    )
+
+
+class ThresholdsModel(BaseModel, extra="forbid"):
+    """
+    Safety threshold configuration used across multiple domains.
+    
+    Defines critical thresholds for thermal safety and control intervention
+    detection that must be consistent across controller, monitoring, and
+    safety filter components.
+    """
+    activation_tolerance: PositiveFloat = Field(
+        default     = 3.0,
+        description = (
+            "Control deviation threshold in m/s for detecting CBF interventions, "
+            "used by both safety filter and event logging systems."
+        )
+    )
+    max_temperature: PositiveFloat = Field(
+        default     = 475.0,
+        description = (
+            "Critical temperature threshold T_max in Kelvin defining the safety set "
+            "C = {𝐱 | T(𝐱) ≤ T_max} enforced across all components."
         )
     )
