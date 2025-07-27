@@ -412,13 +412,13 @@ class MetricsCollector:
             bounds_max      : Maximum workspace bounds from physics config
             gravity         : Gravitational acceleration from physics config
             max_temperature : Maximum safe temperature from flock config
-            monitoring      : Monitoring configuration model
+            metrics         : Metrics configuration model
             output_dim      : Dimension of the policy output
         """
         self.bounds_max      = bounds_max
         self.gravity         = gravity
         self.max_temperature = max_temperature
-        self.monitoring      = monitoring
+        self.metrics         = metrics
         self.output_dim      = output_dim
         
         self._init_imitation_metrics(output_dim=output_dim)
@@ -430,10 +430,10 @@ class MetricsCollector:
         Creates TorchMetrics instances for all five core performance metrics.
         """
         self.train_evaluation = MetricCollection({
-            "avg_power"  : EnergyConsumptionMetric(self.gravity, self.monitoring),
+            "avg_power"  : EnergyConsumptionMetric(self.gravity, self.metrics),
             "λ₂"         : CohesionMetric(),
-            "mae_color"  : ColorAccuracyMetric(self.monitoring),
-            "ssim"       : LegibilitySSIMMetric(self.bounds_max, self.monitoring),
+            "mae_color"  : ColorAccuracyMetric(self.metrics),
+            "ssim"       : LegibilitySSIMMetric(self.bounds_max, self.metrics),
             "tvr"        : ThermalSafetyMetric(self.max_temperature),
         })
         self.val_evaluation = self.train_evaluation.clone(prefix="val_")

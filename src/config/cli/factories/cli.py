@@ -12,6 +12,7 @@ from hydra_zen                          import builds
 build_display  = builds(DisplayModel)
 build_download = builds(DownloadModel)
 build_messages = builds(MessagesModel)
+build_presets  = builds(PresetsModel)
 build_prompts  = builds(PromptsModel)
 build_secrets  = builds(GlobusSecrets)
 build_system   = builds(SystemModel)

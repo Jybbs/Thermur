@@ -109,7 +109,7 @@ class GlobusSecrets(BaseSettings):
     
     model_config = SettingsConfigDict(
         case_sensitive = False,
-        secrets_dir    = str(SECRETS_DIR)
+        secrets_dir    = str(SECRETS_DIR) if SECRETS_DIR.exists() else None
     )
     
     @computed_field

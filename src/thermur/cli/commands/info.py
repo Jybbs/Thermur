@@ -77,9 +77,9 @@ class InfoCommand:
         self.ui.print_config_value(
             align_width = 11,
             key         = "Presets",
-            value       = ", ".join(sorted(self.cfg.prompts.presets.keys()))
+            value       = ", ".join(sorted(self.cfg.presets.__fields__.keys()))
         )
         
 
         self.ui.print_section("Common Commands")
-        self.ui.print_command_examples(self.cfg.cli.commands_examples)
+        self.ui.print_command_examples(self.cfg.display.commands_examples)

@@ -19,11 +19,11 @@ class SafetyFilter:
     A safety layer that uses a thermal CBF to filter unsafe control actions.
 
     This class formulates and solves the real-time Quadratic Program:
-        u* = argmin ||u - u_nom||^2
-        s.t.  ∇h(x) @ u >= -α * h(x)
+        u* = argmin ||u - u_nom||²
+        s.t.  ∇h(x) · u ≥ -α · h(x)
 
-    This ensures the control action `u*` does not lead the agent out of the
-    pre-defined safe set `C = {x | h(x) >= 0}`, where h(𝐬) = T_max - T(𝐬)
+    This ensures the control action u* does not lead the agent out of the
+    pre-defined safe set C = {x | h(x) ≥ 0}, where h(s) = T_max - T(s)
     creates a safety boundary at the maximum survivable temperature.
     """
 
@@ -91,7 +91,7 @@ class SafetyFilter:
         """
         Filters a nominal control action to ensure safety using `qpth`.
 
-        This method translates the CBF safety constraint, `∇h(x) @ u >= -αh(x)`,
+        This method translates the CBF safety constraint, ∇h(x) · u ≥ -αh(x),
         into a batch of standard Quadratic Programs (QPs) and solves them to
         find the safe action `u*` that is minimally distant from the desired
         nominal action `u_nom`.

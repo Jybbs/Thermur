@@ -49,7 +49,7 @@ class GNNPolicy(LightningModule):
     def __init__(
         self, 
         architecture : ArchitectureModel,
-        metrics      : MetricsCollector,
+        collector    : MetricsCollector,
         optimizer    : OptimizerModel
     ):
         """
@@ -59,16 +59,16 @@ class GNNPolicy(LightningModule):
             architecture : Configuration for GNN architecture including hidden 
                            dimensions, number of layers, activation function, and 
                            I/O dimensions.
-            metrics      : Centralized metrics collection and management system.
+            collector    : Centralized metrics collection and management system.
             optimizer    : Configuration for optimization including learning rate,
                            weight decay, and gradient clipping.
         """
         super().__init__()
         self.architecture = architecture
-        self.metrics      = metrics
+        self.collector    = collector
         self.optimizer    = optimizer
 
-        self.save_hyperparameters(ignore=["metrics"])
+        self.save_hyperparameters(ignore=["collector"])
         self.activation = getattr(torch.nn, architecture.activation)()
         self.convs      = self._build_module_list(architecture, GCNConv)
         self.grus       = self._build_module_list(architecture, GRUCell)
@@ -123,13 +123,13 @@ class GNNPolicy(LightningModule):
         targets     = batch["action"]
         loss        = mse_loss(predictions, targets)
         
-        self.metrics.update_imitation_metrics(
+        self.collector.update_imitation_metrics(
             phase       = phase,
             predictions = predictions,
             targets     = targets
         )
         
-        self.metrics.log_all_metrics(
+        self.collector.log_all_metrics(
             module      = self,
             phase       = phase,
             loss        = loss,

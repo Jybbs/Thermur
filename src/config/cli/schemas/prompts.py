@@ -31,44 +31,6 @@ class PromptsModel(BaseModel, extra="forbid"):
         default     = "Required package '{package}' is not installed",
         description = "Error message template for missing packages."
     )
-    presets: dict[str, dict[str, str]] = Field(
-        default = {
-            "quick": {
-                "best_for" : "Quick experiments & debugging",
-                "desc"     : "Minimal setup for rapid testing",
-                "emoji"    : "⚡",
-                "name"     : "quick"
-            },
-            "standard": {
-                "best_for" : "Regular training runs",
-                "desc"     : "Balanced configuration for most tasks",
-                "emoji"    : "🔥",
-                "name"     : "standard"
-            },
-            "large": {
-                "best_for" : "Production & final models",
-                "desc"     : "High-capacity models & longer training",
-                "emoji"    : "💪",
-                "name"     : "large"
-            },
-            "debug": {
-                "best_for" : "Troubleshooting issues",
-                "desc"     : "Verbose logging & validation checks",
-                "emoji"    : "🔍",
-                "name"     : "debug"
-            },
-            "custom": {
-                "best_for" : "Advanced users",
-                "desc"     : "Start from scratch with full control",
-                "emoji"    : "🧵",
-                "name"     : "custom"
-            }
-        },
-        description = (
-            "Training preset configurations optimized for different use cases. "
-            "Each preset includes display metadata and configuration details."
-        )
-    )
     presets_table_columns: list[tuple[str, str, int, str]] = Field(
         default = [
             ("Preset",      "bright_cyan", 15, "left"),
