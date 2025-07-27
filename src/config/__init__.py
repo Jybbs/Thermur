@@ -8,7 +8,3 @@ The configuration hierarchy is organized into two main domains:
 Each domain follows a consistent pattern with schemas for validation
 and stores for hydra-zen configuration management.
 """
-# Re-export key components from imitation domain
-from .imitation import ImitationConfig, register_all_stores
-
-__all__ = ["ImitationConfig", "register_all_stores"]

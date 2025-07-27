@@ -234,8 +234,6 @@ def trainer_build():
         detect_anomaly       = hardware.detect_anomaly,
         deterministic        = hardware.deterministic,
         devices              = hardware.devices,
-        enable_model_summary = metrics.enable_model_summary,
-        enable_progress_bar  = metrics.enable_progress_bar,
         gradient_clip_val    = optimizer.gradient_clip_val,
         log_every_n_steps    = metrics.log_every_n_steps,
         logger               = "${lightning.logger}",

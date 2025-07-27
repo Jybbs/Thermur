@@ -6,12 +6,13 @@ tracking individual agent decisions, CBF activations, and critical events during
 training and simulation. It integrates with PyTorch Lightning's logging system
 and provides structured outputs for post-hoc analysis.
 """
-from collections                         import Counter, defaultdict
-from config.imitation.schemas.monitoring import EventsModel
-from pytorch_lightning                   import LightningModule
-from tensordict                          import TensorDict
-from time                                import perf_counter
-from torch                               import where
+from collections                 import Counter, defaultdict
+from config.imitation.controller import ThresholdsModel
+from config.imitation.monitoring import EventsModel
+from pytorch_lightning           import LightningModule
+from tensordict                  import TensorDict
+from time                        import perf_counter
+from torch                       import where
 
 import wandb
 
@@ -24,26 +25,23 @@ class EventLogger:
     sampling detailed event data to W&B tables for debugging.
     """
     
-    
+    PREFIX = "events/"
     def __init__(
         self,
-        activation_tolerance : float,
-        max_temperature      : float,
-        events               : EventsModel
+        events     : EventsModel,
+        thresholds : ThresholdsModel
     ):
         """
         Initialize the event logger.
         
         Args:
-            activation_tolerance : CBF activation tolerance from safety config
-            max_temperature      : Maximum safe temperature from flock config
-            monitoring           : Monitoring configuration model
+            events     : Event logging configuration model
+            thresholds : Safety threshold configuration from controller domain
         """
-        self.cbf_tolerance   = activation_tolerance
-        self.cbf_threshold   = max_temperature - activation_tolerance
+        self.cbf_tolerance   = thresholds.activation_tolerance
+        self.cbf_threshold   = thresholds.max_temperature - thresholds.activation_tolerance
         self.event_types     = events.event_types
-        self.max_temperature = max_temperature
-        self.prefix          = events.prefix
+        self.max_temperature = thresholds.max_temperature
         self.sample_every    = events.event_sample_every
         
         self.event_buffer = defaultdict(list)
@@ -101,7 +99,7 @@ class EventLogger:
         self.event_counts[event_type] += 1
         
         module.log(
-            name     = self.prefix + self.event_types[event_type]["rate_metric"],
+            name     = self.PREFIX + self.event_types[event_type]["rate_metric"],
             value    = self.event_counts[event_type] / max(self.total_steps, 1),
             on_epoch = True,
             on_step  = True

@@ -15,18 +15,31 @@ class EventsModel(BaseModel, extra="forbid"):
     Defines parameters for detecting and logging critical events during
     simulation, including safety violations and control interventions.
     """
-    activation_tolerance: PositiveFloat = Field(
-        default     = 3.0,
+    event_sample_every: PositiveInt = Field(
+        default     = 100,
         description = (
-            "Control deviation threshold in m/s for detecting CBF interventions, used "
-            "to track when safety filter modifies nominal commands."
+            "Frequency of detailed event sampling for W&B table logging, higher values "
+            "reduce data volume but may miss important events."
         )
     )
-    max_temperature: PositiveFloat = Field(
-        default     = 475.0,
+    event_types: dict[str, dict[str, Any]] = Field(
+        default_factory = lambda: {
+            "thermal_violation": {
+                "columns"     : ["agent_id", "temperature", "position", "excess"],
+                "rate_metric" : "thermal_violation_rate"
+            },
+            "near_miss": {
+                "columns"     : ["agent_id", "temperature", "position", "margin"],
+                "rate_metric" : "near_miss_rate"
+            },
+            "cbf_activation": {
+                "columns"     : ["agent_id", "temperature", "safety_margin", "control_diff"],
+                "rate_metric" : "cbf_activation_rate"
+            }
+        },
         description = (
-            "Maximum temperature threshold in Kelvin for thermal violation detection "
-            "and safety monitoring across all agents."
+            "Event type definitions with column schemas and metric names for structured "
+            "logging of critical simulation events."
         )
     )
 
@@ -50,20 +63,6 @@ class MetricsModel(BaseModel, extra="forbid"):
         description = (
             "Minimum temperature in Kelvin for color mapping visualization, values "
             "below are clamped to minimum intensity in heat colormap."
-        )
-    )
-    enable_model_summary: bool = Field(
-        default     = True,
-        description = (
-            "Display comprehensive model architecture summary including parameter counts "
-            "and layer shapes before training begins for architecture verification."
-        )
-    )
-    enable_progress_bar: bool = Field(
-        default     = True,
-        description = (
-            "Show real-time progress bar with loss metrics during training epochs "
-            "for visual feedback on training progression and convergence."
         )
     )
     legibility_grid_size: PositiveInt = Field(

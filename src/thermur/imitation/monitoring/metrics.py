@@ -6,7 +6,7 @@ for the training pipeline, including imitation learning losses, core evaluation
 metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
-from config.imitation.schemas.monitoring import MetricsModel
+from config.imitation.monitoring import MetricsModel
 from pytorch_lightning                   import LightningModule
 from tensordict                          import TensorDict
 from torch                               import Tensor
@@ -278,7 +278,7 @@ class LegibilitySSIMMetric(Metric):
             reduction='elementwise_mean'
         )
         
-        self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("count",    default=torch.tensor(0),   dist_reduce_fx="sum")
         self.add_state("ssim_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
     def _render_velocity_field(
@@ -402,8 +402,7 @@ class MetricsCollector:
         bounds_max      : list[float],
         gravity         : float,
         max_temperature : float,
-        metrics         : MetricsModel,
-        output_dim      : int
+        metrics         : MetricsModel
     ):
         """
         Initialize the metrics collector with all metric instances.
@@ -413,15 +412,13 @@ class MetricsCollector:
             gravity         : Gravitational acceleration from physics config
             max_temperature : Maximum safe temperature from flock config
             metrics         : Metrics configuration model
-            output_dim      : Dimension of the policy output
         """
         self.bounds_max      = bounds_max
         self.gravity         = gravity
         self.max_temperature = max_temperature
         self.metrics         = metrics
-        self.output_dim      = output_dim
         
-        self._init_imitation_metrics(output_dim=output_dim)
+        self._init_imitation_metrics(3)
         self._init_evaluation_metrics()
         self._init_runtime_trackers()
     
@@ -443,7 +440,7 @@ class MetricsCollector:
         Creates standard regression metrics for behavioral cloning loss.
         
         Args:
-            output_dim : Dimensionality of action space for R² calculation
+            output_dim: Dimensionality of action space for R² calculation
         """
         self.train_imitation = MetricCollection({
             "mae"  : MeanAbsoluteError(),
@@ -531,7 +528,7 @@ class MetricsCollector:
             )
         
         if predictions is not None and targets is not None:
-            for i, dim in enumerate(["x", "y", "z"][:self.output_dim]):
+            for i, dim in enumerate(["x", "y", "z"]):
                 log_metric(
                     name    = f"{phase}/velocity_{dim}_mse",
                     on_step = False,
@@ -550,7 +547,7 @@ class MetricsCollector:
         Updates internal counters used to compute CBF activation rate.
         
         Args:
-            batch : TensorDict containing CBF activation information
+            batch: TensorDict containing CBF activation information
         """
         if "cbf_active" in batch:
             self.cbf_activation_count += batch["cbf_active"].sum().item()
@@ -617,7 +614,7 @@ class MetricsCollector:
         Args:
             phase       : Training phase ("train" or "val")
             predictions : Model predictions [batch_size, output_dim]
-            targets     : Expert actions [batch_size, output_dim]
+            targets     : Expert actions    [batch_size, output_dim]
         """
         imitation_metrics = (
             self.train_imitation if phase == "train" else self.val_imitation
@@ -664,7 +661,7 @@ class ThermalSafetyMetric(Metric):
         Update metric with new temperature readings.
         
         Args:
-            temperature : Agent temperatures [N] or [N, 1] in Kelvin
+            temperature: Agent temperatures [N] or [N, 1] in Kelvin
         """
         temperature = temperature.flatten()
             

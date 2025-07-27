@@ -1,95 +1,54 @@
 """
-Monitoring domain stores for hydra-zen configuration.
+Monitoring configuration stores using hydra-zen.
 
 This module provides store-based configurations for monitoring components
-using simplified domain-level groups with minimal presets.
+using hydra-zen's decorator pattern. Each component is registered as a separate
+build that can be referenced and overridden independently via Hydra's CLI.
 """
-from hydra_zen import store, builds
+from .schemas                     import *
+from config.utils.zen             import store, build  
 from thermur.imitation.monitoring import EventLogger, MetricsCollector
 
-# Import schemas for validation
-from . import EventsModel, MetricsModel
-
-# Pre-configure group for all monitoring configs
 monitoring = store(group="monitoring")
+events     = EventsModel()
+metrics    = MetricsModel()
 
-@monitoring(name="default")
-def default():
+@monitoring(name="collector")
+def collector_build():
     """
-    Standard monitoring configuration.
-    """
-    # Use Pydantic models for validation and defaults
-    events = EventsModel()
-    metrics = MetricsModel()
+    Builder for unified metrics collector.
     
-    return dict(
-        events=builds(EventLogger,
-            activation_tolerance=events.activation_tolerance,
-            max_temperature=events.max_temperature
-        ),
-        
-        collector=builds(MetricsCollector,
-            # Metrics configuration
-            log_every_n_steps=metrics.log_every_n_steps,
-            logging_interval=metrics.logging_interval,
-            enable_model_summary=metrics.enable_model_summary,
-            enable_progress_bar=metrics.enable_progress_bar,
-            profiler=metrics.profiler,
-            
-            # Visual metrics parameters
-            legibility_grid_size=metrics.legibility_grid_size,
-            legibility_kernel_size=metrics.legibility_kernel_size,
-            legibility_sigma=metrics.legibility_sigma,
-            color_temp_min=metrics.color_temp_min,
-            color_temp_max=metrics.color_temp_max,
-            power_exponent=metrics.power_exponent,
-            
-            # Runtime parameters from environment
-            max_temperature=events.max_temperature,
-            bounds_max="${simulation.env.bounds_max}",
-            gravity="${simulation.env.gravity}"
-        )
+    Creates a centralized metrics collection system that tracks:
+    - Imitation learning metrics (MSE, RMSE, MAE, R²)
+    - Core evaluation metrics (thermal safety, legibility, cohesion, energy, color)
+    - Runtime performance metrics (CBF activations, trajectories)
+    
+    The collector integrates with PyTorch Lightning's logging system
+    and automatically syncs metrics to Weights & Biases.
+    """
+    return build(
+        MetricsCollector,
+        bounds_max      = "${simulation.env.bounds_max}",
+        gravity         = "${simulation.env.gravity}",
+        max_temperature = "${controller.thresholds.max_temperature}",
+        metrics         = metrics
     )
 
-@monitoring(name="debug")
-def debug():
+@monitoring(name="events")  
+def events_build():
     """
-    Debug monitoring configuration.
-    """
-    # Debug configurations with overrides
-    events = EventsModel(
-        activation_tolerance=5.0,  # Higher tolerance
-        max_temperature=500.0  # Higher threshold
-    )
-    metrics = MetricsModel(
-        log_every_n_steps=1,  # Log every step
-        enable_model_summary=False,  # Skip summary
-        enable_progress_bar=True,  # Keep progress
-        profiler=None  # No profiling
-    )
+    Builder for event detection and logging system.
     
-    return dict(
-        events=builds(EventLogger,
-            activation_tolerance=events.activation_tolerance,
-            max_temperature=events.max_temperature
-        ),
-        
-        collector=builds(MetricsCollector,
-            # Simplified metrics for debugging
-            log_every_n_steps=metrics.log_every_n_steps,
-            logging_interval=metrics.logging_interval,
-            enable_model_summary=metrics.enable_model_summary,
-            enable_progress_bar=metrics.enable_progress_bar,
-            profiler=None,  # No profiling in debug
-            
-            # Skip visual metrics for speed
-            legibility_grid_size=None,
-            color_temp_min=metrics.color_temp_min,
-            color_temp_max=metrics.color_temp_max,
-            
-            # Runtime parameters
-            max_temperature=events.max_temperature,
-            bounds_max="${simulation.env.bounds_max}",
-            gravity="${simulation.env.gravity}"
-        )
+    Creates an event logger that tracks critical simulation events:
+    - Thermal violations when agents exceed T_max
+    - Near misses when agents approach thermal limits
+    - CBF activations when safety filter modifies control
+    
+    Events are logged as both aggregate rates and detailed tables
+    for debugging and analysis.
+    """
+    return build(
+        EventLogger,
+        events     = events,
+        thresholds = "${controller.thresholds}"
     )

@@ -8,7 +8,7 @@ Reynolds flocking rules with thermal constraints to demonstrate safe
 collective behavior.
 """
 from .safety                     import SafetyFilter
-from config.imitation.controller import ExpertModel, FlockModel
+from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
 from tensordict                  import TensorDict
 from torch                       import Tensor
 from typing                      import Optional
@@ -36,7 +36,8 @@ class ExpertController:
         self,
         expert        : ExpertModel,
         flock         : FlockModel,
-        safety_filter : Optional[SafetyFilter] = None
+        safety_filter : Optional[SafetyFilter] = None,
+        thresholds    : ThresholdsModel
     ):
         """
         Initializes the controller with the necessary configuration models.
@@ -47,11 +48,13 @@ class ExpertController:
             flock         : Flock configuration containing agent properties.
             safety_filter : Optional safety filter for CBF-based control limiting.
                             If None, no safety filtering is applied.
+            thresholds    : Safety threshold configuration used across domains.
         """
         self.expert          = expert
         self.flock           = flock
-        self.max_temperature = flock.max_temperature
+        self.max_temperature = thresholds.max_temperature
         self.safety_filter   = safety_filter
+        self.thresholds      = thresholds
         self._reset_shared_state()
 
     def _compute_alignment(self, velocity: Tensor) -> Tensor:
