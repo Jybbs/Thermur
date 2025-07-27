@@ -40,7 +40,7 @@ class PresetsModel(BaseModel, extra="forbid"):
     This model defines all available training presets, each with its own
     set of hyperparameter overrides optimized for specific use cases.
     """
-    quick : PresetInfo = Field(
+    quick: PresetInfo = Field(
         default = PresetInfo(
             best_for  = "Quick experiments & debugging",
             desc      = "Minimal setup for rapid testing",
@@ -65,7 +65,7 @@ class PresetsModel(BaseModel, extra="forbid"):
         ),
         description = "Quick iteration preset for rapid experimentation."
     )
-    standard : PresetInfo = Field(
+    standard: PresetInfo = Field(
         default = PresetInfo(
             best_for  = "Regular training runs",
             desc      = "Balanced configuration for most tasks",
@@ -90,7 +90,7 @@ class PresetsModel(BaseModel, extra="forbid"):
         ),
         description = "Standard training preset with balanced settings."
     )
-    large : PresetInfo = Field(
+    large: PresetInfo = Field(
         default = PresetInfo(
             best_for  = "Production & final models",
             desc      = "High-capacity models & longer training",
@@ -115,7 +115,7 @@ class PresetsModel(BaseModel, extra="forbid"):
         ),
         description = "Production preset for high-quality models."
     )
-    debug : PresetInfo = Field(
+    debug: PresetInfo = Field(
         default = PresetInfo(
             best_for  = "Troubleshooting issues",
             desc      = "Verbose logging & validation checks",
@@ -140,7 +140,7 @@ class PresetsModel(BaseModel, extra="forbid"):
         ),
         description = "Debug preset with maximum visibility."
     )
-    custom : PresetInfo = Field(
+    custom: PresetInfo = Field(
         default = PresetInfo(
             best_for  = "Advanced users",
             desc      = "Start from scratch with full control",
