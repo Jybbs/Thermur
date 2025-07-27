@@ -23,19 +23,19 @@ class MonitoringCallback(Callback):
     
     def __init__(
         self,
-        events  : Optional[EventLogger]      = None,
-        metrics : Optional[MetricsCollector] = None
+        events    : Optional[EventLogger]      = None,
+        collector : Optional[MetricsCollector] = None
     ):
         """
         Configure monitoring components for training lifecycle integration.
         
         Args:
-            events  : Optional event logger for tracking critical agent behaviors
-            metrics : Optional metrics collector for performance tracking
+            events    : Optional event logger for tracking critical agent behaviors
+            collector : Optional metrics collector for performance tracking
         """
         super().__init__()
-        self.events  = events
-        self.metrics = metrics
+        self.events    = events
+        self.collector = collector
     
     def on_fit_end(
         self, 
@@ -71,9 +71,9 @@ class MonitoringCallback(Callback):
         Updates evaluation metrics, tracks CBF activations, and analyzes
         batch data for critical events like thermal violations.
         """
-        if self.metrics:
-            self.metrics.update_evaluation_metrics(batch, "train")
-            self.metrics.log_cbf_activation(batch)
+        if self.collector:
+            self.collector.update_evaluation_metrics(batch, "train")
+            self.collector.log_cbf_activation(batch)
             
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -89,8 +89,8 @@ class MonitoringCallback(Callback):
         Clears CBF activation counts and event statistics that are
         tracked on a per-epoch basis for trend analysis.
         """
-        if self.metrics:
-            self.metrics.reset_runtime_metrics()
+        if self.collector:
+            self.collector.reset_runtime_metrics()
             
         if self.events:
             self.events.reset_epoch_metrics()
@@ -109,8 +109,8 @@ class MonitoringCallback(Callback):
         Tracks the same metrics as training but without updating
         model parameters, providing unbiased performance estimates.
         """
-        if self.metrics:
-            self.metrics.update_evaluation_metrics(batch, "val")
+        if self.collector:
+            self.collector.update_evaluation_metrics(batch, "val")
             
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -126,8 +126,8 @@ class MonitoringCallback(Callback):
         Computes final metric values across all validation batches
         for monitoring training progress and early stopping decisions.
         """
-        if self.metrics:
-            self.metrics.log_all_metrics(
+        if self.collector:
+            self.collector.log_all_metrics(
                 loss   = None,
                 module = pl_module,
                 phase  = "val"

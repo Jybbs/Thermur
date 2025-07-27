@@ -6,12 +6,12 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from functools import partial
-from itertools import filterfalse
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 from pathlib   import Path
 from textwrap  import shorten
 from torch     import compile as torch_compile
 from typer     import Argument, Context, Exit, Option
+from typing    import Any
 
 import subprocess
 
@@ -62,7 +62,7 @@ def train(
     Examples:
         thermur train                                # Interactive training
         thermur train --preset quick                 # Quick test run
-        thermur train learning.learning_rate=0.001   # Custom parameters
+        thermur train optimizer.learning_rate=0.001  # Custom parameters
         thermur train --no-interactive --force       # Non-interactive mode
         thermur train --dry-run                      # Validate config without training
         thermur train --resume checkpoints/last.ckpt # Resume from checkpoint
@@ -105,16 +105,13 @@ class TrainCommand:
         self,
         additional : list[str],
         base       : list[str] | None,
-        data_path  : str,
         preset     : str | None,
-        resume     : Path | None,
     ) -> list[str]:
         """
         Constructs the final override list in the proper order:
         1. Preset selection (if applicable)
-        2. Data path configuration
-        3. Command-line overrides
-        4. Interactive overrides
+        2. Command-line overrides
+        3. Interactive overrides
 
         The ordering ensures that later overrides can supersede earlier ones,
         giving users full control over the final configuration.
@@ -122,21 +119,24 @@ class TrainCommand:
         Args:
             additional : Overrides from interactive prompts.
             base       : Command-line provided overrides.
-            data_path  : Path to training data.
             preset     : Selected configuration preset.
 
         Returns:
             Complete list of hydra overrides.
         """
-        preset_override = (
-            [f"+preset={preset}"] 
-            if preset and preset in self.cfg.prompts.presets 
+        preset_overrides = (
+            [
+                f"{k}={v}" 
+                for k, v in sorted(
+                    getattr(self.cfg.presets, preset).overrides.overrides.items()
+                )
+            ]
+            if preset and hasattr(self.cfg.presets, preset)
             else []
         )
         
         return [
-            *preset_override,
-            f"+simulation.loader.wrf.data_path={data_path}",
+            *preset_overrides,
             *(base or []),
             *additional
         ]
@@ -196,18 +196,9 @@ class TrainCommand:
         if not overrides:
             return
         
-        is_preset        = lambda x: x.startswith("+preset=")
-        other_overrides  = list(filterfalse(is_preset, overrides))
-        preset_overrides = list(filter(is_preset, overrides))
-        
         meta_info = []
-        if preset_overrides:
-            preset = preset_overrides[0].split("=")[1]
-            emoji  = self.cfg.prompts.presets.get(preset, {}).get('emoji', '')
-            meta_info.append(f"Preset: {emoji} {preset}")
-        
         meta_info.append(f"Overrides: {len(overrides)}")
-        meta_info.extend(f"  • {o}" for o in other_overrides)
+        meta_info.extend(f"  • {o}" for o in overrides)
         
         self.ui.console.print()
         self.ui.display_panel(
@@ -224,10 +215,8 @@ class TrainCommand:
             preset : Selected preset name.
         """
         if preset:
-            preset_emoji = self.cfg.prompts.presets.get(preset, {}).get(
-                'emoji', 
-                preset
-            )
+            preset_info  = getattr(self.cfg.presets, preset, None)
+            preset_emoji = preset_info.emoji if preset_info else preset
             self.ui.print_message(
                 message  = f"Using preset: [bright_cyan]{preset_emoji}[/bright_cyan]",
                 msg_type = "config"
@@ -411,7 +400,7 @@ class TrainCommand:
             Dictionary of instantiated components ready for training.
         """
         with self.ui.create_thermal_progress() as progress:
-            component_cfgs = self.cfg.cli.training_component_configs
+            component_cfgs = self.cfg.display.training_component_configs
             task = progress.add_task(
                 description = self.cfg.messages.status["instantiating_components"],
                 total       = len(component_cfgs)
@@ -450,6 +439,7 @@ class TrainCommand:
 
     def _launch_hydra(
         self,
+        data_path : str,
         dry_run   : bool,
         overrides : list[str],
         resume    : Path | None,
@@ -477,7 +467,12 @@ class TrainCommand:
 
         task_map = {
             True  : partial(self._dry_run_task, overrides=overrides),
-            False : partial(self._training_task, imports=imports, resume=resume)
+            False : partial(
+                self._training_task,
+                data_path = data_path, 
+                imports   = imports, 
+                resume    = resume
+            )
         }
 
         job = imports["launch"](
@@ -492,7 +487,7 @@ class TrainCommand:
         if job.status.name != "COMPLETED":
             raise RuntimeError(f"Training job failed with status: {job.status}")
 
-    def _load_training_modules(self):
+    def _load_training_modules(self) -> dict[str, Any]:
         """
         Lazily imports heavy dependencies for training to keep the CLI lean.
 
@@ -564,13 +559,14 @@ class TrainCommand:
         Raises:
             Exit: If the user declines to proceed with training.
         """
+        preset_obj  = getattr(self.cfg.presets, preset, None) if preset else None
+        preset_emoji = preset_obj.emoji if preset_obj else (preset or "🧵")
         system_info = self.system.get_system_info()
-        preset_info = self.cfg.prompts.presets.get(preset, {}) if preset else {}
         
         summary_data = {
             "gpu_available" : system_info.get("cuda", False),
             "overrides"     : len(overrides),
-            "preset"        : preset_info.get('emoji', preset) or "🧵",
+            "preset"        : preset_emoji,
             "wandb_project" : self.cfg.wandb.project,
         }
             
@@ -583,9 +579,10 @@ class TrainCommand:
 
     def _training_task(
         self, 
-        cfg     : DictConfig, 
-        imports, 
-        resume  : Path | None = None
+        cfg       : DictConfig,
+        data_path : str, 
+        imports   : dict[str, Any], 
+        resume    : Path | None = None
     ):
         """
         Executes the training workflow with resolved configuration.
@@ -604,6 +601,9 @@ class TrainCommand:
         """
         self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
+
+        with open_dict(cfg):
+            cfg.simulation.loader.wrf.data_path = data_path
 
         if cfg.optimizer.seed is not None:
             imports["seed_everything"](cfg.optimizer.seed)
@@ -645,7 +645,6 @@ class TrainCommand:
         )
         self.ui.console.print()
 
-        # Lightning's trainer.fit is called directly - no wrapper needed
         components["trainer"].fit(
             model      = components["policy"],
             datamodule = components["datamodule"],
@@ -698,12 +697,11 @@ class TrainCommand:
 
         self._display_preset(preset)
 
+        data_path = self._ensure_data_available(sample)
         overrides = self._build_overrides(
             additional = additional,
             base       = overrides,
-            data_path  = self._ensure_data_available(sample),
             preset     = preset,
-            resume     = resume,
         )
 
         if not force and (issues := self.system.validate_overrides(overrides)):
@@ -718,7 +716,12 @@ class TrainCommand:
         self.ui.console.print()
 
         try:
-            self._launch_hydra(dry_run, overrides, resume)
+            self._launch_hydra(
+                data_path = data_path,
+                dry_run   = dry_run, 
+                overrides = overrides,
+                resume    = resume
+            )
 
         except KeyboardInterrupt:
             self.ui.console.print()

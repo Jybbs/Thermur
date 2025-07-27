@@ -12,6 +12,15 @@ from omegaconf                           import SI
 from thermur.imitation.monitoring        import EventLogger, MetricsCollector
 
 
+build_metrics = builds(
+    MetricsModel,
+    populate_full_signature = True,
+    zen_dataclass           = {
+        "module"   : "src.configs.imitation.factories.monitoring",
+        "cls_name" : "MetricsBuild"
+    }
+)
+
 build_events = builds(
     EventLogger,
     activation_tolerance    = SI("${safety.activation_tolerance}"),
@@ -32,7 +41,7 @@ near-miss incidents, and dynamic topology changes in the communication graph.
 Events are logged as rates for dashboards and sampled instances for debugging.
 """
 
-build_metrics = builds(
+build_collector = builds(
     MetricsCollector,
     bounds_max              = SI("${physics.bounds_max}"),
     gravity                 = SI("${physics.gravity}"),
@@ -42,7 +51,7 @@ build_metrics = builds(
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.monitoring",
-        "cls_name" : "MetricsBuild"
+        "cls_name" : "CollectorBuild"
     }
 )
 """

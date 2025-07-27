@@ -13,6 +13,7 @@ cli_cfg = make_config(
     display  = build_display,
     download = build_download,
     messages = build_messages,
+    presets  = build_presets,
     prompts  = build_prompts,
     secrets  = build_secrets,
     system   = build_system,

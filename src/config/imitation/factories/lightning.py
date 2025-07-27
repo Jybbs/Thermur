@@ -10,7 +10,7 @@ from omegaconf                          import SI
 from pytorch_lightning                  import Trainer
 from pytorch_lightning.callbacks        import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers          import WandbLogger
-from thermur.imitation.lightning        import DataModule, GNNPolict, MonitoringCallback
+from thermur.imitation.lightning        import DataModule, GNNPolicy, MonitoringCallback
 
 
 build_checkpoint = builds(
@@ -172,7 +172,7 @@ Essential for experiment reproducibility and team collaboration.
 
 build_lr_monitor_callback = builds(
     LearningRateMonitor,
-    logging_interval        = SI("${monitoring.logging_interval}"),
+    logging_interval        = SI("${metrics.logging_interval}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -210,7 +210,7 @@ equivariance critical for generalization across different flock configurations.
 build_policy = builds(
     GNNPolicy,
     architecture            = SI("${architecture}"),
-    metrics                 = SI("${metrics}"),
+    collector               = SI("${collector}"),
     optimizer               = zen(OptimizerModel),
     populate_full_signature = True,
     zen_dataclass           = {
@@ -231,7 +231,7 @@ regardless of agent ordering, critical for sim-to-real transfer.
 build_monitoring_callback = builds(
     MonitoringCallback,
     events                  = SI("${events}"),
-    metrics                 = SI("${metrics}"),
+    collector               = SI("${collector}"),
     populate_full_signature = True,
     zen_dataclass           = {
         "module"   : "src.configs.imitation.factories.lightning",
@@ -276,13 +276,13 @@ build_trainer = builds(
         build_monitoring_callback
     ],
     devices                 = SI("${hardware.devices}"),
-    enable_model_summary    = SI("${monitoring.enable_model_summary}"),
-    enable_progress_bar     = SI("${monitoring.enable_progress_bar}"),
+    enable_model_summary    = SI("${metrics.enable_model_summary}"),
+    enable_progress_bar     = SI("${metrics.enable_progress_bar}"),
     gradient_clip_val       = SI("${optimizer.gradient_clip_val}"),
-    log_every_n_steps       = SI("${monitoring.log_every_n_steps}"),
+    log_every_n_steps       = SI("${metrics.log_every_n_steps}"),
     logger                  = SI("${logger}"),
     precision               = SI("${hardware.precision}"),
-    profiler                = SI("${monitoring.profiler}"),
+    profiler                = SI("${metrics.profiler}"),
     strategy                = SI("${hardware.strategy}"),
     populate_full_signature = True,
     zen_dataclass           = {

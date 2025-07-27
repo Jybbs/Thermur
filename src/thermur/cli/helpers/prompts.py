@@ -36,7 +36,6 @@ class CLIPrompts:
             ui  : An initialized `ThermurUI` object for rendering components.
         """
         self.cfg      = cfg
-        self.cli      = cfg.cli
         self.messages = cfg.messages
         self.prompts  = cfg.prompts
         self.ui       = ui
@@ -49,7 +48,7 @@ class CLIPrompts:
         Asks the user if they wish to provide advanced configuration overrides.
 
         If confirmed, this function enters a loop to collect multiple Hydra-style
-        override strings (e.g., 'hyperparameters.lr=0.001'). It displays syntax
+        override strings (e.g., 'optimizer.learning_rate=0.001'). It displays syntax
         examples to guide the user on the correct format.
 
         Returns:
@@ -59,7 +58,7 @@ class CLIPrompts:
         self.ui.print_section("Advanced Configuration", minor=True)
 
         syntax_panel = self.ui.create_syntax_panel(
-            code  = self.cli.override_syntax_help,
+            code  = self.messages.override_syntax_help,
             title = "Configuration Override Syntax",
         )
         self.ui.console.print(syntax_panel)
@@ -83,7 +82,7 @@ class CLIPrompts:
 
         overrides = []
         while override := questionary.text(
-            instruction = "(e.g., hyperparameters.lr=0.001)",
+            instruction = "(e.g., optimizer.learning_rate=0.001)",
             message     = "Override:",
             style       = self.thermal_style
         ).ask():
@@ -197,34 +196,34 @@ class CLIPrompts:
             title   = "Available Presets"
         )
 
-        preset_cfgs = self.prompts.presets
-        for name, config in preset_cfgs.items():
-            display_name = f"{config['emoji']} {config['name']}"
+        for name in self.cfg.presets.__fields__:
+            config       = getattr(self.cfg.presets, name)
+            display_name = f"{config.emoji} {config.name}"
             if name == "custom":
                 row_style = f"[grey70]"
                 table.add_row(
                     f"{row_style}{display_name}[/]",
-                    f"{row_style}{config['desc']}[/]",
-                    f"{row_style}{config['best_for']}[/]",
+                    f"{row_style}{config.desc}[/]",
+                    f"{row_style}{config.best_for}[/]",
                 )
             else:
-                table.add_row(display_name, config['desc'], config['best_for'])
+                table.add_row(display_name, config.desc, config.best_for)
 
         self.ui.console.print(table)
         self.ui.console.print()
 
         choices = [
             questionary.Choice(
-                title = preset_cfgs[name]['emoji'], 
+                title = getattr(self.cfg.presets, name).emoji, 
                 value = name
             )
-            for name in self.prompts.presets.keys()
+            for name in self.cfg.presets.__fields__
             if name != 'custom'
         ]
         choices.extend([
             questionary.Separator(),
             questionary.Choice(
-                title = preset_cfgs['custom']['emoji'],
+                title = self.cfg.presets.custom.emoji,
                 value = None
             ),
         ])
@@ -237,8 +236,8 @@ class CLIPrompts:
 
         if chosen_emoji:
             emoji_to_preset = {
-                config['emoji']: name 
-                for name, config in preset_cfgs.items()
+                getattr(self.cfg.presets, name).emoji: name 
+                for name in self.cfg.presets.__fields__
             }
             chosen_preset = emoji_to_preset.get(chosen_emoji)
             

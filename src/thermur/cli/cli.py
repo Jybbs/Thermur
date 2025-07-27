@@ -68,8 +68,8 @@ class ThermurCLI:
         """
         cli = Typer(
             context_settings = {"help_option_names": ["-h", "--help"]},
-            help             = self.cfg.cli.app_description,
-            name             = self.cfg.cli.app_name,
+            help             = self.cfg.display.app_description,
+            name             = self.cfg.display.app_name,
             rich_markup_mode = "rich"
         )
         
@@ -132,14 +132,14 @@ class ThermurCLI:
             ui.print_header("Welcome to Thermur")
             ui.print_section("Available Commands", "accent")
 
-            for cmd_info in cfg.cli.commands_available:
+            for cmd_info in cfg.display.commands_available:
                 ui.console.print(
                     f"  {cmd_info['icon']} [bold accent]{cmd_info['name']:10}"
                     f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
                 )
 
             ui.print_section("Getting Started", "bright_green")
-            ui.print_command_examples(cfg.cli.commands_examples)
+            ui.print_command_examples(cfg.display.commands_examples)
 
             ui.console.print()
             ui.print_message(

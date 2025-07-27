@@ -36,6 +36,9 @@ dependencies    = [
 [project.scripts]
 thermur = "thermur.cli.cli:main"
 
+[tool.hatch.build]
+sources = ["src"]
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/configs", "src/thermur"]
+packages = ["src/config", "src/thermur"]
 

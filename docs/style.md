@@ -615,7 +615,7 @@ def train():
 
     Example:
         thermur train
-        thermur train hyperparameters.learning_rate=0.001
+        thermur train optimizer.learning_rate=0.001
         thermur train +experiment=large_flock
     """
     # Lazy imports to keep CLI startup fast

@@ -358,11 +358,11 @@ class MessagesModel(BaseModel, extra="forbid"):
     override_syntax_help: str = Field(
         default = (
             "# Override examples:\n"
-            "hyperparameters.lr=0.001          # Learning rate\n"
-            "hyperparameters.batch_size=64     # Batch size\n"
-            "flock.num_drones=10               # Number of drones\n"
-            "environment.max_temp=85.0         # Temperature limit\n"
-            "+experiment=my_custom_setup       # Load experiment"
+            "optimizer.learning_rate=0.001     # Learning rate\n"
+            "experience.batch_size=64          # Batch size\n"
+            "flock.agent_count=10              # Number of agents\n"
+            "hardware.precision=32-true        # Training precision\n"
+            "wandb.mode=offline                # W&B logging mode"
         ),
         description = "Help text for configuration override syntax."
     )
