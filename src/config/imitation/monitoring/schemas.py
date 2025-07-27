@@ -1,11 +1,34 @@
 """
-Metrics collection configuration schemas.
+Monitoring domain schemas for Pydantic validation.
 
-This module defines configuration for the comprehensive metrics collection
-system used during training and evaluation.
+This module consolidates all monitoring configuration models including
+metrics collection, event tracking, and performance monitoring.
 """
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
-from typing   import Literal, Optional
+from typing   import Any, Literal, Optional
+
+
+class EventsModel(BaseModel, extra="forbid"):
+    """
+    Configuration for event detection and logging system.
+    
+    Defines parameters for detecting and logging critical events during
+    simulation, including safety violations and control interventions.
+    """
+    activation_tolerance: PositiveFloat = Field(
+        default     = 3.0,
+        description = (
+            "Control deviation threshold in m/s for detecting CBF interventions, used "
+            "to track when safety filter modifies nominal commands."
+        )
+    )
+    max_temperature: PositiveFloat = Field(
+        default     = 475.0,
+        description = (
+            "Maximum temperature threshold in Kelvin for thermal violation detection "
+            "and safety monitoring across all agents."
+        )
+    )
 
 
 class MetricsModel(BaseModel, extra="forbid"):
