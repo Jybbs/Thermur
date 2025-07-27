@@ -4,91 +4,112 @@ Controller domain stores for hydra-zen configuration.
 This module provides store-based configurations for control algorithms
 using simplified domain-level groups with minimal presets.
 """
-from hydra_zen                     import store as create_store, builds
-from thermur.imitation.controller  import ReynoldsController, SafetyFilter
+from hydra_zen import store, builds
+from thermur.imitation.controller import FlockController, SafetyFilter
 
-# Import schemas from __init__ for clean imports
+# Import schemas for validation
 from . import (
     ControllerModel,
     FlockModel,
     SafetyModel
 )
 
-# Create domain store
-store = create_store()
+# Pre-configure group for all controller configs
+controller = store(group="controller")
 
-@store(group="controller", name="default")
+@controller(name="default")
 def default():
     """
     Standard controller configuration.
-    
-    Provides default configurations for the Reynolds flocking controller
-    with Control Barrier Function safety filtering.
     """
-    # Validate configurations with Pydantic
-    control = ControllerModel()
-    flock   = FlockModel()
-    safety  = SafetyModel()
+    # Use Pydantic models for validation and defaults
+    ctrl = ControllerModel()
+    flock = FlockModel()
+    safety = SafetyModel()
     
-    return {
-        # Controller
-        "controller": builds(
-            ReynoldsController,
-            control = control.model_dump(),
-            flock   = flock.model_dump(),
-            safety  = safety.model_dump()
-        ),
-        
-        # Safety filter (optional)
-        "safety_filter": builds(
-            SafetyFilter,
-            safety_config = safety.model_dump()
-        ),
-        
-        # Export individual configs for access
-        "control" : control.model_dump(),
-        "flock"   : flock.model_dump(),
-        "safety"  : safety.model_dump()
-    }
+    return dict(
+        expert=builds(FlockController,
+            # Flocking weights
+            w_separation=ctrl.w_separation,
+            w_alignment=ctrl.w_alignment,
+            w_cohesion=ctrl.w_cohesion,
+            w_thermal=ctrl.w_thermal,
+            
+            # Control parameters
+            min_distance=ctrl.min_distance,
+            temperature_scaling=ctrl.temperature_scaling,
+            gradient_step=ctrl.gradient_step,
+            epsilon=ctrl.epsilon,
+            
+            # Flock configuration
+            agent_count=flock.agent_count,
+            communication_range=flock.communication_range,
+            max_temperature=flock.max_temperature,
+            thermal_time_constant=flock.thermal_time_constant,
+            
+            # Safety parameters
+            safety_filter=builds(SafetyFilter,
+                cbf_alpha=safety.cbf_alpha,
+                activation_tolerance=safety.activation_tolerance,
+                log_violations=safety.log_violations,
+                qp_eps=safety.qp_eps,
+                qp_max_iter=safety.qp_max_iter,
+                qp_verbose=safety.qp_verbose,
+                qp_on_failure=safety.qp_on_failure
+            )
+        )
+    )
 
-@store(group="controller", name="debug")
+@controller(name="debug")
 def debug():
     """
     Debug controller configuration.
-    
-    Minimal configuration for rapid testing with small flock
-    and relaxed safety constraints.
     """
-    # Minimal configurations for debugging
-    control = ControllerModel(
-        w_thermal = 1.0,  # Reduced thermal weight
-        epsilon   = 1e-6
+    # Debug configurations with overrides
+    ctrl = ControllerModel(
+        w_thermal=1.0,  # Reduced thermal weight for debugging
+        epsilon=1e-6
     )
     flock = FlockModel(
-        agent_count            = 3,
-        communication_range    = 10.0,
-        formation_scale_factor = 0.3
+        agent_count=3,
+        communication_range=10.0,
+        formation_scale_factor=0.3
     )
     safety = SafetyModel(
-        cbf_alpha            = 1.0,  # Less aggressive safety
-        activation_tolerance = 5.0,   # Higher tolerance
-        log_violations       = False  # Reduce logging
+        cbf_alpha=1.0,  # Less aggressive safety
+        activation_tolerance=5.0,  # Higher tolerance
+        log_violations=False  # Reduce logging
     )
     
-    return {
-        # Simplified controller
-        "controller": builds(
-            ReynoldsController,
-            control = control.model_dump(),
-            flock   = flock.model_dump(),
-            safety  = safety.model_dump()
-        ),
-        
-        # No safety filter for debugging
-        "safety_filter": None,
-        
-        # Export configs
-        "control" : control.model_dump(),
-        "flock"   : flock.model_dump(),
-        "safety"  : safety.model_dump()
-    }
+    return dict(
+        expert=builds(FlockController,
+            # Flocking weights
+            w_separation=ctrl.w_separation,
+            w_alignment=ctrl.w_alignment,
+            w_cohesion=ctrl.w_cohesion,
+            w_thermal=ctrl.w_thermal,
+            
+            # Control parameters
+            min_distance=ctrl.min_distance,
+            temperature_scaling=ctrl.temperature_scaling,
+            gradient_step=ctrl.gradient_step,
+            epsilon=ctrl.epsilon,
+            
+            # Small flock for testing
+            agent_count=flock.agent_count,
+            communication_range=flock.communication_range,
+            max_temperature=flock.max_temperature,
+            thermal_time_constant=flock.thermal_time_constant,
+            
+            # Relaxed safety for debugging
+            safety_filter=builds(SafetyFilter,
+                cbf_alpha=safety.cbf_alpha,
+                activation_tolerance=safety.activation_tolerance,
+                log_violations=safety.log_violations,
+                qp_eps=safety.qp_eps,
+                qp_max_iter=safety.qp_max_iter,
+                qp_verbose=safety.qp_verbose,
+                qp_on_failure=safety.qp_on_failure
+            ) if safety.qp_on_failure != "ignore" else None  # Optionally disable
+        )
+    )
