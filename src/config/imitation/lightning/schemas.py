@@ -1,8 +1,8 @@
 """
-Policy network and training configuration.
+Lightning domain schemas for Pydantic validation.
 
-This module defines configuration models for the GNN policy architecture,
-optimization settings, hardware configuration, and model checkpointing.
+This module consolidates all PyTorch Lightning configuration models including
+policy architecture, training hardware, optimization, and experiment tracking.
 """
 from pathlib  import Path
 from pydantic import BaseModel, Field, NonNegativeFloat
@@ -92,6 +92,57 @@ class CheckpointModel(BaseModel, extra="forbid"):
         description = (
             "Always save the final model checkpoint at training completion regardless "
             "of whether it achieved the best validation metric."
+        )
+    )
+
+
+class ExperienceModel(BaseModel, extra="forbid"):
+    """
+    Experience data handling and batching configuration.
+    
+    Manages how experience data is collected, stored, and sampled during
+    imitation learning from expert demonstrations.
+    """
+    batch_size: PositiveInt = Field(
+        default     = 256,
+        description = (
+            "Number of state-action transitions B sampled per gradient update, "
+            "balancing computational efficiency with gradient variance."
+        )
+    )
+    buffer_size: PositiveInt = Field(
+        default     = 50_000,
+        description = (
+            "Maximum trajectory transitions |𝒟| stored in circular replay buffer "
+            "before oldest experiences are overwritten with new demonstrations."
+        )
+    )
+    frames_per_batch: PositiveInt = Field(
+        default     = 1024,
+        description = (
+            "Environment steps N_batch collected between training updates, controlling "
+            "the ratio of environment interaction to gradient computation."
+        )
+    )
+    max_frames_per_traj: int = Field(
+        default     = -1,
+        description = (
+            "Maximum frames per trajectory before episode reset. Use -1 for infinite "
+            "episodes that only reset when environment signals done."
+        )
+    )
+    prefetch: NonNegativeInt = Field(
+        default     = 8,
+        description = (
+            "Concurrent batches loaded in background threads, hiding I/O latency "
+            "and maintaining GPU utilization during asynchronous data loading."
+        )
+    )
+    total_frames: PositiveInt = Field(
+        default     = 200_000,
+        description = (
+            "Total environment interactions T over entire training run, determining "
+            "sample efficiency and final policy performance convergence."
         )
     )
 
@@ -215,5 +266,52 @@ class OptimizerModel(BaseModel, extra="forbid"):
         description = (
             "L2 regularization coefficient λ penalizing large weights to improve "
             "generalization and prevent overfitting to training demonstrations."
+        )
+    )
+
+
+class WandbModel(BaseModel, extra="forbid"):
+    """
+    Configuration for Weights & Biases experiment tracking.
+    
+    W&B provides comprehensive experiment tracking for machine learning workflows,
+    including metric logging, hyperparameter tracking, model versioning, and
+    visualization. This configuration controls how Lightning integrates with W&B
+    during training and how the CLI accesses W&B for monitoring.
+    
+    The mode parameter allows flexible deployment:
+    - "online": Full cloud synchronization for collaborative work
+    - "offline": Local logging for air-gapped environments  
+    - "disabled": No W&B integration (useful for debugging)
+    
+    The API key is read from an environment variable to avoid hardcoding
+    credentials in configuration files.
+    """
+    api_key: str = Field(
+        default     = "WANDB_API_KEY",
+        description = (
+            "Environment variable name containing the W&B API key for "
+            "authentication - keeps credentials out of config files."
+        )
+    )
+    log_model: Literal["all", "false"] | bool = Field(
+        default     = "all",
+        description = (
+            "Model checkpoint logging policy - 'all' saves every checkpoint, "
+            "'false' or False disables model logging to save bandwidth."
+        )
+    )
+    mode: Literal["online", "offline", "disabled"] = Field(
+        default     = "online",
+        description = (
+            "W&B tracking mode - online syncs to cloud, offline stores locally, "
+            "disabled skips W&B integration entirely."
+        )
+    )
+    project: str = Field(
+        default     = "thermur-imitation",
+        description = (
+            "W&B project name for organizing experiments - groups related training "
+            "runs for easier comparison and analysis."
         )
     )

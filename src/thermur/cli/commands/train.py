@@ -476,7 +476,7 @@ class TrainCommand:
         }
 
         job = imports["launch"](
-            imports["imitation_cfg"],
+            imports["ImitationConfig"],
             config_name            = "train",
             overrides              = overrides,
             task_function          = task_map[dry_run],
@@ -505,8 +505,7 @@ class TrainCommand:
                 description = self.cfg.messages.status["loading_config_sys"],
                 task_id     = task
             )
-            from config.imitation.workloads.imitation import imitation_cfg
-            from config.imitation.workloads.imitation import register_imitation_cfgs
+            from config.imitation                      import ImitationConfig
             from hydra_zen                            import instantiate, launch
             from hydra_zen.third_party.pydantic       import pydantic_parser
             from pytorch_lightning                    import seed_everything
@@ -516,7 +515,7 @@ class TrainCommand:
                 description = self.cfg.messages.status["registering_configs"],
                 task_id     = task
             )
-            register_imitation_cfgs()
+            # Configs are auto-registered when config module is imported
 
             progress.update(
                 advance     = 50,
@@ -525,7 +524,7 @@ class TrainCommand:
             )
 
             imports = {
-                "imitation_cfg"   : imitation_cfg,
+                "ImitationConfig" : ImitationConfig,
                 "instantiate"     : instantiate,
                 "launch"          : launch,
                 "pydantic_parser" : pydantic_parser,

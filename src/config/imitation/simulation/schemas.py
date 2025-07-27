@@ -1,10 +1,81 @@
 """
-Physics and simulation environment configuration.
+Simulation domain schemas for Pydantic validation.
 
-This module defines the unified configuration for the physical simulation
-environment, including MuJoCo settings and thermal field interpolation.
+This module consolidates all simulation configuration models including
+physics settings, data loading, and environment parameters.
 """
-from pydantic import BaseModel, DirectoryPath, Field, PositiveFloat
+from pathlib  import Path
+from pydantic import BaseModel, DirectoryPath, Field, FilePath
+from pydantic import NonNegativeFloat, PositiveFloat
+from typing   import Optional
+
+
+class LoaderModel(BaseModel, extra="forbid"):
+    """
+    Configuration for WRF data loader.
+    
+    This model defines data structure parameters (variable names, processing 
+    options) and caching configuration for the Moisseeva (2020) dataset.
+    
+    The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
+    uses staggered grids where U, V, W wind components are offset from cell centers.
+    """
+    data_path: Optional[FilePath] = Field(
+        default     = None,
+        description = (
+            "Path to WRF-Fire NetCDF dataset file. Defaults to first available: "
+            "wrf-sfire/*.nc, then data/samples/wrf_sample.nc"
+        )
+    )
+    domain_randomization: bool = Field(
+        default     = True,
+        description = (
+            "Enable stochastic environmental variations including wind perturbations "
+            "and temperature noise to improve policy generalization."
+        )
+    )
+    fire_heat_variable: str = Field(
+        default     = "GRNHFX",
+        description = (
+            "NetCDF variable identifier for ground-level heat flux from wildfire "
+            "combustion, measured in W/m² in WRF-Fire outputs."
+        )
+    )
+    temperature_noise_std: NonNegativeFloat = Field(
+        default     = 0.5,
+        description = (
+            "Temperature noise standard deviation σ_T in Kelvin for domain "
+            "randomization, simulating measurement uncertainty and turbulence."
+        )
+    )
+    u_wind_variable: str = Field(
+        default     = "U",
+        description = (
+            "NetCDF variable identifier for eastward wind component U on staggered "
+            "Arakawa-C grid, requiring interpolation to cell centers."
+        )
+    )
+    v_wind_variable: str = Field(
+        default     = "V",
+        description = (
+            "NetCDF variable identifier for northward wind component V on staggered "
+            "Arakawa-C grid, requiring interpolation to cell centers."
+        )
+    )
+    w_wind_variable: str = Field(
+        default     = "W",
+        description = (
+            "NetCDF variable identifier for vertical wind component W, critical "
+            "for modeling thermal updrafts and fire-induced convection."
+        )
+    )
+    wind_noise_std: NonNegativeFloat = Field(
+        default     = 0.1,
+        description = (
+            "Wind noise standard deviation σ_w in m/s for stochastic perturbations, "
+            "modeling atmospheric turbulence and measurement uncertainty."
+        )
+    )
 
 
 class PhysicsModel(BaseModel, extra="forbid"):
@@ -27,7 +98,7 @@ class PhysicsModel(BaseModel, extra="forbid"):
     where ê_i are the standard basis vectors in ℝ^d.
     """
     assets_dir: DirectoryPath = Field(
-        default     = "src/thermur/simulation/assets",
+        default     = Path("src/thermur/simulation/assets"),
         description = (
             "Root directory containing MuJoCo XML model definitions for drone "
             "dynamics, including mesh files and physical parameters."
