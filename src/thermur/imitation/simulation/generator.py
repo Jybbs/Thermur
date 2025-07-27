@@ -70,7 +70,7 @@ class XMLGenerator:
             self.flock_template
         )
     
-    def _generate_actuators(self, agent_idx: int, spatial_dims: int) -> list[str]:
+    def _generate_actuators(self, agent_idx: int) -> list[str]:
         """
         Generate velocity actuator definitions for one agent's control.
         
@@ -79,8 +79,7 @@ class XMLGenerator:
         to [-1, 1] control range for normalized inputs.
         
         Args:
-            agent_idx    : Zero-based index of the agent
-            spatial_dims : Number of spatial dimensions (2 or 3)
+            agent_idx: Zero-based index of the agent
             
         Returns:
             List of actuator XML strings for this agent
@@ -96,10 +95,10 @@ class XMLGenerator:
         
         return [
             template.format(agent=agent_idx, dim=j, axis=axis)
-            for j, axis in enumerate("xyz"[:spatial_dims])
+            for j, axis in enumerate("xyz"[:3])
         ]
     
-    def _generate_drone_body(self, agent_idx: int, spatial_dims: int) -> str:
+    def _generate_drone_body(self, agent_idx: int) -> str:
         """
         Generate the complete XML definition for a single drone body.
         
@@ -108,23 +107,22 @@ class XMLGenerator:
         complete body definition.
         
         Args:
-            agent_idx    : Zero-based index of the agent
-            spatial_dims : Number of spatial dimensions (2 or 3)
+            agent_idx: Zero-based index of the agent
             
         Returns:
             Complete XML string defining the drone body
         """
         replacements = [
             ("$AGENT_ID$", str(agent_idx)),
-            ("$POSITION$", self._get_initial_position(agent_idx, spatial_dims)),
-            ("<!-- JOINTS_XML -->", self._generate_joints(agent_idx, spatial_dims))
+            ("$POSITION$", self._get_initial_position(agent_idx)),
+            ("<!-- JOINTS_XML -->", self._generate_joints(agent_idx))
         ]
         
         return reduce(
             lambda body, r: body.replace(*r), replacements, self.drone_template
         )
     
-    def _generate_joints(self, agent_idx: int, spatial_dims: int) -> str:
+    def _generate_joints(self, agent_idx: int) -> str:
         """
         Generate slide joint definitions for one agent's degrees of freedom.
         
@@ -133,13 +131,12 @@ class XMLGenerator:
         uniquely for each agent to enable individual control.
         
         Args:
-            agent_idx    : Zero-based index of the agent
-            spatial_dims : Number of spatial dimensions (2 or 3)
+            agent_idx: Zero-based index of the agent
             
         Returns:
             XML string containing all joint definitions for this agent
         """
-        axes     = ["1 0 0", "0 1 0", "0 0 1"][:spatial_dims]
+        axes     = ["1 0 0", "0 1 0", "0 0 1"][:3]
         template = """
             <joint
                 axis    = "{axis}"
@@ -155,7 +152,7 @@ class XMLGenerator:
             for j, axis in enumerate(axes)
         )
     
-    def _get_initial_position(self, agent_idx: int, spatial_dims: int) -> str:
+    def _get_initial_position(self, agent_idx: int) -> str:
         """
         Calculate the initial position for an agent to prevent collisions.
         
@@ -164,14 +161,13 @@ class XMLGenerator:
         the default drone geometry size.
         
         Args:
-            agent_idx    : Zero-based index of the agent
-            spatial_dims : Number of spatial dimensions (2 or 3)
+            agent_idx: Zero-based index of the agent
             
         Returns:
             Position string formatted for MuJoCo XML (space-separated values)
         """
         offset = 0.3 * agent_idx
-        return f"0 {offset} 0" if spatial_dims == 3 else f"0 {offset}"
+        return f"0 {offset} 0"
     
     def _load_templates(self) -> tuple[str, str]:
         """
@@ -188,7 +184,7 @@ class XMLGenerator:
 
     def generate_xml(
         self,
-        shape           : tuple[int, int],
+        agent_count     : int,
         simulation_step : float
     ) -> str:
         """
@@ -199,17 +195,15 @@ class XMLGenerator:
         components into a valid MuJoCo model.
         
         Args:
-            shape           : Tuple of (agent_count, spatial_dims) from FlockModel
+            agent_count     : Number of agents in the flock
             simulation_step : Physics simulation timestep in seconds
         
         Returns:
             Complete MuJoCo XML model as a string
         """
-        n, dims = shape
-        
         components = [
-            (self._generate_drone_body(i, dims), self._generate_actuators(i, dims))
-            for i in range(n)
+            (self._generate_drone_body(i), self._generate_actuators(i))
+            for i in range(agent_count)
         ]
         
         bodies, actuators = zip(*components) if components else ([], [])

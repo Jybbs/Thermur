@@ -13,6 +13,7 @@ monitoring = store(group="monitoring")
 events     = EventsModel()
 metrics    = MetricsModel()
 
+
 @monitoring(name="collector")
 def collector_build():
     """

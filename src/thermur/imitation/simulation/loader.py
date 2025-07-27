@@ -5,10 +5,10 @@ This module provides a comprehensive data loader for WRF-Fire NetCDF outputs,
 handling temperature, wind, and fire-specific variables with efficient 
 interpolation and gradient computation.
 """
-from config.imitation.schemas.simulation import LoaderModel, PhysicsModel
-from numpy                               import ndarray, zeros
-from torch                               import Tensor
-from xarray                              import open_dataset
+from config.imitation.simulation import LoaderModel, PhysicsModel
+from numpy                       import ndarray, zeros
+from torch                       import Tensor
+from xarray                      import open_dataset
 
 import torch
 
@@ -25,7 +25,7 @@ class WRFDataSource:
     - Temperature gradient computation using finite differences
     - WRF perturbation temperature conversion (T + 300K)
     - Staggered grid interpolation for wind components
-    - Fire-specific variables like ground heat flux
+    - Fire-specific variables like GRNHFX (ground heat flux from fire)
     
     WRF uses an Arakawa C-grid where velocity components are staggered:
     - U is defined at west/east cell faces (west_east_stag dimension)
@@ -33,26 +33,24 @@ class WRFDataSource:
     - W is defined at top/bottom cell faces (bottom_top_stag dimension)
     """
     def __init__(
-        self, 
-        physics : PhysicsModel,
-        wrf     : LoaderModel
+        self,
+        loader  : LoaderModel,
+        physics : PhysicsModel
     ):
         """
         Loads the dataset from the specified path and initializes configuration.
         
         Args:
-            physics : Physics configuration model with interpolation settings
-            wrf     : WRF configuration model with data path and variable names
+            loader  : Loader configuration with data path and noise settings
+            physics : Physics configuration with numerical parameters
         """
-        self.dataset    = open_dataset(wrf.data_path, cache=True)
-        self.coord_vars = list(self.dataset.coords)
-        self.physics    = physics
-        self.wrf        = wrf
-        
-        self.temp_var = physics.temperature_variable
-        self.u_var    = wrf.u_wind_variable
-        self.v_var    = wrf.v_wind_variable
-        self.w_var    = wrf.w_wind_variable
+        self.dataset                  = open_dataset(loader.data_path, cache=True)
+        self.coord_vars               = list(self.dataset.coords)
+        self.domain_randomization     = loader.domain_randomization
+        self.epsilon                  = physics.epsilon
+        self.fallback_temperature     = physics.fallback_temperature
+        self.temperature_noise_std    = loader.temperature_noise_std
+        self.wind_noise_std           = loader.wind_noise_std
 
     def _add_domain_noise(self, data: Tensor, noise_std: float) -> Tensor:
         """
@@ -67,7 +65,7 @@ class WRFDataSource:
         """
         return (
             data + torch.randn_like(data) * noise_std
-            if self.wrf.domain_randomization and noise_std > 0
+            if self.domain_randomization and noise_std > 0
             else data
         )
 
@@ -96,16 +94,12 @@ class WRFDataSource:
         Returns:
             numpy.ndarray [N, 3] containing field gradients
         """
-        epsilon         = self.physics.epsilon
-        num_agents, dim = positions.shape
-        gradients       = zeros((num_agents, dim))
-        dim_names       = [
-            self.physics.x_dimension, 
-            self.physics.y_dimension, 
-            self.physics.z_dimension
-        ]
+        dim_names  = ["x", "y", "z"]
+        epsilon    = self.epsilon
+        num_agents = positions.shape[0]
+        gradients  = zeros((num_agents, 3))
         
-        for i, dim_name in enumerate(dim_names[:min(dim, 3)]):
+        for i, dim_name in enumerate(dim_names):
             if dim_name not in self.coord_vars:
                 continue
             
@@ -146,14 +140,14 @@ class WRFDataSource:
         Returns:
             Tuple of processed (temperatures, gradients) with NaNs handled
         """
-        nan_grad_mask       = torch.isnan(gradients).any(dim=1)
         default_grad        = torch.zeros_like(gradients)
         default_grad[:, -1] = 1.0
+        nan_grad_mask       = torch.isnan(gradients).any(dim=1)
         
         gradients[nan_grad_mask] = default_grad[nan_grad_mask]
         
         return (
-            torch.nan_to_num(temperatures, nan=self.physics.fallback_temperature),
+            torch.nan_to_num(temperatures, self.fallback_temperature),
             gradients
         )
         
@@ -197,15 +191,11 @@ class WRFDataSource:
             Dictionary mapping dataset coordinate names to position values
         """
         position_array = positions.detach().cpu().numpy()
-        dim_mapping = [
-            self.physics.x_dimension,
-            self.physics.y_dimension,
-            self.physics.z_dimension
-        ]
+        dim_mapping = ["x", "y", "z"]
         
         return {
             dim_name: position_array[:, i]
-            for i, dim_name in enumerate(dim_mapping[:position_array.shape[1]])
+            for i, dim_name in enumerate(dim_mapping[:3])
             if i < 3 and dim_name in self.coord_vars
         }
 
@@ -247,9 +237,9 @@ class WRFDataSource:
             Tensor [N, 1] of heat flux values in W/m²
         """
         coords_dict = self._transform_coordinates(positions)
-        coords_2d   = {k: v for k, v in coords_dict.items() if k != self.physics.z_dimension}
+        coords_2d   = {k: v for k, v in coords_dict.items() if k != "z"}
         
-        heat_flux = self._interpolate_field(coords_2d, self.wrf.fire_heat_variable)
+        heat_flux = self._interpolate_field(coords_2d, "GRNHFX")
         return torch.nan_to_num(
             Tensor(heat_flux.reshape(-1, 1), device=positions.device),
             nan = 0.0
@@ -283,22 +273,19 @@ class WRFDataSource:
         coords_dict = self._transform_coordinates(positions)
         
         temp_values = Tensor(
-            self._interpolate_field(coords_dict, self.temp_var).reshape(-1, 1),
+            self._interpolate_field(coords_dict, "temperature").reshape(-1, 1),
             device = positions.device
         )
         temp_gradients = Tensor(
-            self._calculate_gradient(coords_dict, positions, self.temp_var),
+            self._calculate_gradient(coords_dict, positions, "temperature"),
             device = positions.device
         )
         
         temperatures, gradients = self._handle_out_of_bounds(temp_gradients, temp_values)
         
-        if self.temp_var == "T":
-            temperatures = temperatures + 300.0
-        
         temperatures = self._add_domain_noise(
             temperatures, 
-            self.wrf.temperature_noise_std
+            self.temperature_noise_std
         )
         
         return temperatures, gradients
@@ -332,10 +319,10 @@ class WRFDataSource:
                 Tensor(
                     self._interpolate_field(coords_dict, v), 
                     device = positions.device
-                ) for v in [self.u_var, self.v_var, self.w_var]
+                ) for v in ["U", "V", "W"]
             ]
         )
         
         wind_values = torch.nan_to_num(wind_values, 0.0)
 
-        return self._add_domain_noise(wind_values, self.wrf.wind_noise_std)
+        return self._add_domain_noise(wind_values, self.wind_noise_std)
