@@ -4,72 +4,98 @@ Visualization domain stores for hydra-zen configuration.
 This module provides store-based configurations for visualization components
 using simplified domain-level groups with minimal presets.
 """
-from hydra_zen                          import store as create_store, builds
-from thermur.imitation.visualization    import SwarmVisualizer
+from hydra_zen import store, builds
+from thermur.imitation.visualization import Visualizer
 
-# Import schemas from __init__ for clean imports
+# Import schemas for validation
 from . import SamplingModel, VisualizerModel
 
-# Create domain store
-store = create_store()
+# Pre-configure group for all visualization configs
+visualization = store(group="visualization")
 
-@store(group="visualization", name="default")
+@visualization(name="default")
 def default():
     """
     Standard visualization configuration.
-    
-    Provides default configurations for 3D rendering with balanced
-    quality and performance settings.
     """
-    # Validate configurations with Pydantic
-    sampling   = SamplingModel()
-    visualizer = VisualizerModel()
+    # Use Pydantic models for validation and defaults
+    sampling = SamplingModel()
+    viz = VisualizerModel()
     
-    return {
-        # Visualizer
-        "visualizer": builds(
-            SwarmVisualizer,
-            simulation = "${simulation}",
-            sampling   = sampling.model_dump(),
-            config     = visualizer.model_dump()
-        ),
-        
-        # Export individual configs for access
-        "sampling_config"   : sampling.model_dump(),
-        "visualizer_config" : visualizer.model_dump()
-    }
+    return dict(
+        visualizer=builds(Visualizer,
+            # Sampling configuration
+            render_every_n_steps=sampling.render_every_n_steps,
+            save_frames=sampling.save_frames,
+            output_dir=sampling.output_dir,
+            
+            # Display settings
+            window_size=viz.window_size,
+            window_title=viz.window_title,
+            dark_mode=viz.dark_mode,
+            
+            # Visual elements
+            show_agents=viz.show_agents,
+            show_graph=viz.show_graph,
+            show_temperature=viz.show_temperature,
+            
+            # Agent rendering
+            agent_size=viz.agent_size,
+            agent_opacity=viz.agent_opacity,
+            agent_color=viz.agent_color,
+            
+            # Temperature field
+            colormap=viz.colormap,
+            
+            # Runtime linkage
+            env="${simulation.env}"
+        )
+    )
 
-@store(group="visualization", name="debug")
+@visualization(name="debug")
 def debug():
     """
     Debug visualization configuration.
-    
-    Minimal configuration for rapid testing with reduced quality
-    and disabled frame saving.
     """
-    # Minimal configurations for debugging
+    # Debug configurations with overrides
     sampling = SamplingModel(
-        render_every_n_steps = 50,  # Less frequent rendering
-        save_frames         = False
+        render_every_n_steps=50,  # Less frequent rendering
+        save_frames=False
     )
-    visualizer = VisualizerModel(
-        window_size      = (640, 480),  # Smaller window
-        show_temperature = False,        # Skip temperature field
-        agent_size       = 0.2,         # Larger agents for visibility
-        colormap         = "viridis"    # Simple colormap
+    viz = VisualizerModel(
+        window_size=(640, 480),  # Smaller window
+        show_temperature=False,  # Skip temperature field for speed
+        agent_size=0.2,  # Larger agents for visibility
+        colormap="viridis"  # Simple colormap
     )
     
-    return {
-        # Simplified visualizer
-        "visualizer": builds(
-            SwarmVisualizer,
-            simulation = "${simulation}",
-            sampling   = sampling.model_dump(),
-            config     = visualizer.model_dump(),
-            headless   = True  # No display for CI/CD
-        ),
-        
-        # Export configs
-        "sampling_config"   : sampling.model_dump(),
-        "visualizer_config" : visualizer.model_dump()
-    }
+    return dict(
+        visualizer=builds(Visualizer,
+            # Reduced sampling for speed
+            render_every_n_steps=sampling.render_every_n_steps,
+            save_frames=sampling.save_frames,
+            output_dir=sampling.output_dir,
+            
+            # Smaller window
+            window_size=viz.window_size,
+            window_title=viz.window_title,
+            dark_mode=viz.dark_mode,
+            
+            # Simplified visuals
+            show_agents=viz.show_agents,
+            show_graph=viz.show_graph,
+            show_temperature=viz.show_temperature,
+            
+            # Debug rendering
+            agent_size=viz.agent_size,
+            agent_opacity=viz.agent_opacity,
+            agent_color=viz.agent_color,
+            colormap=viz.colormap,
+            
+            # Runtime linkage
+            env="${simulation.env}",
+            
+            # Debug mode
+            headless=True  # No display for CI/CD
+        )
+    )

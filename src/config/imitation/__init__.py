@@ -23,11 +23,11 @@ from hydra_zen import make_config, store
 from pathlib   import Path
 
 # Import all domain stores
-from .controller.stores    import store as controller_store
-from .lightning.stores     import store as lightning_store
-from .monitoring.stores    import store as monitoring_store
-from .simulation.stores    import store as simulation_store
-from .visualization.stores import store as visualization_store
+from .controller.stores    import controller as controller_store
+from .lightning.stores     import lightning as lightning_store
+from .monitoring.stores    import monitoring as monitoring_store
+from .simulation.stores    import simulation as simulation_store
+from .visualization.stores import visualization as visualization_store
 
 # Create main imitation learning config
 ImitationConfig = make_config(

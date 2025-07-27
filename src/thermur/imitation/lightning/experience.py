@@ -5,15 +5,15 @@ This module wraps TorchRL's trajectory collection and replay buffer components
 into a Lightning DataModule, managing the flow of expert demonstrations
 during imitation learning.
 """
-from config.imitation.schemas.lightning import ExperienceModel
-from pytorch_lightning                  import LightningDataModule
-from thermur.imitation.controller       import FlockController
-from thermur.imitation.simulation       import SimulationEnv
-from torch.utils.data                   import DataLoader
-from torchrl.collectors                 import SyncDataCollector
-from torchrl.data                       import TensorDictReplayBuffer
-from torchrl.data.replay_buffers        import LazyTensorStorage, SamplerWithoutReplacement
-from typing                             import Optional
+from config.imitation.lightning   import ExperienceModel
+from pytorch_lightning            import LightningDataModule
+from thermur.imitation.controller import FlockController
+from thermur.imitation.simulation import SimulationEnv
+from torch.utils.data             import DataLoader
+from torchrl.collectors           import SyncDataCollector
+from torchrl.data                 import TensorDictReplayBuffer
+from torchrl.data.replay_buffers  import LazyTensorStorage, SamplerWithoutReplacement
+from typing                       import Optional
 
 
 class DataModule(LightningDataModule):
@@ -34,22 +34,22 @@ class DataModule(LightningDataModule):
     
     def __init__(
         self,
-        controller : FlockController,
         env        : SimulationEnv,
-        experience : ExperienceModel
+        experience : ExperienceModel,
+        expert     : FlockController
     ):
         """
         Initialize the experience module.
         
         Args:
-            controller : The expert controller policy that generates actions
             env        : The simulation environment for data collection
             experience : Experience data configuration with batch sizes and buffer settings
+            expert     : The expert controller policy that generates actions
         """
         super().__init__()
-        self.controller = controller
         self.env        = env
         self.experience = experience
+        self.expert     = expert
         
         self.buffer    : Optional[TensorDictReplayBuffer] = None
         self.collector : Optional[SyncDataCollector]      = None
@@ -71,7 +71,7 @@ class DataModule(LightningDataModule):
             create_env_fn       = lambda: self.env,
             frames_per_batch    = self.experience.frames_per_batch,
             max_frames_per_traj = self.experience.max_frames_per_traj,
-            policy              = self.controller,
+            policy              = self.expert,
             total_frames        = self.experience.total_frames
         )
         

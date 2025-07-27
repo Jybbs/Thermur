@@ -4,7 +4,7 @@ Visualization domain schemas for Pydantic validation.
 This module consolidates all visualization configuration models including
 rendering settings, display options, and sampling parameters.
 """
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveFloat, PositiveInt
+from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Annotated, Literal
 
 UnitFloat = Annotated[float, Field(ge=0.0, le=1.0)]

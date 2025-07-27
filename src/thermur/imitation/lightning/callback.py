@@ -23,19 +23,19 @@ class MonitoringCallback(Callback):
     
     def __init__(
         self,
-        events    : Optional[EventLogger]      = None,
-        collector : Optional[MetricsCollector] = None
+        collector : Optional[MetricsCollector] = None,
+        events    : Optional[EventLogger]      = None
     ):
         """
         Configure monitoring components for training lifecycle integration.
         
         Args:
-            events    : Optional event logger for tracking critical agent behaviors
             collector : Optional metrics collector for performance tracking
+            events    : Optional event logger for tracking critical agent behaviors
         """
         super().__init__()
-        self.events    = events
         self.collector = collector
+        self.events    = events
     
     def on_fit_end(
         self, 

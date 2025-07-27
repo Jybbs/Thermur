@@ -9,7 +9,6 @@ from functools import partial
 from omegaconf import DictConfig, OmegaConf, open_dict
 from pathlib   import Path
 from textwrap  import shorten
-from torch     import compile as torch_compile
 from typer     import Argument, Context, Exit, Option
 from typing    import Any
 
@@ -619,13 +618,6 @@ class TrainCommand:
             msg_type = "success"
         )
         
-        if cfg.hardware.compile_model:
-            self.ui.print_message(
-                message  = "Compiling model with PyTorch 2.0 for optimization...",
-                msg_type = "info"
-            )
-            components["policy"] = torch_compile(components["policy"])
-        
         self.ui.console.print()
 
         self.ui.print_section("Training Started")
@@ -657,13 +649,13 @@ class TrainCommand:
 
     def run(
         self,
-        dry_run       : bool,
-        force         : bool,
-        interactive   : bool,
-        overrides     : list[str] | None,
-        preset        : str | None,
-        resume        : Path | None,
-        sample        : bool,
+        dry_run     : bool,
+        force       : bool,
+        interactive : bool,
+        overrides   : list[str] | None,
+        preset      : str | None,
+        resume      : Path | None,
+        sample      : bool,
     ):
         """
         Executes the main training workflow from start to finish.
@@ -673,12 +665,12 @@ class TrainCommand:
         launch of the core training logic.
 
         Args:
-            dry_run       : If True, shows configuration without training.
-            force         : If True, skips system validation checks.
-            interactive   : If True, enables interactive prompts.
-            overrides     : A list of Hydra configuration overrides.
-            preset        : The name of the configuration preset to use.
-            sample        : If True, use sample data.
+            dry_run     : If True, shows configuration without training.
+            force       : If True, skips system validation checks.
+            interactive : If True, enables interactive prompts.
+            overrides   : A list of Hydra configuration overrides.
+            preset      : The name of the configuration preset to use.
+            sample      : If True, use sample data.
         """
         self.ui.print_header("Thermur Training System")
 

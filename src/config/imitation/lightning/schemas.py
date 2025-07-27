@@ -36,25 +36,11 @@ class ArchitectureModel(BaseModel, extra="forbid"):
             "message passing layer, balancing expressiveness against memory usage."
         )
     )
-    input_dim: PositiveInt = Field(
-        default     = 11,
-        description = (
-            "Input feature dimensionality d_in = 11 encoding agent state as concatenated "
-            "vector [position(3), velocity(3), temperature(1), temp_gradient(3), energy(1)]."
-        )
-    )
     num_layers: PositiveInt = Field(
         default     = 3,
         description = (
             "Message passing depth L determining multi-hop receptive field radius "
             "r = L × R_comm for aggregating information from distant neighbors."
-        )
-    )
-    output_dim: PositiveInt = Field(
-        default     = 3,
-        description = (
-            "Output action dimensionality d_out matching spatial dimensions for velocity "
-            "commands u_i ∈ ℝ^3 sent to low-level flight controllers."
         )
     )
 
@@ -92,6 +78,13 @@ class CheckpointModel(BaseModel, extra="forbid"):
         description = (
             "Always save the final model checkpoint at training completion regardless "
             "of whether it achieved the best validation metric."
+        )
+    )
+    save_top_k: int = Field(
+        default     = 3,
+        description = (
+            "Number of best model checkpoints to keep based on monitored metric. "
+            "Use -1 to keep all checkpoints, 0 to disable best model saving."
         )
     )
 
@@ -161,11 +154,25 @@ class HardwareModel(BaseModel, extra="forbid"):
             "detects and selects the best available device."
         )
     )
-    compile_model: bool = Field(
+    benchmark: bool = Field(
         default     = False,
         description = (
-            "Enable PyTorch 2.0 compile for potential speedups. May increase "
-            "startup time but can significantly improve training performance."
+            "Enable cuDNN benchmarking to find optimal algorithms. Improves "
+            "performance for fixed input sizes but adds startup overhead."
+        )
+    )
+    deterministic: bool = Field(
+        default     = False,
+        description = (
+            "Enable deterministic mode for reproducible results. May reduce "
+            "performance but ensures identical results across runs with same seed."
+        )
+    )
+    detect_anomaly: bool = Field(
+        default     = False,
+        description = (
+            "Enable anomaly detection to find NaN/Inf values in gradients. "
+            "Adds significant overhead but helpful for debugging training issues."
         )
     )
     devices: PositiveInt = Field(
@@ -234,18 +241,18 @@ class OptimizerModel(BaseModel, extra="forbid"):
             "Works with ReduceLROnPlateau scheduler."
         )
     )
-    lr_scheduler_verbose: bool = Field(
-        default     = True,
+    max_epochs: PositiveInt = Field(
+        default     = 100,
         description = (
-            "Whether ReduceLROnPlateau scheduler prints messages when learning "
-            "rate is reduced."
+            "Maximum number of training epochs before termination, providing an "
+            "upper bound on training time even if convergence isn't reached."
         )
     )
-    metric: str = Field(
+    training_metric: str = Field(
         default     = "train/loss",
         description = (
-            "PyTorch Lightning metric key monitored for model selection, early "
-            "stopping, and learning rate scheduling decisions during training."
+            "Primary metric monitored during training for logging and model "
+            "selection. Also used by early stopping callback."
         )
     )
     mode: Literal["min", "max"] = Field(
@@ -254,11 +261,25 @@ class OptimizerModel(BaseModel, extra="forbid"):
             "Optimization direction for monitored metric (minimize or maximize)."
         )
     )
+    scheduler_metric: str = Field(
+        default     = "val/loss",
+        description = (
+            "Metric monitored by learning rate scheduler for reducing learning rate "
+            "on plateau. Typically a validation metric to avoid overfitting."
+        )
+    )
     seed: Optional[NonNegativeInt] = Field(
         default     = 42,
         description = (
             "Random seed for reproducible training runs. Set to None for "
             "non-deterministic behavior."
+        )
+    )
+    val_check_interval: float = Field(
+        default     = 1.0,
+        description = (
+            "How often to check validation set within an epoch. Use 1.0 for once "
+            "per epoch, 0.5 for twice, or integer for every N batches."
         )
     )
     weight_decay: NonNegativeFloat = Field(
@@ -287,13 +308,6 @@ class WandbModel(BaseModel, extra="forbid"):
     The API key is read from an environment variable to avoid hardcoding
     credentials in configuration files.
     """
-    api_key: str = Field(
-        default     = "WANDB_API_KEY",
-        description = (
-            "Environment variable name containing the W&B API key for "
-            "authentication - keeps credentials out of config files."
-        )
-    )
     log_model: Literal["all", "false"] | bool = Field(
         default     = "all",
         description = (

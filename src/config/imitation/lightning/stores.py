@@ -1,202 +1,247 @@
 """
-Lightning domain stores for hydra-zen configuration.
+Lightning configuration stores using hydra-zen.
 
 This module provides store-based configurations for PyTorch Lightning components
-using simplified domain-level groups with minimal presets.
+using hydra-zen's decorator pattern. Each component is registered as a separate
+build that can be referenced and overridden independently via Hydra's CLI.
+
+The stores follow a flat structure where each component (optimizer, policy, 
+trainer, etc.) is defined as a function decorated with @lightning(name=...).
+This allows for clean interpolation references like ${lightning.optimizer}
+without nested builds, improving configuration clarity and override flexibility.
 """
-from hydra_zen                          import store as create_store, builds
-from pytorch_lightning                  import Trainer
-from pytorch_lightning.callbacks        import EarlyStopping, LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.loggers          import WandbLogger
-from thermur.imitation.lightning        import DataModule, GNNPolicy, MonitoringCallback
-from torch.optim                        import Adam
+from .schemas                     import *
+from config.utils.zen             import store, build
+from pytorch_lightning            import Trainer
+from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers    import WandbLogger
+from thermur.imitation.lightning  import DataModule, GNNPolicy, MonitoringCallback
+from thermur.imitation.monitoring import MetricsModel
+from torch.optim                  import AdamW
+from torch.optim.lr_scheduler     import ReduceLROnPlateau
 
-# Import schemas from __init__ for clean imports
-from . import (
-    ArchitectureModel,
-    CheckpointModel, 
-    ExperienceModel,
-    HardwareModel,
-    OptimizerModel,
-    WandbModel
-)
+lightning    = store(group="lightning")
+architecture = ArchitectureModel()
+checkpoint   = CheckpointModel()
+experience   = ExperienceModel()
+hardware     = HardwareModel()
+metrics      = MetricsModel()
+optimizer    = OptimizerModel()
+wandb        = WandbModel()
 
-# Create domain store
-store = create_store()
+@lightning(name="checkpoint_callback")
+def checkpoint_callback_build():
+    """
+    Builder for model checkpointing callback.
+    
+    Saves model checkpoints at regular intervals during training, enabling
+    recovery from failures and model selection. Uses Pydantic defaults for
+    save frequency, directory path, and retention policy.
+    
+    The callback monitors the metric specified in OptimizerModel (default: 
+    train/loss) to optionally save the best performing model in addition
+    to periodic checkpoints.
+    """
+    return build(
+        ModelCheckpoint,
+        dirpath             = str(checkpoint.dirpath),
+        every_n_train_steps = checkpoint.every_n_train_steps,
+        filename            = checkpoint.filename,
+        mode                = optimizer.mode,
+        monitor             = optimizer.training_metric,
+        save_last           = checkpoint.save_last,
+        save_top_k          = checkpoint.save_top_k
+    )
 
-@store(group="lightning", name="default")
-def default():
+@lightning(name="datamodule")
+def datamodule_build():
     """
-    Standard Lightning configuration.
+    Builder for Lightning data module.
     
-    Provides default configurations for all PyTorch Lightning components
-    including model architecture, optimization, hardware settings, and callbacks.
+    Manages expert demonstration collection and replay buffer for imitation
+    learning, wrapping TorchRL components in Lightning's DataModule interface.
+    The module handles batch creation, shuffling, and multi-worker data loading.
+    
+    References external components via interpolation:
+    - ${controller.expert}: Expert controller for demonstration collection
+    - ${simulation.env}: Environment for trajectory rollouts
     """
-    # Validate configurations with Pydantic
-    architecture = ArchitectureModel()
-    optimizer    = OptimizerModel()
-    hardware     = HardwareModel()
-    checkpoint   = CheckpointModel()
-    experience   = ExperienceModel()
-    wandb        = WandbModel()
-    
-    return {
-        # Model configuration
-        "policy": builds(
-            GNNPolicy,
-            architecture = architecture.model_dump(),
-            optimizer    = builds(
-                Adam,
-                lr           = optimizer.learning_rate,
-                weight_decay = optimizer.weight_decay
-            ),
-            collector    = "${collector}"
-        ),
-        
-        # Data module
-        "datamodule": builds(
-            DataModule,
-            controller = "${controller}",
-            env        = "${simulation}",
-            experience = experience.model_dump()
-        ),
-        
-        # Trainer
-        "trainer": builds(
-            Trainer,
-            # Hardware settings
-            accelerator  = hardware.accelerator,
-            devices      = hardware.devices,
-            precision    = hardware.precision,
-            strategy     = hardware.strategy,
-            
-            # Training settings  
-            max_epochs        = 100,
-            gradient_clip_val = optimizer.gradient_clip_val,
-            log_every_n_steps = 50,
-            
-            # Callbacks
-            callbacks = [
-                builds(
-                    ModelCheckpoint,
-                    dirpath             = str(checkpoint.dirpath),
-                    filename            = checkpoint.filename,
-                    every_n_train_steps = checkpoint.every_n_train_steps,
-                    save_last           = checkpoint.save_last,
-                    monitor             = optimizer.metric,
-                    mode                = optimizer.mode
-                ),
-                builds(
-                    EarlyStopping,
-                    monitor  = optimizer.metric,
-                    mode     = optimizer.mode,
-                    patience = optimizer.early_stopping_patience
-                ),
-                builds(
-                    LearningRateMonitor,
-                    logging_interval = "step"
-                ),
-                builds(
-                    MonitoringCallback,
-                    events    = "${events}",
-                    collector = "${collector}"
-                )
-            ],
-            
-            # Logger
-            logger = builds(
-                WandbLogger,
-                project   = wandb.project,
-                log_model = wandb.log_model,
-                mode      = wandb.mode,
-                save_dir  = str(checkpoint.dirpath)
-            ),
-            
-            # Other settings
-            enable_model_summary = True,
-            enable_progress_bar  = True
-        ),
-        
-        # Export individual configs for access
-        "architecture" : architecture.model_dump(),
-        "optimizer"    : optimizer.model_dump(),
-        "hardware"     : hardware.model_dump(),
-        "checkpoint"   : checkpoint.model_dump(),
-        "experience"   : experience.model_dump(),
-        "wandb"        : wandb.model_dump()
-    }
+    return build(
+        DataModule,
+        env        = "${simulation.env}",
+        experience = experience,
+        expert     = "${controller.expert}",
+    )
 
-@store(group="lightning", name="debug")
-def debug():
+@lightning(name="early_stopping_callback")
+def early_stopping_callback_build():
     """
-    Debug Lightning configuration.
+    Builder for early stopping callback.
     
-    Minimal configuration for rapid testing and debugging with reduced
-    model size, limited batches, and CPU execution.
+    Monitors validation metrics and stops training if no improvement is seen
+    for a specified number of epochs, preventing overfitting and saving compute
+    resources. Uses the same metric as checkpointing for consistency.
     """
-    # Minimal configurations for debugging
-    architecture = ArchitectureModel(hidden_dim=32, num_layers=2)
-    optimizer    = OptimizerModel(learning_rate=3e-4)
-    hardware     = HardwareModel(accelerator="cpu", devices=1, precision="32-true")
-    checkpoint   = CheckpointModel(every_n_train_steps=100)
-    experience   = ExperienceModel(batch_size=32, buffer_size=1000, total_frames=1000)
-    wandb        = WandbModel(mode="disabled")
+    return build(
+        EarlyStopping,
+        mode     = optimizer.mode,
+        monitor  = optimizer.training_metric,
+        patience = optimizer.early_stopping_patience
+    )
+
+@lightning(name="logger")
+def logger_build():
+    """
+    Builder for Weights & Biases logger.
     
-    return {
-        # Simplified model
-        "policy": builds(
-            GNNPolicy,
-            architecture = architecture.model_dump(),
-            optimizer    = builds(Adam, lr=optimizer.learning_rate),
-            collector    = "${collector}"
-        ),
-        
-        # Data module with small batches
-        "datamodule": builds(
-            DataModule,
-            controller = "${controller}",
-            env        = "${simulation}",
-            experience = experience.model_dump()
-        ),
-        
-        # Debug trainer
-        "trainer": builds(
-            Trainer,
-            # Hardware
-            accelerator = hardware.accelerator,
-            devices     = hardware.devices,
-            precision   = hardware.precision,
-            
-            # Debug settings
-            max_epochs          = 2,
-            limit_train_batches = 10,
-            limit_val_batches   = 5,
-            log_every_n_steps   = 1,
-            detect_anomaly      = True,
-            
-            # Minimal callbacks
-            callbacks = [
-                builds(
-                    ModelCheckpoint,
-                    dirpath             = str(checkpoint.dirpath),
-                    every_n_train_steps = checkpoint.every_n_train_steps,
-                    save_last           = True
-                )
-            ],
-            
-            # No logger for debugging
-            logger = None,
-            
-            # UI settings
-            enable_model_summary = True,
-            enable_progress_bar  = True
-        ),
-        
-        # Export configs
-        "architecture" : architecture.model_dump(),
-        "optimizer"    : optimizer.model_dump(),
-        "hardware"     : hardware.model_dump(),
-        "checkpoint"   : checkpoint.model_dump(),
-        "experience"   : experience.model_dump(),
-        "wandb"        : wandb.model_dump()
-    }
+    Creates a WandbLogger for experiment tracking if mode is not 'disabled'.
+    Returns None when W&B integration is disabled, allowing for offline
+    training or debugging without external dependencies.
+    
+    The logger automatically tracks hyperparameters, metrics, and optionally
+    model checkpoints based on the log_model setting.
+    """
+    if wandb.mode != "disabled":
+        return build(
+            WandbLogger, 
+            log_model = wandb.log_model,
+            mode      = wandb.mode,
+            project   = wandb.project
+        )
+    return None
+
+@lightning(name="lr_monitor_callback")
+def lr_monitor_callback_build():
+    """
+    Builder for learning rate monitor callback.
+    
+    Tracks learning rate changes during training, particularly useful when
+    using schedulers like ReduceLROnPlateau. Logs LR at step granularity
+    for detailed optimization analysis.
+    """
+    return build(
+        LearningRateMonitor, 
+        logging_interval = metrics.logging_interval
+    )
+
+@lightning(name="monitoring_callback")
+def monitoring_callback_build():
+    """
+    Builder for unified monitoring callback.
+    
+    Integrates with the monitoring domain to track custom metrics and events
+    during training. References external monitoring components that handle
+    safety violations, control interventions, and performance metrics.
+    
+    References:
+    - ${monitoring.events}: Event logger for safety violations
+    - ${monitoring.collector}: Metrics collector for performance tracking
+    """
+    return build(
+        MonitoringCallback,
+        collector = "${monitoring.collector}",
+        events    = "${monitoring.events}"
+    )
+
+@lightning(name="optimizer")
+def optimizer_build():
+    """
+    Builder for AdamW optimizer.
+    
+    Creates an AdamW optimizer with learning rate and weight decay from
+    OptimizerModel defaults. The zen_partial flag (enabled by default in our
+    custom build function) allows the model parameters to be injected at runtime.
+    
+    This can be swapped for other optimizers (SGD, Adam, etc.) via CLI overrides.
+    """
+    return build(
+        AdamW,
+        lr           = optimizer.learning_rate,
+        weight_decay = optimizer.weight_decay
+    )
+
+@lightning(name="policy")
+def policy_build():
+    """
+    Builder for the Graph Neural Network policy.
+    
+    Creates a permutation-equivariant GNN that processes the flock graph
+    structure G_t = (V, E_t) to output nominal control actions u_nom for 
+    each agent. The architecture uses message passing layers with GRU-based
+    state updates.
+    
+    The policy configures its optimizer using the provided optimizer and
+    scheduler configurations from the lightning domain.
+    
+    References:
+    - ${monitoring.collector}: Metrics collector for loss computation
+    - ${lightning.optimizer}: Optimizer configuration
+    - ${lightning.scheduler}: Learning rate scheduler configuration
+    """
+    return build(
+        GNNPolicy,
+        architecture     = architecture,
+        collector        = "${monitoring.collector}",
+        optimizer        = "${lightning.optimizer}",
+        scheduler        = "${lightning.scheduler}",
+        scheduler_metric = optimizer.scheduler_metric,
+        training_metric  = optimizer.training_metric
+    )
+
+@lightning(name="scheduler")
+def scheduler_build():
+    """
+    Builder for ReduceLROnPlateau learning rate scheduler.
+    
+    Creates a learning rate scheduler that reduces the learning rate when
+    the monitored metric plateaus. The zen_partial flag (enabled by default)
+    allows the optimizer instance to be injected at runtime.
+    
+    The scheduler monitors the validation version of the metric specified
+    in OptimizerModel and reduces learning rate by lr_factor after patience
+    epochs without improvement.
+    """
+    return build(
+        ReduceLROnPlateau,
+        factor   = optimizer.lr_factor,
+        mode     = optimizer.mode,
+        patience = optimizer.lr_patience
+    )
+
+@lightning(name="trainer")
+def trainer_build():
+    """
+    Builder for PyTorch Lightning Trainer.
+    
+    Configures the Lightning Trainer with automatic mixed precision, gradient
+    clipping, logging, and checkpointing. Handles all training loop boilerplate
+    including device placement, backward passes, and metric tracking.
+    
+    Callbacks are referenced via interpolation to allow independent override
+    of each callback's configuration. The trainer uses hardware settings from
+    HardwareModel and training parameters from OptimizerModel.
+    """
+    return build(
+        Trainer,
+        accelerator          = hardware.accelerator,
+        benchmark            = hardware.benchmark,
+        callbacks            = [
+            "${lightning.checkpoint_callback}",
+            "${lightning.early_stopping_callback}",
+            "${lightning.lr_monitor_callback}",
+            "${lightning.monitoring_callback}"
+        ],
+        detect_anomaly       = hardware.detect_anomaly,
+        deterministic        = hardware.deterministic,
+        devices              = hardware.devices,
+        enable_model_summary = metrics.enable_model_summary,
+        enable_progress_bar  = metrics.enable_progress_bar,
+        gradient_clip_val    = optimizer.gradient_clip_val,
+        log_every_n_steps    = metrics.log_every_n_steps,
+        logger               = "${lightning.logger}",
+        max_epochs           = optimizer.max_epochs,
+        precision            = hardware.precision,
+        profiler             = metrics.profiler,
+        strategy             = hardware.strategy,
+        val_check_interval   = optimizer.val_check_interval
+    )

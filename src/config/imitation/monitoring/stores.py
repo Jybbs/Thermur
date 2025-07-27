@@ -4,91 +4,92 @@ Monitoring domain stores for hydra-zen configuration.
 This module provides store-based configurations for monitoring components
 using simplified domain-level groups with minimal presets.
 """
-from hydra_zen                         import store as create_store, builds
-from thermur.imitation.monitoring      import EventMonitor, MetricsCollector
+from hydra_zen import store, builds
+from thermur.imitation.monitoring import EventLogger, MetricsCollector
 
-# Import schemas from __init__ for clean imports
+# Import schemas for validation
 from . import EventsModel, MetricsModel
 
-# Create domain store
-store = create_store()
+# Pre-configure group for all monitoring configs
+monitoring = store(group="monitoring")
 
-@store(group="monitoring", name="default")
+@monitoring(name="default")
 def default():
     """
     Standard monitoring configuration.
-    
-    Provides default configurations for comprehensive metrics collection
-    and event tracking during training.
     """
-    # Validate configurations with Pydantic
-    events  = EventsModel()
+    # Use Pydantic models for validation and defaults
+    events = EventsModel()
     metrics = MetricsModel()
     
-    return {
-        # Event monitoring
-        "events": builds(
-            EventMonitor,
-            activation_tolerance = events.activation_tolerance,
-            max_temperature     = events.max_temperature
+    return dict(
+        events=builds(EventLogger,
+            activation_tolerance=events.activation_tolerance,
+            max_temperature=events.max_temperature
         ),
         
-        # Metrics collection
-        "collector": builds(
-            MetricsCollector,
-            bounds_max      = "${physics.bounds_max}",
-            gravity         = "${physics.gravity}",
-            max_temperature = events.max_temperature,
-            output_dim      = 3,  # 3D velocity commands
-            metrics         = metrics.model_dump()
-        ),
-        
-        # Export individual configs for access
-        "events_config"  : events.model_dump(),
-        "metrics_config" : metrics.model_dump()
-    }
+        collector=builds(MetricsCollector,
+            # Metrics configuration
+            log_every_n_steps=metrics.log_every_n_steps,
+            logging_interval=metrics.logging_interval,
+            enable_model_summary=metrics.enable_model_summary,
+            enable_progress_bar=metrics.enable_progress_bar,
+            profiler=metrics.profiler,
+            
+            # Visual metrics parameters
+            legibility_grid_size=metrics.legibility_grid_size,
+            legibility_kernel_size=metrics.legibility_kernel_size,
+            legibility_sigma=metrics.legibility_sigma,
+            color_temp_min=metrics.color_temp_min,
+            color_temp_max=metrics.color_temp_max,
+            power_exponent=metrics.power_exponent,
+            
+            # Runtime parameters from environment
+            max_temperature=events.max_temperature,
+            bounds_max="${simulation.env.bounds_max}",
+            gravity="${simulation.env.gravity}"
+        )
+    )
 
-@store(group="monitoring", name="debug")
+@monitoring(name="debug")
 def debug():
     """
     Debug monitoring configuration.
-    
-    Minimal configuration for rapid testing with reduced logging
-    and simplified metrics collection.
     """
-    # Minimal configurations for debugging
+    # Debug configurations with overrides
     events = EventsModel(
-        activation_tolerance = 5.0,    # Higher tolerance
-        max_temperature     = 500.0    # Higher threshold
+        activation_tolerance=5.0,  # Higher tolerance
+        max_temperature=500.0  # Higher threshold
     )
     metrics = MetricsModel(
-        log_every_n_steps    = 1,      # Log every step
-        enable_model_summary = False,   # Skip summary
-        enable_progress_bar  = True,    # Keep progress
-        profiler            = None      # No profiling
+        log_every_n_steps=1,  # Log every step
+        enable_model_summary=False,  # Skip summary
+        enable_progress_bar=True,  # Keep progress
+        profiler=None  # No profiling
     )
     
-    return {
-        # Simplified event monitoring
-        "events": builds(
-            EventMonitor,
-            activation_tolerance = events.activation_tolerance,
-            max_temperature     = events.max_temperature,
-            logging_only        = True  # Just log, no stats
+    return dict(
+        events=builds(EventLogger,
+            activation_tolerance=events.activation_tolerance,
+            max_temperature=events.max_temperature
         ),
         
-        # Lightweight metrics
-        "collector": builds(
-            MetricsCollector,
-            bounds_max      = [50.0, 50.0, 20.0],  # Default bounds
-            gravity         = 9.81,
-            max_temperature = events.max_temperature,
-            output_dim      = 3,
-            metrics         = metrics.model_dump(),
-            compute_visual  = False  # Skip visual metrics
-        ),
-        
-        # Export configs
-        "events_config"  : events.model_dump(),
-        "metrics_config" : metrics.model_dump()
-    }
+        collector=builds(MetricsCollector,
+            # Simplified metrics for debugging
+            log_every_n_steps=metrics.log_every_n_steps,
+            logging_interval=metrics.logging_interval,
+            enable_model_summary=metrics.enable_model_summary,
+            enable_progress_bar=metrics.enable_progress_bar,
+            profiler=None,  # No profiling in debug
+            
+            # Skip visual metrics for speed
+            legibility_grid_size=None,
+            color_temp_min=metrics.color_temp_min,
+            color_temp_max=metrics.color_temp_max,
+            
+            # Runtime parameters
+            max_temperature=events.max_temperature,
+            bounds_max="${simulation.env.bounds_max}",
+            gravity="${simulation.env.gravity}"
+        )
+    )
