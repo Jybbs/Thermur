@@ -72,15 +72,14 @@ class Visualizer:
         self.simulation = simulation
         self.vista      = vista
         
-        self.agent_actors       = None
-        self.graph_actors       = None
-        self.safety_actors      = None
-        self.temperature_actors = None
-        self.wind_actors        = None
-        
+        self.agent_actors          = None
         self.frame_capture_enabled = False
-        self.frame_counter = None
-        self.frame_dir = None
+        self.frame_counter         = None
+        self.frame_dir             = None
+        self.graph_actors          = None
+        self.safety_actors         = None
+        self.temperature_actors    = None
+        self.wind_actors           = None
         
         self._initialize_display()
         
@@ -97,6 +96,122 @@ class Visualizer:
         """
         self.plotter.camera_position = 'xy'
         self.plotter.camera.zoom(1.5)
+
+    def close(self):
+        """
+        Close the visualization window and clean up resources.
+        
+        This method properly shuts down the PyVista plotter and releases
+        all associated resources. It should be called when the visualization
+        is no longer needed, such as at the end of a training run or when
+        the user requests to close the window. The method includes safety
+        checks to avoid errors if the plotter is already closed.
+        """
+        if self.plotter is not None:
+            self.plotter.close()
+
+    def enable_frame_capture(self, output_dir: Optional[Path] = None):
+        """
+        Enable frame capture for creating animations.
+        
+        Sets up the frame capture system with an output directory and
+        initializes the frame counter. Once enabled, frames can be saved
+        manually or automatically during rendering.
+        
+        Args:
+            output_dir : Directory to save frames. Defaults to configured path
+        """
+        self.frame_dir = Path(output_dir or self.vista.frame_output_dir)
+        self.frame_dir.mkdir(parents=True, exist_ok=True)
+        self.frame_counter = count()
+        self.frame_capture_enabled = True
+    
+    def render(self):
+        """
+        Render the current visualization state.
+        
+        This method triggers a render pass in the PyVista plotter to display
+        the updated visualization. It should be called after update() to
+        reflect changes in the display window. The method includes safety
+        checks to ensure the plotter is initialized and the window is still
+        open before attempting to render.
+        
+        If auto_save_frames is enabled, automatically captures and saves
+        a screenshot after rendering.
+        """
+        if self.plotter is not None:
+            self.plotter.render()
+            
+            if self.vista.auto_save_frames and self.frame_capture_enabled:
+                self.save_frame()
+    
+    def save_frame(self, filename: Optional[str] = None) -> Optional[Path]:
+        """
+        Save the current visualization frame as an image.
+        
+        Captures the current state of the visualization window and saves it
+        as a PNG image. Frame capture must be enabled first via
+        enable_frame_capture() method.
+        
+        Args:
+            filename : Optional custom filename. If None, uses frame counter.
+                      Should not include directory path or extension.
+        
+        Returns:
+            Path to the saved image file, or None if capture not enabled
+        """
+        if not self.frame_capture_enabled or self.frame_dir is None:
+            return None
+        
+        if filename is None:
+            filename = f"frame_{next(self.frame_counter):06d}"
+        
+        filepath = self.frame_dir / f"{filename}.png"
+        self.plotter.screenshot(filepath)
+        
+        return filepath
+    
+    def toggle(
+        self, 
+        feature : str, 
+        show    : Optional[bool] = None
+    ) -> bool:
+        """
+        Toggle visibility of a visualization feature.
+        
+        This generic method handles toggling for all visualization elements,
+        reducing code duplication. It modifies the appropriate config attribute
+        based on the feature name.
+        
+        Args:
+            feature : Name of the feature to toggle. Valid options:
+                     'agents'  - Agent glyphs (spheres or arrows)
+                     'graph'   - Communication graph edges
+                     'safety'  - Thermal safety boundary (T_max isosurface)
+                     'thermal' - Temperature-based agent coloring
+                     'trails'  - Agent motion trails
+                     'wind'    - Wind field vector arrows
+            show    : Explicit visibility state. If None, toggles current state.
+                     If True, enables the feature. If False, disables it.
+        
+        Returns:
+            New visibility state after the toggle operation
+            
+        Raises:
+            ValueError: If feature name is not recognized
+        """
+        attr_name = f"show_{feature}"
+        if not hasattr(self.visualization, attr_name):
+            raise ValueError(
+                f"Unknown visualization feature: '{feature}'. "
+                f"Valid options: agents, graph, safety, thermal, wind, trails"
+            )
+        
+        current   = getattr(self.visualization, attr_name)
+        new_state = not current if show is None else show
+        setattr(self.visualization, attr_name, new_state)
+        
+        return new_state
 
     def update(self, observation: TensorDictBase):
         """
@@ -176,119 +291,3 @@ class Visualizer:
                 plotter   = self.plotter,
                 temp_grid = temp_grid
             )
-    
-    def render(self):
-        """
-        Render the current visualization state.
-        
-        This method triggers a render pass in the PyVista plotter to display
-        the updated visualization. It should be called after update() to
-        reflect changes in the display window. The method includes safety
-        checks to ensure the plotter is initialized and the window is still
-        open before attempting to render.
-        
-        If auto_save_frames is enabled, automatically captures and saves
-        a screenshot after rendering.
-        """
-        if self.plotter is not None:
-            self.plotter.render()
-            
-            if self.vista.auto_save_frames and self.frame_capture_enabled:
-                self.save_frame()
-    
-    def toggle(
-        self, 
-        feature : str, 
-        show    : Optional[bool] = None
-    ) -> bool:
-        """
-        Toggle visibility of a visualization feature.
-        
-        This generic method handles toggling for all visualization elements,
-        reducing code duplication. It modifies the appropriate config attribute
-        based on the feature name.
-        
-        Args:
-            feature : Name of the feature to toggle. Valid options:
-                     'agents'  - Agent glyphs (spheres or arrows)
-                     'graph'   - Communication graph edges
-                     'safety'  - Thermal safety boundary (T_max isosurface)
-                     'thermal' - Temperature-based agent coloring
-                     'trails'  - Agent motion trails
-                     'wind'    - Wind field vector arrows
-            show    : Explicit visibility state. If None, toggles current state.
-                     If True, enables the feature. If False, disables it.
-        
-        Returns:
-            New visibility state after the toggle operation
-            
-        Raises:
-            ValueError: If feature name is not recognized
-        """
-        attr_name = f"show_{feature}"
-        if not hasattr(self.visualization, attr_name):
-            raise ValueError(
-                f"Unknown visualization feature: '{feature}'. "
-                f"Valid options: agents, graph, safety, thermal, wind, trails"
-            )
-        
-        current   = getattr(self.visualization, attr_name)
-        new_state = not current if show is None else show
-        setattr(self.visualization, attr_name, new_state)
-        
-        return new_state
-    
-    def enable_frame_capture(self, output_dir: Optional[Path] = None):
-        """
-        Enable frame capture for creating animations.
-        
-        Sets up the frame capture system with an output directory and
-        initializes the frame counter. Once enabled, frames can be saved
-        manually or automatically during rendering.
-        
-        Args:
-            output_dir : Directory to save frames. Defaults to configured path
-        """
-        self.frame_dir = Path(output_dir or self.vista.frame_output_dir)
-        self.frame_dir.mkdir(parents=True, exist_ok=True)
-        self.frame_counter = count()
-        self.frame_capture_enabled = True
-    
-    def save_frame(self, filename: Optional[str] = None) -> Optional[Path]:
-        """
-        Save the current visualization frame as an image.
-        
-        Captures the current state of the visualization window and saves it
-        as a PNG image. Frame capture must be enabled first via
-        enable_frame_capture() method.
-        
-        Args:
-            filename : Optional custom filename. If None, uses frame counter.
-                      Should not include directory path or extension.
-        
-        Returns:
-            Path to the saved image file, or None if capture not enabled
-        """
-        if not self.frame_capture_enabled or self.frame_dir is None:
-            return None
-        
-        if filename is None:
-            filename = f"frame_{next(self.frame_counter):06d}"
-        
-        filepath = self.frame_dir / f"{filename}.png"
-        self.plotter.screenshot(filepath)
-        
-        return filepath
-    
-    def close(self):
-        """
-        Close the visualization window and clean up resources.
-        
-        This method properly shuts down the PyVista plotter and releases
-        all associated resources. It should be called when the visualization
-        is no longer needed, such as at the end of a training run or when
-        the user requests to close the window. The method includes safety
-        checks to avoid errors if the plotter is already closed.
-        """
-        if self.plotter is not None:
-            self.plotter.close()

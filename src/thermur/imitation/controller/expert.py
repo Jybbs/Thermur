@@ -36,8 +36,8 @@ class ExpertController:
         self,
         expert        : ExpertModel,
         flock         : FlockModel,
-        safety_filter : Optional[SafetyFilter] = None,
-        thresholds    : ThresholdsModel
+        thresholds    : ThresholdsModel,
+        safety_filter : Optional[SafetyFilter] = None
     ):
         """
         Initializes the controller with the necessary configuration models.
