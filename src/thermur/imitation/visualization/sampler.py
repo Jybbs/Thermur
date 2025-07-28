@@ -9,7 +9,6 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
-from config.imitation.visualization import GridModel
 from numpy                          import array, ndarray
 from pyvista                        import Axes, ImageData, PolyData
 from torch                          import from_numpy, Tensor
@@ -29,14 +28,23 @@ class Sampler:
     simulations while maintaining performance.
     """
     
-    def __init__(self, grid: GridModel):
+    def __init__(
+        self,
+        grid_padding           : float,
+        temperature_resolution : tuple[int, int, int],
+        wind_resolution        : int
+    ):
         """
         Initialize the grid sampler with configuration.
         
         Args:
-            grid: Visualization configuration containing grid parameters.
+            grid_padding           : Buffer distance for grid generation
+            temperature_resolution : Voxel grid dimensions for temperature field
+            wind_resolution        : Grid points per dimension for wind vectors
         """
-        self.grid = grid
+        self.grid_padding           = grid_padding
+        self.temperature_resolution = temperature_resolution
+        self.wind_resolution        = wind_resolution
     
     def compute_grid_bounds(self, position: Tensor) -> tuple[ndarray, ndarray]:
         """
@@ -53,8 +61,8 @@ class Sampler:
             Tuple of (min_bounds, max_bounds) as numpy arrays of shape [3]
         """
         positions  = position.detach().cpu().numpy()
-        min_bounds = positions.min(axis=0) - self.grid.padding
-        max_bounds = positions.max(axis=0) + self.grid.padding
+        min_bounds = positions.min(axis=0) - self.grid_padding
+        max_bounds = positions.max(axis=0) + self.grid_padding
         
         return min_bounds, max_bounds
     
@@ -107,9 +115,9 @@ class Sampler:
         """ 
         min_bounds, max_bounds = self.compute_grid_bounds(position)
         
-        resolution = array(self.grid.temperature_resolution)
+        resolution = array(self.temperature_resolution)
         grid       = ImageData(
-            dimensions = self.grid.temperature_resolution,
+            dimensions = self.temperature_resolution,
             origin     = min_bounds,
             spacing    = (max_bounds - min_bounds) / (resolution - 1)
         )
@@ -140,7 +148,7 @@ class Sampler:
             PyVista PolyData with wind vector field data at each grid point
         """
         min_bounds, max_bounds = self.compute_grid_bounds(position)
-        resolution = self.grid.wind_resolution
+        resolution = self.wind_resolution
         
         spacing_grid = ImageData(
             dimensions = (resolution, resolution, resolution),
