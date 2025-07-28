@@ -9,12 +9,14 @@ and communication graphs.
 The visualizer manages a PyVista plotter window and handles the lifecycle of
 various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
-both light and dark themes.
+both light and dark themes through pre-configured theme objects.
 """
 from .renderer                      import Renderer
 from .sampler                       import Sampler
 from config.imitation.visualization import *
-from pyvista                        import global_theme, Plotter, themes
+from itertools                      import count
+from pathlib                        import Path
+from pyvista                        import Plotter
 from tensordict                     import TensorDictBase
 from typing                         import Optional
 
@@ -43,14 +45,11 @@ class Visualizer:
     
     def __init__(
         self,
-        colors     : ColorModel,
-        display    : DisplayModel,
-        glyphs     : GlyphModel,
-        grids      : GridModel,
-        opacity    : OpacityModel,
+        plotter    : Plotter,
         renderer   : Renderer,
         sampler    : Sampler,
-        simulation : object
+        simulation : object,
+        vista      : VistaModel
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -61,64 +60,43 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            colors     : Color configuration for visualization elements
-            display    : Display settings and element toggles
-            glyphs     : Glyph configuration for agent rendering
-            grids      : Grid configuration for field sampling
-            opacity    : Opacity configuration for visualization elements
+            plotter    : Pre-built PyVista plotter window
             renderer   : Pre-built renderer for visualization elements
             sampler    : Pre-built grid sampler for spatial data sampling
             simulation : Simulation reference for accessing environment data
+            vista      : Unified visualization configuration
         """
-        self.colors        = colors
-        self.display       = display
-        self.glyphs        = glyphs
-        self.grids         = grids
-        self.opacity       = opacity
-        self.renderer      = renderer
-        self.sampler       = sampler
-        self.simulation    = simulation
+        self.plotter    = plotter
+        self.renderer   = renderer
+        self.sampler    = sampler
+        self.simulation = simulation
+        self.vista      = vista
         
-        self.agent_actors              = None
-        self.colormap                  = None
+        self.agent_actors       = None
         self.graph_actors       = None
-        self.plotter            = None
         self.safety_actors      = None
         self.temperature_actors = None
         self.wind_actors        = None
         
-        self._initialize_plotter()
+        self.frame_capture_enabled = False
+        self.frame_counter = None
+        self.frame_dir = None
+        
+        self._initialize_display()
+        
+        if self.vista.auto_save_frames:
+            self.enable_frame_capture()
     
-    def _initialize_plotter(self):
+    def _initialize_display(self):
         """
-        Set up the PyVista plotter with appropriate theme and camera settings.
+        Set up the PyVista display and camera settings.
         
-        This method creates the visualization window with the configured size,
-        applies the selected theme (dark or light), and sets up appropriate
-        lighting for 3D rendering. The camera is positioned to provide a
-        clear initial view of the flock, with zoom adjusted for typical
-        simulation bounds.
-        
-        The method also initializes the temperature colormap that will be
-        used for thermal visualization of agents throughout the simulation.
+        This method sets up the camera position for an optimal initial view
+        of the flock. The theme has already been applied to the plotter
+        during the build phase.
         """
-        match self.display.dark_mode:
-            case True:
-                theme = themes.DarkTheme()
-            case False:
-                theme = themes.DocumentTheme()
-        global_theme.load_theme(theme)
-        
-        self.plotter = Plotter(
-            lighting    = "three lights",
-            off_screen  = False,
-            title       = "Thermur Simulation",
-            window_size = self.display.window_size
-        )
-        
         self.plotter.camera_position = 'xy'
         self.plotter.camera.zoom(1.5)
-        self.colormap = self.colors.colormap
 
     def update(self, observation: TensorDictBase):
         """
@@ -143,9 +121,6 @@ class Visualizer:
                 - temperature : Agent temperatures (N, 1)
                 - velocity    : Agent velocities (N, 3) 
         """
-        if self.plotter is None:
-            self._initialize_plotter()
-        
         edge_index  = observation.get("edge_index")
         position    = observation.get("position")
         temperature = observation.get("temperature")
@@ -156,18 +131,18 @@ class Visualizer:
             
         self.plotter.clear_actors()
         
-        if self.display.show_agents:
-            colormap = self.colormap if self.display.show_thermal else None
+        if self.vista.show_agents:
+            colormap = self.vista.colormap if self.vista.show_thermal_colors else None
             self.agent_actors = self.renderer.add_agents(
                 colormap    = colormap,
                 plotter     = self.plotter,
                 position    = position,
-                show_trails = self.display.show_trails,
+                show_trails = self.vista.show_trails,
                 temperature = temperature,
                 velocity    = velocity
             )
         
-        if self.display.show_wind:
+        if self.vista.show_wind_arrows:
             wind_grid = self.sampler.create_wind_grid(
                 position   = position,
                 simulation = self.simulation
@@ -177,23 +152,22 @@ class Visualizer:
                 wind_grid = wind_grid
             )
         
-        if self.display.show_safety:
+        if self.vista.show_safety_boundary:
             self.safety_actors = self.renderer.add_safety_boundary(
-                grids           = self.grids,
                 max_temperature = self.simulation.flock.max_temperature,
                 plotter         = self.plotter,
                 position        = position,
                 temperature     = temperature
             )
         
-        if self.display.show_graph:
+        if self.vista.show_graph:
             self.graph_actors = self.renderer.add_communication_graph(
                 edge_index = edge_index,
                 plotter    = self.plotter,
                 position   = position
             )
         
-        if self.display.show_temperature_volume:
+        if self.vista.show_temperature_volume:
             temp_grid = self.sampler.create_temperature_grid(
                 environment = self.simulation,
                 position    = position
@@ -212,9 +186,15 @@ class Visualizer:
         reflect changes in the display window. The method includes safety
         checks to ensure the plotter is initialized and the window is still
         open before attempting to render.
+        
+        If auto_save_frames is enabled, automatically captures and saves
+        a screenshot after rendering.
         """
         if self.plotter is not None:
             self.plotter.render()
+            
+            if self.vista.auto_save_frames and self.frame_capture_enabled:
+                self.save_frame()
     
     def toggle(
         self, 
@@ -257,6 +237,48 @@ class Visualizer:
         setattr(self.visualization, attr_name, new_state)
         
         return new_state
+    
+    def enable_frame_capture(self, output_dir: Optional[Path] = None):
+        """
+        Enable frame capture for creating animations.
+        
+        Sets up the frame capture system with an output directory and
+        initializes the frame counter. Once enabled, frames can be saved
+        manually or automatically during rendering.
+        
+        Args:
+            output_dir : Directory to save frames. Defaults to configured path
+        """
+        self.frame_dir = Path(output_dir or self.vista.frame_output_dir)
+        self.frame_dir.mkdir(parents=True, exist_ok=True)
+        self.frame_counter = count()
+        self.frame_capture_enabled = True
+    
+    def save_frame(self, filename: Optional[str] = None) -> Optional[Path]:
+        """
+        Save the current visualization frame as an image.
+        
+        Captures the current state of the visualization window and saves it
+        as a PNG image. Frame capture must be enabled first via
+        enable_frame_capture() method.
+        
+        Args:
+            filename : Optional custom filename. If None, uses frame counter.
+                      Should not include directory path or extension.
+        
+        Returns:
+            Path to the saved image file, or None if capture not enabled
+        """
+        if not self.frame_capture_enabled or self.frame_dir is None:
+            return None
+        
+        if filename is None:
+            filename = f"frame_{next(self.frame_counter):06d}"
+        
+        filepath = self.frame_dir / f"{filename}.png"
+        self.plotter.screenshot(filepath)
+        
+        return filepath
     
     def close(self):
         """
