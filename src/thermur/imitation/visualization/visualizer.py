@@ -11,12 +11,12 @@ various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
 both light and dark themes.
 """
-from .renderers                             import Renderer
-from .sampling                              import GridSampler
-from config.imitation.schemas.visualization import *
-from pyvista                                import Actor, global_theme, Plotter, themes
-from tensordict                             import TensorDictBase
-from typing                                 import Optional
+from .renderer                      import Renderer
+from .sampler                       import Sampler
+from config.imitation.visualization import *
+from pyvista                        import global_theme, Plotter, themes
+from tensordict                     import TensorDictBase
+from typing                         import Optional
 
 
 class Visualizer:
@@ -48,6 +48,8 @@ class Visualizer:
         glyphs     : GlyphModel,
         grids      : GridModel,
         opacity    : OpacityModel,
+        renderer   : Renderer,
+        sampler    : Sampler,
         simulation : object
     ):
         """
@@ -59,28 +61,31 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            colors          : Color configuration for visualization elements
-            display         : Display settings and element toggles
-            glyphs          : Glyph configuration for agent rendering
-            grids           : Grid configuration for field sampling
-            opacity         : Opacity configuration for visualization elements
-            simulation      : Simulation reference for accessing environment data
+            colors     : Color configuration for visualization elements
+            display    : Display settings and element toggles
+            glyphs     : Glyph configuration for agent rendering
+            grids      : Grid configuration for field sampling
+            opacity    : Opacity configuration for visualization elements
+            renderer   : Pre-built renderer for visualization elements
+            sampler    : Pre-built grid sampler for spatial data sampling
+            simulation : Simulation reference for accessing environment data
         """
         self.colors        = colors
         self.display       = display
         self.glyphs        = glyphs
         self.grids         = grids
         self.opacity       = opacity
+        self.renderer      = renderer
+        self.sampler       = sampler
         self.simulation    = simulation
-        self._grid_sampler = GridSampler(self.grids)
-        self._renderer     = Renderer(self.colors, self.glyphs, self.opacity)
         
-        self._plotter       : Plotter     = None
-        self._agent_actors  : list[Actor] = None
-        self._wind_actors   : list[Actor] = None
-        self._safety_actors : list[Actor] = None
-        self._graph_actors  : list[Actor] = None
-        self._colormap      : str         = None
+        self.agent_actors              = None
+        self.colormap                  = None
+        self.graph_actors       = None
+        self.plotter            = None
+        self.safety_actors      = None
+        self.temperature_actors = None
+        self.wind_actors        = None
         
         self._initialize_plotter()
     
@@ -104,16 +109,16 @@ class Visualizer:
                 theme = themes.DocumentTheme()
         global_theme.load_theme(theme)
         
-        self._plotter = Plotter(
+        self.plotter = Plotter(
             lighting    = "three lights",
             off_screen  = False,
-            title       = self.display.window_title,
+            title       = "Thermur Simulation",
             window_size = self.display.window_size
         )
         
-        self._plotter.camera_position = 'xy'
-        self._plotter.camera.zoom(1.5)
-        self._colormap = self.colors.colormap
+        self.plotter.camera_position = 'xy'
+        self.plotter.camera.zoom(1.5)
+        self.colormap = self.colors.colormap
 
     def update(self, observation: TensorDictBase):
         """
@@ -138,7 +143,7 @@ class Visualizer:
                 - temperature : Agent temperatures (N, 1)
                 - velocity    : Agent velocities (N, 3) 
         """
-        if self._plotter is None:
+        if self.plotter is None:
             self._initialize_plotter()
         
         edge_index  = observation.get("edge_index")
@@ -146,16 +151,16 @@ class Visualizer:
         temperature = observation.get("temperature")
         velocity    = observation.get("velocity")
         
-        if self._plotter.ren_win is None:
+        if self.plotter.ren_win is None:
             return
             
-        self._plotter.clear_actors()
+        self.plotter.clear_actors()
         
         if self.display.show_agents:
-            colormap = self._colormap if self.display.show_thermal else None
-            self._agent_actors = self._renderer.add_agents(
+            colormap = self.colormap if self.display.show_thermal else None
+            self.agent_actors = self.renderer.add_agents(
                 colormap    = colormap,
-                plotter     = self._plotter,
+                plotter     = self.plotter,
                 position    = position,
                 show_trails = self.display.show_trails,
                 temperature = temperature,
@@ -163,29 +168,39 @@ class Visualizer:
             )
         
         if self.display.show_wind:
-            wind_grid = self._grid_sampler.create_wind_grid(
+            wind_grid = self.sampler.create_wind_grid(
                 position   = position,
                 simulation = self.simulation
             )
-            self._wind_actors = self._renderer.add_wind_vectors(
-                plotter   = self._plotter,
+            self.wind_actors = self.renderer.add_wind_vectors(
+                plotter   = self.plotter,
                 wind_grid = wind_grid
             )
         
         if self.display.show_safety:
-            self._safety_actors = self._renderer.add_safety_boundary(
+            self.safety_actors = self.renderer.add_safety_boundary(
                 grids           = self.grids,
                 max_temperature = self.simulation.flock.max_temperature,
-                plotter         = self._plotter,
+                plotter         = self.plotter,
                 position        = position,
                 temperature     = temperature
             )
         
         if self.display.show_graph:
-            self._graph_actors = self._renderer.add_communication_graph(
+            self.graph_actors = self.renderer.add_communication_graph(
                 edge_index = edge_index,
-                plotter    = self._plotter,
+                plotter    = self.plotter,
                 position   = position
+            )
+        
+        if self.display.show_temperature_volume:
+            temp_grid = self.sampler.create_temperature_grid(
+                environment = self.simulation,
+                position    = position
+            )
+            self.temperature_actors = self.renderer.add_temperature_volume(
+                plotter   = self.plotter,
+                temp_grid = temp_grid
             )
     
     def render(self):
@@ -198,8 +213,8 @@ class Visualizer:
         checks to ensure the plotter is initialized and the window is still
         open before attempting to render.
         """
-        if self._plotter is not None:
-            self._plotter.render()
+        if self.plotter is not None:
+            self.plotter.render()
     
     def toggle(
         self, 
@@ -253,5 +268,5 @@ class Visualizer:
         the user requests to close the window. The method includes safety
         checks to avoid errors if the plotter is already closed.
         """
-        if self._plotter is not None:
-            self._plotter.close()
+        if self.plotter is not None:
+            self.plotter.close()
