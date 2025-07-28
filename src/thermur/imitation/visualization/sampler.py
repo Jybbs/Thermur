@@ -9,18 +9,14 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
-from collections                            import namedtuple
-from config.imitation.schemas.visualization import GridModel
-from numpy                                  import array, ndarray
-from pyvista                                import Axes, ImageData, PolyData
-from torch                                  import from_numpy, Tensor
-from typing                                 import Any
+from config.imitation.visualization import GridModel
+from numpy                          import array, ndarray
+from pyvista                        import Axes, ImageData, PolyData
+from torch                          import from_numpy, Tensor
+from typing                         import Any
 
 
-Bounds = namedtuple('Bounds', ['min', 'max'])
-
-
-class GridSampler:
+class Sampler:
     """
     Manages spatial sampling of simulation data for visualization.
     
@@ -119,7 +115,7 @@ class GridSampler:
         )
         
         grid_tensor         = from_numpy(grid.points).float()
-        temps, _            = environment.data_source.query_thermal(grid_tensor)
+        temps, _            = environment.wrf.query_thermal(grid_tensor)
         grid["temperature"] = temps.cpu().numpy().ravel()
         
         return grid
@@ -154,7 +150,7 @@ class GridSampler:
         
         wind_grid                  = PolyData(spacing_grid.points)
         grid_tensor                = from_numpy(wind_grid.points).float()
-        wind_vectors               = simulation.data_source.query_wind(grid_tensor)
+        wind_vectors               = simulation.wrf.query_wind(grid_tensor)
         wind_grid["wind_velocity"] = wind_vectors.cpu().numpy()
         
         return wind_grid

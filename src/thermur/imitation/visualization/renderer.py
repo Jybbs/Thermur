@@ -12,11 +12,11 @@ vectorized operations where possible and PyVista's optimized rendering
 pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
-from config.imitation.schemas.visualization import *
-from contextlib                             import suppress
-from pyvista                                import Actor, ImageData, Plotter, PolyData
-from torch                                  import Tensor
-from typing                                 import Optional
+from config.imitation.visualization import *
+from contextlib                     import suppress
+from pyvista                        import Actor, ImageData, Plotter, PolyData
+from torch                          import Tensor
+from typing                         import Optional
 
 import numpy   as np
 import pyvista as pv
@@ -94,7 +94,7 @@ class Renderer:
         
         params = {
             "line_width"            : 2,
-            "opacity"               : self.opacities.trails,
+            "opacity"               : 0.5,
             "render_lines_as_tubes" : True,
         }
         
@@ -105,7 +105,7 @@ class Renderer:
                 "scalars" : "temperature",
             }
         else:
-            params["color"] = self.colors.trail_default
+            params["color"] = (0.8, 0.8, 0.8)
         
         return [plotter.add_mesh(trail_mesh, **params)]
     
@@ -247,7 +247,7 @@ class Renderer:
         
         return [
             plotter.add_mesh(
-                color                  = self.colors.graph_default,
+                color                  = (0.7, 0.7, 0.9),
                 line_width             = 2,
                 mesh                   = mesh,
                 opacity                = self.opacities.graph,
@@ -306,54 +306,9 @@ class Renderer:
                 return []
         return [
             plotter.add_mesh(
-                color   = self.colors.safety_default,
+                color   = (0.9, 0.3, 0.3),
                 mesh    = contour.smooth(n_iter=50),
-                opacity = self.opacities.safety,
-            )
-        ]
-    
-    def add_temperature_volume(
-        self,
-        plotter   : Plotter,
-        temp_grid : ImageData,
-        max_temp  : Optional[float] = None,
-        min_temp  : Optional[float] = None
-    ) -> list[Actor]:
-        """
-        Add temperature field volume rendering to the plotter.
-        
-        Creates a volume rendering of a temperature field, showing thermal gradients
-        throughout the simulation space. This visualization provides insights into
-        the thermal environment that the flock navigates through, helping to understand
-        the thermal currents, hot spots, and thermal gradients.
-        
-        The volume rendering uses PyVista's efficient GPU-accelerated rendering
-        pipeline to display large temperature fields in real-time. The colormap
-        and opacity settings can be configured to highlight specific temperature
-        ranges or features of interest.
-        
-        Args:
-            plotter   : PyVista Plotter instance to render to
-            temp_grid : PyVista UniformGrid with temperature data
-            max_temp  : Maximum temperature for colormap scaling (auto if None)
-            min_temp  : Minimum temperature for colormap scaling (auto if None)
-            
-        Returns:
-            List of PyVista actors created for the temperature field
-        """
-        bounds = temp_grid.get_data_range("temperature")
-        
-        return [
-            plotter.add_volume(
-                cmap            = self.colors.colormap,
-                clim            = (min_temp or bounds[0], max_temp or bounds[1]),
-                opacity         = "linear",
-                scalar_bar_args = {
-                    "position_x" : self.colors.scalar_bar_position_x,
-                    "position_y" : self.colors.scalar_bar_position_y,
-                    "title"      : self.colors.scalar_bar_title,
-                },
-                volume          = temp_grid,
+                opacity = 0.3,
             )
         ]
     
@@ -405,7 +360,45 @@ class Renderer:
         return [
             plotter.add_mesh(
                 mesh    = wind_glyphs,
-                color   = self.colors.wind_default,
-                opacity = self.opacities.wind,
+                color   = (0.7, 0.7, 0.7),
+                opacity = 0.8,
+            )
+        ]
+    
+    def add_temperature_volume(
+        self,
+        plotter   : Plotter,
+        temp_grid : ImageData
+    ) -> list[Actor]:
+        """
+        Add volumetric temperature field rendering to the plotter.
+        
+        Creates a semi-transparent 3D volume showing the thermal structure of the
+        environment. This visualization reveals thermal columns, temperature gradients,
+        and mixing regions that influence agent navigation. The volume rendering
+        provides critical insight into the environmental conditions that drive
+        the flock's thermal soaring behavior.
+        
+        Args:
+            plotter   : PyVista Plotter instance to render to
+            temp_grid : Volumetric temperature data sampled on a regular grid
+            
+        Returns:
+            List of PyVista actors created for the temperature volume
+        """
+        bounds = temp_grid.get_data_range("temperature")
+        
+        return [
+            plotter.add_volume(
+                clim            = bounds,
+                cmap            = self.colors.colormap,
+                opacity         = "sigmoid",
+                opacity_unit_distance = 0.1,
+                scalar_bar_args = {
+                    "position_x" : 0.88,
+                    "position_y" : 0.25,
+                    "title"      : "Temperature (°C)",
+                },
+                volume          = temp_grid,
             )
         ]
