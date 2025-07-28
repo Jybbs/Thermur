@@ -19,21 +19,6 @@ loader     = LoaderModel()
 physics    = PhysicsModel()
 
 
-@simulation(name="wrf")
-def wrf_build():
-    """
-    Builder for WRF data source.
-    
-    Creates a data loader that reads WRF-Fire NetCDF files and provides
-    thermal field interpolation for the simulation environment. Supports
-    both real WRF data and synthetic test data.
-    """
-    return build(
-        WRFDataSource,
-        loader  = loader,
-        physics = physics
-    )
-
 @simulation(name="env")
 def env_build():
     """
@@ -53,4 +38,19 @@ def env_build():
         flock   = "${controller.flock}",
         physics = physics,
         wrf     = "${simulation.wrf}"
+    )
+
+@simulation(name="wrf")
+def wrf_build():
+    """
+    Builder for WRF data source.
+    
+    Creates a data loader that reads WRF-Fire NetCDF files and provides
+    thermal field interpolation for the simulation environment. Supports
+    both real WRF data and synthetic test data.
+    """
+    return build(
+        WRFDataSource,
+        loader  = loader,
+        physics = physics
     )

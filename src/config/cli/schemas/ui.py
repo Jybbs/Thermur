@@ -63,11 +63,6 @@ class DisplayModel(BaseModel, extra="forbid"):
                 "note"    : "Guides you through configuration"
             },
             {
-                "desc"    : "Quick test run",
-                "command" : "thermur train --preset quick",
-                "note"    : "Minimal setup for rapid testing"
-            },
-            {
                 "desc"    : "Custom learning rate",
                 "command" : "thermur train learning.learning_rate=0.001",
                 "note"    : "Override specific parameters"

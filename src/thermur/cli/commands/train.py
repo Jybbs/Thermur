@@ -36,11 +36,6 @@ def train(
         "--interactive/--no-interactive", "-i/-n",
         help = "Enable interactive configuration prompts"
     ),
-    preset: str | None = Option(
-        None,
-        "--preset", "-p",
-        help = "Configuration preset (quick, standard, large, debug)"
-    ),
     resume: Path | None = Option(
         None,
         "--resume", "-r",
@@ -60,7 +55,6 @@ def train(
 
     Examples:
         thermur train                                # Interactive training
-        thermur train --preset quick                 # Quick test run
         thermur train optimizer.learning_rate=0.001  # Custom parameters
         thermur train --no-interactive --force       # Non-interactive mode
         thermur train --dry-run                      # Validate config without training
@@ -73,7 +67,6 @@ def train(
         force       = force,
         interactive = interactive,
         overrides   = overrides,
-        preset      = preset,
         resume      = resume,
         sample      = sample
     )
@@ -104,13 +97,11 @@ class TrainCommand:
         self,
         additional : list[str],
         base       : list[str] | None,
-        preset     : str | None,
     ) -> list[str]:
         """
         Constructs the final override list in the proper order:
-        1. Preset selection (if applicable)
-        2. Command-line overrides
-        3. Interactive overrides
+        1. Command-line overrides
+        2. Interactive overrides
 
         The ordering ensures that later overrides can supersede earlier ones,
         giving users full control over the final configuration.
@@ -118,24 +109,11 @@ class TrainCommand:
         Args:
             additional : Overrides from interactive prompts.
             base       : Command-line provided overrides.
-            preset     : Selected configuration preset.
 
         Returns:
             Complete list of hydra overrides.
         """
-        preset_overrides = (
-            [
-                f"{k}={v}" 
-                for k, v in sorted(
-                    getattr(self.cfg.presets, preset).overrides.overrides.items()
-                )
-            ]
-            if preset and hasattr(self.cfg.presets, preset)
-            else []
-        )
-        
         return [
-            *preset_overrides,
             *(base or []),
             *additional
         ]
@@ -206,25 +184,6 @@ class TrainCommand:
             title        = "Configuration Source"
         )
 
-    def _display_preset(self, preset: str | None):
-        """
-        Shows the selected preset configuration.
-        
-        Args:
-            preset : Selected preset name.
-        """
-        if preset:
-            preset_info  = getattr(self.cfg.presets, preset, None)
-            preset_emoji = preset_info.emoji if preset_info else preset
-            self.ui.print_message(
-                message  = f"Using preset: [bright_cyan]{preset_emoji}[/bright_cyan]",
-                msg_type = "config"
-            )
-        else:
-            self.ui.print_message(
-                message  = "Using default configuration",
-                msg_type = "config"
-            )
 
     def _dry_run_task(self, cfg: DictConfig, overrides: list[str]):
         """
@@ -317,30 +276,20 @@ class TrainCommand:
                 
         return items
 
-    def _gather_interactive_inputs(
-        self,
-        preset        : str | None
-    ) -> tuple[str | None, list[str]]:
+    def _gather_interactive_inputs(self) -> list[str]:
         """
-        Guides the user through interactive configuration by prompting for:
-        1. Configuration preset (if not already specified)
-        2. Any additional Hydra configuration overrides
+        Guides the user through interactive configuration by prompting for
+        any additional Hydra configuration overrides.
         
         The prompts are designed to provide sensible defaults while giving
         users full control over their training configuration.
         
-        Args:
-            preset        : Pre-selected preset.
-            
         Returns:
-            Tuple of (preset, additional_overrides).
+            List of additional overrides.
         """
         self.ui.print_section("Configuration Setup")
         
-        return (
-            preset or self.prompts.select_configuration_preset(), 
-            self.prompts.ask_for_overrides()
-        )
+        return self.prompts.ask_for_overrides()
 
     def _handle_config_issues(self, interactive : bool, issues : list[str]):
         """
@@ -476,7 +425,6 @@ class TrainCommand:
 
         job = imports["launch"](
             imports["ImitationConfig"],
-            config_name            = "train",
             overrides              = overrides,
             task_function          = task_map[dry_run],
             version_base           = None,
@@ -514,7 +462,6 @@ class TrainCommand:
                 description = self.cfg.messages.status["registering_configs"],
                 task_id     = task
             )
-            # Configs are auto-registered when config module is imported
 
             progress.update(
                 advance     = 50,
@@ -541,30 +488,25 @@ class TrainCommand:
     def _request_confirmation(
         self,
         overrides     : list[str],
-        preset        : str | None,
     ):
         """
         Presents a final summary of the training configuration, including GPU 
-        availability, selected preset, and number of overrides.
+        availability and number of overrides.
         
         It acts as a final checkpoint before launching the potentially long-running 
         training process.
 
         Args:
             overrides     : Complete list of hydra overrides.
-            preset        : Selected configuration preset.
             
         Raises:
             Exit: If the user declines to proceed with training.
         """
-        preset_obj  = getattr(self.cfg.presets, preset, None) if preset else None
-        preset_emoji = preset_obj.emoji if preset_obj else (preset or "🧵")
         system_info = self.system.get_system_info()
         
         summary_data = {
             "gpu_available" : system_info.get("cuda", False),
             "overrides"     : len(overrides),
-            "preset"        : preset_emoji,
             "wandb_project" : self.cfg.wandb.project,
         }
             
@@ -653,7 +595,6 @@ class TrainCommand:
         force       : bool,
         interactive : bool,
         overrides   : list[str] | None,
-        preset      : str | None,
         resume      : Path | None,
         sample      : bool,
     ):
@@ -669,7 +610,6 @@ class TrainCommand:
             force       : If True, skips system validation checks.
             interactive : If True, enables interactive prompts.
             overrides   : A list of Hydra configuration overrides.
-            preset      : The name of the configuration preset to use.
             sample      : If True, use sample data.
         """
         self.ui.print_header("Thermur Training System")
@@ -682,24 +622,21 @@ class TrainCommand:
                 msg_type = "warning"
             )
         
-        preset, additional = (
-            self._gather_interactive_inputs(preset) if interactive else (preset, [])
+        additional = (
+            self._gather_interactive_inputs() if interactive else []
         )
-
-        self._display_preset(preset)
 
         data_path = self._ensure_data_available(sample)
         overrides = self._build_overrides(
             additional = additional,
             base       = overrides,
-            preset     = preset,
         )
 
         if not force and (issues := self.system.validate_overrides(overrides)):
             self._handle_config_issues(interactive, issues)
 
         if interactive:
-            self._request_confirmation(overrides, preset)
+            self._request_confirmation(overrides)
 
         self.ui.print_section("Initializing Training", minor=True)
         if self.cfg.wandb.mode != "disabled":

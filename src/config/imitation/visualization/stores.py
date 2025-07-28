@@ -6,8 +6,8 @@ using hydra-zen's decorator pattern. Each component is registered as a separate
 build that can be referenced and overridden independently via Hydra's CLI.
 
 The stores follow a flat structure where each component (plotter, renderer,
-sampler, visualizer) is defined as a function decorated with @viz(name=...).
-This allows for clean interpolation references like ${viz.plotter}
+sampler, visualizer) is defined as a function decorated with @visualization(name=...).
+This allows for clean interpolation references like ${visualization.plotter}
 without nested builds, improving configuration clarity and override flexibility.
 """
 from .schemas                        import VistaModel
@@ -15,11 +15,11 @@ from config.utils.zen                import build, store
 from pyvista                         import Arrow, Plotter, Sphere, themes
 from thermur.imitation.visualization import Renderer, Sampler, Visualizer
 
-viz   = store(group="viz")
-vista = VistaModel()
+visualization = store(group="visualization")
+vista         = VistaModel()
 
 
-@viz(name="agent_glyph")
+@visualization(name="agent_glyph")
 def agent_glyph_build():
     """
     Builder for agent glyph geometry.
@@ -35,8 +35,7 @@ def agent_glyph_build():
         case "arrow" | _:
             return build(Arrow)
 
-
-@viz(name="plotter")
+@visualization(name="plotter")
 def plotter_build():
     """
     Builder for PyVista plotter window.
@@ -52,13 +51,12 @@ def plotter_build():
         Plotter,
         lighting    = "three lights",
         off_screen  = False,
-        theme       = "${viz.theme}",
+        theme       = "${visualization.theme}",
         title       = "Thermur Simulation",
         window_size = vista.window_size
     )
 
-
-@viz(name="renderer")
+@visualization(name="renderer")
 def renderer_build():
     """
     Builder for visualization rendering component.
@@ -74,14 +72,13 @@ def renderer_build():
     """
     return build(
         Renderer,
-        agent_glyph = "${viz.agent_glyph}",
-        scalar_bar  = "${viz.scalar_bar}",
+        agent_glyph = "${visualization.agent_glyph}",
+        scalar_bar  = "${visualization.scalar_bar}",
         vista       = vista,
-        wind_glyph  = "${viz.wind_glyph}"
+        wind_glyph  = "${visualization.wind_glyph}"
     )
 
-
-@viz(name="sampler")
+@visualization(name="sampler")
 def sampler_build():
     """
     Builder for spatial grid sampling component.
@@ -102,8 +99,7 @@ def sampler_build():
         wind_resolution        = vista.wind_resolution
     )
 
-
-@viz(name="scalar_bar")
+@visualization(name="scalar_bar")
 def scalar_bar_build():
     """
     Builder for scalar bar configuration.
@@ -119,8 +115,7 @@ def scalar_bar_build():
         title      = "Temperature (°C)"
     )
 
-
-@viz(name="theme")
+@visualization(name="theme")
 def theme_build():
     """
     Builder for PyVista visual theme.
@@ -134,8 +129,7 @@ def theme_build():
     else:
         return build(themes.DocumentTheme)
 
-
-@viz(name="visualizer")
+@visualization(name="visualizer")
 def visualizer_build():
     """
     Builder for 3D visualization system.
@@ -150,22 +144,21 @@ def visualizer_build():
     initialization complexity and improve startup performance.
     
     References:
-    - ${viz.plotter}: Main rendering window
-    - ${viz.renderer}: Element rendering manager
-    - ${viz.sampler}: Grid sampling utilities
+    - ${visualization.plotter}: Main rendering window
+    - ${visualization.renderer}: Element rendering manager
+    - ${visualization.sampler}: Grid sampling utilities
     - ${simulation.env}: Simulation environment for data access
     """
     return build(
         Visualizer,
-        plotter    = "${viz.plotter}",
-        renderer   = "${viz.renderer}",
-        sampler    = "${viz.sampler}",
+        plotter    = "${visualization.plotter}",
+        renderer   = "${visualization.renderer}",
+        sampler    = "${visualization.sampler}",
         simulation = "${simulation.env}",
         vista      = vista
     )
 
-
-@viz(name="wind_glyph")
+@visualization(name="wind_glyph")
 def wind_glyph_build():
     """
     Builder for wind vector glyph geometry.

@@ -74,11 +74,6 @@ class InfoCommand:
             value       = "configs/"
         )
         
-        self.ui.print_config_value(
-            align_width = 11,
-            key         = "Presets",
-            value       = ", ".join(sorted(self.cfg.presets.__fields__.keys()))
-        )
         
 
         self.ui.print_section("Common Commands")

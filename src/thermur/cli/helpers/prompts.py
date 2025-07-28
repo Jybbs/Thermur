@@ -176,83 +176,6 @@ class CLIPrompts:
             default = False
         )
     
-    def select_configuration_preset(self) -> str | None:
-        """
-        Prompts the user to select a high-level configuration preset.
-
-        This function first displays a descriptive table of available presets,
-        then presents an interactive list. This initial choice allows users to
-        quickly start with sensible defaults for different use cases without
-        needing to configure every detail manually.
-
-        Returns:
-            The string name of the selected preset (e.g., "standard"), or None if
-            the user explicitly chooses the "custom" configuration option.
-        """
-        self.ui.print_section("Configuration Presets", minor=True)
-
-        table = self.ui.create_aligned_table(
-            columns = self.prompts.presets_table_columns,
-            title   = "Available Presets"
-        )
-
-        for name in self.cfg.presets.__fields__:
-            config       = getattr(self.cfg.presets, name)
-            display_name = f"{config.emoji} {config.name}"
-            if name == "custom":
-                row_style = f"[grey70]"
-                table.add_row(
-                    f"{row_style}{display_name}[/]",
-                    f"{row_style}{config.desc}[/]",
-                    f"{row_style}{config.best_for}[/]",
-                )
-            else:
-                table.add_row(display_name, config.desc, config.best_for)
-
-        self.ui.console.print(table)
-        self.ui.console.print()
-
-        choices = [
-            questionary.Choice(
-                title = getattr(self.cfg.presets, name).emoji, 
-                value = name
-            )
-            for name in self.cfg.presets.__fields__
-            if name != 'custom'
-        ]
-        choices.extend([
-            questionary.Separator(),
-            questionary.Choice(
-                title = self.cfg.presets.custom.emoji,
-                value = None
-            ),
-        ])
-
-        chosen_emoji = questionary.select(
-            choices = choices,
-            message = "Which configuration preset would you like to use?",
-            style   = self.thermal_style
-        ).ask()
-
-        if chosen_emoji:
-            emoji_to_preset = {
-                getattr(self.cfg.presets, name).emoji: name 
-                for name in self.cfg.presets.__fields__
-            }
-            chosen_preset = emoji_to_preset.get(chosen_emoji)
-            
-            self.ui.print_message(
-                message  = f"Selected preset: [bright_cyan]{chosen_emoji}[/bright_cyan]",
-                msg_type = "success"
-            )
-        else:
-            chosen_preset = None
-            self.ui.print_message(
-                message  = "Custom configuration selected - full control mode",
-                msg_type = "info"
-            )
-
-        return chosen_preset
     
     def select_file_with_pagination(
         self,
@@ -404,10 +327,6 @@ class CLIPrompts:
 
         num_overrides = config.get('overrides', 0)
         summary_data  = [
-            (
-                "Configuration",
-                f"[{self.ui.display.styles['warning']}]{config.get('preset')}[/]"
-            ),
             (
                 "Hardware", 
                 "🎮 GPU Acceleration" if config.get("gpu_available") else "💻 CPU Mode"

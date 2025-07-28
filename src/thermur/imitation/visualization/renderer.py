@@ -60,32 +60,6 @@ class Renderer:
         
         self.init_cached_values()
     
-    def init_cached_values(self):
-        """
-        Initialize cached values for rendering performance.
-        
-        Pre-computes and caches frequently-used values to avoid repeated
-        allocations and computations during rendering. This includes trail
-        parameters, rendering options, and color constants.
-        """
-        n_points = self.vista.trail_length
-        self.trail_t     = np.linspace(0, 0.1 * n_points, n_points)
-        self.trail_decay = np.linspace(1, 0, n_points)[:, None]
-        
-        self.trail_params = {
-            "line_width"            : 2,
-            "opacity"               : 0.5,
-            "render_lines_as_tubes" : True,
-        }
-        
-        self.color_graph  = (0.7, 0.7, 0.9)
-        self.color_safety = (0.9, 0.3, 0.3)
-        self.color_trail  = (0.8, 0.8, 0.8)
-        self.color_wind   = (0.7, 0.7, 0.7)
-        
-        self.line_segment_size = 2
-        self.wind_threshold_factor = 0.1
-    
     def _create_agent_trails(
         self,
         colormap    : Optional[str],
@@ -332,6 +306,40 @@ class Renderer:
             )
         ]
     
+    def add_temperature_volume(
+        self,
+        plotter   : Plotter,
+        temp_grid : ImageData
+    ) -> list[Actor]:
+        """
+        Add volumetric temperature field rendering to the plotter.
+        
+        Creates a semi-transparent 3D volume showing the thermal structure of the
+        environment. This visualization reveals thermal columns, temperature gradients,
+        and mixing regions that influence agent navigation. The volume rendering
+        provides critical insight into the environmental conditions that drive
+        the flock's thermal soaring behavior.
+        
+        Args:
+            plotter   : PyVista Plotter instance to render to
+            temp_grid : Volumetric temperature data sampled on a regular grid
+            
+        Returns:
+            List of PyVista actors created for the temperature volume
+        """
+        bounds = temp_grid.get_data_range("temperature")
+        
+        return [
+            plotter.add_volume(
+                clim                  = bounds,
+                cmap                  = self.vista.colormap,
+                opacity               = "sigmoid",
+                opacity_unit_distance = 0.1,
+                scalar_bar_args       = self.scalar_bar,
+                volume                = temp_grid,
+            )
+        ]
+    
     def add_wind_vectors(
         self,
         plotter   : Plotter,
@@ -384,36 +392,28 @@ class Renderer:
             )
         ]
     
-    def add_temperature_volume(
-        self,
-        plotter   : Plotter,
-        temp_grid : ImageData
-    ) -> list[Actor]:
+    def init_cached_values(self):
         """
-        Add volumetric temperature field rendering to the plotter.
+        Initialize cached values for rendering performance.
         
-        Creates a semi-transparent 3D volume showing the thermal structure of the
-        environment. This visualization reveals thermal columns, temperature gradients,
-        and mixing regions that influence agent navigation. The volume rendering
-        provides critical insight into the environmental conditions that drive
-        the flock's thermal soaring behavior.
-        
-        Args:
-            plotter   : PyVista Plotter instance to render to
-            temp_grid : Volumetric temperature data sampled on a regular grid
-            
-        Returns:
-            List of PyVista actors created for the temperature volume
+        Pre-computes and caches frequently-used values to avoid repeated
+        allocations and computations during rendering. This includes trail
+        parameters, rendering options, and color constants.
         """
-        bounds = temp_grid.get_data_range("temperature")
+        n_points = self.vista.trail_length
+        self.trail_t     = np.linspace(0, 0.1 * n_points, n_points)
+        self.trail_decay = np.linspace(1, 0, n_points)[:, None]
         
-        return [
-            plotter.add_volume(
-                clim                  = bounds,
-                cmap                  = self.vista.colormap,
-                opacity               = "sigmoid",
-                opacity_unit_distance = 0.1,
-                scalar_bar_args       = self.scalar_bar,
-                volume                = temp_grid,
-            )
-        ]
+        self.trail_params = {
+            "line_width"            : 2,
+            "opacity"               : 0.5,
+            "render_lines_as_tubes" : True,
+        }
+        
+        self.color_graph  = (0.7, 0.7, 0.9)
+        self.color_safety = (0.9, 0.3, 0.3)
+        self.color_trail  = (0.8, 0.8, 0.8)
+        self.color_wind   = (0.7, 0.7, 0.7)
+        
+        self.line_segment_size     = 2
+        self.wind_threshold_factor = 0.1

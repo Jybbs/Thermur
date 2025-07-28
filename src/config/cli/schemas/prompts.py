@@ -1,8 +1,8 @@
 """
-Interactive prompts and presets configuration schemas.
+Interactive prompts configuration schemas.
 
-This module defines configuration for user interaction, prompt styling,
-and training presets used by the CLIPrompts helper.
+This module defines configuration for user interaction and prompt styling
+used by the CLIPrompts helper.
 """
 from pydantic import BaseModel, Field
 
@@ -30,14 +30,6 @@ class PromptsModel(BaseModel, extra="forbid"):
     package_missing_error: str = Field(
         default     = "Required package '{package}' is not installed",
         description = "Error message template for missing packages."
-    )
-    presets_table_columns: list[tuple[str, str, int, str]] = Field(
-        default = [
-            ("Preset",      "bright_cyan", 15, "left"),
-            ("Description", "white",       40, "left"),
-            ("Best For",    "grey70",      30, "left")
-        ],
-        description = "Column configuration for presets selection table."
     )
     python_version_error: str = Field(
         default     = "Python {current} detected, but {required} or higher is required",
