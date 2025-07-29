@@ -576,7 +576,7 @@ class ThermurUI:
 
         with self.console.status(
             spinner = "dots",
-            status  = system.messages.status["checking_reqs"]
+            status  = "Checking system requirements..."
         ):
             info = system.get_system_info()
 

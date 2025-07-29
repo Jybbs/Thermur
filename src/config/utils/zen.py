@@ -6,8 +6,9 @@ across configuration domains. It provides enhanced versions of hydra-zen's
 core functions that apply Thermur-specific defaults automatically.
 
 The primary exports are:
-- thermur_store: Auto-registering store for configuration management
+- store: Direct re-export from hydra-zen for creating config stores
 - thermur_build: Enhanced builds function with automatic signature population
+- thermur_make_all: Helper to create "all" configs and register with Hydra
 - make_config: Direct re-export for creating structured configs
 
 By importing from this module rather than hydra-zen directly, we ensure:
@@ -15,22 +16,7 @@ By importing from this module rather than hydra-zen directly, we ensure:
 2. Easier migration if we need to change defaults
 3. A single place to extend hydra-zen functionality
 """
-from hydra_zen import builds, store as _store
-from hydra_zen import make_custom_builds_fn, make_config
-from typing import Dict, Any, List
-
-def thermur_store(*args, **kwargs):
-    """
-    Thermur-specific store that auto-registers with Hydra on creation.
-    
-    This wrapper creates a ZenStore and immediately registers it with
-    Hydra's ConfigStore, eliminating the need for a separate registration call.
-    Unlike the standard hydra-zen store, this automatically calls
-    add_to_hydra_store() upon creation.
-    """
-    zen_store = _store(*args, **kwargs)
-    zen_store.add_to_hydra_store()
-    return zen_store
+from hydra_zen import store, make_custom_builds_fn, make_config
 
 thermur_build = make_custom_builds_fn(
     populate_full_signature = True,
@@ -62,15 +48,19 @@ Example:
 
 def thermur_make_all(store_instance):
     """
-    Create an "all" config that references all other configs in the store.
+    Create an "all" config that contains all other configs in the store as fields,
+    then register everything with Hydra's ConfigStore.
+    
+    This should be called at the end of each stores module after all configs
+    have been registered with the store.
     
     Example:
-        controller = thermur_store(group="controller")
+        controller = store()(group="controller")
         
         @controller(name="expert")
         def expert_build(): ...
         
-        thermur_make_all(controller)  # Creates controller.all
+        thermur_make_all(controller)  # Creates controller.all and registers with Hydra
     """
     if not store_instance.groups:
         raise ValueError("Store must have a group")
@@ -85,3 +75,4 @@ def thermur_make_all(store_instance):
     })
     
     store_instance(all_config, name="all")
+    store_instance.add_to_hydra_store()

@@ -6,10 +6,10 @@ using hydra-zen's decorator pattern. Each component is registered as a separate
 build that can be referenced and overridden independently via Hydra's CLI.
 """
 from .schemas                     import *
-from config.utils.zen             import thermur_build, thermur_make_all, thermur_store
+from config.utils.zen             import store, thermur_build, thermur_make_all
 from thermur.imitation.monitoring import EventLogger, MetricsCollector
 
-monitoring = thermur_store(group="monitoring")
+monitoring = store()(group="monitoring")
 events     = EventsModel()
 metrics    = MetricsModel()
 
