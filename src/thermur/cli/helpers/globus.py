@@ -12,13 +12,13 @@ The manager handles:
 - Transfer task submission between Globus endpoints
 - Progress monitoring for long-running transfers
 """
-from config.cli.schemas.globus import GlobusSecrets
-from contextlib                import suppress
-from globus_sdk                import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from omegaconf                 import DictConfig
-from pathlib                   import Path
-from time                      import perf_counter, sleep
-from typing                    import Optional
+from config.cli import GlobusSecrets
+from contextlib import suppress
+from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
+from omegaconf  import DictConfig
+from pathlib    import Path
+from time       import perf_counter, sleep
+from typing     import Optional
 
 
 class GlobusManager:

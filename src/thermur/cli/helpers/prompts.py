@@ -35,13 +35,9 @@ class CLIPrompts:
             cfg : The full configuration object containing all subsections.
             ui  : An initialized `ThermurUI` object for rendering components.
         """
-        self.cfg      = cfg
-        self.messages = cfg.messages
-        self.prompts  = cfg.prompts
-        self.ui       = ui
-        self.thermal_style = questionary.Style.from_dict(
-            dict(self.prompts.questionary_style)
-        )
+        self.cfg     = cfg
+        self.thermal = questionary.Style.from_dict(cfg.display.questionary_style)
+        self.ui      = ui
 
     def ask_for_overrides(self) -> list[str]:
         """
@@ -58,7 +54,7 @@ class CLIPrompts:
         self.ui.print_section("Advanced Configuration", minor=True)
 
         syntax_panel = self.ui.create_syntax_panel(
-            code  = self.messages.override_syntax_help,
+            code  = self.cfg.display.override_examples,
             title = "Configuration Override Syntax",
         )
         self.ui.console.print(syntax_panel)
@@ -67,7 +63,7 @@ class CLIPrompts:
         add_overrides = questionary.confirm(
             default = False,
             message = "Would you like to add configuration overrides?",
-            style   = self.thermal_style
+            style   = self.thermal
         ).ask()
 
         if not add_overrides:
@@ -84,7 +80,7 @@ class CLIPrompts:
         while override := questionary.text(
             instruction = "(e.g., optimizer.learning_rate=0.001)",
             message     = "Override:",
-            style       = self.thermal_style
+            style       = self.thermal
         ).ask():
             overrides.append(override)
             success_style = self.ui.display.styles['success']
@@ -119,7 +115,7 @@ class CLIPrompts:
         return questionary.confirm(
             default = default,
             message = message,
-            style   = self.thermal_style
+            style   = self.thermal
         ).ask()
     
     def confirm_download(self, file_info: dict) -> bool:
@@ -232,7 +228,7 @@ class CLIPrompts:
             
             if not (choice := questionary.text(
                 "Select",
-                style    = self.thermal_style,
+                style    = self.thermal,
                 validate = lambda x: x.strip().lower() in choices
             ).ask()):
                 return None
@@ -265,7 +261,7 @@ class CLIPrompts:
                 for val, desc in choices
             ],
             message = message,
-            style   = self.thermal_style,
+            style   = self.thermal,
             instruction = "(↑↓)"
         ).ask()
             

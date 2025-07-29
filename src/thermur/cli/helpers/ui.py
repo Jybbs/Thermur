@@ -16,7 +16,6 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
-from wandb        import Api, api
 
 
 class ThermurUI:
@@ -32,18 +31,15 @@ class ThermurUI:
     
     def __init__(
         self, 
-        display  : DictConfig, 
-        messages : DictConfig = None
+        display  : DictConfig
     ):
         """
         Initializes the ThermurUI with a configured Rich console.
 
         Args:
             display  : Display configuration containing theme and UI settings.
-            messages : Messages configuration for user-facing text.
         """
         self.display       = display
-        self.messages      = messages
         self.console       = Console(
             theme          = Theme(display.styles),
             highlight      = False,
@@ -114,9 +110,9 @@ class ThermurUI:
         return (
             f"[{color}]"
             f"{'█' * int(used_fraction * length)}"
-            f"[/{color}][{self.display.progress_unfilled_color}]"
+            f"[/{color}][{self.display.styles['dim']}]"
             f"{'░' * (length - int(used_fraction * length))}"
-            f"[/{self.display.progress_unfilled_color}]"
+            f"[/{self.display.styles['dim']}]"
         )
     
     def _create_status_indicator(self, text: str, is_available: bool) -> Text:
@@ -150,7 +146,7 @@ class ThermurUI:
             Rich Text object with character-by-character gradient styling
         """
         gradient_text = Text()
-        colors        = self.display.fire_gradient
+        colors = self.display.fire_gradient
         
         for i, char in enumerate(text):
             color = colors[i % len(colors)]
@@ -191,9 +187,7 @@ class ThermurUI:
         )
         
         progress_bar = self._create_progress_bar(color, used_fraction)
-        details_text = self.display.resource_details_template.format(
-            available_gb, unit, total_gb, unit
-        )
+        details_text = f"{available_gb:.1f} {unit} / {total_gb:.1f} {unit}"
         
         return progress_bar, details_text
 
@@ -303,82 +297,91 @@ class ThermurUI:
             ),
         )
 
-    def create_system_table(
-        self,
-        system_info : dict
-    ) -> Table:
+    def create_system_table(self, system_info: dict) -> Table:
         """
         Create a Rich table with system information.
-
-        Generates a comprehensive diagnostic table by combining static component
-        definitions with dynamic rendering logic, both sourced from constants.
-        The table uses visual indicators and progress bars to make the system
-        status immediately apparent.
-
+        
         Args:
-            system_info : A dictionary of system details from 
-                          `system.get_system_info()`.
-
+            system_info: Dictionary of system details from system.get_system_info().
+            
         Returns:
             A formatted Rich table containing system diagnostics.
         """
-        settings = dict(self.display.system_table_settings)
-        
         table = self.create_aligned_table(
             columns = [
                 (c["header"], c["style"], c["width"], "left") 
                 for c in self.display.system_table_columns
             ],
-            **settings
+            show_edge = True
         )
-
+        
+        # Define simple formatters for each component type
+        resource_thresholds = {"memory": (4, 8), "disk": (5, 20)}
+        version_components = {"python", "torch", "mujoco", "thermur"}
+        
         for key, title in self.display.system_components.items():
-            logic = self.display.system_logic[key]
-            
-            if logic.get("is_resource"):
-                thresholds = (4, 8) if key == "memory" else (5, 20)
-                progress_bar, details_text = self._format_resource_display(
-                    available_gb = system_info.get(logic.get("available"), 0),
-                    total_gb     = system_info.get(logic.get("total"), 0),
-                    thresholds   = thresholds,
+            # Resources with progress bars
+            if key in resource_thresholds:
+                value = self._format_resource(
+                    available = system_info.get(f"{key}_available", 0),
+                    total     = system_info.get(f"{key}_total", 0),
+                    threshold = resource_thresholds[key]
                 )
-                value = f"{progress_bar}\n{details_text}"
-
+            # CUDA status
+            elif key == "cuda":
+                version = system_info.get("cuda")
+                value = self._create_status_indicator(
+                    f"✅ Available (v{version})" if version else "Not Available",
+                    bool(version)
+                )
+            # GPU detection
+            elif key == "gpu":
+                gpu_name = system_info.get("gpu")
+                available = gpu_name and gpu_name != "N/A"
+                value = self._create_status_indicator(
+                    str(gpu_name) if available else "Not Detected",
+                    available
+                )
+            # Dataset info
+            elif key == "dataset":
+                size = system_info.get("dataset_size", 0)
+                count = system_info.get("dataset_count", 0)
+                text = (
+                    f"{size:.1f} GB ({count} files)" if size > 0
+                    else "No files downloaded"
+                )
+                value = Text(text, style="white" if size > 0 else "dim")
+            # Version info (with or without 'v' prefix)
+            elif val := system_info.get(key):
+                prefix = "v" if key in version_components else ""
+                value = Text(f"{prefix}{val}", no_wrap=True)
+            # Not available
             else:
-                # For non-resource items, format the value using the format string
-                raw_value  = system_info.get(logic.get("key", key))
-                format_str = logic.get("format", "{}")
-                
-                match key:
-                    case "cuda":
-                        value = self._create_status_indicator(
-                            "✅ Available" if raw_value else "Not Available", 
-                            bool(raw_value)
-                        )
-                    case "gpu":
-                        is_available = raw_value and raw_value != "N/A"
-                        value = self._create_status_indicator(
-                            str(raw_value) if is_available else "Not Detected", 
-                            is_available
-                        )
-                    case "dataset":
-                        count = system_info.get(logic.get("count"), 0)
-                        text  = (
-                            format_str.format(raw_value, count) 
-                                if raw_value and raw_value > 0 
-                                else "No files downloaded"
-                        )
-                        style = "white" if raw_value else "dim"
-                        value = Text(text, style=style)
-                    case _:
-                        if raw_value is not None:
-                            value = Text(format_str.format(raw_value), no_wrap=True)
-                        else:
-                            value = self._create_status_indicator("Not Available", False)
+                value = self._create_status_indicator("Not Available", False)
                 
             table.add_row(Text(title), value)
-
+            
         return table
+    
+    def _format_resource(self, available: float, total: float, 
+                        threshold: tuple[int, int]) -> str:
+        """
+        Format a resource with progress bar and details.
+        
+        Args:
+            available: Available amount in GB
+            total: Total amount in GB  
+            threshold: (warning, critical) thresholds in GB
+            
+        Returns:
+            Formatted string with progress bar and details
+        """
+        progress_bar, details_text = self._format_resource_display(
+            available_gb = available,
+            total_gb     = total,
+            thresholds   = threshold,
+        )
+        return f"{progress_bar} {details_text}"
 
     def create_thermal_progress(self) -> progress.Progress:
         """
@@ -395,20 +398,22 @@ class ThermurUI:
 
             progress.SpinnerColumn(
                 spinner_name = "dots",
-                style        = self.display.progress_style,
+                style        = self.display.styles['thermal'],
             ),
 
             progress.TextColumn(
-                text_format = "[{0}]{{task.description}}[/{0}]".format(
-                    self.display.progress_style
+                text_format = (
+                    f"[{self.display.styles['thermal']}]"
+                    f"{{task.description}}"
+                    f"[/{self.display.styles['thermal']}]"
                 )
             ),
             progress.BarColumn(
                 bar_width        = self.display.progress_bar_length,
-                complete_style   = self.display.progress_style,
-                finished_style   = self.display.progress_style,
-                pulse_style      = self.display.progress_style,
-                style            = self.display.progress_unfilled_color,
+                complete_style   = self.display.styles['thermal'],
+                finished_style   = self.display.styles['thermal'],
+                pulse_style      = self.display.styles['thermal'],
+                style            = self.display.styles['dim'],
             ),
 
             progress.TaskProgressColumn(),
@@ -497,8 +502,9 @@ class ThermurUI:
         
         total_size = sum(f['size'] for f in available_files)
         
+        total_gb = total_size / 1e9
         self.print_message(
-            message  = f"Total: {len(available_files)} files ({total_size / 1e9:.1f} GB)",
+            message  = f"Total: {len(available_files)} files ({total_gb:.1f} GB)",
             msg_type = "info"
         )
         
@@ -511,7 +517,7 @@ class ThermurUI:
         for status_type, template, msg_type in status_info:
             if count := statuses[status_type]:
                 size_gb = size_by_status[status_type] / 1e9
-                self.print_message(template.format(count, size_gb), msg_type)
+                self.print_message(f"{template.format(count, size_gb)}", msg_type)
 
     def display_download_table(
         self,
@@ -526,7 +532,8 @@ class ThermurUI:
         
         Args:
             available_files : List of file info dictionaries with 'name' and 'size'
-            file_status     : Dict mapping filename to status ('downloaded', 'incomplete', 'missing')
+            file_status     : Dict mapping filename to download status
+                              ('downloaded', 'incomplete', or 'missing')
             title           : Table title
         """
         status_symbols = {
@@ -592,25 +599,35 @@ class ThermurUI:
             For monitor context: URL string if ready, False otherwise
             For other contexts: None
         """
-        msgs = self.messages.wandb
+        from wandb import Api, api
+        
         user = Api().viewer.get("username") if api.api_key  else None
         url  = f"https://wandb.ai/{user}/{project}" if user else None
         
         match context:
             case "info":
-                msg = msgs["ready"].format(user) if user else msgs["no_auth"]
-                self.print_message(msg, "flock" if user else "warning")
+                msg = (
+                    f"You are logged in as '{user}'" if user 
+                    else "🎨 wandb: Not authenticated • Run 'wandb login'"
+                )
+                self.print_message(
+                    message  = msg,
+                    msg_type = "flock" if user else "warning"
+                )
                     
             case "train" if url:
-                self.print_message(msgs["dashboard"].format(url, url), "flock")
+                self.print_message(f"Live tracking dashboard → {url}", "flock")
                         
             case "monitor":
                 if not url:
-                    self.print_message(msgs["required"], "warning")
-                    self.print_message(msgs["login"],    "info")
+                    self.print_message(
+                message  = "wandb authentication required to access dashboard",
+                msg_type = "warning"
+            )
+                    self.print_message("Run 'wandb login' to authenticate", "info")
                     return False
                 self.console.print()
-                self.print_message(msgs["open"].format(project), "flock")
+                self.print_message(f"Opening {project} project dashboard...", "flock")
                 self.console.print(f"\n  [link={url}]{url}[/link]\n")
                 return url
 
@@ -625,7 +642,10 @@ class ThermurUI:
             auth_url : The authentication URL to display
         """
         self.console.print()
-        self.print_message("Globus authentication required to access dataset files.", "info")
+        self.print_message(
+            message  = "Globus authentication required to access dataset files.",
+            msg_type = "info"
+        )
         self.console.print("\nPlease visit the following URL to authenticate:")
         self.console.print(f"\n  [link={auth_url}]{auth_url}[/link]\n")
 

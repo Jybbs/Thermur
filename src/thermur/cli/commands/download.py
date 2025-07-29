@@ -12,12 +12,13 @@ from requests   import get
 from tarfile    import open as tar_open
 from tempfile   import NamedTemporaryFile
 from time       import perf_counter
-from typer      import Context, Exit, Option
+from typer      import Exit, Option
 from webbrowser import open as web_open
+
+from thermur.cli import app
 
 
 def download(
-    ctx       : Context,
     sample    : bool = Option(
         False,
         "--sample", "-s",
@@ -48,13 +49,13 @@ def download(
         thermur download -w           # Short form for wrf-sfire
     """
     if sample and wrf_sfire:
-        ctx.obj.ui.print_message(
-            "Cannot specify both --sample and --wrf-sfire",
-            "error"  
+        app.ui.print_message(
+            message  = "Cannot specify both --sample and --wrf-sfire",
+            msg_type = "error"  
         )
         raise Exit(1)
         
-    command = DownloadCommand(ctx)
+    command = DownloadCommand()
     command.run(sample=sample, wrf_sfire=wrf_sfire)
 
 
@@ -66,20 +67,16 @@ class DownloadCommand:
     manifest updates. Downloads individual files from the FRDR repository.
     """
     
-    def __init__(self, ctx: Context):
+    def __init__(self):
         """
         Initializes the command with shared context components.
-        
-        Args:
-            ctx: The Typer context containing AppContext with configuration,
-                 UI utilities, and system inspection capabilities.
         """
-        self.cfg           = ctx.obj.cfg
-        self.globus        = ctx.obj.globus
-        self.prompts       = ctx.obj.prompts
-        self.system        = ctx.obj.system
-        self.ui            = ctx.obj.ui
-        self.wrf_sfire_dir = ctx.obj.cfg.download.wrf_sfire_dir
+        self.cfg           = app.cfg
+        self.globus        = app.get_globus()
+        self.prompts       = app.prompts
+        self.system        = app.system
+        self.ui            = app.ui
+        self.wrf_sfire_dir = app.cfg.download.wrf_sfire_dir
 
     def _download_sample(self):
         """
@@ -514,8 +511,14 @@ class DownloadCommand:
         if not source:
             source = self.prompts.select_from_list(
                 choices = [
-                    ("sample", "Sample Dataset\n  → 468 MB • Single file for quick testing"),
-                    ("wrf-sfire", "Full FRDR Dataset\n  → 5.3 TB • 147 wildfire simulation files")
+                    (
+                        "sample", 
+                        "Sample Dataset\n  → 468 MB • Single file for quick testing"
+                    ),
+                    (
+                        "wrf-sfire", 
+                        "Full FRDR Dataset\n  → 5.3 TB • 147 wildfire simulation files"
+                    )
                 ],
                 message = "What would you like to download?"
             )

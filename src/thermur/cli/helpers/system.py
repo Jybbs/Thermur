@@ -64,9 +64,11 @@ class SystemInspector:
             Dictionary with dataset_size in GB, dataset_count, and has_sample.
         """
         with suppress(Exception):
+            all_files   = self._get_wrf_files()
             sample_path = self.cfg.download.sample_data_path
+            
             if sample_path.exists():
-                all_files = self._get_wrf_files() + [sample_path]
+                all_files.append(sample_path)
             
             return {
                 "dataset_count" : len(all_files),
