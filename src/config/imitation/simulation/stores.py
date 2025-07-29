@@ -11,10 +11,10 @@ for clean interpolation references like ${simulation.data_source} without
 nested builds, improving configuration clarity and override flexibility.
 """
 from .schemas                     import *
-from config.utils.zen             import store, build
+from config.utils.zen             import thermur_build, thermur_make_all, thermur_store
 from thermur.imitation.simulation import SimulationEnv, WRFDataSource
 
-simulation = store(group="simulation")
+simulation = thermur_store(group="simulation")
 loader     = LoaderModel()
 physics    = PhysicsModel()
 
@@ -33,7 +33,7 @@ def env_build():
     - ${simulation.wrf}: WRF data source for thermal fields
     - ${controller.flock}: Flock configuration from controller domain
     """
-    return build(
+    return thermur_build(
         SimulationEnv,
         flock   = "${controller.flock}",
         physics = physics,
@@ -49,8 +49,10 @@ def wrf_build():
     thermal field interpolation for the simulation environment. Supports
     both real WRF data and synthetic test data.
     """
-    return build(
+    return thermur_build(
         WRFDataSource,
         loader  = loader,
         physics = physics
     )
+
+thermur_make_all(simulation)

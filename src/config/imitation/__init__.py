@@ -19,12 +19,18 @@ from .lightning.stores     import lightning
 from .monitoring.stores    import monitoring
 from .simulation.stores    import simulation
 from .visualization.stores import visualization
+from hydra_zen             import make_config
 
-base_config_store.add_to_hydra_store()
-
-# Register main config
-main_store = store()
-main_store(ImitationConfig, group="config", name="imitation", package="_global_")
-main_store.add_to_hydra_store()
+# Create the top-level config using the `thermur_make_all` calls from each domain
+ImitationConfig = make_config(
+    hydra_defaults=[
+        "_self_",
+        {"controller"    : "all"},
+        {"lightning"     : "all"},
+        {"monitoring"    : "all"},
+        {"simulation"    : "all"},
+        {"visualization" : "all"},
+    ]
+)
 
 __all__ = ["ImitationConfig"]

@@ -3,7 +3,7 @@ Lightning configuration stores using hydra-zen.
 
 This module provides store-based configurations for PyTorch Lightning components
 using hydra-zen's decorator pattern. Each component is registered as a separate
-build that can be referenced and overridden independently via Hydra's CLI.
+thermur_build that can be referenced and overridden independently via Hydra's CLI.
 
 The stores follow a flat structure where each component (optimizer, policy, 
 trainer, etc.) is defined as a function decorated with @lightning(name=...).
@@ -11,7 +11,7 @@ This allows for clean interpolation references like ${lightning.optimizer}
 without nested builds, improving configuration clarity and override flexibility.
 """
 from .schemas                     import *
-from config.utils.zen             import store, build
+from config.utils.zen             import thermur_build, thermur_make_all, thermur_store
 from pytorch_lightning            import Trainer
 from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers    import WandbLogger
@@ -20,7 +20,7 @@ from thermur.imitation.monitoring import MetricsModel
 from torch.optim                  import AdamW
 from torch.optim.lr_scheduler     import ReduceLROnPlateau
 
-lightning    = store(group="lightning")
+lightning    = thermur_store(group="lightning")
 architecture = ArchitectureModel()
 checkpoint   = CheckpointModel()
 experience   = ExperienceModel()
@@ -43,7 +43,7 @@ def checkpoint_callback_build():
     train/loss) to optionally save the best performing model in addition
     to periodic checkpoints.
     """
-    return build(
+    return thermur_build(
         ModelCheckpoint,
         dirpath             = str(checkpoint.dirpath),
         every_n_train_steps = checkpoint.every_n_train_steps,
@@ -67,7 +67,7 @@ def datamodule_build():
     - ${controller.expert}: Expert controller for demonstration collection
     - ${simulation.env}: Environment for trajectory rollouts
     """
-    return build(
+    return thermur_build(
         DataModule,
         env        = "${simulation.env}",
         experience = experience,
@@ -83,7 +83,7 @@ def early_stopping_callback_build():
     for a specified number of epochs, preventing overfitting and saving compute
     resources. Uses the same metric as checkpointing for consistency.
     """
-    return build(
+    return thermur_build(
         EarlyStopping,
         mode     = optimizer.mode,
         monitor  = optimizer.training_metric,
@@ -103,7 +103,7 @@ def logger_build():
     model checkpoints based on the log_model setting.
     """
     if wandb.mode != "disabled":
-        return build(
+        return thermur_build(
             WandbLogger, 
             log_model = wandb.log_model,
             mode      = wandb.mode,
@@ -120,7 +120,7 @@ def lr_monitor_callback_build():
     using schedulers like ReduceLROnPlateau. Logs LR at step granularity
     for detailed optimization analysis.
     """
-    return build(
+    return thermur_build(
         LearningRateMonitor, 
         logging_interval = metrics.logging_interval
     )
@@ -138,7 +138,7 @@ def monitoring_callback_build():
     - ${monitoring.events}: Event logger for safety violations
     - ${monitoring.collector}: Metrics collector for performance tracking
     """
-    return build(
+    return thermur_build(
         MonitoringCallback,
         collector = "${monitoring.collector}",
         events    = "${monitoring.events}"
@@ -151,11 +151,11 @@ def optimizer_build():
     
     Creates an AdamW optimizer with learning rate and weight decay from
     OptimizerModel defaults. The zen_partial flag (enabled by default in our
-    custom build function) allows the model parameters to be injected at runtime.
+    custom thermur_build function) allows the model parameters to be injected at runtime.
     
     This can be swapped for other optimizers (SGD, Adam, etc.) via CLI overrides.
     """
-    return build(
+    return thermur_build(
         AdamW,
         lr           = optimizer.learning_rate,
         weight_decay = optimizer.weight_decay
@@ -179,7 +179,7 @@ def policy_build():
     - ${lightning.optimizer}: Optimizer configuration
     - ${lightning.scheduler}: Learning rate scheduler configuration
     """
-    return build(
+    return thermur_build(
         GNNPolicy,
         architecture     = architecture,
         collector        = "${monitoring.collector}",
@@ -202,7 +202,7 @@ def scheduler_build():
     in OptimizerModel and reduces learning rate by lr_factor after patience
     epochs without improvement.
     """
-    return build(
+    return thermur_build(
         ReduceLROnPlateau,
         factor   = optimizer.lr_factor,
         mode     = optimizer.mode,
@@ -222,7 +222,7 @@ def trainer_build():
     of each callback's configuration. The trainer uses hardware settings from
     HardwareModel and training parameters from OptimizerModel.
     """
-    return build(
+    return thermur_build(
         Trainer,
         accelerator          = hardware.accelerator,
         benchmark            = hardware.benchmark,
@@ -244,3 +244,5 @@ def trainer_build():
         strategy             = hardware.strategy,
         val_check_interval   = optimizer.val_check_interval
     )
+
+thermur_make_all(lightning)
