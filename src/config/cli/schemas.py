@@ -58,7 +58,7 @@ class DisplayModel(BaseModel, extra="forbid"):
                 "note"    : "Guides you through configuration"
             },
             {
-                "command" : "thermur train learning.learning_rate=0.001",
+                "command" : "thermur train lightning.optimizer.learning_rate=0.001",
                 "desc"    : "Custom learning rate",
                 "note"    : "Override specific parameters"
             },
@@ -73,7 +73,7 @@ class DisplayModel(BaseModel, extra="forbid"):
                 "note"    : "Check setup before training"
             },
             {
-                "command" : "thermur train flock.agent_count=20 learning.seed=42",
+                "command" : "thermur train controller.expert.agent_count=20 lightning.optimizer.seed=42",
                 "desc"    : "Train with overrides",
                 "note"    : "Multiple parameters"
             },
@@ -121,11 +121,11 @@ class DisplayModel(BaseModel, extra="forbid"):
     override_examples: str = Field(
         default = (
             "# Override examples:\n"
-            "lightning.optimizer.lr=0.001              # Learning rate\n"
-            "lightning.batch_size=64                   # Batch size\n"
+            "lightning.optimizer.learning_rate=0.001   # Learning rate\n"
+            "lightning.experience.batch_size=64        # Batch size\n"
             "controller.expert.agent_count=10          # Number of agents\n"
             "lightning.trainer.precision=32-true       # Training precision\n"
-            "lightning.wandb.mode=offline              # W&B logging mode"
+            "cli.wandb.mode=offline                    # W&B logging mode"
         ),
         description = "Multi-line help text showing example Hydra-style configuration overrides."
     )

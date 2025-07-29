@@ -11,10 +11,10 @@ for clean interpolation references like ${simulation.data_source} without
 nested builds, improving configuration clarity and override flexibility.
 """
 from .schemas                     import *
-from config.utils.zen             import thermur_build, thermur_make_all, thermur_store
+from config.utils.zen             import store, thermur_build, thermur_make_all
 from thermur.imitation.simulation import SimulationEnv, WRFDataSource
 
-simulation = thermur_store(group="simulation")
+simulation = store()(group="simulation")
 loader     = LoaderModel()
 physics    = PhysicsModel()
 

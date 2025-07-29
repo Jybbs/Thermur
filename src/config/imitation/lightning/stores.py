@@ -11,7 +11,7 @@ This allows for clean interpolation references like ${lightning.optimizer}
 without nested builds, improving configuration clarity and override flexibility.
 """
 from .schemas                     import *
-from config.utils.zen             import thermur_build, thermur_make_all, thermur_store
+from config.utils.zen             import store, thermur_build, thermur_make_all
 from pytorch_lightning            import Trainer
 from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers    import WandbLogger
@@ -20,7 +20,7 @@ from thermur.imitation.monitoring import MetricsModel
 from torch.optim                  import AdamW
 from torch.optim.lr_scheduler     import ReduceLROnPlateau
 
-lightning    = thermur_store(group="lightning")
+lightning    = store()(group="lightning")
 architecture = ArchitectureModel()
 checkpoint   = CheckpointModel()
 experience   = ExperienceModel()

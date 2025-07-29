@@ -11,11 +11,11 @@ This allows for clean interpolation references like ${visualization.plotter}
 without nested builds, improving configuration clarity and override flexibility.
 """
 from .schemas                        import VistaModel
-from config.utils.zen                import thermur_build, thermur_make_all, thermur_store
+from config.utils.zen                import store, thermur_build, thermur_make_all
 from pyvista                         import Arrow, Plotter, Sphere, themes
 from thermur.imitation.visualization import Renderer, Sampler, Visualizer
 
-visualization = thermur_store(group="visualization")
+visualization = store()(group="visualization")
 vista         = VistaModel()
 
 

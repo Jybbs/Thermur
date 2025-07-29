@@ -21,7 +21,6 @@ from .simulation.stores    import simulation
 from .visualization.stores import visualization
 from hydra_zen             import make_config
 
-# Create the top-level config using the `thermur_make_all` calls from each domain
 ImitationConfig = make_config(
     hydra_defaults=[
         "_self_",

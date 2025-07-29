@@ -33,8 +33,7 @@ class SystemInspector:
             cfg: The configuration object. If provided, commonly used
                  sections are extracted for easier access.
         """
-        self.cfg               = cfg
-        self.messages          = getattr(cfg, 'messages', None)
+        self.download = cfg.download
 
     def _get_cuda_info(self) -> dict[str, any]:
         """
@@ -65,7 +64,7 @@ class SystemInspector:
         """
         with suppress(Exception):
             all_files   = self._get_wrf_files()
-            sample_path = self.cfg.download.sample_data_path
+            sample_path = self.download.sample_data_path
             
             if sample_path.exists():
                 all_files.append(sample_path)
@@ -136,7 +135,7 @@ class SystemInspector:
         Returns:
             List of Path objects for WRF files, empty list if none found.
         """
-        wrf_dir = self.cfg.download.wrf_sfire_dir
+        wrf_dir = self.download.wrf_sfire_dir
         if not wrf_dir.exists():
             return []
             
@@ -193,10 +192,10 @@ class SystemInspector:
         Raises:
             FileNotFoundError: If no data is available for training
         """
-        if not self.cfg or not hasattr(self.cfg, 'download'):
-            raise ValueError("Configuration object missing download settings")
+        if not hasattr(self, 'download'):
+            raise ValueError("SystemInspector missing download configuration")
             
-        sample_path = self.cfg.download.sample_data_path
+        sample_path = self.download.sample_data_path
         wrf_files   = [] if use_sample else self._get_wrf_files()
         
         match (use_sample, bool(wrf_files), sample_path.exists()):
@@ -235,7 +234,7 @@ class SystemInspector:
         for o in overrides:
             if "=" not in o:
                 issues.append(
-                    f"{self.messages.validation['invalid_override_format']}: {o}"
+                    f"Invalid override format (expected key=value): {o}"
                 )
                 continue
 
@@ -245,10 +244,10 @@ class SystemInspector:
             )
             if not key.isalnum():
                 issues.append(
-                    f"{self.messages.validation['invalid_override_key']}: {o}"
+                    f"Invalid override key (must be alphanumeric): {o}"
                 )
         
         if not cuda.is_available():
-            issues.append(self.messages.validation['gpu_unavailable'])
+            issues.append("GPU not available - training will be slower on CPU")
 
         return issues
