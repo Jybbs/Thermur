@@ -5,18 +5,14 @@ This module provides the main CLI interface by discovering and registering
 all available commands from the .commands subpackage. It uses Hydra-zen
 to load and validate the CLI configuration through Pydantic schemas.
 """
-from config.cli.workloads.cli       import cli_cfg
+from config.cli.stores              import cli
 from functools                      import cached_property
 from hydra_zen                      import instantiate
-from hydra_zen.third_party.pydantic import pydantic_parser
 from thermur.cli.commands           import download, info, monitor, train, validate
 from thermur.cli.helpers            import CLIPrompts, GlobusManager, SystemInspector, ThermurUI
 from typer                          import Context, Exit, Option, Typer
 
-cfg = instantiate(
-    _parser = pydantic_parser,
-    config  = cli_cfg
-)
+cfg = instantiate(cli["all"])
 
 
 class AppContext:
@@ -34,7 +30,7 @@ class AppContext:
         self.cfg     = cfg
         self.ui      = ThermurUI(self.cfg.display, self.cfg.messages)
         self.prompts = CLIPrompts(self.cfg, self.ui)
-        self.system  = SystemInspector(cfg)
+        self.system  = SystemInspector(self.cfg)
     
     @cached_property
     def globus(self):
