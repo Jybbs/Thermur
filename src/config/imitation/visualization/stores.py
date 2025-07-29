@@ -3,7 +3,7 @@ Visualization configuration stores using hydra-zen.
 
 This module provides store-based configurations for visualization components
 using hydra-zen's decorator pattern. Each component is registered as a separate
-build that can be referenced and overridden independently via Hydra's CLI.
+thermur_build that can be referenced and overridden independently via Hydra's CLI.
 
 The stores follow a flat structure where each component (plotter, renderer,
 sampler, visualizer) is defined as a function decorated with @visualization(name=...).
@@ -11,11 +11,11 @@ This allows for clean interpolation references like ${visualization.plotter}
 without nested builds, improving configuration clarity and override flexibility.
 """
 from .schemas                        import VistaModel
-from config.utils.zen                import build, store
+from config.utils.zen                import thermur_build, thermur_make_all, thermur_store
 from pyvista                         import Arrow, Plotter, Sphere, themes
 from thermur.imitation.visualization import Renderer, Sampler, Visualizer
 
-visualization = store(group="visualization")
+visualization = thermur_store(group="visualization")
 vista         = VistaModel()
 
 
@@ -31,9 +31,9 @@ def agent_glyph_build():
     """
     match vista.agent_type:
         case "sphere":
-            return build(Sphere, radius=vista.agent_size)
+            return thermur_build(Sphere, radius=vista.agent_size)
         case "arrow" | _:
-            return build(Arrow)
+            return thermur_build(Arrow)
 
 @visualization(name="plotter")
 def plotter_build():
@@ -47,7 +47,7 @@ def plotter_build():
     The theme is configured based on the dark_mode setting in VistaModel,
     and window dimensions are set according to the configuration.
     """
-    return build(
+    return thermur_build(
         Plotter,
         lighting    = "three lights",
         off_screen  = False,
@@ -61,7 +61,7 @@ def renderer_build():
     """
     Builder for visualization rendering component.
     
-    Pre-builds the renderer with visual configuration parameters for efficient
+    Pre-thermur_builds the renderer with visual configuration parameters for efficient
     rendering of simulation elements. This component manages the visual
     appearance of agents, communication graphs, temperature fields, wind
     vectors, and safety boundaries.
@@ -70,7 +70,7 @@ def renderer_build():
     pipelines to maintain performance with large agent counts. All glyph
     parameters (size, type, scale) are embedded in the pre-built geometries.
     """
-    return build(
+    return thermur_build(
         Renderer,
         agent_glyph = "${visualization.agent_glyph}",
         scalar_bar  = "${visualization.scalar_bar}",
@@ -83,7 +83,7 @@ def sampler_build():
     """
     Builder for spatial grid sampling component.
     
-    Pre-builds the grid sampler with fixed configuration parameters for
+    Pre-thermur_builds the grid sampler with fixed configuration parameters for
     efficient sampling of simulation data into visualization grids. This
     component handles discretization of continuous fields like temperature
     and wind for 3D rendering.
@@ -92,7 +92,7 @@ def sampler_build():
     boxes around the flock, ensuring complete coverage while minimizing
     unnecessary sampling overhead.
     """
-    return build(
+    return thermur_build(
         Sampler,
         grid_padding           = vista.grid_padding,
         temperature_resolution = vista.temperature_resolution,
@@ -108,7 +108,7 @@ def scalar_bar_build():
     in volumetric temperature rendering. The scalar bar provides a visual
     reference for mapping colors to temperature values.
     """
-    return build(
+    return thermur_build(
         dict,
         position_x = 0.88,
         position_y = 0.25,
@@ -125,9 +125,9 @@ def theme_build():
     background) depending on the dark_mode setting in VistaModel.
     """
     if vista.dark_mode:
-        return build(themes.DarkTheme)
+        return thermur_build(themes.DarkTheme)
     else:
-        return build(themes.DocumentTheme)
+        return thermur_build(themes.DocumentTheme)
 
 @visualization(name="visualizer")
 def visualizer_build():
@@ -149,7 +149,7 @@ def visualizer_build():
     - ${visualization.sampler}: Grid sampling utilities
     - ${simulation.env}: Simulation environment for data access
     """
-    return build(
+    return thermur_build(
         Visualizer,
         plotter    = "${visualization.plotter}",
         renderer   = "${visualization.renderer}",
@@ -167,4 +167,6 @@ def wind_glyph_build():
     Wind vectors are always displayed as arrows regardless of the agent glyph
     type, providing clear directional information about airflow patterns.
     """
-    return build(Arrow)
+    return thermur_build(Arrow)
+
+thermur_make_all(visualization)

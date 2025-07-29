@@ -7,7 +7,7 @@ during imitation learning.
 """
 from config.imitation.lightning   import ExperienceModel
 from pytorch_lightning            import LightningDataModule
-from thermur.imitation.controller import FlockController
+from thermur.imitation.controller import ExpertController
 from thermur.imitation.simulation import SimulationEnv
 from torch.utils.data             import DataLoader
 from torchrl.collectors           import SyncDataCollector
@@ -36,7 +36,7 @@ class DataModule(LightningDataModule):
         self,
         env        : SimulationEnv,
         experience : ExperienceModel,
-        expert     : FlockController
+        expert     : ExpertController
     ):
         """
         Initialize the experience module.

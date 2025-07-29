@@ -452,6 +452,7 @@ class TrainCommand:
                 description = self.cfg.messages.status["loading_config_sys"],
                 task_id     = task
             )
+
             from config.imitation                      import ImitationConfig
             from hydra_zen                            import instantiate, launch
             from hydra_zen.third_party.pydantic       import pydantic_parser

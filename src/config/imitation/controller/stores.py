@@ -6,10 +6,10 @@ using hydra-zen's decorator pattern. Each component is registered as a separate
 build that can be referenced and overridden independently via Hydra's CLI.
 """
 from .schemas                     import *
-from config.utils.zen             import store, build
+from config.utils.zen             import thermur_build, thermur_make_all, thermur_store
 from thermur.imitation.controller import ExpertController, SafetyFilter
 
-controller = store(group="controller")
+controller = thermur_store(group="controller")
 expert     = ExpertModel()
 flock      = FlockModel()
 safety     = SafetyModel()
@@ -33,7 +33,7 @@ def expert_build():
     The controller uses Control Barrier Functions to ensure all commands
     respect thermal safety constraints.
     """
-    return build(
+    return thermur_build(
         ExpertController,
         expert        = expert,
         flock         = flock,
@@ -56,7 +56,7 @@ def safety_build():
     
     where h(x) = T_max - T(x) defines the thermal safety boundary.
     """
-    return build(
+    return thermur_build(
         SafetyFilter,
         flock      = flock,
         safety     = safety,
@@ -73,3 +73,5 @@ def thresholds_build():
     intervention detection.
     """
     return thresholds
+
+thermur_make_all(controller)

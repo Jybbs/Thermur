@@ -6,10 +6,10 @@ using hydra-zen's decorator pattern. Each component is registered as a separate
 build that can be referenced and overridden independently via Hydra's CLI.
 """
 from .schemas                     import *
-from config.utils.zen             import store, build  
+from config.utils.zen             import thermur_build, thermur_make_all, thermur_store
 from thermur.imitation.monitoring import EventLogger, MetricsCollector
 
-monitoring = store(group="monitoring")
+monitoring = thermur_store(group="monitoring")
 events     = EventsModel()
 metrics    = MetricsModel()
 
@@ -27,7 +27,7 @@ def collector_build():
     The collector integrates with PyTorch Lightning's logging system
     and automatically syncs metrics to Weights & Biases.
     """
-    return build(
+    return thermur_build(
         MetricsCollector,
         bounds_max      = "${simulation.env.bounds_max}",
         gravity         = "${simulation.env.gravity}",
@@ -48,8 +48,10 @@ def events_build():
     Events are logged as both aggregate rates and detailed tables
     for debugging and analysis.
     """
-    return build(
+    return thermur_build(
         EventLogger,
         events     = events,
         thresholds = "${controller.thresholds}"
     )
+
+thermur_make_all(monitoring)
