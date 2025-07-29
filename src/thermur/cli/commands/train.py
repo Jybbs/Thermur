@@ -5,18 +5,18 @@ This module encapsulates all logic for the 'train' command, including
 system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
-from functools import partial
-from omegaconf import DictConfig, OmegaConf, open_dict
-from pathlib   import Path
-from textwrap  import shorten
-from typer     import Argument, Context, Exit, Option
-from typing    import Any
+from functools   import partial
+from omegaconf   import DictConfig, OmegaConf, open_dict
+from pathlib     import Path
+from textwrap    import shorten
+from thermur.cli import app
+from typer       import Argument, Exit, Option
+from typing      import Any
 
 import subprocess
 
 
 def train(
-    ctx: Context,
     overrides: list[str] = Argument(
         default = None,
         help    = "Hydra configuration overrides (e.g., learning.lr=0.01 flock.num_drones=20)"
@@ -61,7 +61,7 @@ def train(
         thermur train --resume checkpoints/last.ckpt # Resume from checkpoint
     """
     overrides = overrides or []
-    command   = TrainCommand(ctx)
+    command   = TrainCommand()
     command.run(
         dry_run     = dry_run,
         force       = force,
@@ -80,43 +80,18 @@ class TrainCommand:
     holding shared components from the Typer context and organizing the
     process into a series of well-defined, testable methods.
     """
-    def __init__(self, ctx: Context):
+    def __init__(self):
         """
         Initializes the command with shared context components.
-
-        Args:
-            ctx: The Typer context, which holds the shared AppContext object
-                 containing UI, system, and other core components.
         """
-        self.cfg     = ctx.obj.cfg
-        self.prompts = ctx.obj.prompts
-        self.system  = ctx.obj.system
-        self.ui      = ctx.obj.ui
+        self.cfg     = app.cfg
+        self.prompts = app.prompts
+        self.system  = app.system
+        self.ui      = app.ui
 
-    def _build_overrides(
-        self,
-        additional : list[str],
-        base       : list[str] | None,
-    ) -> list[str]:
-        """
-        Constructs the final override list in the proper order:
-        1. Command-line overrides
-        2. Interactive overrides
-
-        The ordering ensures that later overrides can supersede earlier ones,
-        giving users full control over the final configuration.
-
-        Args:
-            additional : Overrides from interactive prompts.
-            base       : Command-line provided overrides.
-
-        Returns:
-            Complete list of hydra overrides.
-        """
-        return [
-            *(base or []),
-            *additional
-        ]
+    def _build_overrides(self, additional: list[str], base: list[str] | None) -> list[str]:
+        """Combine base and additional overrides, with additional taking precedence."""
+        return (base or []) + additional
 
     def _create_config_table(
         self, 
@@ -152,7 +127,7 @@ class TrainCommand:
         for path, value in sorted(flat_config.items()):
             display = str(value)
             formatted = (
-                shorten(display, width=35, placeholder="...") 
+                shorten(display, placeholder="...", width=35) 
                 if len(display) > 35 
                 else display
             )
@@ -200,7 +175,10 @@ class TrainCommand:
             Status dictionary indicating dry run completion.
         """
         self.ui.print_message(
-            message  = self.cfg.messages.dry_run_header,
+            message  = (
+                "[bold yellow]DRY RUN MODE[/bold yellow] - "
+                "No training will occur"
+            ),
             msg_type = "warning"
         )
         self.ui.console.print()
@@ -212,7 +190,7 @@ class TrainCommand:
         
         self.ui.console.print()
         self.ui.print_message(
-            message  = self.cfg.messages.dry_run_complete,
+            message  = "Dry run complete. Configuration validated successfully.",
             msg_type = "success"
         )
         
@@ -266,13 +244,12 @@ class TrainCommand:
             if key.startswith('_'):
                 continue
                 
-            new_key = separator.join(filter(None, [parent_key, key]))
+            full_key = f"{parent_key}{separator}{key}" if parent_key else key
             
-            items |= (
-                self._flatten_config(value, new_key, separator) 
-                     if isinstance(value, dict) 
-                     else {new_key: value}
-            )
+            if isinstance(value, dict):
+                items.update(self._flatten_config(value, full_key, separator))
+            else:
+                items[full_key] = value
                 
         return items
 
@@ -306,13 +283,13 @@ class TrainCommand:
         if interactive:
             if not self.prompts.confirm_system_override(issues):
                 self.ui.print_message(
-                    message  = self.cfg.messages.training_cancelled,
+                    message  = "Training cancelled by user.",
                     msg_type = "warning"
                 )
                 raise Exit()
         else:
             self.ui.print_message(
-                message  = self.cfg.messages.validation["config_fail"],
+                message  = "Configuration validation failed:",
                 msg_type = "error"
             )
 
@@ -320,7 +297,7 @@ class TrainCommand:
                 self.ui.console.print(f"  {i}. {issue}")
 
             self.ui.print_message(
-                message  = self.cfg.messages.validation["force_override"],
+                message  = "Use --force to override or fix the issues above.",
                 msg_type = "info"
             )
             raise Exit(1)
@@ -350,7 +327,7 @@ class TrainCommand:
         with self.ui.create_thermal_progress() as progress:
             component_cfgs = self.cfg.display.training_component_configs
             task = progress.add_task(
-                description = self.cfg.messages.status["instantiating_components"],
+                description = "Instantiating components...",
                 total       = len(component_cfgs)
             )
 
@@ -359,8 +336,7 @@ class TrainCommand:
                 progress.update(
                     completed   = i,
                     description = (
-                        self.cfg.messages.status["setup_component_template"]
-                            .format(display_name=display_name)
+                        f"Setting up {display_name}..."
                     ),
                     task_id = task
                 )
@@ -406,7 +382,7 @@ class TrainCommand:
             RuntimeError: If the hydra job fails to complete successfully.
         """
         self.ui.print_message(
-            message  = self.cfg.messages.loading_components,
+            message  = "Loading training components...",
             msg_type = "info"
         )
 
@@ -443,13 +419,13 @@ class TrainCommand:
         """
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
-                description = self.cfg.messages.status["init_modules"],
+                description = "Initializing core modules...",
                 total       = 100
             )
 
             progress.update(
                 advance     = 20,
-                description = self.cfg.messages.status["loading_config_sys"],
+                description = "Loading configuration system...",
                 task_id     = task
             )
 
@@ -460,13 +436,13 @@ class TrainCommand:
 
             progress.update(
                 advance     = 30,
-                description = self.cfg.messages.status["registering_configs"],
+                description = "Registering configurations...",
                 task_id     = task
             )
 
             progress.update(
                 advance     = 50,
-                description = self.cfg.messages.status["preparing_hydra"],
+                description = "Preparing Hydra runtime...",
                 task_id     = task
             )
 
@@ -480,7 +456,7 @@ class TrainCommand:
 
             progress.update(
                 completed   = 100,
-                description = self.cfg.messages.status["ready_to_train"],
+                description = "Ready to train!",
                 task_id     = task
             )
 
@@ -513,7 +489,7 @@ class TrainCommand:
             
         if not self.prompts.show_training_summary(summary_data):
             self.ui.print_message(
-                message  = self.cfg.messages.training_cancelled,
+                message  = "Training cancelled by user.",
                 msg_type = "warning"
             )
             raise Exit()
@@ -557,7 +533,7 @@ class TrainCommand:
         )
 
         self.ui.print_message(
-            message  = self.cfg.messages.components_initialized,
+            message  = "All components initialized successfully!",
             msg_type = "success"
         )
         
@@ -570,11 +546,11 @@ class TrainCommand:
                 msg_type = "info"
             )
         self.ui.print_message(
-            message  = self.cfg.messages.monitoring_dynamics,
+            message  = "Monitoring thermal constraints and flock dynamics",
             msg_type = "thermal"
         )
         self.ui.print_message(
-            message  = self.cfg.messages.track_wandb,
+            message  = "Track progress in your wandb dashboard",
             msg_type = "flock"
         )
         self.ui.console.print()
@@ -619,7 +595,7 @@ class TrainCommand:
             self.ui.display_system_validation(self.system)
         else:
             self.ui.print_message(
-                message  = self.cfg.messages.skipping_checks,
+                message  = "Skipping system checks (--force enabled)",
                 msg_type = "warning"
             )
         
@@ -655,14 +631,14 @@ class TrainCommand:
         except KeyboardInterrupt:
             self.ui.console.print()
             self.ui.print_message(
-                message  = self.cfg.messages.training_interrupted,
+                message  = "Training interrupted by user.",
                 msg_type = "warning"
             )
             raise Exit()
         
         except Exception as e:
             self.ui.print_message(
-                message  = self.cfg.messages.training_failed_template.format(e=e),
+                message  = f"Training failed: {e}",
                 msg_type = "error"
             )
             raise Exit(1)

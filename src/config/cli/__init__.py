@@ -1,25 +1,17 @@
 """
 CLI configuration system.
 
-This module provides the entry point for CLI configuration, orchestrating
-all settings for the terminal interface, user interaction, and system validation.
-The CLI configuration uses hydra_zen.just() to wrap pure data structures since
-they configure the CLI framework itself rather than instantiatable components.
+This module provides pure data configurations for the CLI framework. Since these
+are static settings that don't require runtime instantiation or interpolation,
+they are created as simple Pydantic model instances.
 
-The configuration is organized as a flat structure:
-- display  : Terminal UI themes and formatting
+The configuration is organized by domain:
+- display  : Terminal UI themes and formatting  
 - download : Globus data transfer settings
-- messages : User-facing message templates
-- prompts  : Interactive dialog configuration
 - secrets  : Secure token storage
-- system   : Environment validation rules
-- wandb    : Experiment tracking access
+- wandb    : Weights & Biases integration settings
 
-These configs are accessed directly via instantiation without Hydra's runtime.
+All configurations are defined in schemas.py with full documentation and
+instantiated in stores.py for direct use by CLI components.
 """
-from .stores import cli
-
-# The CLI uses the "all" config directly from the store
-CLIConfig = cli["all"]
-
-__all__ = ["CLIConfig"]
+from .schemas import *
