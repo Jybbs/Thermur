@@ -238,10 +238,6 @@ class RunsCommand:
             domain : The configuration domain name (e.g., 'controller')
         """
         if not (items := list(self._flatten_config(config).items())):
-            self.ui.print_message(
-                message  = f"No configuration found for domain '{domain}'",
-                msg_type = "warning"
-            )
             return
         
         columns = [
@@ -667,7 +663,7 @@ class RunsCommand:
         
         self.ui.print_section("Recent Runs", minor=True)
         self.ui.print_message(
-            message  = "Status: ✓ = Complete, ... = In Progress/Incomplete",
+            message  = "Status: (✓) Complete, (...) Incomplete",
             msg_type = "info"
         )
         
@@ -746,15 +742,17 @@ class RunsCommand:
         
         domains = [domain] if domain else sorted(cfg.keys())
         
-        for i, domain in enumerate(domains):
-            if domain not in cfg:
-                self.ui.print_message(
-                    message  = f"Domain '{domain}' not found in configuration",
-                    msg_type = "warning"
-                )
+        for i, d in enumerate(domains):
+            if d not in cfg:
+
+                if domain:
+                    self.ui.print_message(
+                        message  = f"Domain '{d}' not found in configuration",
+                        msg_type = "warning"
+                    )
                 continue
             
-            self._display_domain_config(cfg[domain], domain)
+            self._display_domain_config(cfg[d], d)
             
             if (
                 len(domains)     > 1 and 
