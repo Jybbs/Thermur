@@ -6,18 +6,54 @@ directories. It enables users to list training runs, compare configurations
 between runs, clean up old experiments, and inspect detailed configuration 
 settings with pagination support for large configurations.
 """
-from itertools   import islice
-from pathlib     import Path
-from shutil      import rmtree
-from thermur.cli import app
-from typer       import Argument, Context, Exit, Option, Typer
-from typing      import Any, Optional
-from yaml        import Loader, load, safe_load
+from collections   import ChainMap, defaultdict
+from contextlib    import ExitStack, contextmanager, suppress
+from functools     import cache
+from itertools     import chain, islice
+from pathlib       import Path
+from shutil        import rmtree
+from textwrap      import shorten
+from thermur.cli   import app
+from typer         import Argument, Context, Exit, Option, Typer
+from typing        import Any, Iterator, Optional, TypeAlias
+from yaml          import Loader, load, safe_load
+
+ConfigDict : TypeAlias = dict[str, Any]
+RunPath    : TypeAlias = Path
 
 runs = Typer(
     help             = "Explore and manage training runs",
     rich_markup_mode = "rich",
 )
+
+
+@contextmanager
+def load_yaml(path: Path) -> Iterator[Any]:
+    """
+    Context manager for loading YAML files with error handling.
+    
+    Provides a clean interface for YAML file operations with automatic
+    resource management and consistent error handling.
+    
+    Args:
+        path: Path to the YAML file
+        
+    Yields:
+        Loaded YAML content
+        
+    Raises:
+        Exit: If file cannot be loaded
+    """
+    try:
+        with open(path) as f:
+            yield load(f, Loader)
+            
+    except Exception as e:
+        app.ui.print_message(
+            message  = f"Failed to load {path}: {e}",
+            msg_type = "error"
+        )
+        raise Exit(1)
 
 
 @runs.callback(invoke_without_command=True)
@@ -28,8 +64,9 @@ def runs_callback(ctx: Context):
     When called without a subcommand, lists recent training runs.
     Use subcommands to view specific configurations or manage outputs.
     """
+    # Only run the list if no subcommand is provided
     if ctx.invoked_subcommand is None:
-        list_runs()
+        RunsCommand().list_runs(None, show_header=True)
 
 
 @runs.command("clean")
@@ -94,8 +131,8 @@ def compare(
     RunsCommand().compare_runs(domain, run1, run2)
 
 
-@runs.command("list")
-def list_runs(
+@runs.command()
+def list(
     all_runs: bool = Option(
         False,
         "--all", "-a", 
@@ -119,7 +156,7 @@ def list_runs(
         thermur runs list -n 20     # Show 20 most recent
         thermur runs list --all     # Show all runs
     """
-    RunsCommand().list_runs(limit if not all_runs else None)
+    RunsCommand().list_runs(None if all_runs else limit, show_header=True)
 
 
 @runs.command("show")
@@ -185,7 +222,7 @@ class RunsCommand:
     
     def _display_domain_config(
         self,
-        config : dict,
+        config : ConfigDict,
         domain : str
     ):
         """
@@ -211,10 +248,9 @@ class RunsCommand:
             ("Parameter", "bright_white", 50, "left"),
             ("Value",     "bright_green", 50, "left")
         ]
-        page_size   = 20
-        total_items = len(items)
+        page_size = 20
         
-        if total_items <= page_size:
+        if len(items) <= page_size:
             self.ui.print_section(
                 style = "bright_cyan",
                 title = f"{domain.title()} Configuration"
@@ -229,11 +265,10 @@ class RunsCommand:
                 table.add_row(path, self._format_value(value))
             
             self.ui.display_panel(table)
-            
         else:
             self._paginate_config(columns, domain, items, page_size)
     
-    def _display_overrides_panel(self, overrides: list[str]):
+    def _display_overrides_panel(self, overrides: list):
         """
         Display overrides in a formatted panel.
         
@@ -241,9 +276,9 @@ class RunsCommand:
         to a training run, formatted as a bulleted list.
         
         Args:
-            overrides: List of override strings from Hydra
+            overrides : List of override strings from Hydra
         """
-        panel  = self.ui.create_warning_panel(
+        panel = self.ui.create_warning_panel(
             issues = [f"• {override}" for override in overrides],
             title  = "Configuration Overrides"
         )
@@ -251,9 +286,9 @@ class RunsCommand:
     
     def _flatten_config(
         self,
-        config : dict,
+        config : ConfigDict,
         prefix : str = ""
-    ) -> dict:
+    ) -> ConfigDict:
         """
         Flatten nested config to dot notation.
         
@@ -268,7 +303,7 @@ class RunsCommand:
         Returns:
             Flattened dictionary with dot-notation keys
         """
-        items = {}
+        items = defaultdict(dict)
         
         for key, value in config.items():
             if key.startswith('_'):
@@ -281,7 +316,7 @@ class RunsCommand:
             else:
                 items[full_key] = value
         
-        return items
+        return dict(items)
     
     def _format_overrides(self, overrides_file: Path) -> str:
         """
@@ -292,23 +327,20 @@ class RunsCommand:
         are more with a count.
         
         Args:
-            overrides_file: Path to the overrides.yaml file
+            overrides_file : Path to the overrides.yaml file
             
         Returns:
             Formatted string representation of overrides
         """
-        try:
+        with suppress(Exception):
             with open(overrides_file) as f:
-                if overrides_list := safe_load(f) or []:
-                    formatted = ", ".join(overrides_list[:2])
+                if overrides := safe_load(f) or []:
                     return (
-                        f"{formatted} (+{len(overrides_list)-2})"
-                        if len(overrides_list) > 2
-                        else formatted
+                        ", ".join(overrides[:2]) + f" (+{len(overrides)-2})"
+                        if len(overrides) > 2
+                        else ", ".join(overrides)
                     )
-                return "-"
-        except Exception:
-            return "error reading overrides"
+        return "-"
     
     def _format_value(self, value: Any) -> str:
         """
@@ -318,31 +350,27 @@ class RunsCommand:
         appropriately for table display. Long values are truncated with ellipsis.
         
         Args:
-            value: Value to format
+            value : Value to format
             
         Returns:
             Formatted string representation suitable for display
         """
-        if isinstance(value, dict):
-            if '_target_' in value:
+        match value:
+            case dict() if '_target_' in value:
                 return f"{value['_target_'].split('.')[-1]}(...)"
-            else:
+            case dict():
+                return shorten(str(value), width=50, placeholder="...")
+            case list() if len(value) > 3:
+                preview = ', '.join(str(v) for v in value[:3])
+                return f"[{preview}, ...] ({len(value)} items)"
+            case list():
                 return str(value)
-                
-        elif isinstance(value, list):
-            if len(value) > 3:
-                items_preview = ', '.join(str(v) for v in value[:3])
-                return f"[{items_preview}, ...] ({len(value)} items)"
-            else:
+            case str() if len(value) > 50:
+                return shorten(value, width=50, placeholder="...")
+            case _:
                 return str(value)
-                
-        elif isinstance(value, str) and len(value) > 50:
-            return value[:47] + "..."
-            
-        else:
-            return str(value)
     
-    def _get_all_runs(self) -> list[Path]:
+    def _get_all_runs(self) -> list:
         """
         Get all run directories sorted by timestamp.
         
@@ -353,25 +381,25 @@ class RunsCommand:
         Returns:
             List of Path objects pointing to valid run directories
         """
-        runs = []
-        
         if not self.outputs_dir.exists():
-            return runs
-            
-        for date_dir in sorted(self.outputs_dir.iterdir(), reverse=True):
-            if date_dir.is_dir():
-                for time_dir in sorted(date_dir.iterdir(), reverse=True):
-                    hydra_dir = time_dir / ".hydra"
-                    if time_dir.is_dir() and hydra_dir.exists():
-                        runs.append(time_dir)
+            return []
         
-        return runs
+        all_paths = chain.from_iterable(
+            sorted(date_dir.iterdir(), reverse=True)
+            for date_dir in sorted(self.outputs_dir.iterdir(), reverse=True)
+            if date_dir.is_dir()
+        )
+        
+        return [
+            path for path in all_paths
+            if path.is_dir() and (path / ".hydra").exists()
+        ]
     
     def _paginate_config(
         self,
-        columns   : list[tuple[str, str, int, str]],
+        columns   : list,
         domain    : str,
-        items     : list[tuple[str, Any]],
+        items     : list,
         page_size : int
     ):
         """
@@ -387,7 +415,7 @@ class RunsCommand:
             page_size : Number of items to show per page
         """
         def render_config_page(
-            page_items  : list[tuple[str, Any]], 
+            page_items  : list, 
             page_num    : int, 
             total_pages : int
         ):
@@ -417,7 +445,7 @@ class RunsCommand:
             render_page      = render_config_page
         )
     
-    def _resolve_run_id(self, run_id: str) -> Path:
+    def _resolve_run_id(self, run_id: str) -> RunPath:
         """
         Resolve run ID to actual path.
         
@@ -426,27 +454,24 @@ class RunsCommand:
         This provides a consistent way to reference runs by various identifiers.
         
         Args:
-            run_id: Either "last" or a path to a run directory
+            run_id : Either "last" or a path to a run directory
             
         Returns:
             Path object pointing to the resolved run directory
             
         Raises:
-            Exit: If no runs exist or specified run is not found
+            Exit : If no runs exist or specified run is not found
         """
         if run_id == "last":
-            runs = self._get_all_runs()
-            if not runs:
+            if not (runs := self._get_all_runs()):
                 self.ui.print_message(
                     message  = "No training runs found in outputs/",
                     msg_type = "error"
                 )
                 raise Exit(1)
-            
             return runs[0]
         
-        run_path = Path(run_id)
-        if not run_path.exists():
+        if not (run_path := Path(run_id)).exists():
             self.ui.print_message(
                 message  = f"Run not found: {run_id}",
                 msg_type = "error"
@@ -473,6 +498,8 @@ class RunsCommand:
             force   : Whether to skip confirmation prompt
             keep    : Number of recent runs to keep
         """
+        self.ui.print_header("Training Run Management")
+        
         runs = self._get_all_runs()
         
         if len(runs) <= keep:
@@ -484,7 +511,7 @@ class RunsCommand:
         
         to_delete = runs[keep:]
         
-        self.ui.print_header("Runs to Delete")
+        self.ui.print_section("Runs to Delete", minor=True)
         for run in to_delete:
             self.ui.print_message(
                 message  = f"• {run.relative_to(self.outputs_dir)}",
@@ -498,14 +525,14 @@ class RunsCommand:
             )
             return
         
-        if not force:
-            prompt = f"Delete {len(to_delete)} old runs? This cannot be undone."
-            if not self.prompts.confirm(prompt):
-                self.ui.print_message(
-                    message  = "Cleanup cancelled",
-                    msg_type = "warning"
-                )
-                return
+        if not force and not self.prompts.confirm(
+            f"Delete {len(to_delete)} old runs? This cannot be undone."
+        ):
+            self.ui.print_message(
+                message  = "Cleanup cancelled",
+                msg_type = "warning"
+            )
+            return
         
         progress = self.ui.create_thermal_progress()
         task     = progress.add_task("Deleting runs...", total=len(to_delete))
@@ -513,15 +540,10 @@ class RunsCommand:
         
         with progress:
             for run in to_delete:
-                try:
+                with suppress(Exception):
                     rmtree(run)
                     deleted += 1
                     progress.update(advance=1, task=task)
-                except Exception as e:
-                    self.ui.print_message(
-                        message  = f"Failed to delete {run}: {e}",
-                        msg_type = "error"
-                    )
         
         self.ui.print_message(
             message  = f"Deleted {deleted} old runs",
@@ -548,27 +570,19 @@ class RunsCommand:
         run1_path = self._resolve_run_id(run1)
         run2_path = self._resolve_run_id(run2)
         
-        config_files = [
-            (run1_path / ".hydra" / "config.yaml"),
-            (run2_path / ".hydra" / "config.yaml")
-        ]
-        
-        if not all(f.exists() for f in config_files):
-            self.ui.print_message(
-                message  = "Configuration files not found for one or both runs",
-                msg_type = "error"
+        with ExitStack() as stack:
+            cfg1 = stack.enter_context(
+                load_yaml(run1_path / ".hydra" / "config.yaml")
             )
-            raise Exit(1)
+            cfg2 = stack.enter_context(
+                load_yaml(run2_path / ".hydra" / "config.yaml")
+            )
+            
+            cfg1 = {k: v for k, v in cfg1.items() if not k.startswith('_')}
+            cfg2 = {k: v for k, v in cfg2.items() if not k.startswith('_')}
         
-        cfg1, cfg2 = [
-            load(f.open(), Loader) 
-            for f in config_files
-        ]
-        
-        cfg1 = {k: v for k, v in cfg1.items() if not k.startswith('_')}
-        cfg2 = {k: v for k, v in cfg2.items() if not k.startswith('_')}
-        
-        self.ui.print_header("Configuration Comparison")
+        self.ui.print_header("Training Run Management")
+        self.ui.print_section("Configuration Comparison", minor=True)
         self.ui.print_message(
             message  = f"Run 1: {run1_path.relative_to(self.outputs_dir)}",
             msg_type = "info"
@@ -578,50 +592,55 @@ class RunsCommand:
             msg_type = "info"
         )
         
-        all_domains = sorted(set(cfg1.keys()) | set(cfg2.keys()))
-        domains     = [domain] if domain else all_domains
+        all_configs = ChainMap(cfg1, cfg2)
+        domains     = [domain] if domain else sorted(set(all_configs.keys()))
         
-        for domain in filter(lambda d: d in cfg1 or d in cfg2, domains):
-            self.ui.print_section(
-                style = "bright_yellow",
-                title = f"{domain.title()} Configuration Differences"
-            )
-            
+        # Collect all domains with differences
+        domains_with_diffs = []
+        
+        for domain in (d for d in domains if d in all_configs):
             flat1 = self._flatten_config(cfg1.get(domain, {}))
             flat2 = self._flatten_config(cfg2.get(domain, {}))
             
-            all_keys    = sorted(set(flat1.keys()) | set(flat2.keys()))
+            all_keys    = set(flat1) | set(flat2)
             differences = [
                 (key, flat1.get(key, "NOT SET"), flat2.get(key, "NOT SET"))
-                for key in all_keys
+                for key in sorted(all_keys)
                 if flat1.get(key, "NOT SET") != flat2.get(key, "NOT SET")
             ]
             
             if differences:
-                table = self.ui.create_aligned_table(
-                    border_style = "dim",
-                    columns      = [
-                        ("Parameter", "bright_white", 40, "left"),
-                        ("Run 1",     "bright_green", 30, "left"),
-                        ("Run 2",     "bright_blue",  30, "left")
-                    ]
+                domains_with_diffs.append((domain, differences))
+        
+        if not domains_with_diffs:
+            self.ui.print_message(
+                message  = "No configuration differences found between runs",
+                msg_type = "info"
+            )
+            return
+        
+        # Display differences for each domain
+        for domain, differences in domains_with_diffs:
+            table = self.ui.create_aligned_table(
+                border_style = "dim",
+                columns      = [
+                    ("Parameter", "bright_white", 40, "left"),
+                    ("Run 1",     "bright_green", 30, "left"),
+                    ("Run 2",     "bright_blue",  30, "left")
+                ],
+                title        = f"{domain.title()} Configuration"
+            )
+            
+            for param, val1, val2 in differences:
+                table.add_row(
+                    param,
+                    self._format_value(val1),
+                    self._format_value(val2)
                 )
-                
-                for param, val1, val2 in differences:
-                    table.add_row(
-                        param,
-                        self._format_value(val1),
-                        self._format_value(val2)
-                    )
-                
-                self.ui.display_panel(table)
-            else:
-                self.ui.print_message(
-                    message  = f"No differences in {dom} configuration",
-                    msg_type = "info"
-                )
+            
+            self.ui.display_panel(table)
     
-    def list_runs(self, limit: Optional[int] = None):
+    def list_runs(self, limit: Optional[int] = None, show_header: bool = True):
         """
         List recent training runs.
         
@@ -629,17 +648,28 @@ class RunsCommand:
         timestamps, configuration overrides, and completion status.
         
         Args:
-            limit : Maximum number of runs to display (None for all)
+            limit       : Maximum number of runs to display (None for all)
+            show_header : Whether to show the section header
         """
-        if not (runs := self._get_all_runs()):
+        if show_header:
+            self.ui.print_header("Training Run Management")
+            
+        runs = self._get_all_runs()
+        if not runs:
             self.ui.print_message(
-                message  = "No training runs found. Start training with: "
+                message  = "No training runs found. Start training with: "  
                            "thermur train",
                 msg_type = "info"
             )
             return
         
-        display_runs = list(islice(runs, limit)) if limit else runs
+        display_runs = runs if limit is None else runs[:limit]
+        
+        self.ui.print_section("Recent Runs", minor=True)
+        self.ui.print_message(
+            message  = "Status: ✓ = Complete, ... = In Progress/Incomplete",
+            msg_type = "info"
+        )
         
         columns = [
             ("Date & Time",  "bright_white",  20, "left"),
@@ -650,22 +680,22 @@ class RunsCommand:
         
         table = self.ui.create_aligned_table(
             border_style = "bright_blue",
-            columns      = columns,
-            title        = "Training Runs"
+            columns      = columns
         )
         
         for run_path in display_runs:
-            run_id = str(run_path.relative_to(self.outputs_dir))
-            
-            parts = run_id.split('/')
+            run_id    = str(run_path.relative_to(self.outputs_dir))
+            parts     = run_id.split('/')
             timestamp = (
                 f"{parts[0]} {parts[1].replace('-', ':')}"
-                if len(parts) >= 2
-                else run_id
+                if len(parts) >= 2 else run_id
             )
             
-            overrides_file = run_path / ".hydra" / "overrides.yaml"
-            overrides = self._format_overrides(overrides_file) if overrides_file.exists() else "-"
+            overrides = (
+                self._format_overrides(run_path / ".hydra" / "overrides.yaml")
+                if (run_path / ".hydra" / "overrides.yaml").exists()
+                else "-"
+            )
             status = "✓" if (run_path / "training_complete").exists() else "..."
             
             table.add_row(timestamp, overrides, run_id, status)
@@ -697,30 +727,20 @@ class RunsCommand:
             include_system : Whether to include system (_) configurations
             run_id         : Run identifier or "last" for most recent
         """
-        run_path    = self._resolve_run_id(run_id)
-        config_file = run_path / ".hydra" / "config.yaml"
+        run_path = self._resolve_run_id(run_id)
         
-        if not config_file.exists():
-            self.ui.print_message(
-                message  = f"No configuration found for run: {run_id}",
-                msg_type = "error"
-            )
-            raise Exit(1)
+        with load_yaml(run_path / ".hydra" / "config.yaml") as cfg:
+            if not include_system:
+                cfg = {k: v for k, v in cfg.items() if not k.startswith('_')}
         
-        with open(config_file) as f:
-            cfg = load(f, Loader=Loader)
-        
-        cfg = (
-            cfg if include_system
-            else {k: v for k, v in cfg.items() if not k.startswith('_')}
-        )
-        
-        self.ui.print_header(
-            f"Configuration: {run_path.relative_to(self.outputs_dir)}"
+        self.ui.print_header("Training Run Management")
+        self.ui.print_section(
+            f"Configuration: {run_path.relative_to(self.outputs_dir)}",
+            minor=True
         )
         
         if (overrides_file := run_path / ".hydra" / "overrides.yaml").exists():
-            with open(overrides_file) as f:
+            with suppress(Exception), open(overrides_file) as f:
                 if overrides := safe_load(f) or []:
                     self._display_overrides_panel(overrides)
         

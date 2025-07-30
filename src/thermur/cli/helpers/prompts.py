@@ -24,7 +24,8 @@ class CLIPrompts:
     """
     def __init__(
         self,
-        cfg : DictConfig
+        cfg : DictConfig,
+        ui  : Any
     ):
         """
         Initializes the prompt orchestrator.
@@ -35,7 +36,7 @@ class CLIPrompts:
         """
         self.cfg     = cfg
         self.thermal = questionary.Style.from_dict(cfg.display.questionary_style)
-        self.ui      = cfg.ui
+        self.ui      = ui
 
     def ask_for_overrides(self) -> list[str]:
         """
