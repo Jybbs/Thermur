@@ -121,8 +121,8 @@ class Renderer:
         """
         Add agent visualizations to the plotter.
         
-        Creates visual representations of each agent in the flock using either sphere
-        glyphs (showing position only) or arrow glyphs (showing position and direction).
+        Creates visual representations of each agent in the flock using arrow
+        glyphs (showing both position and velocity direction when available).
         Agents can be colored by temperature using the provided colormap, and optional
         motion trails can be drawn to show recent movement patterns.
         
@@ -156,14 +156,13 @@ class Renderer:
         
         glyph_geom = self.agent_glyph
         
-        match (self.vista.agent_type, velocity is not None):
-            case ("arrow", True):
-                norms      = np.linalg.norm(velocities, axis=1, keepdims=True)
-                safe_norms = np.maximum(norms, 1e-6)
-                point_cloud["direction"] = velocities / safe_norms
-                orient = "direction"
-            case _:
-                orient = False
+        if velocity is not None:
+            norms      = np.linalg.norm(velocities, axis=1, keepdims=True)
+            safe_norms = np.maximum(norms, 1e-6)
+            point_cloud["direction"] = velocities / safe_norms
+            orient = "direction"
+        else:
+            orient = False
         
         agent_glyphs = point_cloud.glyph(
             geom   = glyph_geom, 
@@ -171,10 +170,7 @@ class Renderer:
             scale  = False
         )
         
-        mesh_params = {
-            "opacity"                 : self.vista.agent_opacity,
-            "render_points_as_spheres": self.vista.agent_type == "sphere",
-        }
+        mesh_params = {"opacity": self.vista.agent_opacity}
         
         if temperature is not None and colormap:
             mesh_params |= {

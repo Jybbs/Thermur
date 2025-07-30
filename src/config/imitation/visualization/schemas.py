@@ -35,20 +35,6 @@ class VistaModel(BaseModel, extra="forbid"):
             "for maximum visibility and lower values enable layered displays."
         )
     )
-    agent_size: PositiveFloat = Field(
-        default     = 0.15,
-        description = (
-            "Uniform scale factor in meters for agent glyph dimensions, balancing "
-            "visibility against visual clutter in dense flocks."
-        )
-    )
-    agent_type: Literal["sphere", "arrow"] = Field(
-        default     = "sphere",
-        description = (
-            "3D geometry type for agent representation with sphere showing position "
-            "only and arrow indicating both position and velocity direction."
-        )
-    )
     arrow_scale: PositiveFloat = Field(
         default     = 0.1,
         description = (

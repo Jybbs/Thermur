@@ -16,15 +16,14 @@ Sampling & Data Processing:
                   fire perimeters.
 
 Visual Elements:
-- Arrow         : Visualizes wind vectors and agent orientations with size and
-                  color mapping based on magnitude.
-- Sphere        : Represents agent positions with configurable radius.
+- Arrow         : Visualizes both agents and wind vectors with size and color
+                  mapping based on magnitude.
 - Themes        : Pre-configured visual themes (dark/light) for different viewing
                   conditions.
 """
 from .schemas                        import *
 from hydra_zen                       import builds, make_config
-from pyvista                         import Arrow, Plotter, Sphere, themes
+from pyvista                         import Arrow, Plotter, themes
 from thermur.imitation.visualization import Renderer, Sampler, Visualizer
 
 
@@ -33,15 +32,8 @@ VISUALIZATION_USER_CONFIG = make_config(
 )
 
 VISUALIZATION_SYSTEM_BUILDS = {
-    "agent_glyph_arrow": builds(
+    "agent_glyph": builds(
         Arrow,
-        zen_partial             = True,
-        populate_full_signature = True
-    ),
-    
-    "agent_glyph_sphere": builds(
-        Sphere,
-        radius                  = "${visualization.vista.agent_size}",
         zen_partial             = True,
         populate_full_signature = True
     ),
@@ -55,7 +47,7 @@ VISUALIZATION_SYSTEM_BUILDS = {
     
     "renderer": builds(
         Renderer,
-        agent_glyph             = "${_system.agent_glyph_sphere}",
+        agent_glyph             = "${_system.agent_glyph}",
         scalar_bar              = {},  # Default scalar bar config
         vista                   = "${visualization.vista}",
         wind_glyph              = "${_system.wind_glyph}",

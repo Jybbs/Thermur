@@ -13,8 +13,7 @@ from pytorch_lightning           import LightningModule
 from tensordict                  import TensorDict
 from time                        import perf_counter
 from torch                       import where
-
-import wandb
+from wandb                       import Table
 
 
 class EventLogger:
@@ -25,7 +24,22 @@ class EventLogger:
     sampling detailed event data to W&B tables for debugging.
     """
     
+    EVENT_TYPES = {
+        "cbf_activation": {
+            "columns" : ["agent_id", "temperature", "safety_margin", "control_diff"],
+            "rate"    : "cbf_activation_rate"
+        },
+        "near_miss": {
+            "columns" : ["agent_id", "temperature", "position", "margin"],
+            "rate"    : "near_miss_rate"
+        },
+        "thermal_violation": {
+            "columns" : ["agent_id", "temperature", "position", "excess"],
+            "rate"    : "thermal_violation_rate"
+        }
+    }
     PREFIX = "events/"
+
     def __init__(
         self,
         events     : EventsModel,
@@ -40,7 +54,7 @@ class EventLogger:
         """
         self.cbf_tolerance   = thresholds.activation_tolerance
         self.cbf_threshold   = thresholds.max_temperature - thresholds.activation_tolerance
-        self.event_types     = events.event_types
+        self.event_types     = self.EVENT_TYPES
         self.max_temperature = thresholds.max_temperature
         self.sample_every    = events.event_sample_every
         
@@ -75,7 +89,7 @@ class EventLogger:
             for event_dict in self.event_data[event_type]
         ]
         
-        table = wandb.Table(columns, data)
+        table = Table(columns, data)
         module.logger.experiment.log({
             f"{self.prefix}{event_type}_details": table
         })
@@ -99,7 +113,7 @@ class EventLogger:
         self.event_counts[event_type] += 1
         
         module.log(
-            name     = self.PREFIX + self.event_types[event_type]["rate_metric"],
+            name     = self.PREFIX + self.event_types[event_type]["rate"],
             value    = self.event_counts[event_type] / max(self.total_steps, 1),
             on_epoch = True,
             on_step  = True
