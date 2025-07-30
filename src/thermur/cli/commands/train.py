@@ -355,7 +355,7 @@ class TrainCommand:
 
             components['visualizer'] = (
                 instantiate(c, pydantic_parser)
-                if (c := OmegaConf.select(cfg, "visualizer"))
+                if (c := OmegaConf.select(cfg, "_system.visualizer"))
                 else None
             )
 

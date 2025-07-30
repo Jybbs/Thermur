@@ -4,7 +4,7 @@ CLI application state and shared components.
 This module initializes all CLI components at module level, providing
 direct access without indirection. Components are created once on import.
 """
-from config.cli.stores   import cfg
+from config.cli.builds   import cfg
 from thermur.cli.helpers import CLIPrompts, GlobusManager, SystemInspector, ThermurUI
 
 ui      = ThermurUI(cfg.display)

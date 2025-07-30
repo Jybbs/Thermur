@@ -121,7 +121,6 @@ class FlockModel(BaseModel, extra="forbid"):
     )
     communication_range: PositiveFloat = Field(
         default     = 50.0,
-        gt          = 0,
         description = (
             "Maximum distance R_comm in meters for edge formation in dynamic graph "
             "G_t where (i,j) ∈ E_t iff ||𝐱_i - 𝐱_j|| ≤ R_comm."
@@ -129,7 +128,6 @@ class FlockModel(BaseModel, extra="forbid"):
     )
     formation_scale_factor: PositiveFloat = Field(
         default     = 0.5,
-        gt          = 0,
         le          = 1,
         description = (
             "Formation density factor γ ∈ (0, 1] scaling initial agent spacing as "

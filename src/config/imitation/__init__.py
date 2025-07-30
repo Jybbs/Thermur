@@ -3,7 +3,7 @@ Imitation learning configuration system.
 
 This module provides the entry point for Hydra-based configuration, orchestrating
 all domain-specific configurations for the training pipeline. The configuration
-system uses hydra-zen's store pattern for type-safe, modular configuration.
+system uses hydra-zen's hierarchical pattern for type-safe, modular configuration.
 
 The configuration is organized by domains:
 - controller    : Expert policy and safety systems
@@ -12,24 +12,37 @@ The configuration is organized by domains:
 - simulation    : Environment and physics
 - visualization : 3D visualization with PyVista
 
+All user-facing configuration is exposed through Pydantic models, while
+pre-built components are hidden in the _system namespace.
+
 Experiment tracking is handled by Weights & Biases (configured in lightning.wandb).
 """
-from .controller.stores    import controller
-from .lightning.stores     import lightning
-from .monitoring.stores    import monitoring
-from .simulation.stores    import simulation
-from .visualization.stores import visualization
-from hydra_zen             import make_config
+from hydra_zen import make_config
 
+# Import composed configs directly from builds modules
+from .controller.builds    import CONTROLLER_USER_CONFIG,    CONTROLLER_SYSTEM_BUILDS
+from .lightning.builds     import LIGHTNING_USER_CONFIG,     LIGHTNING_SYSTEM_BUILDS
+from .monitoring.builds    import MONITORING_USER_CONFIG,    MONITORING_SYSTEM_BUILDS
+from .simulation.builds    import SIMULATION_USER_CONFIG,    SIMULATION_SYSTEM_BUILDS
+from .visualization.builds import VISUALIZATION_USER_CONFIG, VISUALIZATION_SYSTEM_BUILDS
+
+# Create the main configuration with nested structure
 ImitationConfig = make_config(
-    hydra_defaults=[
-        "_self_",
-        {"controller"    : "all"},
-        {"lightning"     : "all"},
-        {"monitoring"    : "all"},
-        {"simulation"    : "all"},
-        {"visualization" : "all"},
-    ]
+    # User-facing models organized by domain
+    controller    = CONTROLLER_USER_CONFIG,
+    lightning     = LIGHTNING_USER_CONFIG,
+    monitoring    = MONITORING_USER_CONFIG,
+    simulation    = SIMULATION_USER_CONFIG,
+    visualization = VISUALIZATION_USER_CONFIG,
+    
+    # Hidden internal namespace for all pre-built components
+    _system = make_config(
+        **CONTROLLER_SYSTEM_BUILDS,
+        **LIGHTNING_SYSTEM_BUILDS,
+        **MONITORING_SYSTEM_BUILDS,
+        **SIMULATION_SYSTEM_BUILDS,
+        **VISUALIZATION_SYSTEM_BUILDS
+    )
 )
 
 __all__ = ["ImitationConfig"]

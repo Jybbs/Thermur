@@ -198,9 +198,9 @@ class DisplayModel(BaseModel, extra="forbid"):
     )
     training_component_configs: list[tuple[str, str, str]] = Field(
         default = [
-            ("data_module", "data_module", "📦 Data Module"),
-            ("policy",      "policy",      "🧠 Learning Policy"),
-            ("trainer",     "trainer",     "⚡ Lightning Trainer"),
+            ("datamodule", "_system.datamodule", "📦 Data Module"),
+            ("policy",     "_system.policy",     "🧠 Learning Policy"),
+            ("trainer",    "_system.trainer",    "⚡ Lightning Trainer"),
         ],
         description = (
             "Component initialization tuples containing configuration key, hydra path, "

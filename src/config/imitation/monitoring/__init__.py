@@ -1,7 +1,7 @@
 """
 Monitoring configuration domain.
 
-Provides schemas and stores for monitoring components including
-metrics collection, event tracking, and performance analysis.
+Provides schemas for event tracking, metrics collection, and
+performance analysis during training.
 """
 from .schemas import *
