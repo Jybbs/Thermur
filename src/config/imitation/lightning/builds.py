@@ -57,7 +57,7 @@ LIGHTNING_SYSTEM_BUILDS = {
         ModelCheckpoint,
         dirpath                 = "${lightning.checkpoint.dirpath}",
         every_n_train_steps     = "${lightning.checkpoint.every_n_train_steps}",
-        filename                = "${lightning.checkpoint.filename}",
+        filename                = "checkpoint-{step}",
         save_last               = "${lightning.checkpoint.save_last}",
         save_top_k              = "${lightning.checkpoint.save_top_k}",
         zen_partial             = True,
@@ -100,6 +100,7 @@ LIGHTNING_SYSTEM_BUILDS = {
     "monitoring_callback": builds(
         MonitoringCallback,
         collector               = "${_system.collector}",
+        events                  = "${_system.events}",
         zen_partial             = True,
         populate_full_signature = True
     ),

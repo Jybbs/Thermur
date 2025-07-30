@@ -66,13 +66,6 @@ class CheckpointModel(BaseModel, extra="forbid"):
             "recovery granularity for long training runs on large datasets."
         )
     )
-    filename: str = Field(
-        default     = "checkpoint-{step}",
-        description = (
-            "Filename template with {step} placeholder for organizing checkpoints "
-            "chronologically, supporting automated model selection pipelines."
-        )
-    )
     save_last: bool = Field(
         default     = True,
         description = (

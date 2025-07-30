@@ -17,26 +17,20 @@ pre-built components are hidden in the _system namespace.
 
 Experiment tracking is handled by Weights & Biases (configured in lightning.wandb).
 """
-from hydra_zen import make_config
-
-# Import composed configs directly from builds modules
 from .controller.builds    import CONTROLLER_USER_CONFIG,    CONTROLLER_SYSTEM_BUILDS
 from .lightning.builds     import LIGHTNING_USER_CONFIG,     LIGHTNING_SYSTEM_BUILDS
 from .monitoring.builds    import MONITORING_USER_CONFIG,    MONITORING_SYSTEM_BUILDS
 from .simulation.builds    import SIMULATION_USER_CONFIG,    SIMULATION_SYSTEM_BUILDS
 from .visualization.builds import VISUALIZATION_USER_CONFIG, VISUALIZATION_SYSTEM_BUILDS
+from hydra_zen             import make_config
 
-# Create the main configuration with nested structure
 ImitationConfig = make_config(
-    # User-facing models organized by domain
     controller    = CONTROLLER_USER_CONFIG,
     lightning     = LIGHTNING_USER_CONFIG,
     monitoring    = MONITORING_USER_CONFIG,
     simulation    = SIMULATION_USER_CONFIG,
     visualization = VISUALIZATION_USER_CONFIG,
-    
-    # Hidden internal namespace for all pre-built components
-    _system = make_config(
+    _system       = make_config(
         **CONTROLLER_SYSTEM_BUILDS,
         **LIGHTNING_SYSTEM_BUILDS,
         **MONITORING_SYSTEM_BUILDS,

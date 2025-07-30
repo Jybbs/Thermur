@@ -22,26 +22,6 @@ class EventsModel(BaseModel, extra="forbid"):
             "reduce data volume but may miss important events."
         )
     )
-    event_types: dict[str, dict[str, Any]] = Field(
-        default_factory = lambda: {
-            "thermal_violation": {
-                "columns"     : ["agent_id", "temperature", "position", "excess"],
-                "rate_metric" : "thermal_violation_rate"
-            },
-            "near_miss": {
-                "columns"     : ["agent_id", "temperature", "position", "margin"],
-                "rate_metric" : "near_miss_rate"
-            },
-            "cbf_activation": {
-                "columns"     : ["agent_id", "temperature", "safety_margin", "control_diff"],
-                "rate_metric" : "cbf_activation_rate"
-            }
-        },
-        description = (
-            "Event type definitions with column schemas and metric names for structured "
-            "logging of critical simulation events."
-        )
-    )
 
 
 class MetricsModel(BaseModel, extra="forbid"):

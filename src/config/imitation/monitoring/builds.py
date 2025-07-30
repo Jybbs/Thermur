@@ -32,6 +32,7 @@ MONITORING_SYSTEM_BUILDS = {
     "events": builds(
         EventLogger,
         events                  = "${monitoring.events}",
+        thresholds              = "${controller.thresholds}",
         zen_partial             = True,
         populate_full_signature = True
     )
