@@ -4,9 +4,8 @@ Validation command for the Thermur CLI.
 Allows users to check their system setup and configuration syntax
 without initiating a full training run.
 """
-from typer import Option
-
 from thermur.cli import app
+from typer       import Option
 
 
 def validate(

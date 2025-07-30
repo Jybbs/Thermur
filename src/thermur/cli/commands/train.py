@@ -8,12 +8,11 @@ imitation learning workflow.
 from functools   import partial
 from omegaconf   import DictConfig, OmegaConf, open_dict
 from pathlib     import Path
+from subprocess  import run as subrun
 from textwrap    import shorten
 from thermur.cli import app
 from typer       import Argument, Exit, Option
 from typing      import Any
-
-import subprocess
 
 
 def train(
@@ -213,7 +212,7 @@ class TrainCommand:
             
         except FileNotFoundError:
             if self.prompts.confirm("No data found. Download sample dataset?"):
-                subprocess.run(["thermur", "download", "--sample"])
+                subrun(["thermur", "download", "--sample"])
 
                 return Path(self.cfg.download.sample_data_path).as_posix()
             
@@ -516,6 +515,16 @@ class TrainCommand:
         Returns:
             Status dictionary indicating successful completion.
         """
+        from hydra.core.hydra_config import HydraConfig
+        hydra_cfg  = HydraConfig.get()
+        output_dir = Path(hydra_cfg.runtime.output_dir)
+        
+        self.ui.print_message(
+            message  = f"Training output: {output_dir}",
+            msg_type = "info"
+        )
+        self.ui.console.print()
+        
         self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
 
@@ -564,7 +573,25 @@ class TrainCommand:
         self.ui.console.print()
         self.ui.print_header("Training Complete 🎉")
         
-        return {"status": "training_complete"}
+        (output_dir / "training_complete").touch()
+        
+        self.ui.console.print()
+        relative_path = output_dir.relative_to(Path.cwd())
+        self.ui.print_message(
+            message  = (
+                f"View configuration with: "
+                f"[bold]thermur runs show {relative_path}[/bold]"
+            ),
+            msg_type = "info"
+        )
+        
+        if self.prompts.confirm("Would you like to view the configuration now?"):
+            subrun(['thermur', 'runs', 'show', str(relative_path)])
+        
+        return {
+            "output_dir" : str(output_dir),
+            "status"     : "training_complete"
+        }
 
     def run(
         self,

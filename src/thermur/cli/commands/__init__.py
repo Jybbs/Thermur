@@ -8,5 +8,6 @@ formatting.
 from .download import download
 from .info     import info
 from .monitor  import monitor
+from .runs     import runs
 from .train    import train
 from .validate import validate

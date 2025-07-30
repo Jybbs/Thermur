@@ -38,6 +38,11 @@ class DisplayModel(BaseModel, extra="forbid"):
                 "name" : "monitor",
             },
             {
+                "desc" : "Explore and manage training runs",
+                "icon" : "🏃",
+                "name" : "runs",
+            },
+            {
                 "desc" : "Train thermal drone flock behaviors",
                 "icon" : "🚀",
                 "name" : "train",
@@ -61,6 +66,16 @@ class DisplayModel(BaseModel, extra="forbid"):
                 "command" : "thermur train lightning.optimizer.learning_rate=0.001",
                 "desc"    : "Custom learning rate",
                 "note"    : "Override specific parameters"
+            },
+            {
+                "command" : "thermur runs",
+                "desc"    : "List recent training runs",
+                "note"    : "View run history with status"
+            },
+            {
+                "command" : "thermur runs show",
+                "desc"    : "Show last run configuration",
+                "note"    : "Paginated view of all settings"
             },
             {
                 "command" : "thermur monitor",
@@ -110,7 +125,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             'config'  : {'icon': '⚙️ ', 'style': 'config'},
             'debug'   : {'icon': '🐛',  'style': 'debug'},
             'error'   : {'icon': '❌',  'style': 'error'},
-            'flock'   : {'icon': '🦅',  'style': 'flock'},
+            'flock'   : {'icon': '🪿',  'style': 'flock'},
             'info'    : {'icon': 'ℹ️ ', 'style': 'info'},
             'success' : {'icon': '✅',  'style': 'success'},
             'thermal' : {'icon': '🔥',  'style': 'thermal'},
@@ -173,7 +188,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             'disk'     : '💿 Disk',
             'gpu'      : '💎 GPU',
             'memory'   : '💾 Memory',
-            'mujoco'   : '🏃 MuJoCo',
+            'mujoco'   : '🥽 MuJoCo',
             'platform' : '🖥️  Platform',
             'python'   : '🐍 Python',
             'thermur'  : '🔥 Thermur',
