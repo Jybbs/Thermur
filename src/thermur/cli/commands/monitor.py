@@ -4,10 +4,9 @@ Wandb monitoring command for the Thermur CLI.
 Provides a convenient shortcut for opening the Weights & Biases dashboard
 for a specified project in the user's default web browser.
 """
-from typer      import Exit
-from webbrowser import open
-
 from thermur.cli import app
+from typer       import Exit
+from webbrowser  import open
 
 
 def monitor():

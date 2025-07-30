@@ -5,7 +5,7 @@ This module provides the main CLI interface by discovering and registering
 all available commands from the .commands subpackage.
 """
 from thermur.cli          import app
-from thermur.cli.commands import download, info, monitor, train, validate
+from thermur.cli.commands import download, info, monitor, runs, train, validate
 from typer                import Context, Exit, Option, Typer
 
 cli = Typer(
@@ -24,6 +24,7 @@ cli.command()(info)
 cli.command()(monitor)
 cli.command()(train)
 cli.command()(validate)
+cli.add_typer(runs, name="runs")
 
 
 @cli.callback(invoke_without_command=True)
