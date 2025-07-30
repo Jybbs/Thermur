@@ -8,7 +8,7 @@ from config.cli.builds   import cfg
 from thermur.cli.helpers import CLIPrompts, GlobusManager, SystemInspector, ThermurUI
 
 ui      = ThermurUI(cfg.display)
-prompts = CLIPrompts(cfg, ui)
+prompts = CLIPrompts(cfg)
 system  = SystemInspector(cfg)
 
 def get_globus() -> GlobusManager:

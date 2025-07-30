@@ -6,9 +6,8 @@ preset selection, wandb configuration, override collection, and training
 confirmation. It uses the ThermurUI class to render complex components and 
 DictConfig objects for all static text and configuration.
 """
-from itertools import islice
 from omegaconf import DictConfig
-from typing    import Any
+from typing    import Any, Callable
 
 import questionary
 
@@ -25,8 +24,7 @@ class CLIPrompts:
     """
     def __init__(
         self,
-        cfg : DictConfig,
-        ui  : Any
+        cfg : DictConfig
     ):
         """
         Initializes the prompt orchestrator.
@@ -37,7 +35,7 @@ class CLIPrompts:
         """
         self.cfg     = cfg
         self.thermal = questionary.Style.from_dict(cfg.display.questionary_style)
-        self.ui      = ui
+        self.ui      = cfg.ui
 
     def ask_for_overrides(self) -> list[str]:
         """
@@ -172,8 +170,83 @@ class CLIPrompts:
             default = False
         )
     
+    def paginate(
+        self,
+        items            : list[Any],
+        render_page      : Callable,
+        allow_row_select : bool = True,
+        page_size        : int  = 10
+    ) -> Any | None:
+        """
+        Generic pagination handler for any list of items.
+        
+        Provides a reusable pagination interface that delegates page rendering
+        to a callback function. Handles navigation, selection, and clearing.
+        Displays navigation options and handles user input.
+        
+        Args:
+            items            : List of items to paginate
+            render_page      : Callback function to render each page
+            allow_row_select : Whether to allow row selection
+            page_size        : Number of items per page
+            
+        Returns:
+            Selected item if allow_row_select=True and item selected, None otherwise
+        """
+        if not items:
+            return None
+            
+        page = 0
+        total_pages = -(-len(items) // page_size)
+        
+        while True:
+            self.ui.console.clear()
+            
+            start      = page * page_size
+            page_items = items[start:start + page_size]
+            
+            render_page(page_items, page + 1, total_pages)
+            nav_options = []
+            
+            if allow_row_select and len(page_items) > 0:
+                nav_options.append(("[0-9] Select", ""))
+            
+            if page > 0:
+                nav_options.append(("[P]revious", "p"))
+            if page < total_pages - 1:
+                nav_options.append(("[N]ext", "n"))
+                
+            nav_options.append(("[Q]uit", "q"))
+            
+            nav_display = " | ".join(
+                f"[bold cyan]{opt[0]}[/]" for opt in nav_options
+            )
+            self.ui.console.print(nav_display + "\n")
+            
+            valid_choices = ["p", "n", "q", ""]
+            if allow_row_select and len(page_items) > 0:
+                valid_choices.extend(map(str, range(len(page_items))))
+            
+            choice = questionary.text(
+                "Select",
+                style    = self.thermal,
+                validate = lambda x: x.strip().lower() in valid_choices
+            ).ask()
+            
+            if not choice:
+                return None
+            
+            match choice.strip().lower():
+                case "q" | "":
+                    return None
+                case "p":
+                    page = max(0, page - 1)
+                case "n":
+                    page = min(total_pages - 1, page + 1)
+                case n if n.isdigit() and allow_row_select:
+                    return page_items[int(n)]
     
-    def select_file_with_pagination(
+    def select_file_from_pages(
         self,
         available_files : list[dict],
         file_status     : dict[str, str],
@@ -196,49 +269,29 @@ class CLIPrompts:
         Returns:
             Selected file dictionary or None if cancelled
         """
-        page, total = 0, len(available_files)
-        pages = -(-total // page_size)
-        
-        while True:
-            self.ui.console.clear()
-            
-            start = page * page_size
-            page_files = list(islice(available_files, start, start + page_size))
-            
+        def render_file_page(
+            page_files  : list[dict], 
+            page_num    : int, 
+            total_pages : int
+        ):
+            """
+            Render a page of files with download status table and summary.
+            """
             self.ui.display_download_table(
                 available_files = page_files,
                 file_status     = file_status,
-                title           = f"{title_prefix} (Page {page + 1}/{pages})"
+                title           = f"{title_prefix} (Page {page_num}/{total_pages})"
             )
             self.ui.console.print()
             self.ui.display_download_summary(available_files, file_status)
             self.ui.console.print()
-            
-            choices = list(map(str, range(len(page_files)))) + ["q", ""]
-            nav     = ["[bold cyan]0-9[/]: Select", "[bold cyan]q[/]: Quit"]
-            
-            if page:
-                choices.append("p")
-                nav.insert(1, "[bold cyan]p[/]: Previous")
-            if start + page_size < total:
-                choices.append("n") 
-                nav.insert(-1, "[bold cyan]n[/]: Next")
-            
-            self.ui.console.print("  ".join(nav) + "\n")
-            
-            if not (choice := questionary.text(
-                "Select",
-                style    = self.thermal,
-                validate = lambda x: x.strip().lower() in choices
-            ).ask()):
-                return None
-            
-            match choice.strip().lower():
-                case "q" | "": return None
-                case "p": page -= 1
-                case "n": page += 1  
-                case n if n.isdigit():
-                    return page_files[int(n)]
+        
+        return self.paginate(
+            allow_row_select = True,
+            items            = available_files,
+            page_size        = page_size,
+            render_page      = render_file_page
+        )
     
     def select_from_list(
         self,
