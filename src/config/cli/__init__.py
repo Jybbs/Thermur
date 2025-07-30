@@ -11,7 +11,6 @@ The configuration is organized by domain:
 - secrets  : Secure token storage
 - wandb    : Weights & Biases integration settings
 
-All configurations are defined in schemas.py with full documentation and
-instantiated in stores.py for direct use by CLI components.
+All configurations are defined in schemas.py with full documentation.
 """
 from .schemas import *

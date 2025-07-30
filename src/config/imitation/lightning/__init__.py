@@ -1,7 +1,7 @@
 """
 Lightning configuration domain.
 
-Provides schemas and stores for PyTorch Lightning components including
-models, training, and optimization configurations.
+Provides schemas for PyTorch Lightning training infrastructure including
+models, optimization, checkpointing, and experiment tracking with W&B.
 """
 from .schemas import *

@@ -1,5 +1,5 @@
 """
-CLI configuration stores.
+CLI configuration builds.
 
 Provides a clean namespace for all CLI configurations using SimpleNamespace.
 All configs are instantiated Pydantic models for direct use by CLI components.
