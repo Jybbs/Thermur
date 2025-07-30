@@ -535,7 +535,7 @@ class DownloadCommand:
             
         file_status = self._get_download_status(available_files)
         
-        selected_file = self.prompts.select_file_with_pagination(
+        selected_file = self.prompts.select_file_from_pages(
             available_files = available_files,
             file_status     = file_status,
             title_prefix    = "Moisseeva (2020) Dataset"
