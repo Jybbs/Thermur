@@ -237,7 +237,7 @@ class RunsCommand:
         """
         for path, (value, is_override) in items:
             indicator = "●" if is_override else " "
-            table.add_row(indicator, path, self._format_value(value))
+            table.add_row(indicator, path, self.ui.format_truncated(value=value))
 
     def _display_config(
         self,
@@ -354,21 +354,12 @@ class RunsCommand:
         
         for run_path in runs:
             run_id = str(run_path.relative_to(self.outputs_dir))
-            
-            if (run_path / "training_complete").exists():
-                status = "[bold green]✓[/]"
-            elif (run_path / "dry_run").exists():
-                status = "[bold cyan]◎[/]"
-            else:
-                status = "[bold yellow]...[/]"
+            status = self.ui.format_run_status(run_path)
             
             if show_overrides:
-                overrides = (
-                    self._format_overrides(run_path / ".hydra" / "overrides.yaml")
-                    if (run_path / ".hydra" / "overrides.yaml").exists()
-                    else "-"
-                )
-                table.add_row(run_id, overrides, status)
+                overrides = self._load_overrides(run_path)
+                overrides_str = self.ui.format_summary_list(overrides) if overrides else "-"
+                table.add_row(run_id, overrides_str, status)
             else:
                 table.add_row(run_id, status)
         
@@ -436,53 +427,7 @@ class RunsCommand:
         
         return items
     
-    def _format_overrides(self, overrides_file: Path) -> str:
-        """
-        Format overrides from file for display.
-        
-        Reads overrides from a YAML file and formats them for compact display
-        in a table. Shows up to two overrides directly and indicates if there
-        are more with a count.
-        
-        Args:
-            overrides_file : Path to the overrides.yaml file
-            
-        Returns:
-            Formatted string representation of overrides
-        """
-        with suppress(Exception):
-            with open(overrides_file) as f:
-                if overrides := safe_load(f) or []:
-                    return (
-                        ", ".join(overrides[:2]) + f" (+{len(overrides)-2})"
-                        if len(overrides) > 2
-                        else ", ".join(overrides)
-                    )
-        return "-"
     
-    def _format_value(self, value: Any) -> str:
-        """
-        Format a configuration value for display.
-        
-        Handles different value types (dict, list, string) and formats them
-        appropriately for table display. Uses the UI helper for consistent
-        truncation across the application.
-        
-        Args:
-            value : Value to format
-            width : Maximum width for display (default 50 for table columns)
-            
-        Returns:
-            Formatted string representation suitable for display
-        """
-        match value:
-            case dict() if '_target_' in value:
-                return f"{value['_target_'].split('.')[-1]}(...)"
-            case list() if len(value) > 5:
-                preview = ', '.join(str(v) for v in value[:5])
-                return f"[{preview}, ...] ({len(value)} items)"
-            case _:
-                return self.ui.format_truncated(str(value))
     
     def _get_all_runs(self) -> list:
         """
@@ -697,27 +642,11 @@ class RunsCommand:
             )
             return
         
-        issues = [
-            (
-                f"This will permanently delete {len(to_delete)} training "
-                f"run{'s' if len(to_delete) > 1 else ''}"
-            ),
-            "This action cannot be undone"
-        ]
-        
-        if keep > 0:
-            issues.append(f"Keeping only the {keep} most recent runs")
-        else:
-            issues.append("Use --keep N to preserve N recent runs")
-            
-        warning_panel = self.ui.create_warning_panel(
-            issues = issues,
-            title  = "⚠️  Confirm Deletion"
-        )
-        self.ui.display_panel(warning_panel)
-        
-        if not force and not self.prompts.confirm(
-            f"Delete {len(to_delete)} old runs?"
+        if not self.prompts.confirm_deletion(
+            count = len(to_delete),
+            items = "training runs",
+            keep  = keep,
+            force = force
         ):
             self.ui.print_message(
                 message  = "Cleanup cancelled",
@@ -824,8 +753,8 @@ class RunsCommand:
             for param, val1, val2 in differences:
                 table.add_row(
                     param,
-                    self._format_value(val1),
-                    self._format_value(val2)
+                    self.ui.format_truncated(value=val1),
+                    self.ui.format_truncated(value=val2)
                 )
             
             self.ui.display_panel(table)
@@ -870,12 +799,7 @@ class RunsCommand:
             )
         
         self.ui.print_section("Recent Runs", minor=True)
-        self.ui.console.print(
-            "ℹ️  Status: "
-            "[bold green](✓) Complete[/], "
-            "[bold cyan](◎) Dry Run[/], "
-            "[bold yellow](...) Incomplete[/]"
-        )
+        self.ui.display_status_legend()
         
         columns = [
             ("Run ID",       "bright_cyan",   35, "left"),

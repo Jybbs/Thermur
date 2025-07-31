@@ -16,6 +16,7 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
+from typing       import Any
 
 
 class ThermurUI:
@@ -575,6 +576,20 @@ class ThermurUI:
 
         self.console.print(self.create_system_table(info))
         self.console.print()
+    
+    def display_status_legend(self) -> None:
+        """
+        Display the legend for run status indicators.
+        
+        Shows a formatted legend explaining the meaning of status symbols
+        used in run listings: ✓ for complete, ◎ for dry run, ... for incomplete.
+        """
+        self.console.print(
+            "ℹ️  Status: "
+            "[bold green](✓) Complete[/], "
+            "[bold cyan](◎) Dry Run[/], "
+            "[bold yellow](...) Incomplete[/]"
+        )
 
     def display_wandb(
         self, 
@@ -607,16 +622,14 @@ class ThermurUI:
                     message  = msg,
                     msg_type = "flock" if user else "warning"
                 )
-                    
             case "train" if url:
                 self.print_message(f"Live tracking dashboard → {url}", "flock")
-                        
             case "monitor":
                 if not url:
                     self.print_message(
-                message  = "wandb authentication required to access dashboard",
-                msg_type = "warning"
-            )
+                        message  = "wandb authentication required to access dashboard",
+                        msg_type = "warning"
+                    )
                     self.print_message("Run 'wandb login' to authenticate", "info")
                     return False
                 self.console.print()
@@ -624,30 +637,103 @@ class ThermurUI:
                 self.console.print(f"\n  [link={url}]{url}[/link]\n")
                 return url
 
-    def format_truncated(self, text: str, width: int = 50) -> str:
+    def format_truncated(
+        self,
+        text  : str = None, 
+        value : Any = None,
+        width : int = 50
+    ) -> str:
         """
-        Format a string with intelligent truncation for display.
+        Format a string or value with intelligent truncation for display.
         
-        Truncates long strings to fit within the specified width while preserving
-        the beginning and end of the string. Uses the pattern: start...end where
-        the last 10 characters are always shown.
+        Handles different value types (dict, list, string) with appropriate formatting.
+        For strings, truncates long values to fit within the specified width while 
+        preserving the beginning and end. For dicts with _target_, shows a shortened
+        class name. For long lists, shows preview with count.
         
         Args:
-            text  : The string to potentially truncate
+            text  : The string to truncate (ignored if value is provided)
+            value : Optional value to format (takes precedence over text)
             width : Maximum width for the string (default 50)
             
         Returns:
-            Original string if it fits, otherwise truncated with ellipsis
-            
-        Example:
-            >>> format_truncated("a" * 150, 100)
-            'aaa...aaaaaaaaaa'  # 87 chars + ... + last 10 chars = 100 total
+            Formatted string representation suitable for display
         """
+        if value is not None:
+            match value:
+                case dict() if '_target_' in value:
+                    return f"{value['_target_'].split('.')[-1]}(...)"
+                case list() if len(value) > 5:
+                    preview = ', '.join(str(v) for v in value[:5])
+                    return f"[{preview}, ...] ({len(value)} items)"
+                case _:
+                    text = str(value)
+        
+        if text is None:
+            return ""
+            
         if len(text) <= width:
             return text
         
         start_chars = width - 13
         return f"{text[:start_chars]}...{text[-10:]}"
+    
+    def format_summary_list(
+        self, 
+        items       : list[str], 
+        max_display : int = 2,
+        separator   : str = ", "
+    ) -> str:
+        """
+        Format a list into a summary string with optional truncation.
+        
+        Creates a summary like "item1, item2 (+3 more)" for long lists.
+        Useful for displaying overrides, file lists, or any collection
+        where showing all items would be too verbose.
+        
+        Args:
+            items       : List of items to summarize
+            max_display : Maximum number of items to show directly (default 2)
+            separator   : String to join items with (default ", ")
+            
+        Returns:
+            Formatted summary string, or "-" if list is empty
+            
+        Examples:
+            >>> format_summary_list(['a', 'b'])
+            'a, b'
+            >>> format_summary_list(['a', 'b', 'c', 'd', 'e'], max_display=2)
+            'a, b (+3)'
+        """
+        if not items:
+            return "-"
+            
+        if len(items) <= max_display:
+            return separator.join(items)
+            
+        displayed = separator.join(items[:max_display])
+        return f"{displayed} (+{len(items) - max_display})"
+    
+    def format_run_status(self, run_path) -> str:
+        """
+        Determine and format the status indicator for a training run.
+        
+        Checks for marker files to determine if a run completed successfully,
+        was a dry run, or is incomplete. Returns a Rich-formatted status string.
+        
+        Args:
+            run_path : Path to the run directory
+            
+        Returns:
+            Rich-formatted status indicator: ✓ (complete), ◎ (dry run), or ... (incomplete)
+        """
+        if (run_path / "training_complete").exists():
+            return "[bold green]✓[/]"
+        elif (run_path / "dry_run").exists():
+            return "[bold cyan]◎[/]"
+        else:
+            return "[bold yellow]...[/]"
+    
 
     def print_auth_prompt(self, auth_url: str) -> None:
         """
