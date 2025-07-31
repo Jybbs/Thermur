@@ -9,7 +9,6 @@ from functools   import partial
 from omegaconf   import DictConfig, OmegaConf, open_dict
 from pathlib     import Path
 from subprocess  import run as subrun
-from textwrap    import shorten
 from thermur.cli import app
 from typer       import Argument, Exit, Option
 from typing      import Any
@@ -124,13 +123,10 @@ class TrainCommand:
         )
         
         for path, value in sorted(flat_config.items()):
-            display = str(value)
-            formatted = (
-                shorten(display, placeholder="...", width=35) 
-                if len(display) > 35 
-                else display
+            table.add_row(
+                path, 
+                self.ui.format_truncated(str(value), 35)
             )
-            table.add_row(path, formatted)
         
         return table
 
@@ -193,7 +189,12 @@ class TrainCommand:
             msg_type = "success"
         )
         
-        return {"status": "dry_run_complete"}
+        self.system.create_status_marker("dry_run")
+        
+        return {
+            "output_dir" : str(self.system.get_hydra_output_dir()),
+            "status"     : "dry_run_complete"
+        }
 
     def _ensure_data_available(self, use_sample: bool) -> str:
         """
@@ -515,12 +516,10 @@ class TrainCommand:
         Returns:
             Status dictionary indicating successful completion.
         """
-        from hydra.core.hydra_config import HydraConfig
-        hydra_cfg  = HydraConfig.get()
-        output_dir = Path(hydra_cfg.runtime.output_dir)
+        output_dir = self.system.get_hydra_output_dir()
         
         self.ui.print_message(
-            message  = f"Training output: {output_dir}",
+            message  = f"Training output: {self.system.get_hydra_output_dir()}",
             msg_type = "info"
         )
         self.ui.console.print()
@@ -573,7 +572,7 @@ class TrainCommand:
         self.ui.console.print()
         self.ui.print_header("Training Complete 🎉")
         
-        (output_dir / "training_complete").touch()
+        self.system.create_status_marker("training_complete")
         
         self.ui.console.print()
         relative_path = output_dir.relative_to(Path.cwd())

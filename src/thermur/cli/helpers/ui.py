@@ -190,6 +190,26 @@ class ThermurUI:
         details_text = f"{available_gb:.1f} {unit} / {total_gb:.1f} {unit}"
         
         return progress_bar, details_text
+    
+    def _format_resource(self, available: float, total: float, 
+                        threshold: tuple[int, int]) -> str:
+        """
+        Format a resource with progress bar and details.
+        
+        Args:
+            available: Available amount in GB
+            total: Total amount in GB  
+            threshold: (warning, critical) thresholds in GB
+            
+        Returns:
+            Formatted string with progress bar and details
+        """
+        progress_bar, details_text = self._format_resource_display(
+            available_gb = available,
+            total_gb     = total,
+            thresholds   = threshold,
+        )
+        return f"{progress_bar} {details_text}"
 
     def create_aligned_table(
         self,
@@ -315,26 +335,22 @@ class ThermurUI:
             show_edge = True
         )
         
-        # Define simple formatters for each component type
         resource_thresholds = {"memory": (4, 8), "disk": (5, 20)}
-        version_components = {"python", "torch", "mujoco", "thermur"}
+        version_components  = {"python", "torch", "mujoco", "thermur"}
         
         for key, title in self.display.system_components.items():
-            # Resources with progress bars
             if key in resource_thresholds:
                 value = self._format_resource(
                     available = system_info.get(f"{key}_available", 0),
                     total     = system_info.get(f"{key}_total", 0),
                     threshold = resource_thresholds[key]
                 )
-            # CUDA status
             elif key == "cuda":
                 version = system_info.get("cuda")
                 value = self._create_status_indicator(
                     f"✅ Available (v{version})" if version else "Not Available",
                     bool(version)
                 )
-            # GPU detection
             elif key == "gpu":
                 gpu_name = system_info.get("gpu")
                 available = gpu_name and gpu_name != "N/A"
@@ -342,7 +358,6 @@ class ThermurUI:
                     str(gpu_name) if available else "Not Detected",
                     available
                 )
-            # Dataset info
             elif key == "dataset":
                 size = system_info.get("dataset_size", 0)
                 count = system_info.get("dataset_count", 0)
@@ -351,37 +366,15 @@ class ThermurUI:
                     else "No files downloaded"
                 )
                 value = Text(text, style="white" if size > 0 else "dim")
-            # Version info (with or without 'v' prefix)
             elif val := system_info.get(key):
                 prefix = "v" if key in version_components else ""
                 value = Text(f"{prefix}{val}", no_wrap=True)
-            # Not available
             else:
                 value = self._create_status_indicator("Not Available", False)
                 
             table.add_row(Text(title), value)
             
         return table
-    
-    def _format_resource(self, available: float, total: float, 
-                        threshold: tuple[int, int]) -> str:
-        """
-        Format a resource with progress bar and details.
-        
-        Args:
-            available: Available amount in GB
-            total: Total amount in GB  
-            threshold: (warning, critical) thresholds in GB
-            
-        Returns:
-            Formatted string with progress bar and details
-        """
-        progress_bar, details_text = self._format_resource_display(
-            available_gb = available,
-            total_gb     = total,
-            thresholds   = threshold,
-        )
-        return f"{progress_bar} {details_text}"
 
     def create_thermal_progress(self) -> progress.Progress:
         """
@@ -630,6 +623,31 @@ class ThermurUI:
                 self.print_message(f"Opening {project} project dashboard...", "flock")
                 self.console.print(f"\n  [link={url}]{url}[/link]\n")
                 return url
+
+    def format_truncated(self, text: str, width: int = 50) -> str:
+        """
+        Format a string with intelligent truncation for display.
+        
+        Truncates long strings to fit within the specified width while preserving
+        the beginning and end of the string. Uses the pattern: start...end where
+        the last 10 characters are always shown.
+        
+        Args:
+            text  : The string to potentially truncate
+            width : Maximum width for the string (default 50)
+            
+        Returns:
+            Original string if it fits, otherwise truncated with ellipsis
+            
+        Example:
+            >>> format_truncated("a" * 150, 100)
+            'aaa...aaaaaaaaaa'  # 87 chars + ... + last 10 chars = 100 total
+        """
+        if len(text) <= width:
+            return text
+        
+        start_chars = width - 13
+        return f"{text[:start_chars]}...{text[-10:]}"
 
     def print_auth_prompt(self, auth_url: str) -> None:
         """
