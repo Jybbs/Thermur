@@ -247,22 +247,71 @@ class CLIPrompts:
         total_pages = -(-len(items) // page_size)
         
         first_render = True
+        previous_lines = 0
+        
+        # Create line counting wrapper
+        class LineCounter:
+            def __init__(self, console):
+                self.console = console
+                self.count = 0
+                self.counting = False
+                self._original_file = console.file
+                
+            def __getattr__(self, name):
+                return getattr(self.console, name)
+                
+            @property 
+            def file(self):
+                return self if self.counting else self._original_file
+                
+            def write(self, text):
+                if self.counting:
+                    self.count += text.count('\n')
+                return self._original_file.write(text)
+                
+            def flush(self):
+                return self._original_file.flush()
+                
+            def print(self, *args, **kwargs):
+                if self.counting:
+                    # Count lines in output
+                    import io
+                    from rich.console import Console
+                    buffer = io.StringIO()
+                    temp = Console(file=buffer, width=self.console.width)
+                    temp.print(*args, **kwargs)
+                    self.count += buffer.getvalue().count('\n')
+                self.console.print(*args, **kwargs)
+                
+        counter = LineCounter(self.ui.console)
         
         while True:
             start      = page * page_size
             page_items = items[start:start + page_size]
             
-            if not first_render:
-                lines_to_clear = len(page_items) + 20
-                self.ui.console.file.write(f'\033[{lines_to_clear}A')
+            if not first_render and previous_lines > 0:
+                # Clear exactly the previous content
+                self.ui.console.file.write(f'\033[{previous_lines}A')
                 
-                for _ in range(lines_to_clear):
+                for _ in range(previous_lines):
                     self.ui.console.file.write('\033[K\n')
                 
-                self.ui.console.file.write(f'\033[{lines_to_clear}A')
+                self.ui.console.file.write(f'\033[{previous_lines}A')
                 self.ui.console.file.flush()
             
-            render_page(page_items, page + 1, total_pages)
+            # Start counting lines
+            counter.count = 0
+            counter.counting = True
+            
+            # Temporarily replace console for render_page
+            original_console = self.ui.console
+            self.ui.console = counter
+            
+            try:
+                render_page(page_items, page + 1, total_pages)
+            finally:
+                self.ui.console = original_console
+            
             nav_options = []
             
             if allow_row_select and len(page_items) > 0:
@@ -278,7 +327,13 @@ class CLIPrompts:
             nav_display = " | ".join(
                 f"[bold cyan]{opt[0]}[/]" for opt in nav_options
             )
-            self.ui.console.print(nav_display + "\n")
+            
+            # Count navigation lines too
+            counter.print(nav_display + "\n")
+            
+            # Stop counting and store total
+            counter.counting = False
+            previous_lines = counter.count + 1  # +1 for the prompt line
             
             valid_choices = ["p", "n", "q", ""]
             if allow_row_select and len(page_items) > 0:
