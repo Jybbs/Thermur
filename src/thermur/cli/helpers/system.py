@@ -14,8 +14,6 @@ from shutil             import disk_usage
 from sys                import version_info
 from torch              import __version__ as torch_version, cuda
 
-import os
-
 
 class SystemInspector:
     """
@@ -141,6 +139,32 @@ class SystemInspector:
             
         return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
 
+    def create_status_marker(self, status: str, output_dir: Path = None):
+        """
+        Create a status marker file in the output directory.
+        
+        Args:
+            status     : The status type ('training_complete' or 'dry_run')
+            output_dir : The output directory path. If None, uses Hydra's current output dir
+        """
+        if output_dir is None:
+            output_dir = self.get_hydra_output_dir()
+        
+        (output_dir / status).touch()
+
+    def get_hydra_output_dir(self) -> Path:
+        """
+        Get the current Hydra runtime output directory.
+        
+        Returns:
+            Path to the current Hydra output directory
+            
+        Raises:
+            RuntimeError: If called outside of a Hydra run context
+        """
+        from hydra.core.hydra_config import HydraConfig
+        
+        return Path(HydraConfig.get().runtime.output_dir)
 
     def get_system_info(self) -> dict[str, any]:
         """

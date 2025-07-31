@@ -6,16 +6,15 @@ directories. It enables users to list training runs, compare configurations
 between runs, clean up old experiments, and inspect detailed configuration 
 settings with pagination support for large configurations.
 """
-from collections   import ChainMap, defaultdict
-from contextlib    import ExitStack, contextmanager, suppress
-from functools     import cache
-from itertools     import chain, islice
-from pathlib       import Path
-from shutil        import rmtree
-from thermur.cli   import app
-from typer         import Argument, Context, Exit, Option, Typer
-from typing        import Any, Iterator, Optional, TypeAlias
-from yaml          import Loader, load, safe_load
+from collections import ChainMap
+from contextlib  import ExitStack, contextmanager, suppress
+from itertools   import chain
+from pathlib     import Path
+from shutil      import rmtree
+from thermur.cli import app
+from typer       import Argument, Context, Exit, Option, Typer
+from typing      import Any, Iterator, Optional, TypeAlias
+from yaml        import Loader, load, safe_load
 
 ConfigDict : TypeAlias = dict[str, Any]
 RunPath    : TypeAlias = Path
@@ -103,8 +102,8 @@ def clean(
 
 @runs.command("compare")
 def compare(
-    run1   : str = Argument(..., help="First run ID or path"),
-    run2   : str = Argument(..., help="Second run ID or path"),
+    run1   : Optional[str] = Argument(None, help="First run ID or path (defaults to 'last[1]')"),
+    run2   : Optional[str] = Argument(None, help="Second run ID or path (defaults to 'last[2]')"),
     domain : Optional[str] = Option(
         None,
         "--domain", "-d",
@@ -118,15 +117,26 @@ def compare(
     of two training runs. You can filter the comparison to a specific domain
     (e.g., controller, lightning) to focus on relevant settings.
     
+    When no arguments are provided, compares the two most recent runs.
+    You can use 'last[N]' syntax to reference the Nth most recent run.
+    
     Args:
-        run1   : First run identifier (path or "last" for most recent)
-        run2   : Second run identifier (path or "last" for most recent)
+        run1   : First run identifier (path, "last", or "last[N]" for Nth most recent)
+        run2   : Second run identifier (path, "last", or "last[N]" for Nth most recent)
         domain : Optional domain to filter comparison (e.g., controller)
         
-    Examples:
-        thermur runs compare last outputs/2025-07-29/15-30-00
-        thermur runs compare run1 run2 -d lightning
+    Examples with `thermur runs ...`:
+        compare                                   # Compare last 2 runs
+        compare last outputs/2025-07-29/15-30-00  # Compare most recent to specific
+        compare last[1] last[3]                   # Compare most recent to 3rd most recent
+        compare run1 run2 -d lightning            # Compare specific domain
     """
+    if run1 is None and run2 is None:
+        run1 = "last[1]"
+        run2 = "last[2]"
+    elif run1 is not None and run2 is None:
+        run2 = "last[1]"
+    
     RunsCommand().compare_runs(domain, run1, run2)
 
 
@@ -183,12 +193,13 @@ def show(
     readability. System configurations (prefixed with _) are hidden by default
     but can be included with the --all flag.
     
-    Examples:
-        thermur runs show                    # Show last run
-        thermur runs show last               # Explicitly show last  
-        thermur runs show outputs/2025-07-30/10-15-30
-        thermur runs show -d controller      # Show only controller config
-        thermur runs show --all              # Include _system configs
+    Examples with `thermur runs ...`:
+        show                             # Show last run
+        show last                        # Explicitly show last  
+        show last[2]                     # Show 2nd most recent run
+        show outputs/2025-07-30/10-15-30 # See a specific run
+        show -d controller               # Show only controller config
+        show --all                       # Include _system configs
     """
     RunsCommand().show_config(
         domain         = domain,
@@ -219,6 +230,14 @@ class RunsCommand:
         self.system      = app.system
         self.ui          = app.ui
     
+    def _add_config_rows(self, table, items):
+        """
+        Add configuration rows to table with override indicators.
+        """
+        for path, (value, is_override) in items:
+            indicator = "●" if is_override else " "
+            table.add_row(indicator, path, self._format_value(value))
+
     def _display_all_config(
         self,
         items      : list[tuple[str, Any]],
@@ -271,18 +290,15 @@ class RunsCommand:
                 columns      = columns
             )
             
-            for path, item in sorted_items:
-                value, is_override = item if isinstance(item, tuple) else (item, False)
+            for path, (value, is_override) in sorted_items:
                 indicator = "●" if is_override else " "
                 table.add_row(indicator, path, self._format_value(value))
             
             self.ui.display_panel(table)
-            
-            if any(isinstance(item[1], tuple) and item[1][1] for item in sorted_items):
-                self.ui.print_message(
-                    message  = "● = Parameter overridden from default",
-                    msg_type = "info"
-                )
+            self.ui.print_message(
+                message  = "● = Parameter overridden from default",
+                msg_type = "info"
+            )
         else:
             self._paginate_all_config(
                 columns    = columns, 
@@ -334,18 +350,15 @@ class RunsCommand:
                 columns      = columns
             )
             
-            for path, item in items:
-                value, is_override = item if isinstance(item, tuple) else (item, False)
+            for path, (value, is_override) in items:
                 indicator = "●" if is_override else " "
                 table.add_row(indicator, path, self._format_value(value))
             
             self.ui.display_panel(table)
-            
-            if any(isinstance(item, tuple) and item[1] for _, item in items):
-                self.ui.print_message(
-                    message  = "● = Parameter overridden from default",
-                    msg_type = "info"
-                )
+            self.ui.print_message(
+                message  = "● = Parameter overridden from default",
+                msg_type = "info"
+            )
         else:
             self._paginate_config(columns, domain, items, page_size, run_path)
     
@@ -386,14 +399,15 @@ class RunsCommand:
         Returns:
             Flattened dictionary with dot-notation keys and override info
         """
-        items = defaultdict(dict)
+        items = {}
         override_set = set()
         
         if overrides:
-            for override in overrides:
-                if '=' in override:
-                    path = override.split('=')[0].strip('+')
-                    override_set.add(path)
+            override_set = {
+                override.split('=')[0].strip('+') 
+                for override in overrides 
+                if '=' in override
+            }
         
         for key, value in config.items():
             if key.startswith('_') and key != '_target_':
@@ -403,23 +417,27 @@ class RunsCommand:
             
             if isinstance(value, dict):
                 if '_target_' in value:
-                    model_params = {k: v for k, v in value.items() 
-                                  if k != '_target_'}
-                    if model_params:
-                        items.update(self._flatten_config(
-                            model_params, full_key, overrides
-                        ))
-                    else:
-                        items[full_key] = value['_target_'].split('.')[-1]
-                else:
-                    items.update(self._flatten_config(value, full_key, overrides))
+                    model_params = {
+                        k: v for k, v in value.items() 
+                        if k != '_target_'
+                    }
+                    if not model_params:
+                        items[full_key] = (value['_target_'].split('.')[-1], False)
+                        continue
+                    value = model_params
+                
+                items.update(self._flatten_config(
+                    config    = value,
+                    overrides = overrides,
+                    prefix    = full_key
+                ))
             else:
                 is_override = full_key in override_set or any(
                     full_key.startswith(p) for p in override_set
                 )
                 items[full_key] = (value, is_override)
         
-        return dict(items)
+        return items
     
     def _format_overrides(self, overrides_file: Path) -> str:
         """
@@ -445,41 +463,29 @@ class RunsCommand:
                     )
         return "-"
     
-    def _format_value(self, value: Any, width: int = 100) -> str:
+    def _format_value(self, value: Any) -> str:
         """
         Format a configuration value for display.
         
         Handles different value types (dict, list, string) and formats them
-        appropriately for table display. Long values show first 87 chars + ... 
-        + last 10.
+        appropriately for table display. Uses the UI helper for consistent
+        truncation across the application.
         
         Args:
             value : Value to format
-            width : Maximum width for display (default 100)
+            width : Maximum width for display (default 50 for table columns)
             
         Returns:
             Formatted string representation suitable for display
         """
-        def truncate_long(s: str, max_width: int = 100) -> str:
-            if len(s) <= max_width:
-                return s
-            return f"{s[:87]}...{s[-10:]}"
-        
         match value:
             case dict() if '_target_' in value:
                 return f"{value['_target_'].split('.')[-1]}(...)"
-            case dict():
-                return truncate_long(str(value), width)
             case list() if len(value) > 5:
                 preview = ', '.join(str(v) for v in value[:5])
                 return f"[{preview}, ...] ({len(value)} items)"
-            case list():
-                formatted = str(value)
-                return truncate_long(formatted, width)
-            case str():
-                return truncate_long(value, width)
             case _:
-                return truncate_long(str(value), width)
+                return self.ui.format_truncated(str(value))
     
     def _get_all_runs(self) -> list:
         """
@@ -551,18 +557,15 @@ class RunsCommand:
                 columns      = columns
             )
             
-            for path, item in page_items:
-                value, is_override = item if isinstance(item, tuple) else (item, False)
+            for path, (value, is_override) in page_items:
                 indicator = "●" if is_override else " "
                 table.add_row(indicator, path, self._format_value(value))
             
             self.ui.display_panel(table)
-            
-            if any(isinstance(item[1], tuple) and item[1][1] for item in page_items):
-                self.ui.print_message(
-                    message  = "● = Parameter overridden from default",
-                    msg_type = "info"
-                )
+            self.ui.print_message(
+                message  = "● = Parameter overridden from default",
+                msg_type = "info"
+            )
         
         self.prompts.paginate(
             allow_row_select = False,
@@ -620,8 +623,7 @@ class RunsCommand:
                 columns      = columns
             )
             
-            for path, item in page_items:
-                value, is_override = item if isinstance(item, tuple) else (item, False)
+            for path, (value, is_override) in page_items:
                 indicator = "●" if is_override else " "
                 table.add_row(indicator, path, self._format_value(value))
             
@@ -638,12 +640,13 @@ class RunsCommand:
         """
         Resolve run ID to actual path.
         
-        Handles special "last" alias for the most recent run, or converts
-        the provided run ID string to a Path object and validates it exists.
-        This provides a consistent way to reference runs by various identifiers.
+        Handles special "last" alias for the most recent run, "last[N]" for the
+        Nth most recent run, or converts the provided run ID string to a Path
+        object and validates it exists. This provides a consistent way to
+        reference runs by various identifiers.
         
         Args:
-            run_id : Either "last" or a path to a run directory
+            run_id : Either "last", "last[N]", or a path to a run directory
             
         Returns:
             Path object pointing to the resolved run directory
@@ -651,14 +654,48 @@ class RunsCommand:
         Raises:
             Exit : If no runs exist or specified run is not found
         """
-        if run_id == "last":
+        if run_id.startswith("last"):
             if not (runs := self._get_all_runs()):
                 self.ui.print_message(
                     message  = "No training runs found in outputs/",
                     msg_type = "error"
                 )
                 raise Exit(1)
-            return runs[0]
+            
+            if run_id == "last":
+                n = 1
+            elif run_id.startswith("last[") and run_id.endswith("]"):
+                try:
+                    n = int(run_id[5:-1])
+                    if n < 1:
+                        raise ValueError("N must be >= 1")
+                except ValueError:
+                    self.ui.print_message(
+                        message  = (
+                            f"Invalid last[N] syntax: {run_id}. "
+                            f"N must be a positive integer."
+                        ),
+                        msg_type = "error"
+                    )
+                    raise Exit(1)
+            else:
+                self.ui.print_message(
+                    message  = (
+                        f"Invalid run identifier: {run_id}. "
+                        f"Use 'last', 'last[N]', or a valid path."
+                    ),
+                    msg_type = "error"
+                )
+                raise Exit(1)
+            
+            if n > len(runs):
+                self.ui.print_message(
+                    message  = f"Only {len(runs)} runs found, cannot get run #{n}",
+                    msg_type = "error"
+                )
+                raise Exit(1)
+            
+            return runs[n - 1]
         
         if not (run_path := Path(run_id)).exists():
             self.ui.print_message(
@@ -703,9 +740,8 @@ class RunsCommand:
         self.ui.print_section("Runs to Delete", minor=True)
         
         columns = [
-            ("Run ID",      "bright_red",    30, "left"),
-            ("Date & Time", "bright_white",  20, "left"),
-            ("Status",      "bright_yellow", 10, "center")
+            ("Run ID",      "bright_red",    50, "left"),
+            ("Status",      "bright_white",  10, "center")
         ]
         
         table = self.ui.create_aligned_table(
@@ -719,14 +755,15 @@ class RunsCommand:
         
         for run_path in to_delete:
             run_id = str(run_path.relative_to(self.outputs_dir))
-            parts = run_id.split('/')
-            timestamp = (
-                f"{parts[0]} {parts[1].replace('-', ':')}"
-                if len(parts) >= 2 else run_id
-            )
-            status = "✓" if (run_path / "training_complete").exists() else "..."
             
-            table.add_row(run_id, timestamp, status)
+            if (run_path / "training_complete").exists():
+                status = "[bold green]✓[/]"
+            elif (run_path / "dry_run").exists():
+                status = "[bold cyan]◎[/]"
+            else:
+                status = "[bold yellow]...[/]"
+            
+            table.add_row(run_id, status)
         
         self.ui.display_panel(table)
         
@@ -798,6 +835,12 @@ class RunsCommand:
             run1   : First run identifier
             run2   : Second run identifier
         """
+        if run1 == "last[1]" and run2 == "last[2]":
+            self.ui.print_message(
+                message  = "Comparing the two most recent runs.",
+                msg_type = "info"
+            )
+        
         run1_path = self._resolve_run_id(run1)
         run2_path = self._resolve_run_id(run2)
         
@@ -919,16 +962,17 @@ class RunsCommand:
                 )
         
         self.ui.print_section("Recent Runs", minor=True)
-        self.ui.print_message(
-            message  = "Status: (✓) Complete, (...) Incomplete",
-            msg_type = "info"
+        self.ui.console.print(
+            "ℹ️  Status: "
+            "[bold green](✓) Complete[/], "
+            "[bold cyan](◎) Dry Run[/], "
+            "[bold yellow](...) Incomplete[/]"
         )
         
         columns = [
-            ("Date & Time",  "bright_white",  20, "left"),
-            ("Overrides",    "bright_green",  30, "left"),
-            ("Run ID",       "bright_cyan",   30, "left"),
-            ("Status",       "bright_yellow",  8, "center")
+            ("Run ID",       "bright_cyan",   35, "left"),
+            ("Overrides",    "bright_green",  55, "left"),
+            ("Status",       "bright_white",  10, "center")
         ]
         
         table = self.ui.create_aligned_table(
@@ -937,21 +981,22 @@ class RunsCommand:
         )
         
         for run_path in display_runs:
-            run_id    = str(run_path.relative_to(self.outputs_dir))
-            parts     = run_id.split('/')
-            timestamp = (
-                f"{parts[0]} {parts[1].replace('-', ':')}"
-                if len(parts) >= 2 else run_id
-            )
+            run_id = str(run_path.relative_to(self.outputs_dir))
             
             overrides = (
                 self._format_overrides(run_path / ".hydra" / "overrides.yaml")
                 if (run_path / ".hydra" / "overrides.yaml").exists()
                 else "-"
             )
-            status = "✓" if (run_path / "training_complete").exists() else "..."
             
-            table.add_row(timestamp, overrides, run_id, status)
+            if (run_path / "training_complete").exists():
+                status = "[bold green]✓[/]"
+            elif (run_path / "dry_run").exists():
+                status = "[bold cyan]◎[/]"
+            else:
+                status = "[bold yellow]...[/]"
+            
+            table.add_row(run_id, overrides, status)
         
         self.ui.display_panel(table)
         
@@ -1008,7 +1053,11 @@ class RunsCommand:
             domains = sorted(cfg.keys())
         
         for d in domains:
-            domain_config = self._flatten_config(cfg[d], prefix=d, overrides=overrides)
+            domain_config = self._flatten_config(
+                config    = cfg[d], 
+                overrides = overrides,
+                prefix    = d
+            )
             all_items.extend(domain_config.items())
         
         if not all_items:
