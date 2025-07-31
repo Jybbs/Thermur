@@ -94,7 +94,10 @@ def clean(
         thermur runs clean -k 5         # Delete all but 5 most recent
         thermur runs clean --dry-run    # Preview what would be deleted
     """
-    RunsCommand().clean_runs(dry_run, force, keep)
+    cmd = RunsCommand()
+    cmd.dry_run = dry_run
+    cmd.force   = force
+    cmd.clean_runs(keep)
 
 
 @runs.command("compare")
@@ -129,13 +132,9 @@ def compare(
         thermur runs compare last[1] last[3]                   # Compare most recent to 3rd most recent
         thermur runs compare run1 run2 -d lightning            # Compare specific domain
     """
-    if run1 is None and run2 is None:
-        run1 = "last[1]"
-        run2 = "last[2]"
-    elif run1 is not None and run2 is None:
-        run2 = "last[1]"
-    
-    RunsCommand().compare_runs(domain, run1, run2)
+    cmd        = RunsCommand()
+    cmd.domain = domain
+    cmd.compare_runs(run1, run2)
 
 
 @runs.command("list")
@@ -202,11 +201,11 @@ def show(
         thermur runs show -d controller                   # Show only controller config
         thermur runs show --all                           # Include system (_) configs
     """
-    RunsCommand().show_config(
-        domain         = domain,
-        include_system = all_configs,
-        run_id         = run_id or "last"
-    )
+    cmd = RunsCommand()
+    cmd.domain         = domain
+    cmd.include_system = all_configs
+    cmd.run_id         = run_id or "last"
+    cmd.show_config()
 
 
 class RunsCommand:
@@ -225,11 +224,19 @@ class RunsCommand:
         Sets up references to the configuration, UI components, and other
         shared application resources needed for run management operations.
         """
-        self.cfg         = app.cfg
-        self.outputs_dir = Path("outputs")
-        self.prompts     = app.prompts
-        self.system      = app.system
-        self.ui          = app.ui
+        self.cfg            = app.cfg
+        self.outputs_dir    = Path("outputs")
+        self.prompts        = app.prompts
+        self.system         = app.system
+        self.ui             = app.ui
+        
+        self.domain         = None
+        self.dry_run        = False
+        self.force          = False
+        self.include_system = False
+        self.overrides      = None
+        self.run_id         = None
+        self.run_path       = None
     
     def _add_config_rows(self, table, items):
         """
@@ -243,8 +250,6 @@ class RunsCommand:
         self,
         items      : list[tuple[str, Any]],
         title      : str,
-        run_path   : Optional[Path] = None,
-        overrides  : Optional[list[str]] = None,
         page_size  : int = 20,
         using_last : bool = False
     ):
@@ -264,9 +269,9 @@ class RunsCommand:
         def render_page(page_items, page_num, total_pages):
             self.ui.print_header("Training Run Management")
             
-            if run_path:
+            if self.run_path:
                 self.ui.print_section(
-                    f"Configuration: {run_path.relative_to(self.outputs_dir)}",
+                    f"Configuration: {self.run_path.relative_to(self.outputs_dir)}",
                     minor=True
                 )
             
@@ -280,8 +285,8 @@ class RunsCommand:
                         msg_type = "info"
                     )
                 
-                if overrides:
-                    self._display_overrides_panel(overrides)
+                if self.overrides:
+                    self._display_overrides_panel()
             
             page_info = (
                 f" (Page {page_num}/{total_pages})" if total_pages > 1 else ""
@@ -311,17 +316,14 @@ class RunsCommand:
         )
     
     
-    def _display_overrides_panel(self, overrides: list):
+    def _display_overrides_panel(self):
         """
         Display overrides in a formatted panel.
         
         Creates a warning panel showing all configuration overrides applied
         to a training run, formatted as a bulleted list.
-        
-        Args:
-            overrides : List of override strings from Hydra
         """
-        issues = overrides + ["Look for ● markers in the configuration below"]
+        issues = self.overrides + ["Look for ● markers in the configuration below"]
         panel = self.ui.create_warning_panel(
             issues = issues,
             title  = "Configuration Overrides"
@@ -358,8 +360,11 @@ class RunsCommand:
             
             if show_overrides:
                 overrides = self._load_overrides(run_path)
-                overrides_str = self.ui.format_summary_list(overrides) if overrides else "-"
-                table.add_row(run_id, overrides_str, status)
+                table.add_row(
+                    run_id, 
+                    self.ui.format_summary_list(overrides) if overrides else "-", 
+                    status
+                )
             else:
                 table.add_row(run_id, status)
         
@@ -369,7 +374,6 @@ class RunsCommand:
     def _flatten_config(
         self,
         config    : dict[str, Any],
-        overrides : Optional[list[str]] = None,
         prefix    : str = ""
     ) -> dict[str, Any]:
         """
@@ -381,7 +385,6 @@ class RunsCommand:
         
         Args:
             config    : Configuration dictionary to flatten
-            overrides : List of override paths from Hydra
             prefix    : Current path prefix for recursion
             
         Returns:
@@ -390,10 +393,10 @@ class RunsCommand:
         items = {}
         override_set = set()
         
-        if overrides:
+        if self.overrides:
             override_set = {
                 override.split('=')[0].strip('+') 
-                for override in overrides 
+                for override in self.overrides 
                 if '=' in override
             }
         
@@ -415,9 +418,8 @@ class RunsCommand:
                     value = model_params
                 
                 items.update(self._flatten_config(
-                    config    = value,
-                    overrides = overrides,
-                    prefix    = full_key
+                    config = value,
+                    prefix = full_key
                 ))
             else:
                 is_override = full_key in override_set or any(
@@ -426,8 +428,6 @@ class RunsCommand:
                 items[full_key] = (value, is_override)
         
         return items
-    
-    
     
     def _get_all_runs(self) -> list:
         """
@@ -454,67 +454,58 @@ class RunsCommand:
             if path.is_dir() and (path / ".hydra").exists()
         ]
     
-    def _load_run_config(
-        self,
-        run_path       : Path,
-        include_system : bool = False
-    ) -> dict[str, Any]:
-        """
-        Load and optionally filter a run's configuration.
-        
-        Args:
-            run_path       : Path to the run directory
-            include_system : Whether to include system (_) configs
-            
-        Returns:
-            Configuration dictionary
-        """
-        with load_yaml(run_path / ".hydra" / "config.yaml") as cfg:
-            if not include_system:
-                return {k: v for k, v in cfg.items() if not k.startswith('_')}
-            return cfg
-    
-    def _get_domains(
-        self, 
-        cfg: dict[str, Any], 
-        domain: Optional[str] = None
-    ) -> list[str]:
+    def _get_domains(self, cfg: dict[str, Any]) -> list[str]:
         """
         Get list of domains to process from configuration.
         
         Args:
-            cfg    : Configuration dictionary
-            domain : Optional specific domain to filter to
+            cfg: Configuration dictionary
             
         Returns:
             List of domain names to process
         """
-        if domain:
-            if domain not in cfg:
+        if self.domain:
+            if self.domain not in cfg:
                 self.ui.print_message(
-                    message  = f"Domain '{domain}' not found in configuration",
+                    message  = f"Domain '{self.domain}' not found in configuration",
                     msg_type = "warning"
                 )
                 return []
-            return [domain]
+            return [self.domain]
         return sorted(cfg.keys())
     
-    def _load_overrides(self, run_path: Path) -> list[str]:
+    def _load_overrides(self, run_path: Path = None) -> list[str]:
         """
         Load override configuration from a run.
         
         Args:
-            run_path : Path to the run directory
-            
+            run_path : Path to run directory (uses self.run_path if not provided)
+        
         Returns:
             List of override strings, or empty list if none found
         """
-        overrides_file = run_path / ".hydra" / "overrides.yaml"
+        path = run_path or self.run_path
+        overrides_file = path / ".hydra" / "overrides.yaml"
         if overrides_file.exists():
             with suppress(Exception), open(overrides_file) as f:
                 return safe_load(f) or []
         return []
     
+    def _load_run_config(self, run_path: Path = None) -> dict[str, Any]:
+        """
+        Load and optionally filter a run's configuration.
+        
+        Args:
+            run_path : Path to run directory (uses self.run_path if not provided)
+        
+        Returns:
+            Configuration dictionary
+        """
+        path = run_path or self.run_path
+        with load_yaml(path / ".hydra" / "config.yaml") as cfg:
+            if not self.include_system:
+                return {k: v for k, v in cfg.items() if not k.startswith('_')}
+            return cfg
     
     def _resolve_run_id(self, run_id: str) -> Path:
         """
@@ -586,12 +577,7 @@ class RunsCommand:
         
         return run_path
     
-    def clean_runs(
-        self,
-        dry_run : bool,
-        force   : bool,
-        keep    : int
-    ):
+    def clean_runs(self, keep: int):
         """
         Clean up old training runs.
         
@@ -600,9 +586,7 @@ class RunsCommand:
         including dry-run mode and confirmation prompts.
         
         Args:
-            dry_run : Whether to simulate deletion without actually deleting
-            force   : Whether to skip confirmation prompt
-            keep    : Number of recent runs to keep
+            keep: Number of recent runs to keep
         """
         self.ui.print_header("Training Run Management")
         
@@ -635,7 +619,7 @@ class RunsCommand:
             show_overrides = False
         )
         
-        if dry_run:
+        if self.dry_run:
             self.ui.print_message(
                 message  = f"Would delete {len(to_delete)} runs (dry run mode)",
                 msg_type = "info"
@@ -646,7 +630,7 @@ class RunsCommand:
             count = len(to_delete),
             items = "training runs",
             keep  = keep,
-            force = force
+            force = self.force
         ):
             self.ui.print_message(
                 message  = "Cleanup cancelled",
@@ -670,12 +654,7 @@ class RunsCommand:
             msg_type = "success"
         )
     
-    def compare_runs(
-        self,
-        domain : Optional[str],
-        run1   : str,
-        run2   : str
-    ):
+    def compare_runs(self, run1: str = None, run2: str = None):
         """
         Compare configurations between two runs.
         
@@ -683,10 +662,15 @@ class RunsCommand:
         training runs. Can be filtered to show only a specific domain.
         
         Args:
-            domain : Optional domain to filter comparison
-            run1   : First run identifier
-            run2   : Second run identifier
+            run1   : First run identifier (defaults to last[1])
+            run2   : Second run identifier (defaults to last[2] or last[1])
         """
+        if run1 is None and run2 is None:
+            run1 = "last[1]"
+            run2 = "last[2]"
+        elif run1 is not None and run2 is None:
+            run2 = "last[1]"
+            
         if run1 == "last[1]" and run2 == "last[2]":
             self.ui.print_message(
                 message  = "Comparing the two most recent runs.",
@@ -710,10 +694,8 @@ class RunsCommand:
             msg_type = "info"
         )
         
-        all_configs = ChainMap(cfg1, cfg2)
-        domains     = self._get_domains(dict(all_configs), domain)
-        
-        # Collect all domains with differences
+        all_configs        = ChainMap(cfg1, cfg2)
+        domains            = self._get_domains(dict(all_configs))
         domains_with_diffs = []
         
         for domain in (d for d in domains if d in all_configs):
@@ -738,7 +720,6 @@ class RunsCommand:
             )
             return
         
-        # Display differences for each domain
         for domain, differences in domains_with_diffs:
             table = self.ui.create_aligned_table(
                 border_style = "dim",
@@ -814,38 +795,27 @@ class RunsCommand:
             show_overrides = True
         )
     
-    def show_config(
-        self,
-        domain         : Optional[str],
-        include_system : bool,
-        run_id         : str
-    ):
+    def show_config(self):
         """
         Display configuration for a run with pagination.
         
         Shows the full Hydra configuration for a training run, optionally
         filtered by domain. Large configurations are automatically paginated
         for better readability.
-        
-        Args:
-            domain         : Optional specific domain to display
-            include_system : Whether to include system (_) configurations
-            run_id         : Run identifier or "last" for most recent
         """
-        run_path  = self._resolve_run_id(run_id)
-        cfg       = self._load_run_config(run_path, include_system)
-        overrides = self._load_overrides(run_path)
+        self.run_path  = self._resolve_run_id(self.run_id)
+        cfg            = self._load_run_config()
+        self.overrides = self._load_overrides()
         
-        domains = self._get_domains(cfg, domain)
+        domains = self._get_domains(cfg)
         if not domains:
             return
         
         all_items = []
-        for d in domains:
+        for domain in domains:
             domain_config = self._flatten_config(
-                config    = cfg[d], 
-                overrides = overrides,
-                prefix    = d
+                config = cfg[domain], 
+                prefix = domain
             )
             all_items.extend(domain_config.items())
         
@@ -859,7 +829,5 @@ class RunsCommand:
         self._display_config(
             items      = all_items,
             title      = "Configuration Parameters",
-            run_path   = run_path,
-            overrides  = overrides,
-            using_last = run_id == "last"
+            using_last = self.run_id == "last"
         )

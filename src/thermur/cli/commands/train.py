@@ -11,13 +11,16 @@ from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
 from typer       import Argument, Exit, Option
-from typing      import Any
+from typing      import Any, Callable
 
 
 def train(
     overrides: list[str] = Argument(
         default = None,
-        help    = "Hydra configuration overrides (e.g., learning.lr=0.01 flock.num_drones=20)"
+        help    = (
+            "Hydra configuration overrides "
+            "(e.g., flock.agent_count=20)"
+        )
     ),
     dry_run: bool = Option(
         False,
@@ -52,21 +55,19 @@ def train(
     validation, configuration management, and seamless wandb integration.
 
     Examples:
-        thermur train                                # Interactive training
-        thermur train optimizer.learning_rate=0.001  # Custom parameters
-        thermur train --no-interactive --force       # Non-interactive mode
-        thermur train --dry-run                      # Validate config without training
-        thermur train --resume checkpoints/last.ckpt # Resume from checkpoint
+        thermur train                                 # Interactive training
+        thermur train optimizer.learning_rate=0.001   # Custom parameters
+        thermur train --no-interactive --force        # Non-interactive mode
+        thermur train --dry-run                       # Validate config without training
+        thermur train --resume checkpoints/last.ckpt  # Resume from checkpoint
     """
-    overrides = overrides or []
-    command   = TrainCommand()
-    command.run(
+    TrainCommand().run(
         dry_run     = dry_run,
         force       = force,
         interactive = interactive,
-        overrides   = overrides,
-        resume      = resume,
-        sample      = sample
+        sample      = sample,
+        overrides   = overrides or [],
+        resume      = resume
     )
 
 
@@ -82,70 +83,33 @@ class TrainCommand:
         """
         Initializes the command with shared context components.
         """
-        self.cfg     = app.cfg
-        self.prompts = app.prompts
-        self.system  = app.system
-        self.ui      = app.ui
+        self.cfg         = app.cfg
+        self.prompts     = app.prompts
+        self.system      = app.system
+        self.ui          = app.ui
 
-    def _build_overrides(self, additional: list[str], base: list[str] | None) -> list[str]:
-        """Combine base and additional overrides, with additional taking precedence."""
-        return (base or []) + additional
+        self.data_path   = ""
+        self.dry_run     = False
+        self.force       = False
+        self.interactive = True
+        self.output_dir  = None
+        self.overrides   = []
+        self.resume      = None
+        self.sample      = False
 
-    def _create_config_table(
-        self, 
-        cfg   : DictConfig, 
-        title : str = "Training Configuration"
-    ):
+    def _display_override_details(self):
         """
-        Traverses the entire configuration tree and displays all parameters in
-        a hierarchical format.
+        Show configuration override details in a formatted panel.
         
-        Args:
-            cfg   : The resolved Hydra configuration object.
-            title : Optional title for the table.
-            
-        Returns:
-            A Rich Table object with the formatted configuration.
+        The panel provides a quick summary of how the configuration was 
+        constructed, helping users understand what settings are being applied.
         """
-        columns = [
-            ("Configuration Path", "bright_cyan",  40, "left"),
-            ("Value",              "bright_white", 35, "left")
-        ]
-        
-        table = self.ui.create_aligned_table(
-            border_style = "bright_blue",
-            columns      = columns,
-            title        = title
-        )
-        
-        flat_config = self._flatten_config(
-            OmegaConf.to_container(cfg, resolve=True)
-        )
-        
-        for path, value in sorted(flat_config.items()):
-            table.add_row(
-                path, 
-                self.ui.format_truncated(str(value), 35)
-            )
-        
-        return table
-
-    def _display_override_details(self, overrides: list[str]):
-        """
-        Shows configuration override details in a formatted panel.
-        
-        The panel provides a quick summary of how the configuration was constructed, 
-        helping users understand what settings are being applied.
-        
-        Args:
-            overrides : List of hydra configuration overrides.
-        """
-        if not overrides:
+        if not self.overrides:
             return
         
         meta_info = []
-        meta_info.append(f"Overrides: {len(overrides)}")
-        meta_info.extend(f"  • {o}" for o in overrides)
+        meta_info.append(f"Overrides: {len(self.overrides)}")
+        meta_info.extend(f"  • {o}" for o in self.overrides)
         
         self.ui.console.print()
         self.ui.display_panel(
@@ -154,60 +118,18 @@ class TrainCommand:
             title        = "Configuration Source"
         )
 
-
-    def _dry_run_task(self, cfg: DictConfig, overrides: list[str]):
+    def _ensure_data_available(self) -> str:
         """
-        Shows the fully-rsolved configuration without executing training.
+        Ensure training data is available.
         
-        Alows users to verify their settings before committing to a potentially
-        long-running training process.
-        
-        Args:
-            cfg       : Resolved hydra configuration.
-            overrides : Configuration overrides for display.
-            
-        Returns:
-            Status dictionary indicating dry run completion.
-        """
-        self.ui.print_message(
-            message  = (
-                "[bold yellow]DRY RUN MODE[/bold yellow] - "
-                "No training will occur"
-            ),
-            msg_type = "warning"
-        )
-        self.ui.console.print()
-        
-        table = self._create_config_table(cfg)
-        self.ui.console.print(table)
-        
-        self._display_override_details(overrides)
-        
-        self.ui.console.print()
-        self.ui.print_message(
-            message  = "Dry run complete. Configuration validated successfully.",
-            msg_type = "success"
-        )
-        
-        self.system.create_status_marker("dry_run")
-        
-        return {
-            "output_dir" : str(self.system.get_hydra_output_dir()),
-            "status"     : "dry_run_complete"
-        }
-
-    def _ensure_data_available(self, use_sample: bool) -> str:
-        """
-        Ensures training data is available.
-        
-        Args:
-            use_sample: Use sample data if True.
-            
         Returns:
             Path to data directory.
+            
+        Raises:
+            Exit: If data not found and user declines download.
         """
         try:
-            data_path, msg = self.system.resolve_data_path(use_sample=use_sample)
+            data_path, msg = self.system.resolve_data_path(self.sample)
             msg and self.ui.print_message(msg, "info")
             return data_path
             
@@ -219,56 +141,7 @@ class TrainCommand:
             
             raise Exit("Training requires data. Run 'thermur download -s'")
 
-    def _flatten_config(self, config, parent_key="", separator="."):
-        """
-        Flattens nested configuration dictionary into dot-notation paths.
-        
-        Private keys (starting with underscore) are filtered out. This flattened 
-        representation makes it easy to display configuration in a tabular 
-        format for the CLI.
-        
-        Example:
-            {"model": {"layers": 3}} -> {"model.layers": 3}
-        
-        Args:
-            config      : The configuration dictionary to flatten.
-            parent_key  : The parent key path (used for recursion).
-            separator   : The separator to use between keys.
-            
-        Returns:
-            Dictionary mapping dot-notation paths to values.
-        """
-        items = {}
-        
-        for key, value in config.items():
-            if key.startswith('_'):
-                continue
-                
-            full_key = f"{parent_key}{separator}{key}" if parent_key else key
-            
-            if isinstance(value, dict):
-                items.update(self._flatten_config(value, full_key, separator))
-            else:
-                items[full_key] = value
-                
-        return items
-
-    def _gather_interactive_inputs(self) -> list[str]:
-        """
-        Guides the user through interactive configuration by prompting for
-        any additional Hydra configuration overrides.
-        
-        The prompts are designed to provide sensible defaults while giving
-        users full control over their training configuration.
-        
-        Returns:
-            List of additional overrides.
-        """
-        self.ui.print_section("Configuration Setup")
-        
-        return self.prompts.ask_for_overrides()
-
-    def _handle_config_issues(self, interactive : bool, issues : list[str]):
+    def _handle_config_issues(self, issues: list[str]):
         """
         Handles reported configuration validation issues.
 
@@ -277,10 +150,9 @@ class TrainCommand:
         and exits the application with a non-zero status code.
 
         Args:
-            interactive : Whether the CLI is in interactive mode.
-            issues      : A list of validation issue strings to display.
+            issues : A list of validation issue strings to display.
         """
-        if interactive:
+        if self.interactive:
             if not self.prompts.confirm_system_override(issues):
                 self.ui.print_message(
                     message  = "Training cancelled by user.",
@@ -305,12 +177,11 @@ class TrainCommand:
     def _instantiate_components(
         self,
         cfg             : DictConfig,
-        instantiate,
-        pydantic_parser
-    ):
+        instantiate     : Callable,
+        pydantic_parser : Callable
+    ) -> dict[str, Any]:
         """
-        Uses hydra-zen's instantiate function to create concrete objects from the
-        configuration. 
+        Create concrete objects from the configuration.
         
         Components are instantiated in the order specified by the 
         training_component_configs, with a progress bar showing
@@ -323,6 +194,9 @@ class TrainCommand:
 
         Returns:
             Dictionary of instantiated components ready for training.
+            
+        Raises:
+            ValueError: If configuration path is not found.
         """
         with self.ui.create_thermal_progress() as progress:
             component_cfgs = self.cfg.display.training_component_configs
@@ -335,10 +209,8 @@ class TrainCommand:
             for i, (key, path, display_name) in enumerate(component_cfgs):
                 progress.update(
                     completed   = i,
-                    description = (
-                        f"Setting up {display_name}..."
-                    ),
-                    task_id = task
+                    description = f"Setting up {display_name}...",
+                    task_id     = task
                 )
                 
                 if (obj := OmegaConf.select(cfg, path)) is None:
@@ -361,22 +233,12 @@ class TrainCommand:
 
         return components
 
-    def _launch_hydra(
-        self,
-        data_path : str,
-        dry_run   : bool,
-        overrides : list[str],
-        resume    : Path | None,
-    ):
+    def _launch_hydra(self):
         """
         Executes training via hydra-zen launch mechanism.
 
         This method handles both dry-run and actual training modes, automatically
         selecting the appropriate task function.
-
-        Args:
-            dry_run   : Show configuration without training.
-            overrides : Complete list of hydra overrides.
             
         Raises:
             RuntimeError: If the hydra job fails to complete successfully.
@@ -389,20 +251,15 @@ class TrainCommand:
         imports = self._load_training_modules()
         self.ui.console.print()
 
-        task_map = {
-            True  : partial(self._dry_run_task, overrides=overrides),
-            False : partial(
-                self._training_task,
-                data_path = data_path, 
-                imports   = imports, 
-                resume    = resume
-            )
-        }
+        task_function = (
+            self._task if self.dry_run 
+            else partial(self._task, imports=imports)
+        )
 
         job = imports["launch"](
             imports["ImitationConfig"],
-            overrides              = overrides,
-            task_function          = task_map[dry_run],
+            overrides              = self.overrides,
+            task_function          = task_function,
             version_base           = None,
             with_log_configuration = False,
         )
@@ -410,7 +267,7 @@ class TrainCommand:
         if job.status.name != "COMPLETED":
             raise RuntimeError(f"Training job failed with status: {job.status}")
 
-    def _load_training_modules(self) -> dict[str, Any]:
+    def _load_training_modules(self) -> dict[str, Callable]:
         """
         Lazily imports heavy dependencies for training to keep the CLI lean.
 
@@ -429,10 +286,10 @@ class TrainCommand:
                 task_id     = task
             )
 
-            from config.imitation                      import ImitationConfig
-            from hydra_zen                            import instantiate, launch
-            from hydra_zen.third_party.pydantic       import pydantic_parser
-            from pytorch_lightning                    import seed_everything
+            from config.imitation               import ImitationConfig
+            from hydra_zen                      import instantiate, launch
+            from hydra_zen.third_party.pydantic import pydantic_parser
+            from pytorch_lightning              import seed_everything
 
             progress.update(
                 advance     = 30,
@@ -462,19 +319,36 @@ class TrainCommand:
 
         return imports
 
-    def _request_confirmation(
-        self,
-        overrides     : list[str],
-    ):
+    def _offer_config_viewing(self):
+        """
+        Offers to view configuration via the runs command.
+        """
+        relative_path = self.output_dir.relative_to(Path.cwd())
+        
+        self.ui.console.print()
+        self.ui.print_message(
+            message  = (
+                f"View configuration with: "
+                f"[bold]thermur runs show {relative_path}[/bold]"
+            ),
+            msg_type = "info"
+        )
+        
+        should_view = (
+            not self.interactive or 
+            self.prompts.confirm("Would you like to view the configuration now?")
+        )
+        
+        if should_view:
+            subrun(['thermur', 'runs', 'show', str(relative_path)])
+
+    def _request_confirmation(self):
         """
         Presents a final summary of the training configuration, including GPU 
         availability and number of overrides.
         
         It acts as a final checkpoint before launching the potentially long-running 
         training process.
-
-        Args:
-            overrides     : Complete list of hydra overrides.
             
         Raises:
             Exit: If the user declines to proceed with training.
@@ -483,7 +357,7 @@ class TrainCommand:
         
         summary_data = {
             "gpu_available" : system_info.get("cuda", False),
-            "overrides"     : len(overrides),
+            "overrides"     : len(self.overrides),
             "wandb_project" : self.cfg.wandb.project,
         }
             
@@ -494,32 +368,54 @@ class TrainCommand:
             )
             raise Exit()
 
-    def _training_task(
+    def _task(
         self, 
-        cfg       : DictConfig,
-        data_path : str, 
-        imports   : dict[str, Any], 
-        resume    : Path | None = None
+        cfg     : DictConfig          = None, 
+        imports : dict[str, Callable] = None
     ):
         """
-        Executes the training workflow with resolved configuration.
+        Execute the training or dry-run workflow.
 
-        It sets up the training environment (logging, random seeds), instantiates 
-        all required components from the configuration, and runs the training loop.
-        Progress is communicated through UI messages at each major step.
+        In dry-run mode, shows configuration without executing training.
+        In normal mode, sets up training environment and runs the training loop.
 
         Args:
-            cfg     : Resolved hydra configuration.
-            imports : Lazy-loaded training modules.
-            resume  : Optional checkpoint path to resume training from.
+            cfg     : Resolved hydra configuration (passed by Hydra if needed).
+            imports : Lazy-loaded training modules (None in dry-run mode).
 
         Returns:
-            Status dictionary indicating successful completion.
+            Status dictionary indicating completion.
         """
-        output_dir = self.system.get_hydra_output_dir()
+        self.output_dir = self.system.get_hydra_output_dir()
+        
+        if self.dry_run:
+            self.ui.print_message(
+                message  = (
+                    "[bold yellow]DRY RUN MODE[/bold yellow] - "
+                    "No training will occur"
+                ),
+                msg_type = "warning"
+            )
+            self.ui.console.print()
+            
+            self._display_override_details()
+            
+            self.ui.console.print()
+            self.ui.print_message(
+                message  = "Dry run complete. Configuration validated successfully.",
+                msg_type = "success"
+            )
+            
+            self.system.create_status_marker("dry_run")
+            self._offer_config_viewing()
+            
+            return {
+                "output_dir" : str(self.output_dir),
+                "status"     : "dry_run_complete"
+            }
         
         self.ui.print_message(
-            message  = f"Training output: {self.system.get_hydra_output_dir()}",
+            message  = f"Training output: {self.output_dir}",
             msg_type = "info"
         )
         self.ui.console.print()
@@ -527,11 +423,13 @@ class TrainCommand:
         self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
 
-        with open_dict(cfg):
-            cfg.simulation.loader.wrf.data_path = data_path
+        if cfg:
+            with open_dict(cfg):
+                cfg.simulation.loader.wrf.data_path = self.data_path
 
-        if cfg.optimizer.seed is not None:
-            imports["seed_everything"](cfg.optimizer.seed)
+            if cfg.optimizer.seed is not None:
+                imports["seed_everything"](cfg.optimizer.seed)
+        
         self.ui.console.print()
 
         components = self._instantiate_components(
@@ -544,13 +442,12 @@ class TrainCommand:
             message  = "All components initialized successfully!",
             msg_type = "success"
         )
-        
         self.ui.console.print()
 
         self.ui.print_section("Training Started")
-        if resume:
+        if self.resume:
             self.ui.print_message(
-                message  = f"Resuming from checkpoint: {resume}",
+                message  = f"Resuming from checkpoint: {self.resume}",
                 msg_type = "info"
             )
         self.ui.print_message(
@@ -564,31 +461,19 @@ class TrainCommand:
         self.ui.console.print()
 
         components["trainer"].fit(
-            model      = components["policy"],
+            ckpt_path  = str(self.resume) if self.resume else None,
             datamodule = components["datamodule"],
-            ckpt_path  = str(resume) if resume else None
+            model      = components["policy"]
         )
 
         self.ui.console.print()
         self.ui.print_header("Training Complete 🎉")
         
         self.system.create_status_marker("training_complete")
-        
-        self.ui.console.print()
-        relative_path = output_dir.relative_to(Path.cwd())
-        self.ui.print_message(
-            message  = (
-                f"View configuration with: "
-                f"[bold]thermur runs show {relative_path}[/bold]"
-            ),
-            msg_type = "info"
-        )
-        
-        if self.prompts.confirm("Would you like to view the configuration now?"):
-            subrun(['thermur', 'runs', 'show', str(relative_path)])
+        self._offer_config_viewing()
         
         return {
-            "output_dir" : str(output_dir),
+            "output_dir" : str(self.output_dir),
             "status"     : "training_complete"
         }
 
@@ -597,9 +482,9 @@ class TrainCommand:
         dry_run     : bool,
         force       : bool,
         interactive : bool,
+        sample      : bool,
         overrides   : list[str] | None,
         resume      : Path | None,
-        sample      : bool,
     ):
         """
         Executes the main training workflow from start to finish.
@@ -612,12 +497,22 @@ class TrainCommand:
             dry_run     : If True, shows configuration without training.
             force       : If True, skips system validation checks.
             interactive : If True, enables interactive prompts.
-            overrides   : A list of Hydra configuration overrides.
             sample      : If True, use sample data.
+            overrides   : A list of Hydra configuration overrides.
+            resume      : Optional checkpoint path to resume training from.
         """
+        # Set command flags as instance attributes
+        self.dry_run     = dry_run
+        self.force       = force
+        self.interactive = interactive
+        self.sample      = sample
+        self.resume      = resume
+        if overrides:
+            self.overrides = overrides
+        
         self.ui.print_header("Thermur Training System")
 
-        if not force:
+        if not self.force:
             self.ui.display_system_validation(self.system)
         else:
             self.ui.print_message(
@@ -625,34 +520,27 @@ class TrainCommand:
                 msg_type = "warning"
             )
         
-        additional = (
-            self._gather_interactive_inputs() if interactive else []
-        )
+        # Gather additional overrides in interactive mode
+        if self.interactive:
+            self.overrides = self.overrides + self.prompts.ask_for_overrides()
 
-        data_path = self._ensure_data_available(sample)
-        overrides = self._build_overrides(
-            additional = additional,
-            base       = overrides,
-        )
+        self.data_path = self._ensure_data_available()
 
-        if not force and (issues := self.system.validate_overrides(overrides)):
-            self._handle_config_issues(interactive, issues)
+        if not self.force and (
+            issues := self.system.validate_overrides(self.overrides)
+        ):
+            self._handle_config_issues(issues)
 
-        if interactive:
-            self._request_confirmation(overrides)
+        if self.interactive:
+            self._request_confirmation()
 
-        self.ui.print_section("Initializing Training", minor=True)
+        self.ui.print_section("Initializing Training", True)
         if self.cfg.wandb.mode != "disabled":
             self.ui.display_wandb("train", self.cfg.wandb.project)
         self.ui.console.print()
 
         try:
-            self._launch_hydra(
-                data_path = data_path,
-                dry_run   = dry_run, 
-                overrides = overrides,
-                resume    = resume
-            )
+            self._launch_hydra()
 
         except KeyboardInterrupt:
             self.ui.console.print()
