@@ -12,18 +12,13 @@ from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
 from typer       import Argument, Exit, Option
-from typing      import Any, Callable, Union
+from typing      import Any, Callable, Optional
 
 
 def train(
     overrides: list[str] = Argument(
         default = None,
-        help    = (
-            "Hydra configuration overrides. "
-            "Syntax: path.to.key=value (override), "
-            "+path.to.key=value (append), "
-            "++path.to.key=value (force add)"
-        )
+        help    = "Hydra configuration overrides (e.g.,optimizer.learning_rate=0.001)"
     ),
     dry_run: bool = Option(
         False,
@@ -40,14 +35,10 @@ def train(
         "--interactive/--no-interactive", "-i/-n",
         help = "Enable interactive configuration prompts"
     ),
-    resume: Union[bool, Path] = Option(
-        False,
+    resume: Optional[Path] = Option(
+        None,
         "--resume", "-r",
-        help = (
-
-            "Resume from checkpoint. If True, uses last checkpoint. "
-            "User can also specify a path."
-        )
+        help = "Resume from checkpoint. Path to checkpoint or 'last' for most recent."
     ),
     sample: bool = Option(
         False,
@@ -68,7 +59,7 @@ def train(
         thermur train ++model.force_param=true          # Force add/override
         thermur train --no-interactive --force          # Non-interactive mode
         thermur train --dry-run                         # Validate config without training
-        thermur train --resume                          # Resume from last checkpoint
+        thermur train --resume last                     # Resume from last checkpoint
         thermur train --resume checkpoints/epoch5.ckpt  # Resume from specific checkpoint
     """
     TrainCommand().run(
@@ -517,7 +508,7 @@ class TrainCommand:
         interactive : bool,
         sample      : bool,
         overrides   : list[str] | None,
-        resume      : Union[bool, Path],
+        resume      : Optional[Path],
     ):
         """
         Executes the main training workflow from start to finish.
@@ -540,23 +531,23 @@ class TrainCommand:
         self.interactive = interactive
         self.sample      = sample
         
-        match resume:
-            case True:
-                self.resume = self._find_last_checkpoint() or Exit(
+        if resume:
+            if str(resume) == "last":
+                self.resume = self._find_last_checkpoint()
+                if not self.resume:
                     self.ui.print_message(
                         "No checkpoint found to resume from", "error"
-                    ) or 1
+                    )
+                    raise Exit(1)
+            elif not resume.exists():
+                self.ui.print_message(
+                    f"Checkpoint not found: {resume}", "error"
                 )
-            case Path() if not resume.exists():
-                raise Exit(
-                    self.ui.print_message(
-                        f"Checkpoint not found: {resume}", "error"
-                    ) or 1
-                )
-            case Path():
+                raise Exit(1)
+            else:
                 self.resume = resume
-            case _:
-                self.resume = None
+        else:
+            self.resume = None
                 
         if overrides:
             self.overrides = overrides
