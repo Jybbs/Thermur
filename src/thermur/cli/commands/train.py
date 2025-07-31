@@ -6,20 +6,23 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from functools   import partial
+from itertools   import chain
 from omegaconf   import DictConfig, OmegaConf, open_dict
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
 from typer       import Argument, Exit, Option
-from typing      import Any, Callable
+from typing      import Any, Callable, Union
 
 
 def train(
     overrides: list[str] = Argument(
         default = None,
         help    = (
-            "Hydra configuration overrides "
-            "(e.g., flock.agent_count=20)"
+            "Hydra configuration overrides. "
+            "Syntax: path.to.key=value (override), "
+            "+path.to.key=value (append), "
+            "++path.to.key=value (force add)"
         )
     ),
     dry_run: bool = Option(
@@ -37,10 +40,14 @@ def train(
         "--interactive/--no-interactive", "-i/-n",
         help = "Enable interactive configuration prompts"
     ),
-    resume: Path | None = Option(
-        None,
+    resume: Union[bool, Path] = Option(
+        False,
         "--resume", "-r",
-        help = "Resume training from checkpoint file"
+        help = (
+
+            "Resume from checkpoint. If True, uses last checkpoint. "
+            "User can also specify a path."
+        )
     ),
     sample: bool = Option(
         False,
@@ -55,11 +62,14 @@ def train(
     validation, configuration management, and seamless wandb integration.
 
     Examples:
-        thermur train                                 # Interactive training
-        thermur train optimizer.learning_rate=0.001   # Custom parameters
-        thermur train --no-interactive --force        # Non-interactive mode
-        thermur train --dry-run                       # Validate config without training
-        thermur train --resume checkpoints/last.ckpt  # Resume from checkpoint
+        thermur train                                   # Interactive training
+        thermur train optimizer.learning_rate=0.001     # Override config value
+        thermur train +model.new_param=42               # Append new config value
+        thermur train ++model.force_param=true          # Force add/override
+        thermur train --no-interactive --force          # Non-interactive mode
+        thermur train --dry-run                         # Validate config without training
+        thermur train --resume                          # Resume from last checkpoint
+        thermur train --resume checkpoints/epoch5.ckpt  # Resume from specific checkpoint
     """
     TrainCommand().run(
         dry_run     = dry_run,
@@ -140,6 +150,29 @@ class TrainCommand:
                 return Path(self.cfg.download.sample_data_path).as_posix()
             
             raise Exit("Training requires data. Run 'thermur download -s'")
+
+    def _find_last_checkpoint(self) -> Path | None:
+        """
+        Find the most recent checkpoint file.
+        
+        Returns:
+            Path to last checkpoint or None if not found.
+        """
+        outputs = Path("outputs")
+        if not outputs.exists():
+            return None
+            
+        checkpoints = [
+            run / "checkpoints" / "last.ckpt"
+            for run in chain.from_iterable(
+                sorted(date.iterdir(), reverse=True)
+                for date in sorted(outputs.iterdir(), reverse=True)
+                if date.is_dir()
+            )
+            if run.is_dir() and (run / ".hydra").exists()
+        ]
+        
+        return next((ckpt for ckpt in checkpoints if ckpt.exists()), None)
 
     def _handle_config_issues(self, issues: list[str]):
         """
@@ -484,7 +517,7 @@ class TrainCommand:
         interactive : bool,
         sample      : bool,
         overrides   : list[str] | None,
-        resume      : Path | None,
+        resume      : Union[bool, Path],
     ):
         """
         Executes the main training workflow from start to finish.
@@ -506,7 +539,25 @@ class TrainCommand:
         self.force       = force
         self.interactive = interactive
         self.sample      = sample
-        self.resume      = resume
+        
+        match resume:
+            case True:
+                self.resume = self._find_last_checkpoint() or Exit(
+                    self.ui.print_message(
+                        "No checkpoint found to resume from", "error"
+                    ) or 1
+                )
+            case Path() if not resume.exists():
+                raise Exit(
+                    self.ui.print_message(
+                        f"Checkpoint not found: {resume}", "error"
+                    ) or 1
+                )
+            case Path():
+                self.resume = resume
+            case _:
+                self.resume = None
+                
         if overrides:
             self.overrides = overrides
         
@@ -551,8 +602,62 @@ class TrainCommand:
             raise Exit()
         
         except Exception as e:
-            self.ui.print_message(
-                message  = f"Training failed: {e}",
-                msg_type = "error"
-            )
+            try:
+                from hydra.errors import ConfigCompositionException
+                from hydra.errors import InstantiationException
+                from hydra.errors import OverrideParseException
+                from pydantic     import ValidationError
+            except ImportError:
+                self.ui.print_message(f"Training failed: {e}", "error")
+                raise Exit(1)
+            
+            match e:
+                case OverrideParseException():
+                    self.ui.print_message("Override syntax error:", "error")
+                    self.ui.console.print(f"  {e}")
+                    self.ui.console.print()
+                    self.ui.print_message(
+                        "Syntax: key=value, +key=value (append), ++key=value (force)",
+                        "info"
+                    )
+                
+                case ConfigCompositionException():
+                    self.ui.print_message("Configuration error:", "error")
+                    self.ui.console.print(f"  {e}")
+                    if hasattr(e, 'available_options'):
+                        self.ui.console.print()
+                        self.ui.print_message(
+                            message  = (
+                                f"Available options: "
+                                f"{', '.join(e.available_options)}"
+                            ),
+                            msg_type = "info"
+                        )
+                
+                case InstantiationException():
+                    self.ui.print_message("Component instantiation failed:", "error")
+                    self.ui.console.print(f"  {e}")
+                    if (
+                        hasattr(e, '__cause__') 
+                        and isinstance(e.__cause__, ValidationError)
+                    ):
+                        self.ui.console.print()
+                        self.ui.print_message("Validation errors:", "error")
+                        for error in e.__cause__.errors():
+                            self.ui.console.print(
+                                f"  - {'.'.join(str(x) for x in error['loc'])}: "
+                                f"{error['msg']}"
+                            )
+                
+                case ValidationError():
+                    self.ui.print_message("Configuration validation failed:", "error")
+                    for error in e.errors():
+                        self.ui.console.print(
+                            f"  - {'.'.join(str(x) for x in error['loc'])}: "
+                            f"{error['msg']}"
+                        )
+                
+                case _:
+                    self.ui.print_message(f"Training failed: {e}", "error")
+            
             raise Exit(1)
