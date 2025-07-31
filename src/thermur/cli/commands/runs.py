@@ -12,7 +12,6 @@ from functools     import cache
 from itertools     import chain, islice
 from pathlib       import Path
 from shutil        import rmtree
-from textwrap      import shorten
 from thermur.cli   import app
 from typer         import Argument, Context, Exit, Option, Typer
 from typing        import Any, Iterator, Optional, TypeAlias
@@ -82,7 +81,7 @@ def clean(
         help = "Skip confirmation prompt"
     ),
     keep: int = Option(
-        5,
+        0,
         "--keep", "-k",
         help = "Number of recent runs to keep"
     )
@@ -90,13 +89,13 @@ def clean(
     """
     Clean up old training runs.
     
-    This command removes old training runs from the outputs directory, keeping
-    only the most recent runs based on the specified count. Use dry-run mode
-    to preview which directories would be deleted without actually removing them.
+    This command removes training runs from the outputs directory. By default,
+    it deletes ALL runs. Use the --keep option to preserve recent runs.
+    Use dry-run mode to preview what would be deleted.
     
     Examples:
-        thermur runs clean              # Keep 5 most recent
-        thermur runs clean -k 10        # Keep 10 most recent  
+        thermur runs clean              # Delete all runs
+        thermur runs clean -k 5         # Delete all but 5 most recent
         thermur runs clean --dry-run    # Preview what would be deleted
     """
     RunsCommand().clean_runs(dry_run, force, keep)
@@ -131,8 +130,8 @@ def compare(
     RunsCommand().compare_runs(domain, run1, run2)
 
 
-@runs.command()
-def list(
+@runs.command("list")
+def list_command(
     all_runs: bool = Option(
         False,
         "--all", "-a", 
@@ -220,28 +219,106 @@ class RunsCommand:
         self.system      = app.system
         self.ui          = app.ui
     
+    def _display_all_config(
+        self,
+        items      : list[tuple[str, Any]],
+        run_path   : Optional[Path] = None,
+        overrides  : Optional[list[str]] = None,
+        using_last : bool = False
+    ):
+        """
+        Display all configuration parameters in a single paginated view.
+        
+        Args:
+            items     : List of (path, value) tuples to display
+            run_path  : Optional path to the run for display context
+            overrides : List of override strings from Hydra
+        """
+        columns = [
+            ("",          "bright_yellow", 2,  "center"),
+            ("Parameter", "bright_white",  48, "left"),
+            ("Value",     "bright_green",  50, "left")
+        ]
+        page_size    = 20
+        sorted_items = sorted(items, key=lambda x: x[0])
+        
+        if len(sorted_items) <= page_size:
+            if using_last:
+                self.ui.print_message(
+                    message  = (
+                        "Using most recent run. "
+                        "(Use specific run ID to view others)"
+                    ),
+                    msg_type = "info"
+                )
+            
+            self.ui.print_header("Training Run Management")
+            self.ui.print_section(
+                f"Configuration: {run_path.relative_to(self.outputs_dir)}",
+                minor=True
+            )
+            
+            if overrides:
+                self._display_overrides_panel(overrides)
+            
+            self.ui.print_section(
+                style = "bright_cyan",
+                title = "Configuration Parameters"
+            )
+            
+            table = self.ui.create_aligned_table(
+                border_style = "dim",
+                columns      = columns
+            )
+            
+            for path, item in sorted_items:
+                value, is_override = item if isinstance(item, tuple) else (item, False)
+                indicator = "●" if is_override else " "
+                table.add_row(indicator, path, self._format_value(value))
+            
+            self.ui.display_panel(table)
+            
+            if any(isinstance(item[1], tuple) and item[1][1] for item in sorted_items):
+                self.ui.print_message(
+                    message  = "● = Parameter overridden from default",
+                    msg_type = "info"
+                )
+        else:
+            self._paginate_all_config(
+                columns    = columns, 
+                items      = sorted_items, 
+                overrides  = overrides,
+                page_size  = page_size, 
+                run_path   = run_path,
+                using_last = using_last
+            )
+    
     def _display_domain_config(
         self,
-        config : ConfigDict,
-        domain : str
+        config    : ConfigDict,
+        domain    : str,
+        run_path  : Optional[Path] = None,
+        overrides : Optional[list[str]] = None
     ):
         """
         Display configuration for a single domain with pagination.
         
         Flattens nested configuration dictionaries into dot-notation paths
-        and displays them in a paginated table format. Handles both small
-        configurations that fit on a single page and large ones requiring
-        pagination.
+        and displays them in a paginated table format. Shows override
+        indicators for modified values.
         
         Args:
-            config : The configuration dictionary to display
-            domain : The configuration domain name (e.g., 'controller')
+            config    : The configuration dictionary to display
+            domain    : The configuration domain name (e.g., 'controller')
+            run_path  : Optional path to the run for display context
+            overrides : List of override strings from Hydra
         """
-        if not (items := list(self._flatten_config(config).items())):
+        if not (items := list(self._flatten_config(config, overrides=overrides).items())):
             return
         
         columns = [
-            ("Parameter", "bright_white", 50, "left"),
+            ("", "bright_yellow", 2, "center"),
+            ("Parameter", "bright_white", 48, "left"),
             ("Value",     "bright_green", 50, "left")
         ]
         page_size = 20
@@ -257,12 +334,20 @@ class RunsCommand:
                 columns      = columns
             )
             
-            for path, value in items:
-                table.add_row(path, self._format_value(value))
+            for path, item in items:
+                value, is_override = item if isinstance(item, tuple) else (item, False)
+                indicator = "●" if is_override else " "
+                table.add_row(indicator, path, self._format_value(value))
             
             self.ui.display_panel(table)
+            
+            if any(isinstance(item, tuple) and item[1] for _, item in items):
+                self.ui.print_message(
+                    message  = "● = Parameter overridden from default",
+                    msg_type = "info"
+                )
         else:
-            self._paginate_config(columns, domain, items, page_size)
+            self._paginate_config(columns, domain, items, page_size, run_path)
     
     def _display_overrides_panel(self, overrides: list):
         """
@@ -275,42 +360,64 @@ class RunsCommand:
             overrides : List of override strings from Hydra
         """
         panel = self.ui.create_warning_panel(
-            issues = [f"• {override}" for override in overrides],
+            issues = overrides,
             title  = "Configuration Overrides"
         )
         self.ui.display_panel(panel)
     
     def _flatten_config(
         self,
-        config : ConfigDict,
-        prefix : str = ""
+        config    : ConfigDict,
+        overrides : Optional[list[str]] = None,
+        prefix    : str = ""
     ) -> ConfigDict:
         """
         Flatten nested config to dot notation.
         
         Recursively flattens a nested configuration dictionary into a flat
-        dictionary with dot-notation keys. Skips private keys (starting with _)
-        and stops recursion at instantiated objects (containing _target_).
+        dictionary with dot-notation keys. Expands model instances to show
+        their parameters. Tracks which values were overridden.
         
         Args:
-            config : Configuration dictionary to flatten
-            prefix : Current path prefix for recursion
+            config    : Configuration dictionary to flatten
+            overrides : List of override paths from Hydra
+            prefix    : Current path prefix for recursion
             
         Returns:
-            Flattened dictionary with dot-notation keys
+            Flattened dictionary with dot-notation keys and override info
         """
         items = defaultdict(dict)
+        override_set = set()
+        
+        if overrides:
+            for override in overrides:
+                if '=' in override:
+                    path = override.split('=')[0].strip('+')
+                    override_set.add(path)
         
         for key, value in config.items():
-            if key.startswith('_'):
+            if key.startswith('_') and key != '_target_':
                 continue
             
             full_key = f"{prefix}.{key}" if prefix else key
             
-            if isinstance(value, dict) and '_target_' not in value:
-                items.update(self._flatten_config(value, full_key))
+            if isinstance(value, dict):
+                if '_target_' in value:
+                    model_params = {k: v for k, v in value.items() 
+                                  if k != '_target_'}
+                    if model_params:
+                        items.update(self._flatten_config(
+                            model_params, full_key, overrides
+                        ))
+                    else:
+                        items[full_key] = value['_target_'].split('.')[-1]
+                else:
+                    items.update(self._flatten_config(value, full_key, overrides))
             else:
-                items[full_key] = value
+                is_override = full_key in override_set or any(
+                    full_key.startswith(p) for p in override_set
+                )
+                items[full_key] = (value, is_override)
         
         return dict(items)
     
@@ -338,33 +445,41 @@ class RunsCommand:
                     )
         return "-"
     
-    def _format_value(self, value: Any) -> str:
+    def _format_value(self, value: Any, width: int = 100) -> str:
         """
         Format a configuration value for display.
         
         Handles different value types (dict, list, string) and formats them
-        appropriately for table display. Long values are truncated with ellipsis.
+        appropriately for table display. Long values show first 87 chars + ... 
+        + last 10.
         
         Args:
             value : Value to format
+            width : Maximum width for display (default 100)
             
         Returns:
             Formatted string representation suitable for display
         """
+        def truncate_long(s: str, max_width: int = 100) -> str:
+            if len(s) <= max_width:
+                return s
+            return f"{s[:87]}...{s[-10:]}"
+        
         match value:
             case dict() if '_target_' in value:
                 return f"{value['_target_'].split('.')[-1]}(...)"
             case dict():
-                return shorten(str(value), width=50, placeholder="...")
-            case list() if len(value) > 3:
-                preview = ', '.join(str(v) for v in value[:3])
+                return truncate_long(str(value), width)
+            case list() if len(value) > 5:
+                preview = ', '.join(str(v) for v in value[:5])
                 return f"[{preview}, ...] ({len(value)} items)"
             case list():
-                return str(value)
-            case str() if len(value) > 50:
-                return shorten(value, width=50, placeholder="...")
+                formatted = str(value)
+                return truncate_long(formatted, width)
+            case str():
+                return truncate_long(value, width)
             case _:
-                return str(value)
+                return truncate_long(str(value), width)
     
     def _get_all_runs(self) -> list:
         """
@@ -391,12 +506,78 @@ class RunsCommand:
             if path.is_dir() and (path / ".hydra").exists()
         ]
     
+    def _paginate_all_config(
+        self,
+        columns   : list,
+        items     : list[tuple[str, Any]],
+        page_size : int,
+        run_path  : Optional[Path] = None,
+        overrides : Optional[list[str]] = None
+    ):
+        """
+        Handle paginated display of all configuration parameters.
+        
+        Args:
+            columns   : Column definitions for the table
+            items     : Sorted list of (path, value) tuples
+            page_size : Number of items to show per page
+            run_path  : Optional path to the run for display context
+        """
+        def render_config_page(
+            page_items  : list, 
+            page_num    : int, 
+            total_pages : int
+        ):
+            """
+            Render a page of configuration parameters in a table.
+            """
+            self.ui.print_header("Training Run Management")
+            if run_path:
+                self.ui.print_section(
+                    f"Configuration: {run_path.relative_to(self.outputs_dir)}",
+                    minor=True
+                )
+            
+            if page_num == 1 and overrides:
+                self._display_overrides_panel(overrides)
+            
+            self.ui.print_section(
+                style = "bright_cyan",
+                title = f"Configuration Parameters (Page {page_num}/{total_pages})"
+            )
+            
+            table = self.ui.create_aligned_table(
+                border_style = "dim",
+                columns      = columns
+            )
+            
+            for path, item in page_items:
+                value, is_override = item if isinstance(item, tuple) else (item, False)
+                indicator = "●" if is_override else " "
+                table.add_row(indicator, path, self._format_value(value))
+            
+            self.ui.display_panel(table)
+            
+            if any(isinstance(item[1], tuple) and item[1][1] for item in page_items):
+                self.ui.print_message(
+                    message  = "● = Parameter overridden from default",
+                    msg_type = "info"
+                )
+        
+        self.prompts.paginate(
+            allow_row_select = False,
+            items            = items,
+            page_size        = page_size,
+            render_page      = render_config_page
+        )
+    
     def _paginate_config(
         self,
         columns   : list,
         domain    : str,
         items     : list,
-        page_size : int
+        page_size : int,
+        run_path  : Optional[Path] = None
     ):
         """
         Handle paginated display of large configurations.
@@ -409,6 +590,7 @@ class RunsCommand:
             domain    : Configuration domain name for the title
             items     : List of (key, value) tuples to display
             page_size : Number of items to show per page
+            run_path  : Optional path to the run for display context
         """
         def render_config_page(
             page_items  : list, 
@@ -418,10 +600,19 @@ class RunsCommand:
             """
             Render a page of configuration parameters in a table.
             """
+            self.ui.print_header("Training Run Management")
+            if run_path:
+                self.ui.print_section(
+                    f"Configuration: {run_path.relative_to(self.outputs_dir)}",
+                    minor=True
+                )
+            
             self.ui.print_section(
                 style = "bright_cyan",
-                title = f"{domain.title()} Configuration "
-                        f"(Page {page_num}/{total_pages})"
+                title = (
+                    f"{domain.title()} Configuration "
+                    f"(Page {page_num}/{total_pages})"
+                )
             )
             
             table = self.ui.create_aligned_table(
@@ -429,8 +620,10 @@ class RunsCommand:
                 columns      = columns
             )
             
-            for path, value in page_items:
-                table.add_row(path, self._format_value(value))
+            for path, item in page_items:
+                value, is_override = item if isinstance(item, tuple) else (item, False)
+                indicator = "●" if is_override else " "
+                table.add_row(indicator, path, self._format_value(value))
             
             self.ui.display_panel(table)
         
@@ -508,21 +701,63 @@ class RunsCommand:
         to_delete = runs[keep:]
         
         self.ui.print_section("Runs to Delete", minor=True)
-        for run in to_delete:
-            self.ui.print_message(
-                message  = f"• {run.relative_to(self.outputs_dir)}",
-                msg_type = "info"
+        
+        columns = [
+            ("Run ID",      "bright_red",    30, "left"),
+            ("Date & Time", "bright_white",  20, "left"),
+            ("Status",      "bright_yellow", 10, "center")
+        ]
+        
+        table = self.ui.create_aligned_table(
+            border_style = "red",
+            columns      = columns,
+            title        = (
+                f"{len(to_delete)} run{'s' if len(to_delete) > 1 else ''} "
+                f"will be deleted"
             )
+        )
+        
+        for run_path in to_delete:
+            run_id = str(run_path.relative_to(self.outputs_dir))
+            parts = run_id.split('/')
+            timestamp = (
+                f"{parts[0]} {parts[1].replace('-', ':')}"
+                if len(parts) >= 2 else run_id
+            )
+            status = "✓" if (run_path / "training_complete").exists() else "..."
+            
+            table.add_row(run_id, timestamp, status)
+        
+        self.ui.display_panel(table)
         
         if dry_run:
             self.ui.print_message(
-                message  = f"Would delete {len(to_delete)} runs (dry run)",
+                message  = f"Would delete {len(to_delete)} runs (dry run mode)",
                 msg_type = "info"
             )
             return
         
+        issues = [
+            (
+                f"This will permanently delete {len(to_delete)} training "
+                f"run{'s' if len(to_delete) > 1 else ''}"
+            ),
+            "This action cannot be undone"
+        ]
+        
+        if keep > 0:
+            issues.append(f"Keeping only the {keep} most recent runs")
+        else:
+            issues.append("Use --keep N to preserve N recent runs")
+            
+        warning_panel = self.ui.create_warning_panel(
+            issues = issues,
+            title  = "⚠️  Confirm Deletion"
+        )
+        self.ui.display_panel(warning_panel)
+        
         if not force and not self.prompts.confirm(
-            f"Delete {len(to_delete)} old runs? This cannot be undone."
+            f"Delete {len(to_delete)} old runs?"
         ):
             self.ui.print_message(
                 message  = "Cleanup cancelled",
@@ -598,12 +833,19 @@ class RunsCommand:
             flat1 = self._flatten_config(cfg1.get(domain, {}))
             flat2 = self._flatten_config(cfg2.get(domain, {}))
             
+            def get_value(flat_dict, key, default="NOT SET"):
+                item = flat_dict.get(key, default)
+                if isinstance(item, tuple):
+                    return item[0]
+                return item
+            
             all_keys    = set(flat1) | set(flat2)
-            differences = [
-                (key, flat1.get(key, "NOT SET"), flat2.get(key, "NOT SET"))
-                for key in sorted(all_keys)
-                if flat1.get(key, "NOT SET") != flat2.get(key, "NOT SET")
-            ]
+            differences = []
+            for key in sorted(all_keys):
+                val1 = get_value(flat1, key)
+                val2 = get_value(flat2, key)
+                if val1 != val2:
+                    differences.append((key, val1, val2))
             
             if differences:
                 domains_with_diffs.append((domain, differences))
@@ -661,6 +903,21 @@ class RunsCommand:
         
         display_runs = runs if limit is None else runs[:limit]
         
+        if limit is not None and limit == 10:
+            if len(display_runs) < limit:
+                self.ui.print_message(
+                    message  = f"Showing all {len(display_runs)} runs.",
+                    msg_type = "info"
+                )
+            else:
+                self.ui.print_message(
+                    message  = (
+                        f"Showing {len(display_runs)} most recent runs. "
+                        f"(Use -n to change limit or --all)"
+                    ),
+                    msg_type = "info"
+                )
+        
         self.ui.print_section("Recent Runs", minor=True)
         self.ui.print_message(
             message  = "Status: (✓) Complete, (...) Incomplete",
@@ -698,10 +955,12 @@ class RunsCommand:
         
         self.ui.display_panel(table)
         
-        if limit and len(runs) > limit:
+        if limit and len(runs) > limit and limit != 10:
             self.ui.print_message(
-                message  = f"Showing {limit} of {len(runs)} runs. "
-                           f"Use --all to see all runs.",
+                message  = (
+                    f"Showing {limit} of {len(runs)} runs. "
+                    f"(Use --all to see all runs)"
+                ),
                 msg_type = "info"
             )
     
@@ -729,34 +988,34 @@ class RunsCommand:
             if not include_system:
                 cfg = {k: v for k, v in cfg.items() if not k.startswith('_')}
         
-        self.ui.print_header("Training Run Management")
-        self.ui.print_section(
-            f"Configuration: {run_path.relative_to(self.outputs_dir)}",
-            minor=True
-        )
-        
+        overrides = []
         if (overrides_file := run_path / ".hydra" / "overrides.yaml").exists():
             with suppress(Exception), open(overrides_file) as f:
-                if overrides := safe_load(f) or []:
-                    self._display_overrides_panel(overrides)
+                if loaded_overrides := safe_load(f) or []:
+                    overrides = loaded_overrides
         
-        domains = [domain] if domain else sorted(cfg.keys())
+        all_items = []
         
-        for i, d in enumerate(domains):
-            if d not in cfg:
-
-                if domain:
-                    self.ui.print_message(
-                        message  = f"Domain '{d}' not found in configuration",
-                        msg_type = "warning"
-                    )
-                continue
-            
-            self._display_domain_config(cfg[d], d)
-            
-            if (
-                len(domains)     > 1 and 
-                i < len(domains) - 1 and 
-                not self.prompts.confirm("Show next domain?")
-            ):
-                break
+        if domain:
+            if domain not in cfg:
+                self.ui.print_message(
+                    message  = f"Domain '{domain}' not found in configuration",
+                    msg_type = "warning"
+                )
+                return
+            domains = [domain]
+        else:
+            domains = sorted(cfg.keys())
+        
+        for d in domains:
+            domain_config = self._flatten_config(cfg[d], prefix=d, overrides=overrides)
+            all_items.extend(domain_config.items())
+        
+        if not all_items:
+            self.ui.print_message(
+                message  = "No configuration parameters found",
+                msg_type = "info"
+            )
+            return
+        
+        self._display_all_config(all_items, run_path, overrides, run_id == "last")
