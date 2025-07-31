@@ -7,20 +7,17 @@ between runs, clean up old experiments, and inspect detailed configuration
 settings with pagination support for large configurations.
 """
 from collections import ChainMap
-from contextlib  import ExitStack, contextmanager, suppress
+from contextlib  import contextmanager, suppress
 from itertools   import chain
 from pathlib     import Path
 from shutil      import rmtree
 from thermur.cli import app
 from typer       import Argument, Context, Exit, Option, Typer
-from typing      import Any, Iterator, Optional, TypeAlias
+from typing      import Any, Iterator, Optional
 from yaml        import Loader, load, safe_load
 
-ConfigDict : TypeAlias = dict[str, Any]
-RunPath    : TypeAlias = Path
-
 runs = Typer(
-    help             = "Explore and manage training runs",
+    help             = "🏃 Explore training runs and configurations",
     rich_markup_mode = "rich",
 )
 
@@ -59,12 +56,12 @@ def runs_callback(ctx: Context):
     """
     🏃 Explore training runs and configurations.
     
-    When called without a subcommand, lists recent training runs.
+    When called without a subcommand, shows available commands.
     Use subcommands to view specific configurations or manage outputs.
     """
-    # Only run the list if no subcommand is provided
     if ctx.invoked_subcommand is None:
-        RunsCommand().list_runs(None, show_header=True)
+        app.ui.print_header("Training Run Management")
+        ctx.get_help()
 
 
 @runs.command("clean")
@@ -86,7 +83,7 @@ def clean(
     )
 ):
     """
-    Clean up old training runs.
+    Clean up old training runs. Use --keep N to preserve recent runs.
     
     This command removes training runs from the outputs directory. By default,
     it deletes ALL runs. Use the --keep option to preserve recent runs.
@@ -102,34 +99,35 @@ def clean(
 
 @runs.command("compare")
 def compare(
-    run1   : Optional[str] = Argument(None, help="First run ID or path (defaults to 'last[1]')"),
-    run2   : Optional[str] = Argument(None, help="Second run ID or path (defaults to 'last[2]')"),
+    run1   : Optional[str] = Argument(
+        None, 
+        help="First run ID or path. Use 'last[N]' for Nth most recent (defaults to 'last[1]')"
+    ),
+    run2   : Optional[str] = Argument(
+        None, 
+        help="Second run ID or path. Use 'last[N]' for Nth most recent (defaults to 'last[2]')"
+    ),
     domain : Optional[str] = Option(
         None,
         "--domain", "-d",
-        help = "Compare only specific domain"
+        help = "Compare only specific domain (e.g., controller, lightning)"
     )
 ):
     """
-    Compare configurations between two training runs.
+    Compare configurations between two runs. Defaults to last 2.
     
-    This command displays side-by-side differences between the configurations
-    of two training runs. You can filter the comparison to a specific domain
+    Displays side-by-side differences between the configurations of two
+    training runs. You can filter the comparison to a specific domain
     (e.g., controller, lightning) to focus on relevant settings.
     
     When no arguments are provided, compares the two most recent runs.
     You can use 'last[N]' syntax to reference the Nth most recent run.
     
-    Args:
-        run1   : First run identifier (path, "last", or "last[N]" for Nth most recent)
-        run2   : Second run identifier (path, "last", or "last[N]" for Nth most recent)
-        domain : Optional domain to filter comparison (e.g., controller)
-        
-    Examples with `thermur runs ...`:
-        compare                                   # Compare last 2 runs
-        compare last outputs/2025-07-29/15-30-00  # Compare most recent to specific
-        compare last[1] last[3]                   # Compare most recent to 3rd most recent
-        compare run1 run2 -d lightning            # Compare specific domain
+    Examples:
+        thermur runs compare                                   # Compare last 2 runs
+        thermur runs compare last outputs/2025-07-29/15-30-00  # Compare most recent to specific
+        thermur runs compare last[1] last[3]                   # Compare most recent to 3rd most recent
+        thermur runs compare run1 run2 -d lightning            # Compare specific domain
     """
     if run1 is None and run2 is None:
         run1 = "last[1]"
@@ -154,7 +152,7 @@ def list_command(
     )
 ):
     """
-    List recent training runs with timestamps and status.
+    List training runs with timestamps and status indicators.
     
     Displays a formatted table of training runs including their IDs, timestamps,
     configuration overrides, and completion status. By default shows the 10 most
@@ -172,7 +170,10 @@ def list_command(
 def show(
     run_id: Optional[str] = Argument(
         None,
-        help = "Run ID or path (defaults to 'last')"
+        help = (
+            "Run ID or path. Use 'last' for most recent, 'last[N]' for Nth "
+            "most recent (defaults to 'last')"
+        )
     ),
     all_configs: bool = Option(
         False,
@@ -186,20 +187,20 @@ def show(
     )
 ):
     """
-    Display configuration for a specific training run.
+    Display run configuration. Use 'last[N]' for Nth most recent.
     
     Shows the full Hydra configuration for a training run, optionally filtered
     by domain. Large configurations are automatically paginated for better 
     readability. System configurations (prefixed with _) are hidden by default
     but can be included with the --all flag.
     
-    Examples with `thermur runs ...`:
-        show                             # Show last run
-        show last                        # Explicitly show last  
-        show last[2]                     # Show 2nd most recent run
-        show outputs/2025-07-30/10-15-30 # See a specific run
-        show -d controller               # Show only controller config
-        show --all                       # Include _system configs
+    Examples:
+        thermur runs show                                 # Show last run
+        thermur runs show last                            # Explicitly show last  
+        thermur runs show last[2]                         # Show 2nd most recent run
+        thermur runs show outputs/2025-07-30/10-15-30     # Show a specific run
+        thermur runs show -d controller                   # Show only controller config
+        thermur runs show --all                           # Include system (_) configs
     """
     RunsCommand().show_config(
         domain         = domain,
@@ -238,129 +239,77 @@ class RunsCommand:
             indicator = "●" if is_override else " "
             table.add_row(indicator, path, self._format_value(value))
 
-    def _display_all_config(
+    def _display_config(
         self,
         items      : list[tuple[str, Any]],
+        title      : str,
         run_path   : Optional[Path] = None,
         overrides  : Optional[list[str]] = None,
+        page_size  : int = 20,
         using_last : bool = False
     ):
         """
-        Display all configuration parameters in a single paginated view.
+        Unified config display using pagination for all cases.
         
         Args:
-            items     : List of (path, value) tuples to display
-            run_path  : Optional path to the run for display context
-            overrides : List of override strings from Hydra
+            items      : List of (path, (value, is_override)) tuples
+            title      : Title for the configuration section
+            run_path   : Optional path to the run for display context
+            overrides  : List of override strings from Hydra
+            page_size  : Number of items per page (default 20)
+            using_last : Whether the user is viewing the last run
         """
-        columns = [
-            ("",          "bright_yellow", 2,  "center"),
-            ("Parameter", "bright_white",  48, "left"),
-            ("Value",     "bright_green",  50, "left")
-        ]
-        page_size    = 20
         sorted_items = sorted(items, key=lambda x: x[0])
         
-        if len(sorted_items) <= page_size:
-            if using_last:
-                self.ui.print_message(
-                    message  = (
-                        "Using most recent run. "
-                        "(Use specific run ID to view others)"
-                    ),
-                    msg_type = "info"
+        def render_page(page_items, page_num, total_pages):
+            self.ui.print_header("Training Run Management")
+            
+            if run_path:
+                self.ui.print_section(
+                    f"Configuration: {run_path.relative_to(self.outputs_dir)}",
+                    minor=True
                 )
             
-            self.ui.print_header("Training Run Management")
-            self.ui.print_section(
-                f"Configuration: {run_path.relative_to(self.outputs_dir)}",
-                minor=True
+            if page_num == 1:
+                if using_last:
+                    self.ui.print_message(
+                        message  = (
+                            "Using most recent run. "
+                            "(Use specific run ID to view others)"
+                        ),
+                        msg_type = "info"
+                    )
+                
+                if overrides:
+                    self._display_overrides_panel(overrides)
+            
+            page_info = (
+                f" (Page {page_num}/{total_pages})" if total_pages > 1 else ""
             )
-            
-            if overrides:
-                self._display_overrides_panel(overrides)
-            
             self.ui.print_section(
                 style = "bright_cyan",
-                title = "Configuration Parameters"
+                title = f"{title}{page_info}"
             )
             
             table = self.ui.create_aligned_table(
                 border_style = "dim",
-                columns      = columns
+                columns      = [
+                    ("",          "bright_yellow", 2,  "center"),
+                    ("Parameter", "bright_white",  48, "left"),
+                    ("Value",     "bright_green",  50, "left")
+                ]
             )
             
-            for path, (value, is_override) in sorted_items:
-                indicator = "●" if is_override else " "
-                table.add_row(indicator, path, self._format_value(value))
-            
+            self._add_config_rows(table, page_items)
             self.ui.display_panel(table)
-            self.ui.print_message(
-                message  = "● = Parameter overridden from default",
-                msg_type = "info"
-            )
-        else:
-            self._paginate_all_config(
-                columns    = columns, 
-                items      = sorted_items, 
-                overrides  = overrides,
-                page_size  = page_size, 
-                run_path   = run_path,
-                using_last = using_last
-            )
+        
+        self.prompts.paginate(
+            allow_row_select = False,
+            items            = sorted_items,
+            page_size        = page_size,
+            render_page      = render_page
+        )
     
-    def _display_domain_config(
-        self,
-        config    : ConfigDict,
-        domain    : str,
-        run_path  : Optional[Path] = None,
-        overrides : Optional[list[str]] = None
-    ):
-        """
-        Display configuration for a single domain with pagination.
-        
-        Flattens nested configuration dictionaries into dot-notation paths
-        and displays them in a paginated table format. Shows override
-        indicators for modified values.
-        
-        Args:
-            config    : The configuration dictionary to display
-            domain    : The configuration domain name (e.g., 'controller')
-            run_path  : Optional path to the run for display context
-            overrides : List of override strings from Hydra
-        """
-        if not (items := list(self._flatten_config(config, overrides=overrides).items())):
-            return
-        
-        columns = [
-            ("", "bright_yellow", 2, "center"),
-            ("Parameter", "bright_white", 48, "left"),
-            ("Value",     "bright_green", 50, "left")
-        ]
-        page_size = 20
-        
-        if len(items) <= page_size:
-            self.ui.print_section(
-                style = "bright_cyan",
-                title = f"{domain.title()} Configuration"
-            )
-            
-            table = self.ui.create_aligned_table(
-                border_style = "dim",
-                columns      = columns
-            )
-            
-            for path, (value, is_override) in items:
-                indicator = "●" if is_override else " "
-                table.add_row(indicator, path, self._format_value(value))
-            
-            self.ui.display_panel(table)
-            self.ui.print_message(
-                message  = "● = Parameter overridden from default",
-                msg_type = "info"
-            )
-        else:
-            self._paginate_config(columns, domain, items, page_size, run_path)
     
     def _display_overrides_panel(self, overrides: list):
         """
@@ -372,18 +321,66 @@ class RunsCommand:
         Args:
             overrides : List of override strings from Hydra
         """
+        issues = overrides + ["Look for ● markers in the configuration below"]
         panel = self.ui.create_warning_panel(
-            issues = overrides,
+            issues = issues,
             title  = "Configuration Overrides"
         )
         self.ui.display_panel(panel)
     
+    def _display_runs_table(
+        self,
+        runs         : list[Path],
+        columns      : list[tuple[str, str, int, str]],
+        border_style : str = "bright_blue",
+        title        : Optional[str] = None,
+        show_overrides : bool = True
+    ) -> None:
+        """
+        Display runs in a formatted table with status indicators.
+        
+        Args:
+            runs         : List of run paths to display
+            columns      : Column definitions for the table
+            border_style : Border style for the table
+            title        : Optional title for the table
+            show_overrides : Whether to include overrides column
+        """
+        table = self.ui.create_aligned_table(
+            border_style = border_style,
+            columns      = columns,
+            title        = title
+        )
+        
+        for run_path in runs:
+            run_id = str(run_path.relative_to(self.outputs_dir))
+            
+            if (run_path / "training_complete").exists():
+                status = "[bold green]✓[/]"
+            elif (run_path / "dry_run").exists():
+                status = "[bold cyan]◎[/]"
+            else:
+                status = "[bold yellow]...[/]"
+            
+            if show_overrides:
+                overrides = (
+                    self._format_overrides(run_path / ".hydra" / "overrides.yaml")
+                    if (run_path / ".hydra" / "overrides.yaml").exists()
+                    else "-"
+                )
+                table.add_row(run_id, overrides, status)
+            else:
+                table.add_row(run_id, status)
+        
+        self.ui.display_panel(table)
+    
+    
     def _flatten_config(
         self,
-        config    : ConfigDict,
+        config    : dict[str, Any],
         overrides : Optional[list[str]] = None,
         prefix    : str = ""
-    ) -> ConfigDict:
+    ) -> dict[str, Any]:
         """
         Flatten nested config to dot notation.
         
@@ -512,131 +509,69 @@ class RunsCommand:
             if path.is_dir() and (path / ".hydra").exists()
         ]
     
-    def _paginate_all_config(
+    def _load_run_config(
         self,
-        columns   : list,
-        items     : list[tuple[str, Any]],
-        page_size : int,
-        run_path  : Optional[Path] = None,
-        overrides : Optional[list[str]] = None
-    ):
+        run_path       : Path,
+        include_system : bool = False
+    ) -> dict[str, Any]:
         """
-        Handle paginated display of all configuration parameters.
+        Load and optionally filter a run's configuration.
         
         Args:
-            columns   : Column definitions for the table
-            items     : Sorted list of (path, value) tuples
-            page_size : Number of items to show per page
-            run_path  : Optional path to the run for display context
+            run_path       : Path to the run directory
+            include_system : Whether to include system (_) configs
+            
+        Returns:
+            Configuration dictionary
         """
-        def render_config_page(
-            page_items  : list, 
-            page_num    : int, 
-            total_pages : int
-        ):
-            """
-            Render a page of configuration parameters in a table.
-            """
-            self.ui.print_header("Training Run Management")
-            if run_path:
-                self.ui.print_section(
-                    f"Configuration: {run_path.relative_to(self.outputs_dir)}",
-                    minor=True
-                )
-            
-            if page_num == 1 and overrides:
-                self._display_overrides_panel(overrides)
-            
-            self.ui.print_section(
-                style = "bright_cyan",
-                title = f"Configuration Parameters (Page {page_num}/{total_pages})"
-            )
-            
-            table = self.ui.create_aligned_table(
-                border_style = "dim",
-                columns      = columns
-            )
-            
-            for path, (value, is_override) in page_items:
-                indicator = "●" if is_override else " "
-                table.add_row(indicator, path, self._format_value(value))
-            
-            self.ui.display_panel(table)
-            self.ui.print_message(
-                message  = "● = Parameter overridden from default",
-                msg_type = "info"
-            )
-        
-        self.prompts.paginate(
-            allow_row_select = False,
-            items            = items,
-            page_size        = page_size,
-            render_page      = render_config_page
-        )
+        with load_yaml(run_path / ".hydra" / "config.yaml") as cfg:
+            if not include_system:
+                return {k: v for k, v in cfg.items() if not k.startswith('_')}
+            return cfg
     
-    def _paginate_config(
-        self,
-        columns   : list,
-        domain    : str,
-        items     : list,
-        page_size : int,
-        run_path  : Optional[Path] = None
-    ):
+    def _get_domains(
+        self, 
+        cfg: dict[str, Any], 
+        domain: Optional[str] = None
+    ) -> list[str]:
         """
-        Handle paginated display of large configurations.
-        
-        Uses the prompts.paginate method to display configuration items
-        across multiple pages with navigation controls.
+        Get list of domains to process from configuration.
         
         Args:
-            columns   : Column definitions for the table
-            domain    : Configuration domain name for the title
-            items     : List of (key, value) tuples to display
-            page_size : Number of items to show per page
-            run_path  : Optional path to the run for display context
+            cfg    : Configuration dictionary
+            domain : Optional specific domain to filter to
+            
+        Returns:
+            List of domain names to process
         """
-        def render_config_page(
-            page_items  : list, 
-            page_num    : int, 
-            total_pages : int
-        ):
-            """
-            Render a page of configuration parameters in a table.
-            """
-            self.ui.print_header("Training Run Management")
-            if run_path:
-                self.ui.print_section(
-                    f"Configuration: {run_path.relative_to(self.outputs_dir)}",
-                    minor=True
+        if domain:
+            if domain not in cfg:
+                self.ui.print_message(
+                    message  = f"Domain '{domain}' not found in configuration",
+                    msg_type = "warning"
                 )
-            
-            self.ui.print_section(
-                style = "bright_cyan",
-                title = (
-                    f"{domain.title()} Configuration "
-                    f"(Page {page_num}/{total_pages})"
-                )
-            )
-            
-            table = self.ui.create_aligned_table(
-                border_style = "dim",
-                columns      = columns
-            )
-            
-            for path, (value, is_override) in page_items:
-                indicator = "●" if is_override else " "
-                table.add_row(indicator, path, self._format_value(value))
-            
-            self.ui.display_panel(table)
-        
-        self.prompts.paginate(
-            allow_row_select = False,
-            items            = items,
-            page_size        = page_size,
-            render_page      = render_config_page
-        )
+                return []
+            return [domain]
+        return sorted(cfg.keys())
     
-    def _resolve_run_id(self, run_id: str) -> RunPath:
+    def _load_overrides(self, run_path: Path) -> list[str]:
+        """
+        Load override configuration from a run.
+        
+        Args:
+            run_path : Path to the run directory
+            
+        Returns:
+            List of override strings, or empty list if none found
+        """
+        overrides_file = run_path / ".hydra" / "overrides.yaml"
+        if overrides_file.exists():
+            with suppress(Exception), open(overrides_file) as f:
+                return safe_load(f) or []
+        return []
+    
+    
+    def _resolve_run_id(self, run_id: str) -> Path:
         """
         Resolve run ID to actual path.
         
@@ -744,28 +679,16 @@ class RunsCommand:
             ("Status",      "bright_white",  10, "center")
         ]
         
-        table = self.ui.create_aligned_table(
-            border_style = "red",
-            columns      = columns,
-            title        = (
+        self._display_runs_table(
+            runs           = to_delete,
+            columns        = columns,
+            border_style   = "red",
+            title          = (
                 f"{len(to_delete)} run{'s' if len(to_delete) > 1 else ''} "
                 f"will be deleted"
-            )
+            ),
+            show_overrides = False
         )
-        
-        for run_path in to_delete:
-            run_id = str(run_path.relative_to(self.outputs_dir))
-            
-            if (run_path / "training_complete").exists():
-                status = "[bold green]✓[/]"
-            elif (run_path / "dry_run").exists():
-                status = "[bold cyan]◎[/]"
-            else:
-                status = "[bold yellow]...[/]"
-            
-            table.add_row(run_id, status)
-        
-        self.ui.display_panel(table)
         
         if dry_run:
             self.ui.print_message(
@@ -844,16 +767,8 @@ class RunsCommand:
         run1_path = self._resolve_run_id(run1)
         run2_path = self._resolve_run_id(run2)
         
-        with ExitStack() as stack:
-            cfg1 = stack.enter_context(
-                load_yaml(run1_path / ".hydra" / "config.yaml")
-            )
-            cfg2 = stack.enter_context(
-                load_yaml(run2_path / ".hydra" / "config.yaml")
-            )
-            
-            cfg1 = {k: v for k, v in cfg1.items() if not k.startswith('_')}
-            cfg2 = {k: v for k, v in cfg2.items() if not k.startswith('_')}
+        cfg1 = self._load_run_config(run1_path)
+        cfg2 = self._load_run_config(run2_path)
         
         self.ui.print_header("Training Run Management")
         self.ui.print_section("Configuration Comparison", minor=True)
@@ -867,7 +782,7 @@ class RunsCommand:
         )
         
         all_configs = ChainMap(cfg1, cfg2)
-        domains     = [domain] if domain else sorted(set(all_configs.keys()))
+        domains     = self._get_domains(dict(all_configs), domain)
         
         # Collect all domains with differences
         domains_with_diffs = []
@@ -876,17 +791,11 @@ class RunsCommand:
             flat1 = self._flatten_config(cfg1.get(domain, {}))
             flat2 = self._flatten_config(cfg2.get(domain, {}))
             
-            def get_value(flat_dict, key, default="NOT SET"):
-                item = flat_dict.get(key, default)
-                if isinstance(item, tuple):
-                    return item[0]
-                return item
-            
             all_keys    = set(flat1) | set(flat2)
             differences = []
             for key in sorted(all_keys):
-                val1 = get_value(flat1, key)
-                val2 = get_value(flat2, key)
+                val1 = flat1.get(key, ("NOT SET", False))[0]
+                val2 = flat2.get(key, ("NOT SET", False))[0]
                 if val1 != val2:
                     differences.append((key, val1, val2))
             
@@ -946,20 +855,19 @@ class RunsCommand:
         
         display_runs = runs if limit is None else runs[:limit]
         
-        if limit is not None and limit == 10:
-            if len(display_runs) < limit:
-                self.ui.print_message(
-                    message  = f"Showing all {len(display_runs)} runs.",
-                    msg_type = "info"
-                )
-            else:
-                self.ui.print_message(
-                    message  = (
-                        f"Showing {len(display_runs)} most recent runs. "
-                        f"(Use -n to change limit or --all)"
-                    ),
-                    msg_type = "info"
-                )
+        if limit and len(runs) > limit:
+            self.ui.print_message(
+                message  = (
+                    f"Showing {limit} of {len(runs)} runs. "
+                    f"(Use --all to see all runs)"
+                ),
+                msg_type = "info"
+            )
+        elif limit and len(runs) <= limit:
+            self.ui.print_message(
+                message  = f"Showing all {len(runs)} runs.",
+                msg_type = "info"
+            )
         
         self.ui.print_section("Recent Runs", minor=True)
         self.ui.console.print(
@@ -975,39 +883,12 @@ class RunsCommand:
             ("Status",       "bright_white",  10, "center")
         ]
         
-        table = self.ui.create_aligned_table(
-            border_style = "bright_blue",
-            columns      = columns
+        self._display_runs_table(
+            runs           = display_runs,
+            columns        = columns,
+            border_style   = "bright_blue",
+            show_overrides = True
         )
-        
-        for run_path in display_runs:
-            run_id = str(run_path.relative_to(self.outputs_dir))
-            
-            overrides = (
-                self._format_overrides(run_path / ".hydra" / "overrides.yaml")
-                if (run_path / ".hydra" / "overrides.yaml").exists()
-                else "-"
-            )
-            
-            if (run_path / "training_complete").exists():
-                status = "[bold green]✓[/]"
-            elif (run_path / "dry_run").exists():
-                status = "[bold cyan]◎[/]"
-            else:
-                status = "[bold yellow]...[/]"
-            
-            table.add_row(run_id, overrides, status)
-        
-        self.ui.display_panel(table)
-        
-        if limit and len(runs) > limit and limit != 10:
-            self.ui.print_message(
-                message  = (
-                    f"Showing {limit} of {len(runs)} runs. "
-                    f"(Use --all to see all runs)"
-                ),
-                msg_type = "info"
-            )
     
     def show_config(
         self,
@@ -1027,31 +908,15 @@ class RunsCommand:
             include_system : Whether to include system (_) configurations
             run_id         : Run identifier or "last" for most recent
         """
-        run_path = self._resolve_run_id(run_id)
+        run_path  = self._resolve_run_id(run_id)
+        cfg       = self._load_run_config(run_path, include_system)
+        overrides = self._load_overrides(run_path)
         
-        with load_yaml(run_path / ".hydra" / "config.yaml") as cfg:
-            if not include_system:
-                cfg = {k: v for k, v in cfg.items() if not k.startswith('_')}
-        
-        overrides = []
-        if (overrides_file := run_path / ".hydra" / "overrides.yaml").exists():
-            with suppress(Exception), open(overrides_file) as f:
-                if loaded_overrides := safe_load(f) or []:
-                    overrides = loaded_overrides
+        domains = self._get_domains(cfg, domain)
+        if not domains:
+            return
         
         all_items = []
-        
-        if domain:
-            if domain not in cfg:
-                self.ui.print_message(
-                    message  = f"Domain '{domain}' not found in configuration",
-                    msg_type = "warning"
-                )
-                return
-            domains = [domain]
-        else:
-            domains = sorted(cfg.keys())
-        
         for d in domains:
             domain_config = self._flatten_config(
                 config    = cfg[d], 
@@ -1067,4 +932,10 @@ class RunsCommand:
             )
             return
         
-        self._display_all_config(all_items, run_path, overrides, run_id == "last")
+        self._display_config(
+            items      = all_items,
+            title      = "Configuration Parameters",
+            run_path   = run_path,
+            overrides  = overrides,
+            using_last = run_id == "last"
+        )
