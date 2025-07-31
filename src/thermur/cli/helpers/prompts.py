@@ -117,6 +117,52 @@ class CLIPrompts:
             style   = self.thermal
         ).ask()
     
+    def confirm_deletion(
+        self, 
+        count  : int,
+        items  : str = "items",
+        keep   : int = 0,
+        force  : bool = False
+    ) -> bool:
+        """
+        Confirm deletion of items with warning panel.
+        
+        Displays a warning panel with deletion details and prompts for confirmation.
+        Useful for any destructive operation that needs user confirmation.
+        
+        Args:
+            count  : Number of items to delete
+            items  : Plural name of items (e.g., "runs", "files")
+            keep   : Number of items being kept (0 if deleting all)
+            force  : Skip confirmation if True
+            
+        Returns:
+            True if user confirms deletion, False otherwise
+        """
+        if force:
+            return True
+            
+        # Build warning messages
+        issues = [
+            f"This will permanently delete {count} {items}",
+            "This action cannot be undone"
+        ]
+        
+        if keep > 0:
+            issues.append(f"Keeping only the {keep} most recent {items}")
+        else:
+            issues.append(f"Use --keep N to preserve N recent {items}")
+            
+        # Display warning panel
+        warning_panel = self.ui.create_warning_panel(
+            issues = issues,
+            title  = "⚠️  Confirm Deletion"
+        )
+        self.ui.display_panel(warning_panel)
+        
+        # Prompt for confirmation
+        return self.confirm(f"Delete {count} {items}?")
+    
     def confirm_download(self, file_info: dict) -> bool:
         """
         Prompts user to confirm file download operation.
