@@ -246,11 +246,21 @@ class CLIPrompts:
         page = 0
         total_pages = -(-len(items) // page_size)
         
+        first_render = True
+        
         while True:
-            self.ui.console.clear()
-            
             start      = page * page_size
             page_items = items[start:start + page_size]
+            
+            if not first_render:
+                lines_to_clear = len(page_items) + 20
+                self.ui.console.file.write(f'\033[{lines_to_clear}A')
+                
+                for _ in range(lines_to_clear):
+                    self.ui.console.file.write('\033[K\n')
+                
+                self.ui.console.file.write(f'\033[{lines_to_clear}A')
+                self.ui.console.file.flush()
             
             render_page(page_items, page + 1, total_pages)
             nav_options = []
@@ -274,22 +284,32 @@ class CLIPrompts:
             if allow_row_select and len(page_items) > 0:
                 valid_choices.extend(map(str, range(len(page_items))))
             
-            choice = questionary.text(
-                "Select",
-                style    = self.thermal,
-                validate = lambda x: x.strip().lower() in valid_choices
-            ).ask()
-            
-            if not choice:
-                return None
+            try:
+                choice = questionary.text(
+                    "Select",
+                    style    = self.thermal,
+                    validate = lambda x: x.strip().lower() in valid_choices
+                ).ask()
+                
+                if not choice:
+                    return None
+            except Exception:
+                self.ui.console.print("[dim]Enter choice: [/dim]", end="")
+                choice = input().strip().lower()
+                if choice not in valid_choices:
+                    continue
             
             match choice.strip().lower():
                 case "q" | "":
                     return None
                 case "p":
-                    page = max(0, page - 1)
+                    if page > 0:
+                        page = max(0, page - 1)
+                        first_render = False
                 case "n":
-                    page = min(total_pages - 1, page + 1)
+                    if page < total_pages - 1:
+                        page = min(total_pages - 1, page + 1)
+                        first_render = False
                 case n if n.isdigit() and allow_row_select:
                     return page_items[int(n)]
     
@@ -322,15 +342,13 @@ class CLIPrompts:
             total_pages : int
         ):
             """
-            Render a page of files with download status table and summary.
+            Render a page of files with download status table.
             """
             self.ui.display_download_table(
                 available_files = page_files,
                 file_status     = file_status,
                 title           = f"{title_prefix} (Page {page_num}/{total_pages})"
             )
-            self.ui.console.print()
-            self.ui.display_download_summary(available_files, file_status)
             self.ui.console.print()
         
         return self.paginate(
