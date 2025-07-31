@@ -263,28 +263,27 @@ class RunsCommand:
             page_size  : Number of items per page (default 20)
             using_last : Whether the user is viewing the last run
         """
+        self.ui.print_header("Training Run Management")
+        
+        if self.run_path:
+            self.ui.print_section(
+                f"Configuration: {self.run_path.relative_to(self.outputs_dir)}",
+                True
+            )
+        
+        if using_last:
+            self.ui.print_message(
+                message  = (
+                    "Using most recent run. "
+                    "(Use specific run ID to view others)"
+                ),
+                msg_type = "info"
+            )
+        
+        if self.overrides:
+            self._display_overrides_panel()
+        
         def render_page(page_items, page_num, total_pages):
-            self.ui.print_header("Training Run Management")
-            
-            if self.run_path:
-                self.ui.print_section(
-                    f"Configuration: {self.run_path.relative_to(self.outputs_dir)}",
-                    True
-                )
-            
-            if page_num == 1:
-                if using_last:
-                    self.ui.print_message(
-                        message  = (
-                            "Using most recent run. "
-                            "(Use specific run ID to view others)"
-                        ),
-                        msg_type = "info"
-                    )
-                
-                if self.overrides:
-                    self._display_overrides_panel()
-            
             page_info = (
                 f" (Page {page_num}/{total_pages})" if total_pages > 1 else ""
             )

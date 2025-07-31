@@ -535,10 +535,17 @@ class DownloadCommand:
             
         file_status = self._get_download_status(available_files)
         
+        self.ui.print_section("FRDR Dataset Browser", minor=True)
+        self.ui.print_message(
+            message  = "Moisseeva (2020) LES Wildfire Plume Dataset",
+            msg_type = "info"
+        )
+        self.ui.display_download_summary(available_files, file_status)
+        
         selected_file = self.prompts.select_file_from_pages(
             available_files = available_files,
             file_status     = file_status,
-            title_prefix    = "Moisseeva (2020) Dataset"
+            title_prefix    = "Available Files"
         )
         
         if selected_file:
