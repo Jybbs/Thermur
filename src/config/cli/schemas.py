@@ -8,7 +8,7 @@ have been moved inline to reduce indirection.
 from pathlib           import Path
 from pydantic          import BaseModel, computed_field, Field, PositiveInt, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing            import Literal, Optional
+from typing            import Literal
 
 SECRETS_DIR = Path.home() / ".config" / "thermur" / "secrets"
 
@@ -333,14 +333,14 @@ class GlobusSecrets(BaseSettings):
     Each token field is stored as a separate file in the secrets directory,
     with the filename matching the field name.
     """
-    refresh_token: Optional[SecretStr] = Field(
+    refresh_token: SecretStr | None = Field(
         default     = None,
         description = (
             "Long-lived OAuth2 refresh token used to obtain new access tokens "
             "for Globus transfer operations."
         )
     )
-    scope: Optional[str] = Field(
+    scope: str | None = Field(
         default     = None,
         description = (
             "Space-delimited list of OAuth2 scopes granted by the authentication "

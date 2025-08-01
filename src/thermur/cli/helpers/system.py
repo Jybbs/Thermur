@@ -44,13 +44,11 @@ class SystemInspector:
         if not cuda.is_available():
             return {"cuda": False, "device_count": 0}
         
-        props             = cuda.get_device_properties(0)
-        total_memory: int = getattr(props, 'total_memory', 0)
         return {
             "cuda"         : True,
             "cuda_version" : torch_version.split('+')[0] if '+' in torch_version else torch_version,
             "device_count" : cuda.device_count(),
-            "gpu_memory"   : f"{total_memory / 1e9:.1f}GB",
+            "gpu_memory"   : f"{cuda.mem_get_info(0)[1] / 1e9:.1f}GB",
             "gpu_name"     : cuda.get_device_name(0),
         }
 

@@ -41,4 +41,3 @@ sources = ["src"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/config", "src/thermur"]
-

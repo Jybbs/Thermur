@@ -13,7 +13,6 @@ from torch.utils.data             import DataLoader
 from torchrl.collectors           import SyncDataCollector
 from torchrl.data                 import TensorDictReplayBuffer
 from torchrl.data.replay_buffers  import LazyTensorStorage, SamplerWithoutReplacement
-from typing                       import Optional
 
 
 class DataModule(LightningDataModule):
@@ -51,8 +50,8 @@ class DataModule(LightningDataModule):
         self.experience = experience
         self.expert     = expert
         
-        self.buffer    : Optional[TensorDictReplayBuffer] = None
-        self.collector : Optional[SyncDataCollector]      = None
+        self.buffer    : TensorDictReplayBuffer | None = None
+        self.collector : SyncDataCollector      | None = None
     
     def setup(self, stage: str):
         """

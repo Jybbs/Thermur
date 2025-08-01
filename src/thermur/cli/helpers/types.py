@@ -5,7 +5,19 @@ This module consolidates all type protocols, TypedDicts, and type aliases used
 throughout the CLI, providing a single source of truth for type definitions.
 """
 from config.cli.schemas import *
-from typing             import Protocol, TypedDict
+from typing             import Any, Literal, NamedTuple, Protocol, TypedDict
+
+
+class ConfigItem(NamedTuple):
+    """
+    Configuration parameter with override indicator.
+    
+    Represents a single configuration parameter with its hierarchical path,
+    current value, and whether it was overridden from the default.
+    """
+    is_override : bool  # Whether this parameter was overridden
+    path        : str   # Dot-separated parameter path (e.g., "model.lr")
+    value       : Any   # Current parameter value
 
 
 class CLIConfig(Protocol):
@@ -43,6 +55,19 @@ class EndpointInfo(TypedDict):
     """
     display_name : str  # Human-readable endpoint name
     id           : str  # UUID of the endpoint
+
+
+class TableColumn(NamedTuple):
+    """
+    Rich table column specification.
+    
+    Defines the structure for table column configuration used by Rich
+    tables throughout the CLI for consistent styling and alignment.
+    """
+    justify : Literal["default", "left", "center", "right", "full"]
+    style   : str  
+    title   : str
+    width   : int
 
 
 class TransferStatus(TypedDict):

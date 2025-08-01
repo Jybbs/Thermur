@@ -8,7 +8,7 @@ handling metric updates and event logging at appropriate lifecycle hooks.
 from pytorch_lightning            import Callback, LightningModule, Trainer
 from tensordict                   import TensorDict
 from thermur.imitation.monitoring import EventLogger, MetricsCollector
-from typing                       import Any, Optional
+from typing                       import Any
 
 
 class MonitoringCallback(Callback):
@@ -23,8 +23,8 @@ class MonitoringCallback(Callback):
     
     def __init__(
         self,
-        collector : Optional[MetricsCollector] = None,
-        events    : Optional[EventLogger]      = None
+        collector : MetricsCollector | None = None,
+        events    : EventLogger      | None = None
     ):
         """
         Configure monitoring components for training lifecycle integration.

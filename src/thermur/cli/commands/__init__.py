@@ -5,11 +5,9 @@ Each command is implemented as a function that receives the AppContext through
 Typer's dependency injection system and uses the shared UI components for output 
 formatting.
 """
-from .download import download
-from .info     import info
-from .monitor  import monitor
-from .runs     import runs
-from .train    import train
-from .validate import validate
-
-__all__ = ["download", "info", "monitor", "runs", "train", "validate"]
+from .download import *
+from .info     import *
+from .monitor  import *
+from .runs     import *
+from .train    import *
+from .validate import *

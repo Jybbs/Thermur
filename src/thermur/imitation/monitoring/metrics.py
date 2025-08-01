@@ -13,7 +13,6 @@ from torch                               import Tensor
 from torchmetrics                        import MeanAbsoluteError, MeanSquaredError
 from torchmetrics                        import MetricCollection, R2Score, Metric
 from torchmetrics.image                  import StructuralSimilarityIndexMeasure
-from typing                              import Optional
 
 import torch
 
@@ -167,7 +166,7 @@ class ColorAccuracyMetric(Metric):
     def update(
         self,
         sensed_temperature : Tensor,
-        displayed_rgb      : Optional[Tensor] = None
+        displayed_rgb      : Tensor | None = None
     ):
         """
         Update metric with temperature and color data.
@@ -475,9 +474,9 @@ class MetricsCollector:
         self,
         module      : LightningModule,
         phase       : str,
-        loss        : Optional[Tensor] = None,
-        predictions : Optional[Tensor] = None,
-        targets     : Optional[Tensor] = None
+        loss        : Tensor | None = None,
+        predictions : Tensor | None = None,
+        targets     : Tensor | None = None
     ):
         """
         Handles logging of all metric types and ensures proper
