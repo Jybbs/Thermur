@@ -54,7 +54,7 @@ def main_callback(
 
     if ctx.invoked_subcommand is None:
         app.ui.print_header("Welcome to Thermur")
-        app.ui.print_section("Available Commands", "accent")
+        app.ui.print_section("Available Commands", style="accent")
 
         for cmd_info in app.cfg.display.commands_available:
             app.ui.console.print(
@@ -62,7 +62,7 @@ def main_callback(
                 f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
             )
 
-        app.ui.print_section("Getting Started", "bright_green")
+        app.ui.print_section("Getting Started", style="bright_green")
         app.ui.print_command_examples(app.cfg.display.commands_examples)
 
         app.ui.console.print()

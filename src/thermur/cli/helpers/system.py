@@ -5,7 +5,7 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
-from .types             import CLIConfig
+from config.cli.builds  import CLIConfiguration
 from contextlib         import suppress
 from importlib.metadata import PackageNotFoundError, version
 from pathlib            import Path
@@ -24,7 +24,7 @@ class SystemInspector:
     reducing the need to pass configuration objects to every method call.
     """
     
-    def __init__(self, cfg: CLIConfig):
+    def __init__(self, cfg: CLIConfiguration):
         """
         Initialize the system inspector with configuration.
         
