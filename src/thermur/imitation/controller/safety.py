@@ -40,38 +40,18 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            flock  : Flock configuration model containing agent properties
-            safety : QP solver configuration model
+            flock      : Flock configuration model containing agent properties
+            safety     : QP solver configuration model
+            thresholds : Safety threshold configuration with temperature limits
         """
         self.activation_count     = 0
-        self.activation_tolerance = safety.activation_tolerance
+        self.activation_tolerance = thresholds.activation_tolerance
         self.agent_count          = flock.agent_count
-        self.max_temperature      = flock.max_temperature
+        self.max_temperature      = thresholds.max_temperature
         self.safety               = safety
         self.total_queries        = 0
-        self.Q                    = torch.eye(3, dtype=torch.float32)  # Always 3D
+        self.Q                    = torch.eye(3, dtype=torch.float32)
 
-    def _evaluate_barrier(self, flock: TensorDict) -> tuple[Tensor, Tensor]:
-        """
-        Computes the barrier function h(𝐬) and its gradient ∇h(𝐬).
-        
-        The barrier function is h(𝐬) = T_max - T(𝐬), creating a boundary at
-        T = T_max. The gradient ∇h(𝐬) = -∇T(𝐬) points away from high temperature
-        regions, creating a "force" that pushes agents toward safety.
-        
-        Args:
-            flock: The current observation data for the flock containing
-                   gradient and temperature tensors.
-                
-        Returns:
-            A tuple containing (h_values, h_grads).
-        """
-        gradient = flock.get("gradient", None)       
-        h_grads  = -gradient if gradient is not None else None
-        h_values = self.max_temperature - flock["temperature"]
-        
-        return h_values, h_grads
-    
     def _log_activation(self, is_active: Tensor):
         """
         Records barrier function activations for debugging and monitoring.
@@ -107,15 +87,16 @@ class SafetyFilter:
         Returns:
             The batch of safe control actions `u*`.
         """
-        h_values, h_grads = self._evaluate_barrier(flock)
-        agent_count       = self.agent_count
-        device            = u_nominal.device
+        agent_count = self.agent_count
+        device      = u_nominal.device
+        h_grads     = -flock["gradient"]
+        h_values    = self.max_temperature - flock["temperature"]
 
         solver = QPFunction(
             eps     = self.safety.qp_eps,
             maxIter = self.safety.qp_max_iter,
         )
-
+            
         try:
             u_safe = solver(
                 Q = self.Q.to(device).expand(agent_count, -1, -1),
@@ -126,18 +107,18 @@ class SafetyFilter:
                 b = torch.empty(0, device=device),
             )
             
-            is_active = torch.norm(
-                input = u_safe - u_nominal, 
-                dim   = 1
-            ) > self.activation_tolerance
+            delta     = u_safe - u_nominal
+            is_active = delta.norm(dim=1) > self.activation_tolerance
             self._log_activation(is_active)
+            return u_safe.view_as(u_nominal)
 
         except Exception as e:
             if self.safety.qp_on_failure == "nominal":
                 return u_nominal
-            raise ValueError(f"QP safety filter failed to find a solution: {e}")
-
-        return u_safe.view_as(u_nominal)
+            elif self.safety.qp_on_failure == "zero":
+                return torch.zeros_like(u_nominal)
+            else:
+                raise ValueError(f"QP safety filter failed to find a solution: {e}")
     
     def get_activation_rate(self) -> float:
         """
