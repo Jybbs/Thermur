@@ -9,14 +9,16 @@ and communication graphs.
 The visualizer manages a PyVista plotter window and handles the lifecycle of
 various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
-both light and dark themes.
+both light and dark themes through pre-configured theme objects.
 """
-from .renderers                             import Renderer
-from .sampling                              import GridSampler
-from config.imitation.schemas.visualization import *
-from pyvista                                import Actor, global_theme, Plotter, themes
-from tensordict                             import TensorDictBase
-from typing                                 import Optional
+from .renderer                      import Renderer
+from .sampler                       import Sampler
+from config.imitation.visualization import *
+from itertools                      import count
+from pathlib                        import Path
+from pyvista                        import Plotter
+from tensordict                     import TensorDictBase
+from typing                         import Optional
 
 
 class Visualizer:
@@ -43,12 +45,11 @@ class Visualizer:
     
     def __init__(
         self,
-        colors     : ColorModel,
-        display    : DisplayModel,
-        glyphs     : GlyphModel,
-        grids      : GridModel,
-        opacity    : OpacityModel,
-        simulation : object
+        plotter    : Plotter,
+        renderer   : Renderer,
+        sampler    : Sampler,
+        simulation : object,
+        vista      : VistaModel
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -59,134 +60,71 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            colors          : Color configuration for visualization elements
-            display         : Display settings and element toggles
-            glyphs          : Glyph configuration for agent rendering
-            grids           : Grid configuration for field sampling
-            opacity         : Opacity configuration for visualization elements
-            simulation      : Simulation reference for accessing environment data
+            plotter    : Pre-built PyVista plotter window
+            renderer   : Pre-built renderer for visualization elements
+            sampler    : Pre-built grid sampler for spatial data sampling
+            simulation : Simulation reference for accessing environment data
+            vista      : Unified visualization configuration
         """
-        self.colors        = colors
-        self.display       = display
-        self.glyphs        = glyphs
-        self.grids         = grids
-        self.opacity       = opacity
-        self.simulation    = simulation
-        self._grid_sampler = GridSampler(self.grids)
-        self._renderer     = Renderer(self.colors, self.glyphs, self.opacity)
+        self.plotter    = plotter
+        self.renderer   = renderer
+        self.sampler    = sampler
+        self.simulation = simulation
+        self.vista      = vista
         
-        self._plotter       : Plotter     = None
-        self._agent_actors  : list[Actor] = None
-        self._wind_actors   : list[Actor] = None
-        self._safety_actors : list[Actor] = None
-        self._graph_actors  : list[Actor] = None
-        self._colormap      : str         = None
+        self.agent_actors          = None
+        self.frame_capture_enabled = False
+        self.frame_counter         = None
+        self.frame_dir             = None
+        self.graph_actors          = None
+        self.safety_actors         = None
+        self.temperature_actors    = None
+        self.wind_actors           = None
         
-        self._initialize_plotter()
+        self._initialize_display()
+        
+        if self.vista.auto_save_frames:
+            self.enable_frame_capture()
     
-    def _initialize_plotter(self):
+    def _initialize_display(self):
         """
-        Set up the PyVista plotter with appropriate theme and camera settings.
+        Set up the PyVista display and camera settings.
         
-        This method creates the visualization window with the configured size,
-        applies the selected theme (dark or light), and sets up appropriate
-        lighting for 3D rendering. The camera is positioned to provide a
-        clear initial view of the flock, with zoom adjusted for typical
-        simulation bounds.
-        
-        The method also initializes the temperature colormap that will be
-        used for thermal visualization of agents throughout the simulation.
+        This method sets up the camera position for an optimal initial view
+        of the flock. The theme has already been applied to the plotter
+        during the build phase.
         """
-        match self.display.dark_mode:
-            case True:
-                theme = themes.DarkTheme()
-            case False:
-                theme = themes.DocumentTheme()
-        global_theme.load_theme(theme)
-        
-        self._plotter = Plotter(
-            lighting    = "three lights",
-            off_screen  = False,
-            title       = self.display.window_title,
-            window_size = self.display.window_size
-        )
-        
-        self._plotter.camera_position = 'xy'
-        self._plotter.camera.zoom(1.5)
-        self._colormap = self.colors.colormap
+        self.plotter.camera_position = 'xy'
+        self.plotter.camera.zoom(1.5)
 
-    def update(self, observation: TensorDictBase):
+    def close(self):
         """
-        Update the visualization with new simulation data.
+        Close the visualization window and clean up resources.
         
-        This method processes the latest observation data from the simulation
-        and updates all active visualization elements. It efficiently manages
-        the rendering pipeline by clearing previous actors and creating new
-        ones based on the current configuration settings.
+        This method properly shuts down the PyVista plotter and releases
+        all associated resources. It should be called when the visualization
+        is no longer needed, such as at the end of a training run or when
+        the user requests to close the window. The method includes safety
+        checks to avoid errors if the plotter is already closed.
+        """
+        if self.plotter is not None:
+            self.plotter.close()
+
+    def enable_frame_capture(self, output_dir: Optional[Path] = None):
+        """
+        Enable frame capture for creating animations.
         
-        The update process includes:
-        1. Extracting tensor data from the observation
-        2. Clearing previous frame's actors
-        3. Conditionally rendering each visualization element
-        4. Managing actor references for future updates
+        Sets up the frame capture system with an output directory and
+        initializes the frame counter. Once enabled, frames can be saved
+        manually or automatically during rendering.
         
         Args:
-            observation: Current simulation state containing:
-                - edge_index  : Communication graph edges (2, E)
-                - gradient    : Temperature gradients (N, 3)
-                - position    : Agent positions (N, 3)
-                - temperature : Agent temperatures (N, 1)
-                - velocity    : Agent velocities (N, 3) 
+            output_dir : Directory to save frames. Defaults to configured path
         """
-        if self._plotter is None:
-            self._initialize_plotter()
-        
-        edge_index  = observation.get("edge_index")
-        position    = observation.get("position")
-        temperature = observation.get("temperature")
-        velocity    = observation.get("velocity")
-        
-        if self._plotter.ren_win is None:
-            return
-            
-        self._plotter.clear_actors()
-        
-        if self.display.show_agents:
-            colormap = self._colormap if self.display.show_thermal else None
-            self._agent_actors = self._renderer.add_agents(
-                colormap    = colormap,
-                plotter     = self._plotter,
-                position    = position,
-                show_trails = self.display.show_trails,
-                temperature = temperature,
-                velocity    = velocity
-            )
-        
-        if self.display.show_wind:
-            wind_grid = self._grid_sampler.create_wind_grid(
-                position   = position,
-                simulation = self.simulation
-            )
-            self._wind_actors = self._renderer.add_wind_vectors(
-                plotter   = self._plotter,
-                wind_grid = wind_grid
-            )
-        
-        if self.display.show_safety:
-            self._safety_actors = self._renderer.add_safety_boundary(
-                grids           = self.grids,
-                max_temperature = self.simulation.flock.max_temperature,
-                plotter         = self._plotter,
-                position        = position,
-                temperature     = temperature
-            )
-        
-        if self.display.show_graph:
-            self._graph_actors = self._renderer.add_communication_graph(
-                edge_index = edge_index,
-                plotter    = self._plotter,
-                position   = position
-            )
+        self.frame_dir = Path(output_dir or self.vista.frame_output_dir)
+        self.frame_dir.mkdir(parents=True, exist_ok=True)
+        self.frame_counter = count()
+        self.frame_capture_enabled = True
     
     def render(self):
         """
@@ -197,9 +135,41 @@ class Visualizer:
         reflect changes in the display window. The method includes safety
         checks to ensure the plotter is initialized and the window is still
         open before attempting to render.
+        
+        If auto_save_frames is enabled, automatically captures and saves
+        a screenshot after rendering.
         """
-        if self._plotter is not None:
-            self._plotter.render()
+        if self.plotter is not None:
+            self.plotter.render()
+            
+            if self.vista.auto_save_frames and self.frame_capture_enabled:
+                self.save_frame()
+    
+    def save_frame(self, filename: Optional[str] = None) -> Optional[Path]:
+        """
+        Save the current visualization frame as an image.
+        
+        Captures the current state of the visualization window and saves it
+        as a PNG image. Frame capture must be enabled first via
+        enable_frame_capture() method.
+        
+        Args:
+            filename : Optional custom filename. If None, uses frame counter.
+                      Should not include directory path or extension.
+        
+        Returns:
+            Path to the saved image file, or None if capture not enabled
+        """
+        if not self.frame_capture_enabled or self.frame_dir is None:
+            return None
+        
+        if filename is None:
+            filename = f"frame_{next(self.frame_counter):06d}"
+        
+        filepath = self.frame_dir / f"{filename}.png"
+        self.plotter.screenshot(filepath)
+        
+        return filepath
     
     def toggle(
         self, 
@@ -242,16 +212,82 @@ class Visualizer:
         setattr(self.visualization, attr_name, new_state)
         
         return new_state
-    
-    def close(self):
+
+    def update(self, observation: TensorDictBase):
         """
-        Close the visualization window and clean up resources.
+        Update the visualization with new simulation data.
         
-        This method properly shuts down the PyVista plotter and releases
-        all associated resources. It should be called when the visualization
-        is no longer needed, such as at the end of a training run or when
-        the user requests to close the window. The method includes safety
-        checks to avoid errors if the plotter is already closed.
+        This method processes the latest observation data from the simulation
+        and updates all active visualization elements. It efficiently manages
+        the rendering pipeline by clearing previous actors and creating new
+        ones based on the current configuration settings.
+        
+        The update process includes:
+        1. Extracting tensor data from the observation
+        2. Clearing previous frame's actors
+        3. Conditionally rendering each visualization element
+        4. Managing actor references for future updates
+        
+        Args:
+            observation: Current simulation state containing:
+                - edge_index  : Communication graph edges (2, E)
+                - gradient    : Temperature gradients (N, 3)
+                - position    : Agent positions (N, 3)
+                - temperature : Agent temperatures (N, 1)
+                - velocity    : Agent velocities (N, 3) 
         """
-        if self._plotter is not None:
-            self._plotter.close()
+        edge_index  = observation.get("edge_index")
+        position    = observation.get("position")
+        temperature = observation.get("temperature")
+        velocity    = observation.get("velocity")
+        
+        if self.plotter.ren_win is None:
+            return
+            
+        self.plotter.clear_actors()
+        
+        if self.vista.show_agents:
+            colormap = self.vista.colormap if self.vista.show_thermal_colors else None
+            self.agent_actors = self.renderer.add_agents(
+                colormap    = colormap,
+                plotter     = self.plotter,
+                position    = position,
+                show_trails = self.vista.show_trails,
+                temperature = temperature,
+                velocity    = velocity
+            )
+        
+        if self.vista.show_wind_arrows:
+            wind_grid = self.sampler.create_wind_grid(
+                position   = position,
+                simulation = self.simulation
+            )
+            self.wind_actors = self.renderer.add_wind_vectors(
+                plotter   = self.plotter,
+                wind_grid = wind_grid
+            )
+        
+        if self.vista.show_safety_boundary:
+            self.safety_actors = self.renderer.add_safety_boundary(
+                max_temperature = self.simulation.flock.max_temperature,
+                plotter         = self.plotter,
+                position        = position,
+                temperature     = temperature
+            )
+        
+        if self.vista.show_graph:
+            self.graph_actors = self.renderer.add_communication_graph(
+                edge_index = edge_index,
+                plotter    = self.plotter,
+                position   = position
+            )
+        
+        if self.vista.show_temperature_volume:
+            temp_grid = self.sampler.create_temperature_grid(
+                environment = self.simulation,
+                position    = position
+            )
+            self.temperature_actors = self.renderer.add_temperature_volume(
+                plotter   = self.plotter,
+                temp_grid = temp_grid
+            )

@@ -1,16 +1,14 @@
 """
 Validation command for the Thermur CLI.
 
-This module provides the 'validate' command, which allows users to check
-their system setup and configuration syntax without initiating a full
-training run.
+Allows users to check their system setup and configuration syntax
+without initiating a full training run.
 """
-from operator import itemgetter
-from typer    import Context, Option
+from thermur.cli import app
+from typer       import Option
 
 
 def validate(
-    ctx       : Context,
     overrides : list[str] | None = Option(
         None,
         "--config", "-c",
@@ -24,67 +22,45 @@ def validate(
     system requirements, configuration syntax, and integration status, providing
     a full report of any potential issues.
     """
-    command = ValidateCommand(ctx)
-    command.run(overrides)
+    app.ui.print_header("System Validation")
+    app.ui.display_system_validation(app.system)
 
+    app.ui.print_section("Configuration Check")
 
-class ValidateCommand:
-    """
-    Encapsulates the logic for the 'validate' command.
+    with app.ui.console.status(
+        "[accent]Validating configuration...[/accent]",
+        spinner = "dots"
+    ):
+        issues = app.system.validate_overrides(overrides)
 
-    This class provides a structured way to run all system and configuration
-    validations, using components from the shared Typer context.
-    """
-    def __init__(self, ctx: Context):
-        """
-        Initializes the command with shared context components.
+    app.ui.print_message(
+        message  = (
+            "Configuration issues found:" if issues 
+            else "Configuration validation passed!"
+        ),
+        msg_type = "warning" if issues else "success"
+    )
+    
+    for i, issue in enumerate(issues, start=1):
+        app.ui.console.print(f"  [warning]⚠️  {i}. {issue}[/warning]")
 
-        Args:
-            ctx: The Typer context, which holds the shared AppContext object
-                 containing UI, system, and other core components.
-        """
-        self.cfg    = ctx.obj.cfg
-        self.system = ctx.obj.system
-        self.ui     = ctx.obj.ui
-
-
-    def run(self, overrides: list[str] | None):
-        """
-        Executes the main validation workflow.
-
-        Args:
-            overrides: A list of Hydra configuration overrides to validate.
-        """
-        self.ui.print_header("System Validation")
-        self.ui.display_system_validation(self.system)
-
-        self.ui.print_section("Configuration Check")
-
-        with self.ui.console.status(
-            self.cfg.messages.status["validating_config"],
-            spinner = "dots"
-        ):
-            issues = self.system.validate_overrides(overrides)
-
-        msg_key = "config_issues" if issues else "config_passed"
-        self.ui.print_message(
-            message  = self.cfg.messages.validation[msg_key],
-            msg_type = "warning" if issues else "success"
+    app.ui.console.print()
+    
+    if issues:
+        app.ui.print_message(
+            message  = "Validation completed with warnings",
+            msg_type = "warning"
         )
-        for i, issue in enumerate(issues, start=1):
-            self.ui.console.print(f"  [warning]⚠️  {i}. {issue}[/warning]")
-
-        self.ui.console.print()
-        
-        if issues:
-            with_warn, review = itemgetter("with_warnings", "review_issues")(
-                self.cfg.messages.validation
-            )
-            self.ui.print_message(with_warn, "warning")
-            self.ui.print_message(review,    "tip")
-        else:
-            all_pass, ready = itemgetter("all_passed", "system_ready")(
-                self.cfg.messages.validation
-            )
-            self.ui.print_message(all_pass, "success")
-            self.ui.print_message(ready,    "success")
+        app.ui.print_message(
+            message  = "Review the issues above before training",
+            msg_type = "tip"
+        )
+    else:
+        app.ui.print_message(
+            message  = "All validations passed!",
+            msg_type = "success"
+        )
+        app.ui.print_message(
+            message  = "Your system is ready for training",
+            msg_type = "success"
+        )

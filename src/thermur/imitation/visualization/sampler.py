@@ -9,18 +9,13 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
-from collections                            import namedtuple
-from config.imitation.schemas.visualization import GridModel
-from numpy                                  import array, ndarray
-from pyvista                                import Axes, ImageData, PolyData
-from torch                                  import from_numpy, Tensor
-from typing                                 import Any
+from numpy                          import array, ndarray
+from pyvista                        import Axes, ImageData, PolyData
+from torch                          import from_numpy, Tensor
+from typing                         import Any
 
 
-Bounds = namedtuple('Bounds', ['min', 'max'])
-
-
-class GridSampler:
+class Sampler:
     """
     Manages spatial sampling of simulation data for visualization.
     
@@ -33,14 +28,23 @@ class GridSampler:
     simulations while maintaining performance.
     """
     
-    def __init__(self, grid: GridModel):
+    def __init__(
+        self,
+        grid_padding           : float,
+        temperature_resolution : tuple[int, int, int],
+        wind_resolution        : int
+    ):
         """
         Initialize the grid sampler with configuration.
         
         Args:
-            grid: Visualization configuration containing grid parameters.
+            grid_padding           : Buffer distance for grid generation
+            temperature_resolution : Voxel grid dimensions for temperature field
+            wind_resolution        : Grid points per dimension for wind vectors
         """
-        self.grid = grid
+        self.grid_padding           = grid_padding
+        self.temperature_resolution = temperature_resolution
+        self.wind_resolution        = wind_resolution
     
     def compute_grid_bounds(self, position: Tensor) -> tuple[ndarray, ndarray]:
         """
@@ -57,8 +61,8 @@ class GridSampler:
             Tuple of (min_bounds, max_bounds) as numpy arrays of shape [3]
         """
         positions  = position.detach().cpu().numpy()
-        min_bounds = positions.min(axis=0) - self.grid.padding
-        max_bounds = positions.max(axis=0) + self.grid.padding
+        min_bounds = positions.min(axis=0) - self.grid_padding
+        max_bounds = positions.max(axis=0) + self.grid_padding
         
         return min_bounds, max_bounds
     
@@ -111,15 +115,15 @@ class GridSampler:
         """ 
         min_bounds, max_bounds = self.compute_grid_bounds(position)
         
-        resolution = array(self.grid.temperature_resolution)
+        resolution = array(self.temperature_resolution)
         grid       = ImageData(
-            dimensions = self.grid.temperature_resolution,
+            dimensions = self.temperature_resolution,
             origin     = min_bounds,
             spacing    = (max_bounds - min_bounds) / (resolution - 1)
         )
         
         grid_tensor         = from_numpy(grid.points).float()
-        temps, _            = environment.data_source.query_thermal(grid_tensor)
+        temps, _            = environment.wrf.query_thermal(grid_tensor)
         grid["temperature"] = temps.cpu().numpy().ravel()
         
         return grid
@@ -144,7 +148,7 @@ class GridSampler:
             PyVista PolyData with wind vector field data at each grid point
         """
         min_bounds, max_bounds = self.compute_grid_bounds(position)
-        resolution = self.grid.wind_resolution
+        resolution = self.wind_resolution
         
         spacing_grid = ImageData(
             dimensions = (resolution, resolution, resolution),
@@ -154,7 +158,7 @@ class GridSampler:
         
         wind_grid                  = PolyData(spacing_grid.points)
         grid_tensor                = from_numpy(wind_grid.points).float()
-        wind_vectors               = simulation.data_source.query_wind(grid_tensor)
+        wind_vectors               = simulation.wrf.query_wind(grid_tensor)
         wind_grid["wind_velocity"] = wind_vectors.cpu().numpy()
         
         return wind_grid

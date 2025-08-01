@@ -12,11 +12,11 @@ vectorized operations where possible and PyVista's optimized rendering
 pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
-from config.imitation.schemas.visualization import ColorModel, GlyphModel, GridModel, OpacityModel
-from contextlib                             import suppress
-from pyvista                                import Actor, ImageData, Plotter, PolyData
-from torch                                  import Tensor
-from typing                                 import Optional
+from config.imitation.visualization import VistaModel
+from contextlib                     import suppress
+from pyvista                        import Actor, ImageData, Plotter, PolyData
+from torch                          import Tensor
+from typing                         import Optional
 
 import numpy   as np
 import pyvista as pv
@@ -33,26 +33,32 @@ class Renderer:
     
     The renderer uses efficient vectorized operations and PyVista's optimized
     rendering pipeline to handle large-scale simulations while maintaining
-    interactive frame rates.
+    interactive frame rates. Glyph geometries are pre-built and cached for
+    improved performance.
     """
     
     def __init__(
         self,
-        colors    : ColorModel,
-        glyphs    : GlyphModel,
-        opacities : OpacityModel
+        agent_glyph : object,
+        scalar_bar  : dict,
+        vista       : VistaModel,
+        wind_glyph  : object
     ):
         """
-        Initialize the renderer with visual configuration.
+        Initialize the renderer with visual configuration and cached geometries.
         
         Args:
-            colors    : Configuration for color settings
-            glyphs    : Configuration for glyph appearance
-            opacities : Configuration for opacity values
+            agent_glyph : Pre-built geometry for agent visualization
+            scalar_bar  : Configuration for temperature scalar bar
+            vista       : Unified visualization configuration
+            wind_glyph  : Pre-built arrow geometry for wind vectors
         """
-        self.colors    = colors
-        self.glyphs    = glyphs
-        self.opacities = opacities
+        self.agent_glyph = agent_glyph
+        self.scalar_bar  = scalar_bar
+        self.vista       = vista
+        self.wind_glyph  = wind_glyph
+        
+        self.init_cached_values()
     
     def _create_agent_trails(
         self,
@@ -80,11 +86,9 @@ class Renderer:
             List of actors for the trails
         """
         n_agents = len(positions)
-        n_points = self.glyphs.trail_length
+        n_points = self.vista.trail_length
         
-        t          = np.linspace(0, 0.1 * n_points, n_points)
-        decay      = np.linspace(1, 0, n_points)[:, None]
-        offsets    = velocities[:, None] * t * decay
+        offsets    = velocities[:, None] * self.trail_t * self.trail_decay
         points     = (positions[:, None] - offsets).reshape(-1, 3)
         indices    = np.arange(n_agents * n_points).reshape(n_agents, n_points)
         trail_mesh = pv.MultipleLines(points=points, lines=indices)
@@ -92,11 +96,7 @@ class Renderer:
         if temperature is not None:
             trail_mesh["temperature"] = np.repeat(temperature, n_points)
         
-        params = {
-            "line_width"            : 2,
-            "opacity"               : self.opacities.trails,
-            "render_lines_as_tubes" : True,
-        }
+        params = self.trail_params.copy()
         
         if temperature is not None and colormap:
             params |= {
@@ -105,7 +105,7 @@ class Renderer:
                 "scalars" : "temperature",
             }
         else:
-            params["color"] = self.colors.trail_default
+            params["color"] = self.color_trail
         
         return [plotter.add_mesh(trail_mesh, **params)]
     
@@ -121,8 +121,8 @@ class Renderer:
         """
         Add agent visualizations to the plotter.
         
-        Creates visual representations of each agent in the flock using either sphere
-        glyphs (showing position only) or arrow glyphs (showing position and direction).
+        Creates visual representations of each agent in the flock using arrow
+        glyphs (showing both position and velocity direction when available).
         Agents can be colored by temperature using the provided colormap, and optional
         motion trails can be drawn to show recent movement patterns.
         
@@ -154,20 +154,15 @@ class Renderer:
             velocities = velocity.detach().cpu().numpy()
             point_cloud["velocity"] = velocities
         
-        match self.glyphs.type:
-            case "sphere":
-                glyph_geom = pv.Sphere(radius=self.glyphs.size)
-            case "arrow" | _:
-                glyph_geom = pv.Arrow()
+        glyph_geom = self.agent_glyph
         
-        match (self.glyphs.type, velocity is not None):
-            case ("arrow", True):
-                norms      = np.linalg.norm(velocities, axis=1, keepdims=True)
-                safe_norms = np.maximum(norms, 1e-6)
-                point_cloud["direction"] = velocities / safe_norms
-                orient = "direction"
-            case _:
-                orient = False
+        if velocity is not None:
+            norms      = np.linalg.norm(velocities, axis=1, keepdims=True)
+            safe_norms = np.maximum(norms, 1e-6)
+            point_cloud["direction"] = velocities / safe_norms
+            orient = "direction"
+        else:
+            orient = False
         
         agent_glyphs = point_cloud.glyph(
             geom   = glyph_geom, 
@@ -175,9 +170,7 @@ class Renderer:
             scale  = False
         )
         
-        mesh_params = {
-            "render_points_as_spheres": self.glyphs.type == "sphere",
-        }
+        mesh_params = {"opacity": self.vista.agent_opacity}
         
         if temperature is not None and colormap:
             mesh_params |= {
@@ -186,7 +179,7 @@ class Renderer:
                 "scalars" : "temperature",
             }
         else:
-            mesh_params["color"] = self.colors.agent_default
+            mesh_params["color"] = self.vista.agent_color
         
         actors.append(plotter.add_mesh(agent_glyphs, **mesh_params))
         
@@ -236,7 +229,7 @@ class Renderer:
         edges = edge_index.cpu().numpy()
         lines = np.column_stack(
             [
-                np.full(edges.shape[1], 2),
+                np.full(edges.shape[1], self.line_segment_size),
                 edges[0],
                 edges[1]
             ]
@@ -247,21 +240,20 @@ class Renderer:
         
         return [
             plotter.add_mesh(
-                color                  = self.colors.graph_default,
+                color                  = self.color_graph,
                 line_width             = 2,
                 mesh                   = mesh,
-                opacity                = self.opacities.graph,
+                opacity                = self.vista.graph_opacity,
                 render_lines_as_tubes  = True,
             )
         ]
     
     def add_safety_boundary(
         self,
-        grids            : GridModel,
-        max_temperature  : float,
-        plotter          : Plotter,
-        position         : Tensor,
-        temperature      : Tensor
+        max_temperature : float,
+        plotter         : Plotter,
+        position        : Tensor,
+        temperature     : Tensor
     ) -> list[Actor]:
         """
         Add safety boundary isosurface to the plotter.
@@ -275,7 +267,6 @@ class Renderer:
         estimation and isosurface extraction for efficient rendering.
         
         Args:
-            grids            : Configuration for grid sampling parameters
             max_temperature  : Maximum safe temperature (T_max)
             plotter          : PyVista Plotter instance to render to
             position         : Agent positions tensor of shape [N, 3]
@@ -288,17 +279,16 @@ class Renderer:
         point_cloud = pv.PolyData(positions)
         point_cloud["temperature"] = temperature.cpu().numpy().ravel()
         
-        min_bounds = positions.min(axis=0) - grids.padding
-        max_bounds = positions.max(axis=0) + grids.padding
-        resolution = np.array(grids.temperature_resolution)
+        min_bounds = positions.min(axis=0) - self.vista.grid_padding
+        max_bounds = positions.max(axis=0) + self.vista.grid_padding
+        resolution = np.array(self.vista.temperature_resolution)
         
         target_grid = pv.ImageData(
-            dimensions = grids.temperature_resolution,
+            dimensions = self.vista.temperature_resolution,
             origin     = min_bounds,
             spacing    = (max_bounds - min_bounds) / (resolution - 1),
         )
         
-        # Use sample method to interpolate temperature values
         grid = target_grid.sample(point_cloud)
         
         with suppress(Exception):
@@ -306,54 +296,43 @@ class Renderer:
                 return []
         return [
             plotter.add_mesh(
-                color   = self.colors.safety_default,
+                color   = self.color_safety,
                 mesh    = contour.smooth(n_iter=50),
-                opacity = self.opacities.safety,
+                opacity = 0.3,
             )
         ]
     
     def add_temperature_volume(
         self,
         plotter   : Plotter,
-        temp_grid : ImageData,
-        max_temp  : Optional[float] = None,
-        min_temp  : Optional[float] = None
+        temp_grid : ImageData
     ) -> list[Actor]:
         """
-        Add temperature field volume rendering to the plotter.
+        Add volumetric temperature field rendering to the plotter.
         
-        Creates a volume rendering of a temperature field, showing thermal gradients
-        throughout the simulation space. This visualization provides insights into
-        the thermal environment that the flock navigates through, helping to understand
-        the thermal currents, hot spots, and thermal gradients.
-        
-        The volume rendering uses PyVista's efficient GPU-accelerated rendering
-        pipeline to display large temperature fields in real-time. The colormap
-        and opacity settings can be configured to highlight specific temperature
-        ranges or features of interest.
+        Creates a semi-transparent 3D volume showing the thermal structure of the
+        environment. This visualization reveals thermal columns, temperature gradients,
+        and mixing regions that influence agent navigation. The volume rendering
+        provides critical insight into the environmental conditions that drive
+        the flock's thermal soaring behavior.
         
         Args:
             plotter   : PyVista Plotter instance to render to
-            temp_grid : PyVista UniformGrid with temperature data
-            max_temp  : Maximum temperature for colormap scaling (auto if None)
-            min_temp  : Minimum temperature for colormap scaling (auto if None)
+            temp_grid : Volumetric temperature data sampled on a regular grid
             
         Returns:
-            List of PyVista actors created for the temperature field
+            List of PyVista actors created for the temperature volume
         """
         bounds = temp_grid.get_data_range("temperature")
         
         return [
             plotter.add_volume(
-                cmap            = self.colors.colormap,
-                clim            = (min_temp or bounds[0], max_temp or bounds[1]),
-                opacity         = "linear",
-                scalar_bar_args = {
-                    "position_x" : self.colors.scalar_bar_position_x,
-                    "position_y" : self.colors.scalar_bar_position_y,
-                    "title"      : self.colors.scalar_bar_title,
-                },
-                volume          = temp_grid,
+                clim                  = bounds,
+                cmap                  = self.vista.colormap,
+                opacity               = "sigmoid",
+                opacity_unit_distance = 0.1,
+                scalar_bar_args       = self.scalar_bar,
+                volume                = temp_grid,
             )
         ]
     
@@ -385,8 +364,7 @@ class Renderer:
         magnitudes = np.linalg.norm(velocities, axis=1)
         wind_grid["wind_magnitude"] = magnitudes
         
-        # Filter insignificant vectors to reduce clutter
-        threshold = 0.1 * magnitudes.max()
+        threshold = self.wind_threshold_factor * magnitudes.max()
         filtered_grid = wind_grid.threshold(
             scalars = "wind_magnitude",
             value   = threshold, 
@@ -396,8 +374,8 @@ class Renderer:
             return []
         
         wind_glyphs = filtered_grid.glyph(
-            factor = self.glyphs.arrow_scale,
-            geom   = pv.Arrow(),
+            factor = self.vista.arrow_scale,
+            geom   = self.wind_glyph,
             orient = "wind_velocity",
             scale  = "wind_magnitude",
         )
@@ -405,7 +383,33 @@ class Renderer:
         return [
             plotter.add_mesh(
                 mesh    = wind_glyphs,
-                color   = self.colors.wind_default,
-                opacity = self.opacities.wind,
+                color   = self.color_wind,
+                opacity = 0.8,
             )
         ]
+    
+    def init_cached_values(self):
+        """
+        Initialize cached values for rendering performance.
+        
+        Pre-computes and caches frequently-used values to avoid repeated
+        allocations and computations during rendering. This includes trail
+        parameters, rendering options, and color constants.
+        """
+        n_points = self.vista.trail_length
+        self.trail_t     = np.linspace(0, 0.1 * n_points, n_points)
+        self.trail_decay = np.linspace(1, 0, n_points)[:, None]
+        
+        self.trail_params = {
+            "line_width"            : 2,
+            "opacity"               : 0.5,
+            "render_lines_as_tubes" : True,
+        }
+        
+        self.color_graph  = (0.7, 0.7, 0.9)
+        self.color_safety = (0.9, 0.3, 0.3)
+        self.color_trail  = (0.8, 0.8, 0.8)
+        self.color_wind   = (0.7, 0.7, 0.7)
+        
+        self.line_segment_size     = 2
+        self.wind_threshold_factor = 0.1

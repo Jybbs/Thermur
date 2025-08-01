@@ -2,195 +2,76 @@
 Enhanced console-script target for Thermur, built with Typer and Rich.
 
 This module provides the main CLI interface by discovering and registering
-all available commands from the .commands subpackage. It uses Hydra-zen
-to load and validate the CLI configuration through Pydantic schemas.
+all available commands from the .commands subpackage.
 """
-from config.cli.workloads.cli       import cli_cfg
-from functools                      import cached_property
-from hydra_zen                      import instantiate
-from hydra_zen.third_party.pydantic import pydantic_parser
-from thermur.cli.commands.download  import download
-from thermur.cli.commands.info      import info
-from thermur.cli.commands.monitor   import monitor
-from thermur.cli.commands.train     import train
-from thermur.cli.commands.validate  import validate
-from thermur.cli.helpers.globus     import GlobusManager
-from thermur.cli.helpers.prompts    import CLIPrompts
-from thermur.cli.helpers.system     import SystemInspector
-from thermur.cli.helpers.ui         import ThermurUI
-from typer                          import Context, Exit, Option, Typer
+from thermur.cli          import app
+from thermur.cli.commands import download, info, monitor, runs, train, validate
+from typer                import Context, Exit, Option, Typer
 
-cfg = instantiate(
-    _parser = pydantic_parser,
-    config  = cli_cfg
+cli = Typer(
+    context_settings = {"help_option_names": ["-h", "--help"]},
+    help             = (
+        "🔥 Thermur: Advanced thermal-aware drone flock training "
+        "using imitation learning, physics-based constraints, and "
+        "real-time monitoring"
+    ),
+    name             = "thermur",
+    rich_markup_mode = "rich"
 )
 
+cli.command()(download)
+cli.command()(info)
+cli.command()(monitor)
+cli.command()(train)
+cli.command()(validate)
+cli.add_typer(runs, name="runs")
 
-class AppContext:
+
+@cli.callback(invoke_without_command=True)
+def main_callback(
+    ctx     : Context,
+    version : bool | None = Option(
+        None,
+        "--version", "-v",
+        callback = None,
+        help     = "Show version and system information",
+        is_eager = True
+    )
+):
     """
-    A container for shared application state and components.
+    🔥 Thermur: Thermally-constrained drone flock training toolkit.
 
-    This class initializes the core user interface, system inspector, and prompt
-    orchestrator using the Hydra-zen configuration. An instance is created once
-    in the main callback and passed to all commands via the Typer context.
+    A command-line interface for training and managing thermal drone
+    flock behaviors using imitation learning.
+
+    Use 'thermur <command> --help' for detailed command information.
     """
-    def __init__(self):
-        """
-        Initialize the application context with the loaded configuration.
-        """
-        self.cfg     = cfg
-        self.ui      = ThermurUI(self.cfg.display, self.cfg.messages)
-        self.prompts = CLIPrompts(self.cfg, self.ui)
-        self.system  = SystemInspector(cfg)
-    
-    @cached_property
-    def globus(self):
-        """
-        Lazy-loaded GlobusManager, created only when first accessed.
-        
-        This prevents a secrets directory warning from appearing when
-        Globus functionality isn't needed (e.g., when using sample data).
-        """
-        return GlobusManager(self.cfg.download)
-
-
-class ThermurCLI:
-    """
-    Main CLI application class for Thermur.
-    
-    This class encapsulates all CLI-related functionality, including command
-    registration, callbacks, and the main entry point.
-    """
-    
-    def __init__(self):
-        """
-        Initialize the CLI with configuration.
-        """
-        self.cfg = cfg
-        self.cli = self._create_cli()
-    
-    def _create_cli(self) -> Typer:
-        """
-        Create and configure the Typer CLI application.
-        """
-        cli = Typer(
-            context_settings = {"help_option_names": ["-h", "--help"]},
-            help             = self.cfg.cli.app_description,
-            name             = self.cfg.cli.app_name,
-            rich_markup_mode = "rich"
-        )
-        
-        # Register all commands
-        cli.command()(download)
-        cli.command()(info)
-        cli.command()(monitor)
-        cli.command()(train)
-        cli.command()(validate)
-        
-        cli.callback(invoke_without_command=True)(self._main_callback)
-        
-        return cli
-    
-    def _get_context(self, ctx: Context) -> AppContext:
-        """
-        Lazy context getter. Creates the AppContext on its first access.
-
-        This ensures that the AppContext is only instantiated once per run,
-        and its creation is deferred until it is actually needed by either the
-        main callback or an eager callback like --version.
-
-        Args:
-            ctx: The Typer context.
-
-        Returns:
-            The singleton AppContext instance for the current application run.
-        """
-        if not (app_ctx := ctx.obj):
-            ctx.obj = app_ctx = AppContext()
-        return app_ctx
-    
-    def _main_callback(
-        self,
-        ctx     : Context,
-        version : bool | None = Option(
-            None,
-            "--version", "-v",
-            callback = None,
-            help     = "Show version and system information",
-            is_eager = True
-        )
-    ):
-        """
-        🔥 Thermur: Thermally-constrained drone flock training toolkit.
-
-        A command-line interface for training and managing thermal drone
-        flock behaviors using imitation learning.
-
-        Use 'thermur <command> --help' for detailed command information.
-        """
-        if version:
-            self._version_callback(version, ctx)
-        
-        app_context = self._get_context(ctx)
-
-        if ctx.invoked_subcommand is None:
-            cfg, ui = app_context.cfg, app_context.ui
-
-            ui.print_header("Welcome to Thermur")
-            ui.print_section("Available Commands", "accent")
-
-            for cmd_info in cfg.cli.commands_available:
-                ui.console.print(
-                    f"  {cmd_info['icon']} [bold accent]{cmd_info['name']:10}"
-                    f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
-                )
-
-            ui.print_section("Getting Started", "bright_green")
-            ui.print_command_examples(cfg.cli.commands_examples)
-
-            ui.console.print()
-            ui.print_message(
-                message  = cfg.messages.ready_to_train, 
-                msg_type = "thermal"
-            )
-    
-    def _version_callback(self, value: bool, ctx: Context):
-        """
-        Shows version information.
-
-        This is an "eager" callback that runs before the main callback. It uses
-        the lazy context getter to ensure the AppContext is only created once.
-
-        Args:
-            ctx   : The Typer context.
-            value : True if the --version flag is present.
-        """
-        if not value:
-            return
-
-        app_context = self._get_context(ctx)
-        system      = app_context.system
-        ui          = app_context.ui
-
-        info = system.get_system_info()
-        ui.console.print(f"thermur v{info['thermur']}")
-        ui.console.print(f"Python v{info['python']} • PyTorch v{info['torch']}")
-
+    if version:
+        info = app.system.get_system_info()
+        app.ui.console.print(f"thermur v{info['thermur']}")
+        app.ui.console.print(f"Python v{info['python']} • PyTorch v{info['torch']}")
         raise Exit()
-    
-    def run(self):
-        """
-        Run the CLI application.
-        """
-        self.cli()
+
+    if ctx.invoked_subcommand is None:
+        app.ui.print_header("Welcome to Thermur")
+        app.ui.print_section("Available Commands", "accent")
+
+        for cmd_info in app.cfg.display.commands_available:
+            app.ui.console.print(
+                f"  {cmd_info['icon']} [bold accent]{cmd_info['name']:10}"
+                f"[/bold accent] [muted]{cmd_info['desc']}[/muted]"
+            )
+
+        app.ui.print_section("Getting Started", "bright_green")
+        app.ui.print_command_examples(app.cfg.display.commands_examples)
+
+        app.ui.console.print()
+        app.ui.print_message(
+            message  = "Ready to train some thermal flocks? 🔥", 
+            msg_type = "thermal"
+        )
 
 
 def main():
-    """
-    Main entry point for the CLI.
-    """
-    ThermurCLI().run()
-
-
-if __name__ == "__main__":
-    main()
+    """Entry point for the thermur console script."""
+    cli()
