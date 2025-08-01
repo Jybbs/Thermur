@@ -5,7 +5,7 @@ This module consolidates all type protocols, TypedDicts, and type aliases used
 throughout the CLI, providing a single source of truth for type definitions.
 """
 from config.cli.schemas import *
-from typing             import Any, Literal, NamedTuple, Protocol, TypedDict
+from typing             import Any, Literal, NamedTuple, TypedDict
 
 
 class ConfigItem(NamedTuple):
@@ -19,18 +19,6 @@ class ConfigItem(NamedTuple):
     path        : str   # Dot-separated parameter path (e.g., "model.lr")
     value       : Any   # Current parameter value
 
-
-class CLIConfig(Protocol):
-    """
-    Protocol defining the structure of CLI configuration.
-    
-    This represents the SimpleNamespace object containing all CLI-specific
-    configuration models. Each attribute is a Pydantic model instance.
-    """
-    display  : DisplayModel
-    download : DownloadModel
-    secrets  : GlobusSecrets
-    wandb    : WandbConfig
 
 
 class FileInfo(TypedDict):

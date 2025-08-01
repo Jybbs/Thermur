@@ -6,9 +6,10 @@ preset selection, wandb configuration, override collection, and training
 confirmation. It uses the ThermurUI class to render complex components and 
 structured configuration objects for all static text and configuration.
 """
-from .types    import CLIConfig, FileInfo
-from itertools import islice
-from typing    import Any, Callable, Sequence
+from .types            import FileInfo
+from config.cli.builds import CLIConfiguration
+from itertools         import islice
+from typing            import Any, Callable, Sequence
 
 import questionary
 
@@ -19,13 +20,13 @@ class CLIPrompts:
 
     This class encapsulates the logic for asking the user questions, presenting
     choices, and confirming actions. It relies on a `ThermurUI` instance and 
-    CLIConfig for prompts and messages, both provided during initialization,
+    CLIConfiguration for prompts and messages, both provided during initialization,
     to render visuals and access static text. This keeps the interactive logic separate
     from both the UI rendering and the core application orchestration.
     """
     def __init__(
         self,
-        cfg : CLIConfig,
+        cfg : CLIConfiguration,
         ui  : Any
     ):
         """
