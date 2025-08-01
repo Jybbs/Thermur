@@ -8,7 +8,7 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 """
 from config.imitation.controller import FlockModel, SafetyModel, ThresholdsModel
 from qpth.qp                     import QPFunction
-from tensordict                  import TensorDict
+from tensordict                  import TensorDictBase
 from torch                       import Tensor
 
 import torch
@@ -65,7 +65,7 @@ class SafetyFilter:
 
     def filter(
         self, 
-        flock     : TensorDict, 
+        flock     : TensorDictBase, 
         u_nominal : Tensor
     ) -> Tensor:
         """

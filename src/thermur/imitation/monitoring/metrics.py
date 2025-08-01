@@ -8,7 +8,7 @@ with PyTorch Lightning's logging system and Weights & Biases.
 """
 from config.imitation.monitoring import MetricsModel
 from pytorch_lightning                   import LightningModule
-from tensordict                          import TensorDict
+from tensordict                          import TensorDictBase
 from torch                               import Tensor
 from torchmetrics                        import MeanAbsoluteError, MeanSquaredError
 from torchmetrics                        import MetricCollection, R2Score, Metric
@@ -541,7 +541,7 @@ class MetricsCollector:
                 value   = self.get_cbf_activation_rate()
             )
     
-    def log_cbf_activation(self, batch: TensorDict):
+    def log_cbf_activation(self, batch: TensorDictBase):
         """
         Updates internal counters used to compute CBF activation rate.
         
@@ -562,7 +562,7 @@ class MetricsCollector:
     
     def update_evaluation_metrics(
         self,
-        batch : TensorDict,
+        batch : TensorDictBase,
         phase : str
     ):
         """

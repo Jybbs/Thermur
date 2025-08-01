@@ -6,7 +6,7 @@ monitoring system (MetricsCollector and EventLogger) into the training loop,
 handling metric updates and event logging at appropriate lifecycle hooks.
 """
 from pytorch_lightning            import Callback, LightningModule, Trainer
-from tensordict                   import TensorDict
+from tensordict                   import TensorDictBase
 from thermur.imitation.monitoring import EventLogger, MetricsCollector
 from typing                       import Any
 
@@ -39,7 +39,7 @@ class MonitoringCallback(Callback):
     
     def on_fit_end(
         self, 
-        _trainer  : Trainer,
+        trainer   : Trainer,
         pl_module : LightningModule 
     ):
         """
@@ -59,11 +59,11 @@ class MonitoringCallback(Callback):
     
     def on_train_batch_end(
         self,
-        batch      : TensorDict,
-        pl_module  : LightningModule,
-        _batch_idx : int,
-        _outputs   : Any,
-        _trainer   : Trainer
+        trainer   : Trainer,
+        pl_module : LightningModule,
+        outputs   : Any,
+        batch     : TensorDictBase,
+        batch_idx : int
     ):
         """
         Process training batch for metrics and event detection.
@@ -80,8 +80,8 @@ class MonitoringCallback(Callback):
     
     def on_train_epoch_end(
         self, 
-        _pl_module : LightningModule,
-        _trainer   : Trainer 
+        trainer   : Trainer,
+        pl_module : LightningModule 
     ):
         """
         Reset per-epoch counters to ensure accurate rate calculations.
@@ -97,11 +97,12 @@ class MonitoringCallback(Callback):
     
     def on_validation_batch_end(
         self,
-        batch      : TensorDict,
-        pl_module  : LightningModule,
-        _batch_idx : int,
-        _outputs   : Any,
-        _trainer   : Trainer
+        trainer        : Trainer,
+        pl_module      : LightningModule,
+        outputs        : Any,
+        batch          : TensorDictBase,
+        batch_idx      : int,
+        dataloader_idx : int = 0
     ):
         """
         Update metrics and detect events during validation.
@@ -117,8 +118,8 @@ class MonitoringCallback(Callback):
     
     def on_validation_epoch_end(
         self, 
-        pl_module : LightningModule,
-        _trainer  : Trainer 
+        trainer   : Trainer,
+        pl_module : LightningModule 
     ):
         """
         Aggregate and log validation metrics for epoch-level tracking.

@@ -10,7 +10,7 @@ from collections                 import Counter, defaultdict
 from config.imitation.controller import ThresholdsModel
 from config.imitation.monitoring import EventsModel
 from pytorch_lightning           import LightningModule
-from tensordict                  import TensorDict
+from tensordict                  import TensorDictBase
 from time                        import perf_counter
 from torch                       import where
 from wandb                       import Table
@@ -132,7 +132,7 @@ class EventLogger:
     
     def analyze_batch(
         self, 
-        batch  : TensorDict, 
+        batch  : TensorDictBase, 
         module : LightningModule
     ) -> dict[str, int]:
         """
@@ -215,19 +215,23 @@ class EventLogger:
             if self.event_data[event_type]:
                 self._flush_events_to_table(event_type, module)
     
-    def get_event_summary(self) -> dict:
+    def get_event_summary(self) -> dict[str, float | int]:
         """
         Get summary statistics of logged events.
         
         Returns:
             Dictionary containing event counts and timing information
         """
-        return {
-            "elapsed_time"   : perf_counter() - self.start_time,
-            "events_by_type" : dict(self.event_counts),
-            "total_events"   : sum(self.event_counts.values()),
-            "total_steps"    : self.total_steps
+        summary = {
+            "elapsed_time" : perf_counter() - self.start_time,
+            "total_events" : sum(self.event_counts.values()),
+            "total_steps"  : self.total_steps
         }
+        
+        for event_type, count in self.event_counts.items():
+            summary[f"events/{event_type}"] = count
+            
+        return summary
     
     def reset_epoch_metrics(self):
         """

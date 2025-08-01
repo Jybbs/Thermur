@@ -9,7 +9,7 @@ collective behavior.
 """
 from .safety                     import SafetyFilter
 from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
-from tensordict                  import TensorDict
+from tensordict                  import TensorDictBase
 from torch                       import Tensor
 
 import torch
@@ -55,6 +55,24 @@ class ExpertController:
         self.safety_filter   = safety_filter
         self.thresholds      = thresholds
         self._reset_shared_state()
+    
+    def __call__(self, flock: TensorDictBase) -> TensorDictBase:
+        """
+        Compute control actions in TorchRL-compatible format.
+        
+        This method makes ExpertController compatible with TorchRL's
+        expected policy interface by wrapping the nominal action
+        computation and returning a TensorDict with the action.
+        
+        Args:
+            flock: TensorDict containing the current flock state
+            
+        Returns:
+            TensorDict with the computed action added
+        """
+        action = self.compute_nominal_action(flock)
+        flock["action"] = action
+        return flock
 
     def _compute_alignment(self, velocity: Tensor) -> Tensor:
         """
@@ -367,7 +385,7 @@ class ExpertController:
         norm_temp = self._ensure_1d_temperature(temperature) / self.max_temperature
         return vertical * norm_temp.unsqueeze(1)
     
-    def compute_nominal_action(self, flock: TensorDict) -> Tensor:
+    def compute_nominal_action(self, flock: TensorDictBase) -> Tensor:
         """
         Computes the collective nominal control action for the entire flock.
 
