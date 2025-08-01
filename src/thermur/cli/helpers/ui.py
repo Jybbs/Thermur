@@ -671,14 +671,16 @@ class ThermurUI:
             Formatted string representation suitable for display
         """
         if value is not None:
-            match value:
-                case dict() if '_target_' in value:
-                    target = str(value['_target_'])
-                    return f"{target.split('.')[-1]}(...)"
-                case list() if len(value) > 5:
-                    preview = ', '.join(str(v) for v in value[:5])
-                    return f"[{preview}, ...] ({len(value)} items)"
-                case _:
+            if isinstance(value, str):
+                text = value
+            else:
+                try:
+                    text = (
+                        f"[{', '.join(map(str, value[:5]))}, ...] ({len(value)} items)" 
+                        if len(value) > 5 
+                        else str(value)
+                    )
+                except (TypeError, AttributeError):
                     text = str(value)
         
         if text is None:

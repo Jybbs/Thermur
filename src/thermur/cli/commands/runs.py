@@ -385,8 +385,8 @@ class RunsCommand:
     
     def _flatten_config(
         self,
-        config    : dict[str, Any],
-        prefix    : str = ""
+        config : dict[str, Any],
+        prefix : str = ""
     ) -> dict[str, ConfigItem]:
         """
         Flatten nested config to dot notation.
@@ -396,8 +396,8 @@ class RunsCommand:
         their parameters. Tracks which values were overridden.
         
         Args:
-            config    : Configuration dictionary to flatten
-            prefix    : Current path prefix for recursion
+            config : Configuration dictionary to flatten
+            prefix : Current path prefix for recursion
             
         Returns:
             Flattened dictionary with dot-notation keys and override info
