@@ -13,7 +13,9 @@ during training:
 """
 from .schemas                     import *
 from hydra_zen                    import builds, make_config
+from hydra_zen.typing             import Builds
 from thermur.imitation.monitoring import EventLogger, MetricsCollector
+from typing                       import Any
 
 
 MONITORING_USER_CONFIG = make_config(
@@ -21,7 +23,7 @@ MONITORING_USER_CONFIG = make_config(
     metrics = MetricsModel() 
 )
 
-MONITORING_SYSTEM_BUILDS = {
+MONITORING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "collector": builds(
         MetricsCollector,
         metrics                 = "${monitoring.metrics}",

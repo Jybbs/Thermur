@@ -23,15 +23,17 @@ Visual Elements:
 """
 from .schemas                        import *
 from hydra_zen                       import builds, make_config
+from hydra_zen.typing                import Builds
 from pyvista                         import Arrow, Plotter, themes
 from thermur.imitation.visualization import Renderer, Sampler, Visualizer
+from typing                          import Any
 
 
 VISUALIZATION_USER_CONFIG = make_config(
     vista = VistaModel()
 )
 
-VISUALIZATION_SYSTEM_BUILDS = {
+VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "agent_glyph": builds(
         Arrow,
         zen_partial             = True,
@@ -48,7 +50,6 @@ VISUALIZATION_SYSTEM_BUILDS = {
     "renderer": builds(
         Renderer,
         agent_glyph             = "${_system.agent_glyph}",
-        scalar_bar              = {},  # Default scalar bar config
         vista                   = "${visualization.vista}",
         wind_glyph              = "${_system.wind_glyph}",
         zen_partial             = True,

@@ -15,7 +15,9 @@ data processing pipeline:
 """
 from .schemas                     import *
 from hydra_zen                    import builds, make_config
+from hydra_zen.typing             import Builds
 from thermur.imitation.simulation import SimulationEnv, WRFDataSource
+from typing                       import Any
 
 
 SIMULATION_USER_CONFIG = make_config(
@@ -23,7 +25,7 @@ SIMULATION_USER_CONFIG = make_config(
     physics = PhysicsModel()
 )
 
-SIMULATION_SYSTEM_BUILDS = {
+SIMULATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "env": builds(
         SimulationEnv,
         physics                 = "${simulation.physics}",

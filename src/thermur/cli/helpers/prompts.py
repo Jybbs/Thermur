@@ -4,10 +4,11 @@ Orchestrates the CLI's interactive dialogues using the questionary library.
 This module manages the interactive prompts for the training command, including
 preset selection, wandb configuration, override collection, and training 
 confirmation. It uses the ThermurUI class to render complex components and 
-DictConfig objects for all static text and configuration.
+structured configuration objects for all static text and configuration.
 """
-from omegaconf import DictConfig
-from typing    import Any, Callable
+from .types    import CLIConfig
+from itertools import islice
+from typing    import Any, Callable, Sequence
 
 import questionary
 
@@ -18,13 +19,13 @@ class CLIPrompts:
 
     This class encapsulates the logic for asking the user questions, presenting
     choices, and confirming actions. It relies on a `ThermurUI` instance and 
-    DictConfig objects for prompts and messages, both provided during initialization,
+    CLIConfig for prompts and messages, both provided during initialization,
     to render visuals and access static text. This keeps the interactive logic separate
     from both the UI rendering and the core application orchestration.
     """
     def __init__(
         self,
-        cfg : DictConfig,
+        cfg : CLIConfig,
         ui  : Any
     ):
         """
@@ -75,7 +76,7 @@ class CLIPrompts:
             "[/grey70]"
         )
 
-        overrides = []
+        overrides: list[str] = []
         while override := questionary.text(
             instruction = "(e.g., optimizer.learning_rate=0.001)",
             message     = "Override:",
@@ -142,7 +143,6 @@ class CLIPrompts:
         if force:
             return True
             
-        # Build warning messages
         issues = [
             f"This will permanently delete {count} {items}",
             "This action cannot be undone"
@@ -153,17 +153,15 @@ class CLIPrompts:
         else:
             issues.append(f"Use --keep N to preserve N recent {items}")
             
-        # Display warning panel
         warning_panel = self.ui.create_warning_panel(
             issues = issues,
             title  = "⚠️  Confirm Deletion"
         )
         self.ui.display_panel(warning_panel)
         
-        # Prompt for confirmation
         return self.confirm(f"Delete {count} {items}?")
     
-    def confirm_download(self, file_info: dict) -> bool:
+    def confirm_download(self, file_info: dict[str, Any]) -> bool:
         """
         Prompts user to confirm file download operation.
         
@@ -219,8 +217,8 @@ class CLIPrompts:
     
     def paginate(
         self,
-        items            : list[Any],
-        render_page      : Callable,
+        items            : Sequence[Any],
+        render_page      : Callable[[list[Any], int, int], None],
         allow_row_select : bool = True,
         page_size        : int  = 10
     ) -> Any | None:
@@ -243,8 +241,9 @@ class CLIPrompts:
         if not items:
             return None
             
-        page = 0
-        total_pages = -(-len(items) // page_size)
+        page        = 0
+        items_count = len(items)
+        total_pages = -(-items_count // page_size)
         
         # Save cursor position before pagination starts
         self.ui.console.file.write('\033[s')
@@ -252,14 +251,14 @@ class CLIPrompts:
         
         while True:
             start      = page * page_size
-            page_items = items[start:start + page_size]
+            page_items = list(islice(items, start, start + page_size))
             
             # Restore cursor and clear to end of screen
             self.ui.console.file.write('\033[u\033[J')
             self.ui.console.file.flush()
             
             render_page(page_items, page + 1, total_pages)
-            nav_options = []
+            nav_options: list[tuple[str, str]] = []
             
             if allow_row_select and len(page_items) > 0:
                 nav_options.append(("[0-9] Select", ""))
@@ -276,15 +275,18 @@ class CLIPrompts:
             )
             self.ui.console.print(nav_display + "\n")
             
-            valid_choices = ["p", "n", "q", ""]
-            if allow_row_select and len(page_items) > 0:
-                valid_choices.extend(map(str, range(len(page_items))))
+            valids = ["p", "n", "q", ""] + (
+                [str(i) for i in range(len(page_items))] 
+                if allow_row_select and page_items 
+                else []
+            )
             
+            validate: Callable[[str], bool] = lambda x: x.strip().lower() in valids
             try:
                 choice = questionary.text(
                     "Select",
                     style    = self.thermal,
-                    validate = lambda x: x.strip().lower() in valid_choices
+                    validate = validate
                 ).ask()
                 
                 if not choice:
@@ -293,7 +295,7 @@ class CLIPrompts:
             except Exception:
                 self.ui.console.print("[dim]Enter choice: [/dim]", end="")
                 choice = input().strip().lower()
-                if choice not in valid_choices:
+                if choice not in valids:
                     continue
             
             match choice.strip().lower():
@@ -307,14 +309,16 @@ class CLIPrompts:
                         page = min(total_pages - 1, page + 1)
                 case n if n.isdigit() and allow_row_select:
                     return page_items[int(n)]
+                case _:
+                    pass
     
     def select_file_from_pages(
         self,
-        available_files : list[dict],
+        available_files : Sequence[dict[str, Any]],
         file_status     : dict[str, str],
         page_size       : int = 10,
         title_prefix    : str = "Available Files"
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """
         Display files in paginated table format and allow selection.
         
@@ -332,7 +336,7 @@ class CLIPrompts:
             Selected file dictionary or None if cancelled
         """
         def render_file_page(
-            page_files  : list[dict], 
+            page_files  : list[dict[str, Any]], 
             page_num    : int, 
             total_pages : int
         ):
@@ -377,36 +381,6 @@ class CLIPrompts:
             style   = self.thermal,
             instruction = "(↑↓)"
         ).ask()
-            
-    def select_globus_endpoint(self, endpoints: list[dict]) -> dict | None:
-        """
-        Select a Globus endpoint from multiple available endpoints.
-        
-        When multiple local Globus endpoints are found, prompts the user
-        to select which one to use for transfers.
-        
-        Args:
-            endpoints: List of endpoint dictionaries with 'display_name' and 'id'
-            
-        Returns:
-            Selected endpoint dict, or None if cancelled
-        """
-        if not endpoints:
-            return None
-            
-        if len(endpoints) == 1:
-            return endpoints[0]
-            
-        self.ui.print_message("Multiple local endpoints found:", "info")
-        for i, e in enumerate(endpoints, start=1):
-            self.ui.console.print(f"  {i}. {e['display_name']}")
-            
-        selected = self.select_from_list(
-            choices = [(e, e['display_name']) for e in endpoints],
-            message = "Select local endpoint:"
-        )
-        
-        return selected
             
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """

@@ -35,12 +35,14 @@ Logging:
 """
 from .schemas                    import *
 from hydra_zen                   import builds, make_config
+from hydra_zen.typing            import Builds
 from pytorch_lightning           import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers   import WandbLogger
 from thermur.imitation.lightning import DataModule, GNNPolicy, MonitoringCallback
 from torch.optim                 import AdamW
 from torch.optim.lr_scheduler    import ReduceLROnPlateau
+from typing                      import Any
 
 
 LIGHTNING_USER_CONFIG = make_config(
@@ -52,7 +54,7 @@ LIGHTNING_USER_CONFIG = make_config(
     wandb        = WandbModel()
 )
 
-LIGHTNING_SYSTEM_BUILDS = {
+LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "checkpoint_callback": builds(
         ModelCheckpoint,
         dirpath                 = "${lightning.checkpoint.dirpath}",

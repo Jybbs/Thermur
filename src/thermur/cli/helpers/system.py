@@ -5,14 +5,15 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
+from .types             import CLIConfig
 from contextlib         import suppress
 from importlib.metadata import PackageNotFoundError, version
-from omegaconf          import DictConfig
 from pathlib            import Path
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
 from torch              import __version__ as torch_version, cuda
+from typing             import Any
 
 
 class SystemInspector:
@@ -23,17 +24,16 @@ class SystemInspector:
     reducing the need to pass configuration objects to every method call.
     """
     
-    def __init__(self, cfg: DictConfig = None):
+    def __init__(self, cfg: CLIConfig):
         """
-        Initialize the system inspector with optional configuration.
+        Initialize the system inspector with configuration.
         
         Args:
-            cfg: The configuration object. If provided, commonly used
-                 sections are extracted for easier access.
+            cfg: The CLI configuration object containing all settings.
         """
         self.download = cfg.download
 
-    def _get_cuda_info(self) -> dict[str, any]:
+    def _get_cuda_info(self) -> dict[str, Any]:
         """
         Gather CUDA-related system information.
         
@@ -44,16 +44,17 @@ class SystemInspector:
         if not cuda.is_available():
             return {"cuda": False, "device_count": 0}
         
-        props = cuda.get_device_properties(0)
+        props             = cuda.get_device_properties(0)
+        total_memory: int = getattr(props, 'total_memory', 0)
         return {
             "cuda"         : True,
-            "cuda_version" : cuda.version.cuda,
+            "cuda_version" : torch_version.split('+')[0] if '+' in torch_version else torch_version,
             "device_count" : cuda.device_count(),
-            "gpu_memory"   : f"{props.total_memory / 1e9:.1f}GB",
+            "gpu_memory"   : f"{total_memory / 1e9:.1f}GB",
             "gpu_name"     : cuda.get_device_name(0),
         }
 
-    def _get_dataset_info(self) -> dict[str, any]:
+    def _get_dataset_info(self) -> dict[str, Any]:
         """
         Gather information about downloaded dataset files.
         
@@ -110,7 +111,7 @@ class SystemInspector:
     def _get_package_version(
         self, 
         package_name : str, 
-        default      : str = None
+        default      : str | None = None
     ) -> str | None:
         """
         Get version of an installed package.
@@ -139,7 +140,7 @@ class SystemInspector:
             
         return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
 
-    def create_status_marker(self, status: str, output_dir: Path = None):
+    def create_status_marker(self, status: str, output_dir: Path | None = None):
         """
         Create a status marker file in the output directory.
         
@@ -166,7 +167,7 @@ class SystemInspector:
         
         return Path(HydraConfig.get().runtime.output_dir)
 
-    def get_system_info(self) -> dict[str, any]:
+    def get_system_info(self) -> dict[str, Any]:
         """
         Gather comprehensive system information.
 
@@ -180,7 +181,7 @@ class SystemInspector:
             - System info      : platform, python, python_version_info
             - Hardware         : cuda info, memory stats, disk usage
         """
-        info = {
+        info: dict[str, Any] = {
             "mujoco"              : self._get_package_version("mujoco"),
             "platform"            : platform(),
             "python"              : python_version(),
@@ -253,7 +254,7 @@ class SystemInspector:
         if not overrides:
             return []
 
-        issues = []
+        issues: list[str] = []
         
         for o in overrides:
             if "=" not in o:

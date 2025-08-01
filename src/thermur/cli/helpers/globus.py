@@ -12,13 +12,13 @@ The manager handles:
 - Transfer task submission between Globus endpoints
 - Progress monitoring for long-running transfers
 """
-from config.cli import GlobusSecrets
+from .types     import EndpointInfo, FileInfo, TransferStatus
+from config.cli import DownloadModel, GlobusSecrets
 from contextlib import suppress
 from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from omegaconf  import DictConfig
 from pathlib    import Path
 from time       import perf_counter, sleep
-from typing     import Optional
+from typing     import Callable, Optional
 
 
 class GlobusManager:
@@ -35,7 +35,7 @@ class GlobusManager:
     when necessary. This provides a seamless experience for repeated use.
     """
     
-    def __init__(self, download: DictConfig):
+    def __init__(self, download: DownloadModel):
         """
         Initialize the Globus manager with download configuration.
         
@@ -80,7 +80,7 @@ class GlobusManager:
         self,
         task_id         : str, 
         transfer_client : TransferClient
-    ) -> dict:
+    ) -> TransferStatus:
         """
         Check the current status of a transfer task.
         
@@ -104,14 +104,14 @@ class GlobusManager:
         task          = transfer_client.get_task(task_id)
         bytes_per_sec = task.get("effective_bytes_per_second", 0)
         
-        return {
-            "bytes_transferred" : task.get("bytes_transferred", 0),
-            "files_transferred" : task.get("files_transferred", 0), 
-            "is_ok"             : task.get("is_ok", False),
-            "mbps"              : bytes_per_sec / (1024 * 1024),
-            "nice_status"       : task.get("nice_status", "Unknown"),
-            "status"            : task["status"]
-        }
+        return TransferStatus(
+            bytes_transferred = task.get("bytes_transferred", 0),
+            files_transferred = task.get("files_transferred", 0), 
+            is_ok             = task.get("is_ok", False),
+            mbps              = bytes_per_sec / (1024 * 1024),
+            nice_status       = task.get("nice_status", "Unknown"),
+            status            = task["status"]
+        )
 
     def finalize_oauth2_flow(
         self, 
@@ -144,7 +144,7 @@ class GlobusManager:
             )
         )
     
-    def get_local_endpoints(self, transfer_client: TransferClient) -> list[dict]:
+    def get_local_endpoints(self, transfer_client: TransferClient) -> list[EndpointInfo]:
         """
         Retrieve all Globus Connect Personal endpoints for the authenticated user.
         
@@ -162,17 +162,16 @@ class GlobusManager:
             - description  : Optional endpoint description
         """
         return [
-            {
-                "description"  : ep.get("description", ""),
-                "display_name" : ep["display_name"],
-                "id"           : ep["id"]
-            }
+            EndpointInfo(
+                display_name = ep["display_name"],
+                id           = ep["id"]
+            )
             for ep in transfer_client.endpoint_search(
                 filter_scope = "my-endpoints"
             )
         ]
     
-    def get_or_create_client(self) -> TransferClient:
+    def get_or_create_client(self) -> TransferClient | None:
         """
         Obtain an authenticated Transfer client, handling all OAuth2 flows.
         
@@ -193,14 +192,13 @@ class GlobusManager:
         Raises:
             Exception: If authentication fails after user interaction
         """
-        if self.secrets and self.secrets.is_valid:
+        if self.secrets and self.secrets.is_valid and self.secrets.refresh_token:
             auth_client = NativeAppAuthClient(self.client_id)
             authorizer  = RefreshTokenAuthorizer(
                 auth_client   = auth_client,
                 refresh_token = self.secrets.refresh_token.get_secret_value()
             )
             
-            # The authorizer will automatically get/refresh access tokens as needed
             return TransferClient(authorizer=authorizer)
         
         # If no valid secrets, auth needs to be handled by caller
@@ -211,7 +209,7 @@ class GlobusManager:
         endpoint_id     : str,
         path            : str,
         transfer_client : TransferClient
-    ) -> list[dict]:
+    ) -> list[FileInfo]:
         """
         List files and directories at a specific path on a Globus endpoint.
         
@@ -237,12 +235,12 @@ class GlobusManager:
         response = transfer_client.operation_ls(endpoint_id, path=path)
         
         return [
-            {
-                "name" : item["name"],
-                "path" : str(Path(path) / item['name']),
-                "size" : item.get("size", 0),
-                "type" : item["type"]
-            }
+            FileInfo(
+                name = item["name"],
+                path = str(Path(path) / item['name']),
+                size = item.get("size", 0),
+                type = item["type"]
+            )
             for item in response
         ]
     
@@ -311,9 +309,9 @@ class GlobusManager:
         self,
         task_id           : str,
         transfer_client   : TransferClient,
-        polling_interval  : int                = 10,
-        progress_callback : Optional[callable] = None,
-        timeout           : Optional[int]      = None
+        polling_interval  : int                                        = 10,
+        progress_callback : Optional[Callable[[TransferStatus], None]] = None,
+        timeout           : Optional[int]                              = None
     ) -> bool:
         """
         Block until a transfer task completes or times out.
@@ -341,8 +339,12 @@ class GlobusManager:
             match status["status"]:
                 case "SUCCEEDED" : return True
                 case "FAILED"    : return False
+                case _           : pass  # Continue polling for ACTIVE or other states
                 
             if timeout and (perf_counter() - start_time) > timeout:
                 return False
                 
             sleep(polling_interval)
+        
+        # If we exit the while loop without returning, the transfer failed
+        return False

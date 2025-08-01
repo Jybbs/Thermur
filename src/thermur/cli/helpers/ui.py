@@ -6,7 +6,7 @@ built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
 from collections  import Counter
-from omegaconf    import DictConfig
+from config.cli   import DisplayModel
 from rich         import box, progress
 from rich.align   import Align
 from rich.console import Console
@@ -16,7 +16,7 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
-from typing       import Any
+from typing       import Any, Sequence
 
 
 class ThermurUI:
@@ -32,7 +32,7 @@ class ThermurUI:
     
     def __init__(
         self, 
-        display  : DictConfig
+        display  : DisplayModel
     ):
         """
         Initializes the ThermurUI with a configured Rich console.
@@ -472,7 +472,7 @@ class ThermurUI:
     
     def display_download_summary(
         self,
-        available_files : list[dict],
+        available_files : Sequence[dict[str, Any]],
         file_status     : dict[str, str]
     ):
         """
@@ -577,7 +577,7 @@ class ThermurUI:
         self.console.print(self.create_system_table(info))
         self.console.print()
     
-    def display_status_legend(self) -> None:
+    def display_status_legend(self):
         """
         Display the legend for run status indicators.
         
@@ -735,7 +735,7 @@ class ThermurUI:
             return "[bold yellow]...[/]"
     
 
-    def print_auth_prompt(self, auth_url: str) -> None:
+    def print_auth_prompt(self, auth_url: str):
         """
         Display authentication prompt with URL.
         
