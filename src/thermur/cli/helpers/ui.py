@@ -6,9 +6,9 @@ built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
 from .system      import SystemInspector
-from .types       import FileInfo, TableColumn
 from collections  import Counter
 from config.cli   import DisplayModel
+from config.types import FileInfo, TableColumn
 from pathlib      import Path
 from rich         import box, progress
 from rich.align   import Align

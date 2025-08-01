@@ -6,16 +6,16 @@ directories. It enables users to list training runs, compare configurations
 between runs, clean up old experiments, and inspect detailed configuration 
 settings with pagination support for large configurations.
 """
-from ..helpers   import ConfigItem, TableColumn
-from contextlib  import contextmanager, suppress
-from itertools   import chain
-from pathlib     import Path
-from shutil      import rmtree
-from rich.table  import Table
-from thermur.cli import app
-from typer       import Argument, Context, Exit, Option, Typer
-from typing      import Any, Iterator
-from yaml        import Loader, load, safe_load
+from config.types import ConfigItem, TableColumn
+from contextlib   import contextmanager, suppress
+from itertools    import chain
+from pathlib      import Path
+from shutil       import rmtree
+from rich.table   import Table
+from thermur.cli  import app
+from typer        import Argument, Context, Exit, Option, Typer
+from typing       import Any, Iterator
+from yaml         import Loader, load, safe_load
 
 runs = Typer(
     help             = "🏃 Explore training runs and configurations",
