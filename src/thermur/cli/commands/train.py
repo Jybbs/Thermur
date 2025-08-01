@@ -108,7 +108,7 @@ class TrainCommand:
         if not self.overrides:
             return
         
-        meta_info = []
+        meta_info: list[str] = []
         meta_info.append(f"Overrides: {len(self.overrides)}")
         meta_info.extend(f"  • {o}" for o in self.overrides)
         
@@ -131,8 +131,9 @@ class TrainCommand:
         """
         try:
             data_path, msg = self.system.resolve_data_path(self.sample)
-            msg and self.ui.print_message(msg, "info")
-            return data_path
+            if msg:
+                self.ui.print_message(msg, "info")
+            return str(data_path)
             
         except FileNotFoundError:
             if self.prompts.confirm("No data found. Download sample dataset?"):
@@ -140,7 +141,7 @@ class TrainCommand:
 
                 return Path(self.cfg.download.sample_data_path).as_posix()
             
-            raise Exit("Training requires data. Run 'thermur download -s'")
+            raise Exit(1)
 
     def _find_last_checkpoint(self) -> Path | None:
         """
@@ -201,8 +202,8 @@ class TrainCommand:
     def _instantiate_components(
         self,
         cfg             : DictConfig,
-        instantiate     : Callable,
-        pydantic_parser : Callable
+        instantiate     : Callable[..., Any],
+        pydantic_parser : Callable[..., Any]
     ) -> dict[str, Any]:
         """
         Create concrete objects from the configuration.
@@ -229,7 +230,7 @@ class TrainCommand:
                 total       = len(component_cfgs)
             )
 
-            components = {}
+            components: dict[str, Any] = {}
             for i, (key, path, display_name) in enumerate(component_cfgs):
                 progress.update(
                     completed   = i,
@@ -291,7 +292,7 @@ class TrainCommand:
         if job.status.name != "COMPLETED":
             raise RuntimeError(f"Training job failed with status: {job.status}")
 
-    def _load_training_modules(self) -> dict[str, Callable]:
+    def _load_training_modules(self) -> dict[str, Callable[..., Any]]:
         """
         Lazily imports heavy dependencies for training to keep the CLI lean.
 
@@ -327,7 +328,7 @@ class TrainCommand:
                 task_id     = task
             )
 
-            imports = {
+            imports: dict[str, Callable[..., Any]] = {
                 "ImitationConfig" : ImitationConfig,
                 "instantiate"     : instantiate,
                 "launch"          : launch,
@@ -347,6 +348,9 @@ class TrainCommand:
         """
         Offers to view configuration via the runs command.
         """
+        if self.output_dir is None:
+            return
+            
         relative_path = self.output_dir.relative_to(Path.cwd())
         
         self.ui.console.print()
@@ -379,7 +383,7 @@ class TrainCommand:
         """
         system_info = self.system.get_system_info()
         
-        summary_data = {
+        summary_data: dict[str, Any] = {
             "gpu_available" : system_info.get("cuda", False),
             "overrides"     : len(self.overrides),
             "wandb_project" : self.cfg.wandb.project,
@@ -394,8 +398,8 @@ class TrainCommand:
 
     def _task(
         self, 
-        cfg     : DictConfig          = None, 
-        imports : dict[str, Callable] = None
+        cfg     : DictConfig | None = None, 
+        imports : dict[str, Callable[..., Any]] | None = None
     ):
         """
         Execute the training or dry-run workflow.
@@ -447,12 +451,17 @@ class TrainCommand:
         self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
 
-        if cfg:
-            with open_dict(cfg):
-                cfg.simulation.loader.wrf.data_path = self.data_path
+        if cfg is None:
+            raise ValueError("Configuration not provided by Hydra")
+            
+        if imports is None:
+            raise ValueError("Training modules not provided")
+            
+        with open_dict(cfg):
+            cfg.simulation.loader.wrf.data_path = self.data_path
 
-            if cfg.optimizer.seed is not None:
-                imports["seed_everything"](cfg.optimizer.seed)
+        if cfg.optimizer.seed is not None:
+            imports["seed_everything"](cfg.optimizer.seed)
         
         self.ui.console.print()
 
@@ -615,12 +624,13 @@ class TrainCommand:
                 case ConfigCompositionException():
                     self.ui.print_message("Configuration error:", "error")
                     self.ui.console.print(f"  {e}")
-                    if hasattr(e, 'available_options'):
+                    available_options = getattr(e, 'available_options', None)
+                    if available_options:
                         self.ui.console.print()
                         self.ui.print_message(
                             message  = (
                                 f"Available options: "
-                                f"{', '.join(e.available_options)}"
+                                f"{', '.join(available_options)}"
                             ),
                             msg_type = "info"
                         )
