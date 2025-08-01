@@ -20,7 +20,6 @@ class ConfigItem(NamedTuple):
     value       : Any   # Current parameter value
 
 
-
 class FileInfo(TypedDict):
     """
     Globus file metadata returned from endpoint directory listings.
@@ -43,6 +42,17 @@ class EndpointInfo(TypedDict):
     """
     display_name : str  # Human-readable endpoint name
     id           : str  # UUID of the endpoint
+
+
+class EventConfig(TypedDict):
+    """
+    Configuration for a specific event type in the monitoring system.
+    
+    Defines the structure for event logging configuration including
+    which data columns to track and the metric name for rate tracking.
+    """
+    columns : list[str]  # Data fields to log for this event type
+    rate    : str        # Metric name for event rate tracking
 
 
 class TableColumn(NamedTuple):
