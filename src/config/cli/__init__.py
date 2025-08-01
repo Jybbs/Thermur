@@ -1,11 +1,16 @@
 """
-Command-line interface configuration domain.
+CLI configuration system.
 
-This package organizes all CLI-related configurations using a layered architecture:
-schemas define the data models, factories create Hydra-zen builders, and workloads
-compose everything into the final configuration. The CLI configuration controls the
-user experience, including themes, prompts, messages, and command definitions.
+This module provides pure data configurations for the CLI framework. Since these
+are static settings that don't require runtime instantiation or interpolation,
+they are created as simple Pydantic model instances.
 
-The configuration system leverages Pydantic for validation and Hydra-zen for 
-instantiation, ensuring type safety and runtime flexibility.
+The configuration is organized by domain:
+- display  : Terminal UI themes and formatting  
+- download : Globus data transfer settings
+- secrets  : Secure token storage
+- wandb    : Weights & Biases integration settings
+
+All configurations are defined in schemas.py with full documentation.
 """
+from .schemas import *

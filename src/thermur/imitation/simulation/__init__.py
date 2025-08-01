@@ -11,3 +11,6 @@ multi-agent flocking policies in wildfire scenarios. The main components include
 The simulation integrates rigid-body physics (MuJoCo) with dynamic environmental
 hazards, providing a realistic testbed for thermal-aware navigation policies.
 """
+from .environment import *
+from .generator   import *
+from .loader      import *

@@ -14,8 +14,6 @@ from shutil             import disk_usage
 from sys                import version_info
 from torch              import __version__ as torch_version, cuda
 
-import os
-
 
 class SystemInspector:
     """
@@ -33,8 +31,7 @@ class SystemInspector:
             cfg: The configuration object. If provided, commonly used
                  sections are extracted for easier access.
         """
-        self.cfg               = cfg
-        self.messages          = getattr(cfg, 'messages', None)
+        self.download = cfg.download
 
     def _get_cuda_info(self) -> dict[str, any]:
         """
@@ -64,9 +61,11 @@ class SystemInspector:
             Dictionary with dataset_size in GB, dataset_count, and has_sample.
         """
         with suppress(Exception):
-            sample_path = self.cfg.download.sample_data_path
+            all_files   = self._get_wrf_files()
+            sample_path = self.download.sample_data_path
+            
             if sample_path.exists():
-                all_files = self._get_wrf_files() + [sample_path]
+                all_files.append(sample_path)
             
             return {
                 "dataset_count" : len(all_files),
@@ -134,12 +133,38 @@ class SystemInspector:
         Returns:
             List of Path objects for WRF files, empty list if none found.
         """
-        wrf_dir = self.cfg.download.wrf_sfire_dir
+        wrf_dir = self.download.wrf_sfire_dir
         if not wrf_dir.exists():
             return []
             
         return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
 
+    def create_status_marker(self, status: str, output_dir: Path = None):
+        """
+        Create a status marker file in the output directory.
+        
+        Args:
+            status     : The status type ('training_complete' or 'dry_run')
+            output_dir : The output directory path. If None, uses Hydra's current output dir
+        """
+        if output_dir is None:
+            output_dir = self.get_hydra_output_dir()
+        
+        (output_dir / status).touch()
+
+    def get_hydra_output_dir(self) -> Path:
+        """
+        Get the current Hydra runtime output directory.
+        
+        Returns:
+            Path to the current Hydra output directory
+            
+        Raises:
+            RuntimeError: If called outside of a Hydra run context
+        """
+        from hydra.core.hydra_config import HydraConfig
+        
+        return Path(HydraConfig.get().runtime.output_dir)
 
     def get_system_info(self) -> dict[str, any]:
         """
@@ -191,10 +216,10 @@ class SystemInspector:
         Raises:
             FileNotFoundError: If no data is available for training
         """
-        if not self.cfg or not hasattr(self.cfg, 'download'):
-            raise ValueError("Configuration object missing download settings")
+        if not hasattr(self, 'download'):
+            raise ValueError("SystemInspector missing download configuration")
             
-        sample_path = self.cfg.download.sample_data_path
+        sample_path = self.download.sample_data_path
         wrf_files   = [] if use_sample else self._get_wrf_files()
         
         match (use_sample, bool(wrf_files), sample_path.exists()):
@@ -233,7 +258,7 @@ class SystemInspector:
         for o in overrides:
             if "=" not in o:
                 issues.append(
-                    f"{self.messages.validation['invalid_override_format']}: {o}"
+                    f"Invalid override format (expected key=value): {o}"
                 )
                 continue
 
@@ -243,10 +268,10 @@ class SystemInspector:
             )
             if not key.isalnum():
                 issues.append(
-                    f"{self.messages.validation['invalid_override_key']}: {o}"
+                    f"Invalid override key (must be alphanumeric): {o}"
                 )
         
         if not cuda.is_available():
-            issues.append(self.messages.validation['gpu_unavailable'])
+            issues.append("GPU not available - training will be slower on CPU")
 
         return issues

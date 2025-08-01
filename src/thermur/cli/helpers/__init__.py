@@ -1,12 +1,10 @@
 """
-Helper utilities for CLI functionality.
+CLI helper utilities.
 
-These classes provide the building blocks for the CLI's user experience:
-- GlobusManager   : Globus authentication and transfer management
-- CLIPrompts      : Interactive prompts for configuration and user input
-- SystemInspector : Hardware and dependency detection for compatibility checks
-- ThermurUI       : Rich-based terminal UI with consistent theming and formatting
-
-All helpers are initialized with the CLI configuration and share a common
-visual style defined by the theme settings.
+Provides specialized components for interactive prompts, system inspection,
+UI rendering, and external service integration.
 """
+from .globus  import GlobusManager
+from .prompts import CLIPrompts
+from .system  import SystemInspector
+from .ui      import ThermurUI

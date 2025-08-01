@@ -6,9 +6,8 @@ preset selection, wandb configuration, override collection, and training
 confirmation. It uses the ThermurUI class to render complex components and 
 DictConfig objects for all static text and configuration.
 """
-from itertools import islice
 from omegaconf import DictConfig
-from typing    import Any
+from typing    import Any, Callable
 
 import questionary
 
@@ -35,22 +34,16 @@ class CLIPrompts:
             cfg : The full configuration object containing all subsections.
             ui  : An initialized `ThermurUI` object for rendering components.
         """
-        self.cfg      = cfg
-        self.cli      = cfg.cli
-        self.messages = cfg.messages
-        self.presets  = cfg.presets
-        self.prompts  = cfg.prompts
-        self.ui       = ui
-        self.thermal_style = questionary.Style.from_dict(
-            dict(self.prompts.questionary_style)
-        )
+        self.cfg     = cfg
+        self.thermal = questionary.Style.from_dict(cfg.display.questionary_style)
+        self.ui      = ui
 
     def ask_for_overrides(self) -> list[str]:
         """
         Asks the user if they wish to provide advanced configuration overrides.
 
         If confirmed, this function enters a loop to collect multiple Hydra-style
-        override strings (e.g., 'hyperparameters.lr=0.001'). It displays syntax
+        override strings (e.g., 'optimizer.learning_rate=0.001'). It displays syntax
         examples to guide the user on the correct format.
 
         Returns:
@@ -60,7 +53,7 @@ class CLIPrompts:
         self.ui.print_section("Advanced Configuration", minor=True)
 
         syntax_panel = self.ui.create_syntax_panel(
-            code  = self.cli.override_syntax_help,
+            code  = self.cfg.display.override_examples,
             title = "Configuration Override Syntax",
         )
         self.ui.console.print(syntax_panel)
@@ -69,7 +62,7 @@ class CLIPrompts:
         add_overrides = questionary.confirm(
             default = False,
             message = "Would you like to add configuration overrides?",
-            style   = self.thermal_style
+            style   = self.thermal
         ).ask()
 
         if not add_overrides:
@@ -84,9 +77,9 @@ class CLIPrompts:
 
         overrides = []
         while override := questionary.text(
-            instruction = "(e.g., hyperparameters.lr=0.001)",
+            instruction = "(e.g., optimizer.learning_rate=0.001)",
             message     = "Override:",
-            style       = self.thermal_style
+            style       = self.thermal
         ).ask():
             overrides.append(override)
             success_style = self.ui.display.styles['success']
@@ -121,8 +114,54 @@ class CLIPrompts:
         return questionary.confirm(
             default = default,
             message = message,
-            style   = self.thermal_style
+            style   = self.thermal
         ).ask()
+    
+    def confirm_deletion(
+        self, 
+        count  : int,
+        items  : str = "items",
+        keep   : int = 0,
+        force  : bool = False
+    ) -> bool:
+        """
+        Confirm deletion of items with warning panel.
+        
+        Displays a warning panel with deletion details and prompts for confirmation.
+        Useful for any destructive operation that needs user confirmation.
+        
+        Args:
+            count  : Number of items to delete
+            items  : Plural name of items (e.g., "runs", "files")
+            keep   : Number of items being kept (0 if deleting all)
+            force  : Skip confirmation if True
+            
+        Returns:
+            True if user confirms deletion, False otherwise
+        """
+        if force:
+            return True
+            
+        # Build warning messages
+        issues = [
+            f"This will permanently delete {count} {items}",
+            "This action cannot be undone"
+        ]
+        
+        if keep > 0:
+            issues.append(f"Keeping only the {keep} most recent {items}")
+        else:
+            issues.append(f"Use --keep N to preserve N recent {items}")
+            
+        # Display warning panel
+        warning_panel = self.ui.create_warning_panel(
+            issues = issues,
+            title  = "⚠️  Confirm Deletion"
+        )
+        self.ui.display_panel(warning_panel)
+        
+        # Prompt for confirmation
+        return self.confirm(f"Delete {count} {items}?")
     
     def confirm_download(self, file_info: dict) -> bool:
         """
@@ -178,85 +217,98 @@ class CLIPrompts:
             default = False
         )
     
-    def select_configuration_preset(self) -> str | None:
+    def paginate(
+        self,
+        items            : list[Any],
+        render_page      : Callable,
+        allow_row_select : bool = True,
+        page_size        : int  = 10
+    ) -> Any | None:
         """
-        Prompts the user to select a high-level configuration preset.
-
-        This function first displays a descriptive table of available presets,
-        then presents an interactive list. This initial choice allows users to
-        quickly start with sensible defaults for different use cases without
-        needing to configure every detail manually.
-
-        Returns:
-            The string name of the selected preset (e.g., "standard"), or None if
-            the user explicitly chooses the "custom" configuration option.
-        """
-        self.ui.print_section("Configuration Presets", minor=True)
-
-        table = self.ui.create_aligned_table(
-            columns = self.prompts.presets_table_columns,
-            title   = "Available Presets"
-        )
-
-        preset_cfgs = self.presets.presets
-        for name, config in preset_cfgs.items():
-            display_name = f"{config['emoji']} {config['name']}"
-            if name == "custom":
-                row_style = f"[grey70]"
-                table.add_row(
-                    f"{row_style}{display_name}[/]",
-                    f"{row_style}{config['desc']}[/]",
-                    f"{row_style}{config['best_for']}[/]",
-                )
-            else:
-                table.add_row(display_name, config['desc'], config['best_for'])
-
-        self.ui.console.print(table)
-        self.ui.console.print()
-
-        choices = [
-            questionary.Choice(
-                title = preset_cfgs[name]['emoji'], 
-                value = name
-            )
-            for name in self.presets.presets.keys()
-            if name != 'custom'
-        ]
-        choices.extend([
-            questionary.Separator(),
-            questionary.Choice(
-                title = preset_cfgs['custom']['emoji'],
-                value = None
-            ),
-        ])
-
-        chosen_emoji = questionary.select(
-            choices = choices,
-            message = "Which configuration preset would you like to use?",
-            style   = self.thermal_style
-        ).ask()
-
-        if chosen_emoji:
-            emoji_to_preset = {
-                config['emoji']: name 
-                for name, config in preset_cfgs.items()
-            }
-            chosen_preset = emoji_to_preset.get(chosen_emoji)
+        Generic pagination handler for any list of items.
+        
+        Provides a reusable pagination interface that delegates page rendering
+        to a callback function. Handles navigation, selection, and clearing.
+        Displays navigation options and handles user input.
+        
+        Args:
+            items            : List of items to paginate
+            render_page      : Callback function to render each page
+            allow_row_select : Whether to allow row selection
+            page_size        : Number of items per page
             
-            self.ui.print_message(
-                message  = f"Selected preset: [bright_cyan]{chosen_emoji}[/bright_cyan]",
-                msg_type = "success"
+        Returns:
+            Selected item if allow_row_select=True and item selected, None otherwise
+        """
+        if not items:
+            return None
+            
+        page = 0
+        total_pages = -(-len(items) // page_size)
+        
+        # Save cursor position before pagination starts
+        self.ui.console.file.write('\033[s')
+        self.ui.console.file.flush()
+        
+        while True:
+            start      = page * page_size
+            page_items = items[start:start + page_size]
+            
+            # Restore cursor and clear to end of screen
+            self.ui.console.file.write('\033[u\033[J')
+            self.ui.console.file.flush()
+            
+            render_page(page_items, page + 1, total_pages)
+            nav_options = []
+            
+            if allow_row_select and len(page_items) > 0:
+                nav_options.append(("[0-9] Select", ""))
+            
+            if page > 0:
+                nav_options.append(("[P]revious", "p"))
+            if page < total_pages - 1:
+                nav_options.append(("[N]ext", "n"))
+                
+            nav_options.append(("[Q]uit", "q"))
+            
+            nav_display = " | ".join(
+                f"[bold cyan]{opt[0]}[/]" for opt in nav_options
             )
-        else:
-            chosen_preset = None
-            self.ui.print_message(
-                message  = "Custom configuration selected - full control mode",
-                msg_type = "info"
-            )
+            self.ui.console.print(nav_display + "\n")
+            
+            valid_choices = ["p", "n", "q", ""]
+            if allow_row_select and len(page_items) > 0:
+                valid_choices.extend(map(str, range(len(page_items))))
+            
+            try:
+                choice = questionary.text(
+                    "Select",
+                    style    = self.thermal,
+                    validate = lambda x: x.strip().lower() in valid_choices
+                ).ask()
+                
+                if not choice:
+                    return None
 
-        return chosen_preset
+            except Exception:
+                self.ui.console.print("[dim]Enter choice: [/dim]", end="")
+                choice = input().strip().lower()
+                if choice not in valid_choices:
+                    continue
+            
+            match choice.strip().lower():
+                case "q" | "":
+                    return None
+                case "p":
+                    if page > 0:
+                        page = max(0, page - 1)
+                case "n":
+                    if page < total_pages - 1:
+                        page = min(total_pages - 1, page + 1)
+                case n if n.isdigit() and allow_row_select:
+                    return page_items[int(n)]
     
-    def select_file_with_pagination(
+    def select_file_from_pages(
         self,
         available_files : list[dict],
         file_status     : dict[str, str],
@@ -279,49 +331,27 @@ class CLIPrompts:
         Returns:
             Selected file dictionary or None if cancelled
         """
-        page, total = 0, len(available_files)
-        pages = -(-total // page_size)
-        
-        while True:
-            self.ui.console.clear()
-            
-            start = page * page_size
-            page_files = list(islice(available_files, start, start + page_size))
-            
+        def render_file_page(
+            page_files  : list[dict], 
+            page_num    : int, 
+            total_pages : int
+        ):
+            """
+            Render a page of files with download status table.
+            """
             self.ui.display_download_table(
                 available_files = page_files,
                 file_status     = file_status,
-                title           = f"{title_prefix} (Page {page + 1}/{pages})"
+                title           = f"{title_prefix} (Page {page_num}/{total_pages})"
             )
             self.ui.console.print()
-            self.ui.display_download_summary(available_files, file_status)
-            self.ui.console.print()
-            
-            choices = list(map(str, range(len(page_files)))) + ["q", ""]
-            nav     = ["[bold cyan]0-9[/]: Select", "[bold cyan]q[/]: Quit"]
-            
-            if page:
-                choices.append("p")
-                nav.insert(1, "[bold cyan]p[/]: Previous")
-            if start + page_size < total:
-                choices.append("n") 
-                nav.insert(-1, "[bold cyan]n[/]: Next")
-            
-            self.ui.console.print("  ".join(nav) + "\n")
-            
-            if not (choice := questionary.text(
-                "Select",
-                style    = self.thermal_style,
-                validate = lambda x: x.strip().lower() in choices
-            ).ask()):
-                return None
-            
-            match choice.strip().lower():
-                case "q" | "": return None
-                case "p": page -= 1
-                case "n": page += 1  
-                case n if n.isdigit():
-                    return page_files[int(n)]
+        
+        return self.paginate(
+            allow_row_select = True,
+            items            = available_files,
+            page_size        = page_size,
+            render_page      = render_file_page
+        )
     
     def select_from_list(
         self,
@@ -344,7 +374,7 @@ class CLIPrompts:
                 for val, desc in choices
             ],
             message = message,
-            style   = self.thermal_style,
+            style   = self.thermal,
             instruction = "(↑↓)"
         ).ask()
             
@@ -406,10 +436,6 @@ class CLIPrompts:
 
         num_overrides = config.get('overrides', 0)
         summary_data  = [
-            (
-                "Configuration",
-                f"[{self.ui.display.styles['warning']}]{config.get('preset')}[/]"
-            ),
             (
                 "Hardware", 
                 "🎮 GPU Acceleration" if config.get("gpu_available") else "💻 CPU Mode"

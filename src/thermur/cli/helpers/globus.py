@@ -12,14 +12,13 @@ The manager handles:
 - Transfer task submission between Globus endpoints
 - Progress monitoring for long-running transfers
 """
-import time
-
-from config.cli.schemas.secrets import GlobusSecrets
-from contextlib                 import suppress
-from globus_sdk                 import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from omegaconf                  import DictConfig
-from pathlib                    import Path
-from typing                     import Optional
+from config.cli import GlobusSecrets
+from contextlib import suppress
+from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
+from omegaconf  import DictConfig
+from pathlib    import Path
+from time       import perf_counter, sleep
+from typing     import Optional
 
 
 class GlobusManager:
@@ -333,7 +332,7 @@ class GlobusManager:
         Returns:
             True if transfer succeeded, False if failed or timed out
         """
-        start_time = time.time()
+        start_time = perf_counter()
         
         while status := self._monitor_transfer_task(task_id, transfer_client):
             if progress_callback:
@@ -343,7 +342,7 @@ class GlobusManager:
                 case "SUCCEEDED" : return True
                 case "FAILED"    : return False
                 
-            if timeout and (time.time() - start_time) > timeout:
+            if timeout and (perf_counter() - start_time) > timeout:
                 return False
                 
-            time.sleep(polling_interval)
+            sleep(polling_interval)

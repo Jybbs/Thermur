@@ -6,12 +6,10 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from __future__                          import annotations
-from config.imitation.schemas.controller import SafetyModel
-from config.imitation.schemas.flock      import FlockModel
-from qpth.qp                             import QPFunction
-from tensordict                          import TensorDict
-from torch                               import Tensor
+from config.imitation.controller import FlockModel, SafetyModel, ThresholdsModel
+from qpth.qp                     import QPFunction
+from tensordict                  import TensorDict
+from torch                       import Tensor
 
 import torch
 
@@ -21,18 +19,19 @@ class SafetyFilter:
     A safety layer that uses a thermal CBF to filter unsafe control actions.
 
     This class formulates and solves the real-time Quadratic Program:
-        u* = argmin ||u - u_nom||^2
-        s.t.  ∇h(x) @ u >= -α * h(x)
+        u* = argmin ||u - u_nom||²
+        s.t.  ∇h(x) · u ≥ -α · h(x)
 
-    This ensures the control action `u*` does not lead the agent out of the
-    pre-defined safe set `C = {x | h(x) >= 0}`, where h(𝐬) = T_max - T(𝐬)
+    This ensures the control action u* does not lead the agent out of the
+    pre-defined safe set C = {x | h(x) ≥ 0}, where h(s) = T_max - T(s)
     creates a safety boundary at the maximum survivable temperature.
     """
 
     def __init__(
         self, 
-        flock  : FlockModel,
-        safety : SafetyModel,
+        flock      : FlockModel,
+        safety     : SafetyModel,
+        thresholds : ThresholdsModel
     ):
         """
         Initializes the safety filter with thermal barrier configuration.
@@ -49,9 +48,8 @@ class SafetyFilter:
         self.agent_count          = flock.agent_count
         self.max_temperature      = flock.max_temperature
         self.safety               = safety
-        self.spatial_dims         = flock.spatial_dims
         self.total_queries        = 0
-        self.Q                    = torch.eye(self.spatial_dims, dtype=torch.float32)
+        self.Q                    = torch.eye(3, dtype=torch.float32)  # Always 3D
 
     def _evaluate_barrier(self, flock: TensorDict) -> tuple[Tensor, Tensor]:
         """
@@ -93,7 +91,7 @@ class SafetyFilter:
         """
         Filters a nominal control action to ensure safety using `qpth`.
 
-        This method translates the CBF safety constraint, `∇h(x) @ u >= -αh(x)`,
+        This method translates the CBF safety constraint, ∇h(x) · u ≥ -αh(x),
         into a batch of standard Quadratic Programs (QPs) and solves them to
         find the safe action `u*` that is minimally distant from the desired
         nominal action `u_nom`.

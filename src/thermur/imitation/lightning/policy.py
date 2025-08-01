@@ -10,18 +10,20 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
-from config.imitation.schemas.learning    import ArchitectureModel, OptimizerModel
-from pytorch_lightning                    import LightningModule
-from tensordict                           import TensorDict
-from thermur.imitation.monitoring.metrics import MetricsCollector
-from torch                                import Tensor
-from torch.nn                             import GRUCell, Linear, Module, ModuleList
-from torch.nn.functional                  import mse_loss
-from torch.optim                          import AdamW
-from torch.optim.lr_scheduler             import ReduceLROnPlateau
-from torch_geometric.data                 import Data
-from torch_geometric.nn                   import GCNConv
-from typing                               import Type
+from config.imitation.lightning   import ArchitectureModel
+from hydra_zen                    import instantiate
+from hydra_zen.typing             import Builds, Partial
+from pytorch_lightning            import LightningModule
+from tensordict                   import TensorDict
+from thermur.imitation.monitoring import MetricsCollector
+from torch                        import Tensor
+from torch.nn                     import GRUCell, Linear, Module, ModuleList
+from torch.nn.functional          import mse_loss
+from torch.optim                  import Optimizer
+from torch.optim.lr_scheduler     import LRScheduler
+from torch_geometric.data         import Data
+from torch_geometric.nn           import GCNConv
+from typing                       import Type
 
 import torch
 
@@ -48,32 +50,42 @@ class GNNPolicy(LightningModule):
     """
     def __init__(
         self, 
-        architecture : ArchitectureModel,
-        metrics      : MetricsCollector,
-        optimizer    : OptimizerModel
+        architecture     : ArchitectureModel,
+        collector        : MetricsCollector,
+        optimizer        : Builds[Partial[Optimizer]],
+        scheduler        : Builds[Partial[LRScheduler]],
+        scheduler_metric : str,
+        training_metric  : str
     ):
         """
         Initializes the GNN policy network.
 
         Args:
-            architecture : Configuration for GNN architecture including hidden 
-                           dimensions, number of layers, activation function, and 
-                           I/O dimensions.
-            metrics      : Centralized metrics collection and management system.
-            optimizer    : Configuration for optimization including learning rate,
-                           weight decay, and gradient clipping.
+            architecture     : Configuration for GNN architecture including hidden 
+                               dimensions, number of layers, activation function, and 
+                               I/O dimensions.
+            collector        : Centralized metrics collection and management system.
+            optimizer        : Partial optimizer build from hydra-zen that will be 
+                               instantiated with model parameters at runtime.
+            scheduler        : Partial scheduler build from hydra-zen that will be 
+                               instantiated with the optimizer at runtime.
+            scheduler_metric : Metric name for learning rate scheduler to monitor.
+            training_metric  : Metric name to monitor for training loss.
         """
         super().__init__()
-        self.architecture = architecture
-        self.metrics      = metrics
-        self.optimizer    = optimizer
+        self.architecture     = architecture
+        self.collector        = collector
+        self.optimizer        = optimizer
+        self.scheduler        = scheduler
+        self.scheduler_metric = scheduler_metric
+        self.training_metric  = training_metric
 
-        self.save_hyperparameters(ignore=["metrics"])
+        self.save_hyperparameters(ignore=["collector"])
         self.activation = getattr(torch.nn, architecture.activation)()
         self.convs      = self._build_module_list(architecture, GCNConv)
         self.grus       = self._build_module_list(architecture, GRUCell)
-        self.decoder    = Linear(architecture.hidden_dim, architecture.output_dim)
-        self.encoder    = Linear(architecture.input_dim,  architecture.hidden_dim)
+        self.decoder    = Linear(architecture.hidden_dim, 3)   # Output: 3D velocity
+        self.encoder    = Linear(11, architecture.hidden_dim)  # Input: 11 features
     
     def _build_module_list(
         self, 
@@ -123,13 +135,13 @@ class GNNPolicy(LightningModule):
         targets     = batch["action"]
         loss        = mse_loss(predictions, targets)
         
-        self.metrics.update_imitation_metrics(
+        self.collector.update_imitation_metrics(
             phase       = phase,
             predictions = predictions,
             targets     = targets
         )
         
-        self.metrics.log_all_metrics(
+        self.collector.log_all_metrics(
             module      = self,
             phase       = phase,
             loss        = loss,
@@ -144,29 +156,20 @@ class GNNPolicy(LightningModule):
         Configures the optimizer and learning rate scheduler for training.
         
         Lightning calls this method to set up optimizers and learning rate
-        schedulers. Returns the AdamW optimizer with ReduceLROnPlateau
-        scheduler that monitors validation loss.
+        schedulers. Uses the partial configurations from hydra-zen builds
+        to create the actual optimizer and scheduler instances.
         
         Returns:
             Dictionary with optimizer and scheduler configuration
         """
-        optimizer = AdamW(
-            params       = self.parameters(),
-            lr           = self.optimizer.learning_rate,
-            weight_decay = self.optimizer.weight_decay
-        )
+        optimizer = instantiate(self.optimizer, params=self.parameters())
+        scheduler = instantiate(self.scheduler, optimizer=optimizer)
         
         return {
             "optimizer"    : optimizer,
             "lr_scheduler" : {
-                "monitor"   : self.optimizer.metric.replace("train", "val"),
-                "scheduler" : ReduceLROnPlateau(
-                    factor    = self.optimizer.lr_factor,
-                    mode      = self.optimizer.mode,
-                    optimizer = optimizer,
-                    patience  = self.optimizer.lr_patience,
-                    verbose   = self.optimizer.lr_scheduler_verbose
-                )
+                "monitor"   : self.scheduler_metric,
+                "scheduler" : scheduler
             }
         }
 
