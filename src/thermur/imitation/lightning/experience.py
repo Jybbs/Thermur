@@ -9,7 +9,6 @@ from config.imitation.lightning   import ExperienceModel
 from pytorch_lightning            import LightningDataModule
 from thermur.imitation.controller import ExpertController
 from thermur.imitation.simulation import SimulationEnv
-from torch.utils.data             import DataLoader
 from torchrl.collectors           import SyncDataCollector
 from torchrl.data                 import TensorDictReplayBuffer
 from torchrl.data.replay_buffers  import LazyTensorStorage, SamplerWithoutReplacement
@@ -67,7 +66,7 @@ class DataModule(LightningDataModule):
             return
             
         self.collector = SyncDataCollector(
-            create_env_fn       = lambda: self.env,
+            create_env_fn       = self.env,
             frames_per_batch    = self.experience.frames_per_batch,
             max_frames_per_traj = self.experience.max_frames_per_traj,
             policy              = self.expert,
@@ -113,7 +112,7 @@ class DataModule(LightningDataModule):
         )
     
 
-class ExperienceDataLoader(DataLoader):
+class ExperienceDataLoader:
     """
     Custom DataLoader that integrates TorchRL components.
     

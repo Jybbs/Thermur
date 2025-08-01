@@ -14,7 +14,7 @@ from config.imitation.lightning   import ArchitectureModel
 from hydra_zen                    import instantiate
 from hydra_zen.typing             import Builds, Partial
 from pytorch_lightning            import LightningModule
-from tensordict                   import TensorDict
+from tensordict                   import TensorDictBase
 from thermur.imitation.monitoring import MetricsCollector
 from torch                        import Tensor
 from torch.nn                     import GRUCell, Linear, Module, ModuleList
@@ -114,7 +114,7 @@ class GNNPolicy(LightningModule):
     
     def _compute_loss_and_log(
         self, 
-        batch : TensorDict, 
+        batch : TensorDictBase, 
         phase : str
     ) -> Tensor:
         """
@@ -203,7 +203,7 @@ class GNNPolicy(LightningModule):
         
         return self.decoder(h)
     
-    def training_step(self, batch: TensorDict, batch_idx: int) -> Tensor:
+    def training_step(self, batch: TensorDictBase, batch_idx: int) -> Tensor:
         """
         Executes a single training step using behavioral cloning loss.
         
@@ -220,7 +220,7 @@ class GNNPolicy(LightningModule):
         """
         return self._compute_loss_and_log(batch, "train")
     
-    def validation_step(self, batch: TensorDict, batch_idx: int) -> Tensor:
+    def validation_step(self, batch: TensorDictBase, batch_idx: int) -> Tensor:
         """
         Executes validation step for model evaluation.
         
