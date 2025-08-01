@@ -5,7 +5,7 @@ This module consolidates all monitoring configuration models including
 metrics collection, event tracking, and performance monitoring.
 """
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
-from typing   import Literal, Optional
+from typing   import Literal
 
 
 class EventsModel(BaseModel, extra="forbid"):
@@ -87,7 +87,7 @@ class MetricsModel(BaseModel, extra="forbid"):
             "typically 1.5 for quadrotors based on momentum theory analysis."
         )
     )
-    profiler: Optional[Literal["simple", "advanced"]] = Field(
+    profiler: Literal["simple", "advanced"] | None = Field(
         default     = None,
         description = (
             "PyTorch Lightning profiler for performance analysis, 'simple' tracks basic "

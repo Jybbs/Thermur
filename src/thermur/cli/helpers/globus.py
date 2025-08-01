@@ -18,7 +18,7 @@ from contextlib import suppress
 from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
 from pathlib    import Path
 from time       import perf_counter, sleep
-from typing     import Callable, Optional
+from typing     import Callable
 
 
 class GlobusManager:
@@ -309,9 +309,9 @@ class GlobusManager:
         self,
         task_id           : str,
         transfer_client   : TransferClient,
-        polling_interval  : int                                        = 10,
-        progress_callback : Optional[Callable[[TransferStatus], None]] = None,
-        timeout           : Optional[int]                              = None
+        polling_interval  : int  = 10,
+        progress_callback : Callable[[TransferStatus], None] | None = None,
+        timeout           : int | None = None
     ) -> bool:
         """
         Block until a transfer task completes or times out.

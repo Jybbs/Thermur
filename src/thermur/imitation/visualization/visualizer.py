@@ -18,7 +18,6 @@ from itertools                      import count
 from pathlib                        import Path
 from pyvista                        import Plotter
 from tensordict                     import TensorDictBase
-from typing                         import Optional
 
 
 class Visualizer:
@@ -110,7 +109,7 @@ class Visualizer:
         if self.plotter is not None:
             self.plotter.close()
 
-    def enable_frame_capture(self, output_dir: Optional[Path] = None):
+    def enable_frame_capture(self, output_dir: Path | None = None):
         """
         Enable frame capture for creating animations.
         
@@ -145,7 +144,7 @@ class Visualizer:
             if self.vista.auto_save_frames and self.frame_capture_enabled:
                 self.save_frame()
     
-    def save_frame(self, filename: Optional[str] = None) -> Optional[Path]:
+    def save_frame(self, filename: str | None = None) -> Path | None:
         """
         Save the current visualization frame as an image.
         
@@ -174,7 +173,7 @@ class Visualizer:
     def toggle(
         self, 
         feature : str, 
-        show    : Optional[bool] = None
+        show    : bool | None = None
     ) -> bool:
         """
         Toggle visibility of a visualization feature.

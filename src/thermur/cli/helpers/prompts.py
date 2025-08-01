@@ -6,7 +6,7 @@ preset selection, wandb configuration, override collection, and training
 confirmation. It uses the ThermurUI class to render complex components and 
 structured configuration objects for all static text and configuration.
 """
-from .types    import CLIConfig
+from .types    import CLIConfig, FileInfo
 from itertools import islice
 from typing    import Any, Callable, Sequence
 
@@ -161,7 +161,7 @@ class CLIPrompts:
         
         return self.confirm(f"Delete {count} {items}?")
     
-    def confirm_download(self, file_info: dict[str, Any]) -> bool:
+    def confirm_download(self, file_info: FileInfo) -> bool:
         """
         Prompts user to confirm file download operation.
         
@@ -314,11 +314,11 @@ class CLIPrompts:
     
     def select_file_from_pages(
         self,
-        available_files : Sequence[dict[str, Any]],
+        available_files : Sequence[FileInfo],
         file_status     : dict[str, str],
         page_size       : int = 10,
         title_prefix    : str = "Available Files"
-    ) -> dict[str, Any] | None:
+    ) -> FileInfo | None:
         """
         Display files in paginated table format and allow selection.
         

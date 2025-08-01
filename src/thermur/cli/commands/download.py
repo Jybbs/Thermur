@@ -5,7 +5,7 @@ This module provides the 'download' command for acquiring simulation datasets
 from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
-from ..helpers     import EndpointInfo, FileInfo, TransferStatus
+from ..helpers     import FileInfo, TransferStatus
 from globus_sdk    import TransferClient
 from itertools     import accumulate
 from pathlib       import Path
@@ -146,39 +146,37 @@ class DownloadCommand:
         """
         globus_client = self.globus.get_or_create_client()
         
-        if globus_client is None:
-            auth_client, auth_url = self.globus.start_oauth2_flow()
-            self.ui.print_auth_prompt(auth_url)
+        if globus_client is not None:
+            return globus_client
             
-            if self.prompts.confirm("Open browser to complete authentication?"):
-                try:
-                    web_open(auth_url, new=2)
-                    self.ui.print_message(
-                        message  = "Browser opened successfully", 
-                        msg_type = "success"
-                    )
-                except Exception:
-                    self.ui.print_message(
-                        message  = "Unable to open browser automatically", 
-                        msg_type = "warning"
-                    )
-            
-            if auth_code := input("Enter the authorization code from the browser: "):
-                globus_client = self.globus.finalize_oauth2_flow(
-                    auth_code = auth_code,
-                    client    = auth_client
-                )
+        auth_client, auth_url = self.globus.start_oauth2_flow()
+        self.ui.print_auth_prompt(auth_url)
+        
+        if self.prompts.confirm("Open browser to complete authentication?"):
+            try:
+                web_open(auth_url, new=2)
                 self.ui.print_message(
-                    message  = "Authentication successful! Credentials saved.",
+                    message  = "Browser opened successfully", 
                     msg_type = "success"
                 )
-            else:
-                raise Exception("Authentication cancelled by user")
+            except Exception:
+                self.ui.print_message(
+                    message  = "Unable to open browser automatically", 
+                    msg_type = "warning"
+                )
         
-        if globus_client is None:
-            raise Exception("Failed to authenticate with Globus")
-            
-        return globus_client
+        if auth_code := input("Enter the authorization code from the browser: "):
+            globus_client = self.globus.finalize_oauth2_flow(
+                auth_code = auth_code,
+                client    = auth_client
+            )
+            self.ui.print_message(
+                message  = "Authentication successful! Credentials saved.",
+                msg_type = "success"
+            )
+            return globus_client
+        else:
+            raise Exception("Authentication cancelled by user")
     
     def _get_available_files(self, globus_client: TransferClient) -> list[FileInfo]:
         """

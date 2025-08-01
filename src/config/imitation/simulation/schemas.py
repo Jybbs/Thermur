@@ -7,7 +7,6 @@ physics settings, data loading, and environment parameters.
 from pathlib  import Path
 from pydantic import BaseModel, DirectoryPath, Field, FilePath
 from pydantic import NonNegativeFloat, PositiveFloat
-from typing   import Optional
 
 
 class LoaderModel(BaseModel, extra="forbid"):
@@ -20,7 +19,7 @@ class LoaderModel(BaseModel, extra="forbid"):
     The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
     uses staggered grids where U, V, W wind components are offset from cell centers.
     """
-    data_path: Optional[FilePath] = Field(
+    data_path: FilePath | None = Field(
         default     = None,
         description = (
             "Path to WRF-Fire NetCDF dataset file. Defaults to first available: "

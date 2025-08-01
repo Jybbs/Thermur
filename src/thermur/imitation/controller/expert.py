@@ -11,7 +11,6 @@ from .safety                     import SafetyFilter
 from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
 from tensordict                  import TensorDict
 from torch                       import Tensor
-from typing                      import Optional
 
 import torch
 import torch.nn.functional as F
@@ -37,7 +36,7 @@ class ExpertController:
         expert        : ExpertModel,
         flock         : FlockModel,
         thresholds    : ThresholdsModel,
-        safety_filter : Optional[SafetyFilter] = None
+        safety_filter : SafetyFilter | None = None
     ):
         """
         Initializes the controller with the necessary configuration models.
@@ -206,7 +205,7 @@ class ExpertController:
         Args:
             position    : Tensor [N, dim] containing agent positions 𝐱
             temperature : Tensor [N] or [N, 1] containing temperatures T
-            gradient    : Optional[Tensor] tensor [N, dim] of pre-computed temperature
+            gradient    : Optional tensor [N, dim] of pre-computed temperature
                           gradients ∇T. If None, gradients are estimated.
         
         Returns:

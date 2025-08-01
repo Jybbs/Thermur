@@ -12,7 +12,7 @@ from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
 from typer       import Argument, Exit, Option
-from typing      import Any, Callable, Optional
+from typing      import Any, Callable
 
 
 def train(
@@ -35,7 +35,7 @@ def train(
         "--interactive/--no-interactive", "-i/-n",
         help = "Enable interactive configuration prompts"
     ),
-    resume: Optional[Path] = Option(
+    resume: Path | None = Option(
         None,
         "--resume", "-r",
         help = "Resume from checkpoint. Path to checkpoint or 'last' for most recent."
@@ -508,7 +508,7 @@ class TrainCommand:
         interactive : bool,
         sample      : bool,
         overrides   : list[str] | None,
-        resume      : Optional[Path],
+        resume      : Path      | None,
     ):
         """
         Executes the main training workflow from start to finish.

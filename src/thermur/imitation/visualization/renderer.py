@@ -16,7 +16,6 @@ from config.imitation.visualization import VistaModel
 from contextlib                     import suppress
 from pyvista                        import Actor, ImageData, Plotter, PolyData
 from torch                          import Tensor
-from typing                         import Optional
 
 import numpy   as np
 import pyvista as pv
@@ -59,10 +58,10 @@ class Renderer:
     
     def _create_agent_trails(
         self,
-        colormap    : Optional[str],
+        colormap    : str | None,
         plotter     : Plotter,
         positions   : np.ndarray,
-        temperature : Optional[np.ndarray],
+        temperature : np.ndarray | None,
         velocities  : np.ndarray
     ) -> list[Actor]:
         """
@@ -110,10 +109,10 @@ class Renderer:
         self,
         plotter     : Plotter,
         position    : Tensor,
-        colormap    : Optional[str]    = None,
-        show_trails : bool             = False,
-        temperature : Optional[Tensor] = None,
-        velocity    : Optional[Tensor] = None
+        colormap    : str | None    = None,
+        show_trails : bool          = False,
+        temperature : Tensor | None = None,
+        velocity    : Tensor | None = None
     ) -> list[Actor]:
         """
         Add agent visualizations to the plotter.
