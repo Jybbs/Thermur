@@ -12,13 +12,13 @@ The manager handles:
 - Transfer task submission between Globus endpoints
 - Progress monitoring for long-running transfers
 """
-from .types     import EndpointInfo, FileInfo, TransferStatus
-from config.cli import DownloadModel, GlobusSecrets
-from contextlib import suppress
-from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
-from pathlib    import Path
-from time       import perf_counter, sleep
-from typing     import Callable
+from config.cli   import DownloadModel, GlobusSecrets
+from config.types import EndpointInfo, FileInfo, TransferStatus
+from contextlib   import suppress
+from globus_sdk   import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
+from pathlib      import Path
+from time         import perf_counter, sleep
+from typing       import Callable
 
 
 class GlobusManager:

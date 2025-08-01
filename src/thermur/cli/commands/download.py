@@ -5,7 +5,7 @@ This module provides the 'download' command for acquiring simulation datasets
 from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
-from ..helpers     import FileInfo, TransferStatus
+from config.types  import FileInfo, TransferStatus
 from globus_sdk    import TransferClient
 from itertools     import accumulate
 from pathlib       import Path
