@@ -13,7 +13,9 @@ This module provides pre-built components for the controller domain:
 """
 from .schemas                     import *
 from hydra_zen                    import builds, make_config
+from hydra_zen.typing             import Builds
 from thermur.imitation.controller import ExpertController, SafetyFilter
+from typing                       import Any
 
 
 CONTROLLER_USER_CONFIG = make_config(
@@ -23,7 +25,7 @@ CONTROLLER_USER_CONFIG = make_config(
     thresholds = ThresholdsModel()
 )
 
-CONTROLLER_SYSTEM_BUILDS = {
+CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "expert_controller": builds(
         ExpertController,
         expert                  = "${controller.expert}",

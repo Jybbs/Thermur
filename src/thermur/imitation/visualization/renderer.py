@@ -40,7 +40,6 @@ class Renderer:
     def __init__(
         self,
         agent_glyph : object,
-        scalar_bar  : dict,
         vista       : VistaModel,
         wind_glyph  : object
     ):
@@ -49,12 +48,10 @@ class Renderer:
         
         Args:
             agent_glyph : Pre-built geometry for agent visualization
-            scalar_bar  : Configuration for temperature scalar bar
             vista       : Unified visualization configuration
             wind_glyph  : Pre-built arrow geometry for wind vectors
         """
         self.agent_glyph = agent_glyph
-        self.scalar_bar  = scalar_bar
         self.vista       = vista
         self.wind_glyph  = wind_glyph
         
@@ -331,7 +328,6 @@ class Renderer:
                 cmap                  = self.vista.colormap,
                 opacity               = "sigmoid",
                 opacity_unit_distance = 0.1,
-                scalar_bar_args       = self.scalar_bar,
                 volume                = temp_grid,
             )
         ]
