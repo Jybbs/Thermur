@@ -14,6 +14,7 @@ the main visualizer for updates and cleanup.
 """
 from config.imitation.visualization import VistaModel
 from contextlib                     import suppress
+from numpy.typing                   import NDArray
 from pyvista                        import Actor, ImageData, Plotter, PolyData
 from torch                          import Tensor
 
@@ -60,9 +61,9 @@ class Renderer:
         self,
         colormap    : str | None,
         plotter     : Plotter,
-        positions   : np.ndarray,
-        temperature : np.ndarray | None,
-        velocities  : np.ndarray
+        positions   : NDArray,
+        temperature : NDArray | None,
+        velocities  : NDArray
     ) -> list[Actor]:
         """
         Create motion trail visualization for agents.

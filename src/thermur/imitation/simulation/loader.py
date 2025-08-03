@@ -6,7 +6,8 @@ handling temperature, wind, and fire-specific variables with efficient
 interpolation and gradient computation.
 """
 from config.imitation.simulation import LoaderModel, PhysicsModel
-from numpy                       import ndarray, zeros
+from numpy                       import zeros
+from numpy.typing                import NDArray
 from torch                       import Tensor
 from xarray                      import open_dataset
 
@@ -74,7 +75,7 @@ class WRFDataSource:
         coords_dict   : dict,
         positions     : Tensor,
         variable_name : str
-    ) -> ndarray:
+    ) -> NDArray:
         """
         Calculates field gradient using finite differences.
         
@@ -155,7 +156,7 @@ class WRFDataSource:
         self, 
         coords        : dict,
         variable_name : str
-    ) -> ndarray:
+    ) -> NDArray:
         """
         Interpolates a field variable at the specified coordinates.
         
@@ -176,7 +177,7 @@ class WRFDataSource:
             method = "linear"
         ).values.astype(float)
     
-    def _transform_coordinates(self, positions: Tensor) -> dict[str, ndarray]:
+    def _transform_coordinates(self, positions: Tensor) -> dict[str, NDArray]:
         """
         Transforms simulation coordinates to dataset coordinates.
         
