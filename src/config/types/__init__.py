@@ -55,21 +55,6 @@ class EventConfig(TypedDict):
     rate    : str        # Metric name for event rate tracking
 
 
-class EventData(TypedDict, total=False):
-    """
-    Event data logged by the monitoring system.
-    
-    Contains core fields that are always present plus optional fields
-    that depend on the event type. Uses total=False to allow dynamic
-    fields added at runtime.
-    """
-    agent_id    : int          # Agent index in the flock
-    distance    : float        # Distance measurement (e.g., to boundary)
-    position    : list[float]  # 3D position coordinates
-    step        : int          # Simulation timestep
-    temperature : float        # Temperature at agent location
-
-
 class MujocoModel(TypedDict):
     """
     MuJoCo physics model and data pair.
