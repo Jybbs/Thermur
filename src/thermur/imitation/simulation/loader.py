@@ -49,10 +49,6 @@ class WRFDataSource:
             loader  : Loader configuration with data path and noise settings
             physics : Physics configuration with numerical parameters
         """
-        assert loader.data_path is not None, (
-            "data_path must be provided. Use 'thermur download --sample' "
-            "to get a sample dataset."
-        )
         self.dataset                  = open_dataset(loader.data_path, cache=True)
         self.coord_vars               = list(self.dataset.coords)
         self.domain_randomization     = loader.domain_randomization
