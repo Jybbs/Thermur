@@ -9,11 +9,15 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
+from __future__   import annotations
 from numpy        import array
 from numpy.typing import NDArray
 from pyvista      import Axes, ImageData, PolyData
 from torch        import from_numpy, Tensor
-from typing       import Any
+from typing       import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..simulation.environment import SimulationEnv
 
 
 class Sampler:
@@ -95,7 +99,7 @@ class Sampler:
     
     def create_temperature_grid(
         self,
-        environment : Any,
+        environment : SimulationEnv,
         position    : Tensor
     ) -> ImageData:
         """
@@ -130,7 +134,7 @@ class Sampler:
     def create_wind_grid(
         self,
         position   : Tensor,
-        simulation : Any
+        simulation : SimulationEnv
     ) -> PolyData:
         """
         Create a grid of wind vectors from the environment data source.

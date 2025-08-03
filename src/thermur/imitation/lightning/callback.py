@@ -5,10 +5,15 @@ This module provides a unified PyTorch Lightning callback that integrates the
 monitoring system (MetricsCollector and EventLogger) into the training loop,
 handling metric updates and event logging at appropriate lifecycle hooks.
 """
-from pytorch_lightning                 import Callback, LightningModule, Trainer
-from pytorch_lightning.utilities.types import STEP_OUTPUT
-from tensordict                        import TensorDictBase
-from thermur.imitation.monitoring      import EventLogger, MetricsCollector
+from __future__        import annotations
+from pytorch_lightning import Callback
+from typing            import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pytorch_lightning                 import LightningModule, Trainer
+    from pytorch_lightning.utilities.types import STEP_OUTPUT
+    from tensordict                        import TensorDictBase
+    from thermur.imitation.monitoring      import EventLogger, MetricsCollector
 
 
 class MonitoringCallback(Callback):

@@ -5,7 +5,7 @@ This module provides functions for gathering system diagnostics, including
 hardware, software, and package information. It is responsible for collecting
 the raw data that other modules, like the UI, will then format and display.
 """
-from config.cli.builds  import CLIConfiguration
+from __future__         import annotations
 from contextlib         import suppress
 from importlib.metadata import PackageNotFoundError, version
 from pathlib            import Path
@@ -13,7 +13,10 @@ from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
 from torch              import __version__ as torch_version, cuda
-from typing             import Any
+from typing             import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config.cli.builds import CLIConfiguration
 
 
 class SystemInspector:

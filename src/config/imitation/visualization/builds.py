@@ -21,12 +21,15 @@ Visual Elements:
 - Themes        : Pre-configured visual themes (dark/light) for different viewing
                   conditions.
 """
+from __future__                      import annotations
 from .schemas                        import *
 from hydra_zen                       import builds, make_config
-from hydra_zen.typing                import Builds
 from pyvista                         import Arrow, Plotter, themes
 from thermur.imitation.visualization import Renderer, Sampler, Visualizer
-from typing                          import Any
+from typing                          import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hydra_zen.typing import Builds
 
 
 VISUALIZATION_USER_CONFIG = make_config(

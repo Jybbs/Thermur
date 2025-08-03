@@ -5,19 +5,23 @@ This module provides the 'download' command for acquiring simulation datasets
 from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
-from config.types  import FileInfo, TransferStatus
-from globus_sdk    import TransferClient
-from itertools     import accumulate
-from pathlib       import Path
-from requests      import get, Response
-from rich.progress import Progress, TaskID
-from tarfile       import open as tar_open
-from tempfile      import NamedTemporaryFile
-from thermur.cli   import app
-from time          import perf_counter
-from typer         import Exit, Option
-from typing        import IO
-from webbrowser    import open as web_open
+from __future__  import annotations
+from itertools   import accumulate
+from pathlib     import Path
+from requests    import get
+from tarfile     import open as tar_open
+from tempfile    import NamedTemporaryFile
+from thermur.cli import app
+from time        import perf_counter
+from typer       import Exit, Option
+from typing      import IO, TYPE_CHECKING
+from webbrowser  import open as web_open
+
+if TYPE_CHECKING:
+    from config.types  import FileInfo, TransferStatus
+    from globus_sdk    import TransferClient
+    from requests      import Response
+    from rich.progress import Progress, TaskID
 
 
 def download(

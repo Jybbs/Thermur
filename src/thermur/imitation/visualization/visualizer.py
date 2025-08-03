@@ -11,14 +11,18 @@ various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
 both light and dark themes through pre-configured theme objects.
 """
-from .renderer                      import Renderer
-from .sampler                       import Sampler
-from config.imitation.visualization import *
-from itertools                      import count
-from pathlib                        import Path
-from pyvista                        import Plotter
-from tensordict                     import TensorDictBase
-from typing                         import Any
+from __future__ import annotations
+from .renderer  import Renderer
+from .sampler   import Sampler
+from itertools  import count
+from pathlib    import Path
+from pyvista    import Plotter
+from tensordict import TensorDictBase
+from typing     import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..simulation.environment       import SimulationEnv
+    from config.imitation.visualization import VistaModel
 
 
 class Visualizer:
@@ -48,7 +52,7 @@ class Visualizer:
         plotter    : Plotter,
         renderer   : Renderer,
         sampler    : Sampler,
-        simulation : Any,
+        simulation : SimulationEnv,
         vista      : VistaModel
     ):
         """
@@ -269,7 +273,7 @@ class Visualizer:
         
         if self.vista.show_safety_boundary:
             self.safety_actors = self.renderer.add_safety_boundary(
-                max_temperature = self.simulation.flock.max_temperature,
+                max_temperature = self.vista.max_temperature,
                 plotter         = self.plotter,
                 position        = position,
                 temperature     = temperature

@@ -7,12 +7,16 @@ optimal trajectory datasets for imitation learning. The expert combines
 Reynolds flocking rules with thermal constraints to demonstrate safe
 collective behavior.
 """
-from .safety                     import SafetyFilter
-from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
-from tensordict                  import TensorDictBase
-from torch                       import Tensor
+from __future__ import annotations
+from typing     import TYPE_CHECKING
 
 import torch as th
+
+if TYPE_CHECKING:
+    from .safety                     import SafetyFilter
+    from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
 
 
 class ExpertController:

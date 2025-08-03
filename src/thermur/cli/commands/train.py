@@ -5,14 +5,18 @@ This module encapsulates all logic for the 'train' command, including
 system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
+from __future__  import annotations
 from functools   import partial
 from itertools   import chain
-from omegaconf   import DictConfig, OmegaConf, open_dict
+from omegaconf   import OmegaConf, open_dict
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
 from typer       import Argument, Exit, Option
-from typing      import Any, Callable
+from typing      import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from omegaconf import DictConfig
 
 
 def train(

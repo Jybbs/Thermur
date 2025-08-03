@@ -6,12 +6,16 @@ defined safety constraints, specifically the maximum thermal limit. It achieves
 this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
-from config.imitation.controller import FlockModel, SafetyModel, ThresholdsModel
-from qpth.qp                     import QPFunction
-from tensordict                  import TensorDictBase
-from torch                       import Tensor
+from __future__ import annotations
+from qpth.qp    import QPFunction
+from typing     import TYPE_CHECKING
 
-import torch
+import torch as th
+
+if TYPE_CHECKING:
+    from config.imitation.controller import FlockModel, SafetyModel, ThresholdsModel
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
 
 
 class SafetyFilter:
@@ -50,7 +54,7 @@ class SafetyFilter:
         self.max_temperature      = thresholds.max_temperature
         self.safety               = safety
         self.total_queries        = 0
-        self.Q                    = torch.eye(3, dtype=torch.float32)
+        self.Q                    = th.eye(3, dtype=th.float32)
 
     def _log_activation(self, is_active: Tensor):
         """
@@ -103,8 +107,8 @@ class SafetyFilter:
                 p = -u_nominal,
                 G = -h_grads.unsqueeze(1),
                 h = (self.safety.cbf_alpha * h_values).unsqueeze(1),
-                A = torch.empty(0, device=device),
-                b = torch.empty(0, device=device),
+                A = th.empty(0, device=device),
+                b = th.empty(0, device=device),
             )
             
             assert u_safe is not None
@@ -116,7 +120,7 @@ class SafetyFilter:
         except Exception:
             return (
                 u_nominal if self.safety.qp_on_failure == "nominal" 
-                else torch.zeros_like(u_nominal)
+                else th.zeros_like(u_nominal)
             )
     
     def get_activation_rate(self) -> float:
