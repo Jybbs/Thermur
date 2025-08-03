@@ -22,7 +22,7 @@ from typing       import Any, Literal, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .system      import SystemInspector
-    from config.types import FileInfo, TableColumn
+    from config.types import FileInfo, SystemInfo, TableColumn
 
 
 class ThermurUI:
@@ -322,7 +322,7 @@ class ThermurUI:
             ),
         )
 
-    def create_system_table(self, system_info: dict[str, Any]) -> Table:
+    def create_system_table(self, system_info: SystemInfo) -> Table:
         """
         Create a Rich table with system information.
         
@@ -362,7 +362,7 @@ class ThermurUI:
                     bool(version)
                 )
             elif key == "gpu":
-                gpu_name = system_info.get("gpu")
+                gpu_name = system_info.get("gpu_name")
                 available = bool(gpu_name and gpu_name != "N/A")
                 value = self._create_status_indicator(
                     str(gpu_name) if available else "Not Detected",

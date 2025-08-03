@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .loader                     import WRFDataSource
     from config.imitation.controller import FlockModel
     from config.imitation.simulation import PhysicsModel
+    from config.types                import MujocoModel
     from tensordict                  import TensorDictBase
     from torch                       import Tensor
     from torchrl.data                import TensorSpec
@@ -45,6 +46,8 @@ class SimulationEnv(EnvBase):
     defined externally, which includes agent kinematics, local thermal
     data, and the communication graph topology.
     """
+    
+    physics_model: MujocoModel
 
     def __init__(
         self,

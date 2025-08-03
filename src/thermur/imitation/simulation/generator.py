@@ -6,13 +6,16 @@ loading MuJoCo models with varying numbers of agents, enabling true multi-agent
 physics simulation for flock environments.
 """
 from __future__ import annotations
-from functools import reduce
-from itertools import chain
-from operator  import methodcaller
-from pathlib   import Path
-from typing    import Any, TYPE_CHECKING
+from functools  import reduce
+from itertools  import chain
+from operator   import methodcaller
+from pathlib    import Path
+from typing     import TYPE_CHECKING
 
 import mujoco as mj
+
+if TYPE_CHECKING:
+    from config.types import MujocoModel
 
 
 class XMLGenerator:
@@ -221,7 +224,7 @@ class XMLGenerator:
             simulation_step
         )
     
-    def load_model(self, xml_string: str) -> dict[str, Any]:
+    def load_model(self, xml_string: str) -> MujocoModel:
         """
         Load a MuJoCo model from an XML string.
         

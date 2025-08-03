@@ -8,7 +8,7 @@ and provides structured outputs for post-hoc analysis.
 """
 from __future__   import annotations
 from collections  import Counter, defaultdict
-from config.types import EventConfig
+from config.types import EventConfig, EventData
 from time         import perf_counter
 from typing       import Any, TYPE_CHECKING
 from wandb        import Table
@@ -51,7 +51,7 @@ class EventLogger:
         
         self.event_buffer : defaultdict[str, list[Any]]            = defaultdict(list)
         self.event_counts : Counter[str]                           = Counter()
-        self.event_data   : defaultdict[str, list[dict[str, Any]]] = defaultdict(list) 
+        self.event_data   : defaultdict[str, list[EventData]] = defaultdict(list) 
     
     def _batch_log_masked_events(
         self,
@@ -89,10 +89,10 @@ class EventLogger:
         masked_positions = batch["position"][mask]
         
         for i in range(count):
-            event_data: dict[str, Any] = {
-                "agent_id"    : indices[i].item(),
+            event_data: EventData = {
+                "agent_id"    : int(indices[i].item()),
                 "position"    : masked_positions[i].cpu().tolist(),
-                "temperature" : masked_temps[i].item()
+                "temperature" : float(masked_temps[i].item())
             }
             
             for field_name, field_tensor in fields.items():

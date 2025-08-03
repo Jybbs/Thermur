@@ -82,6 +82,7 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     
     "visualizer": builds(
         Visualizer,
+        max_temperature         = "${controller.thresholds.max_temperature}",
         plotter                 = "${_system.plotter}",
         renderer                = "${_system.renderer}",
         sampler                 = "${_system.sampler}",

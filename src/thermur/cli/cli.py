@@ -4,6 +4,7 @@ Enhanced console-script target for Thermur, built with Typer and Rich.
 This module provides the main CLI interface by discovering and registering
 all available commands from the .commands subpackage.
 """
+from operator             import itemgetter
 from thermur.cli          import app
 from thermur.cli.commands import *
 from typer                import Context, Exit, Option, Typer
@@ -48,8 +49,9 @@ def main_callback(
     """
     if version:
         info = app.system.get_system_info()
-        app.ui.console.print(f"thermur v{info['thermur']}")
-        app.ui.console.print(f"Python v{info['python']} • PyTorch v{info['torch']}")
+        thermur, python, torch = itemgetter('thermur', 'python', 'torch')(info)
+        app.ui.console.print(f"thermur v{thermur}")
+        app.ui.console.print(f"Python v{python} • PyTorch v{torch}")
         raise Exit()
 
     if ctx.invoked_subcommand is None:

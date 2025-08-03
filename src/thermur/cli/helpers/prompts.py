@@ -7,15 +7,16 @@ confirmation. It uses the ThermurUI class to render complex components and
 structured configuration objects for all static text and configuration.
 """
 from __future__ import annotations
-from config.cli import CLIConfiguration
-from itertools  import islice
-from typing     import Any, Callable, Sequence, TYPE_CHECKING
+from config.types import TableColumn
+from itertools    import islice
+from typing       import Any, Callable, Sequence, TYPE_CHECKING
 
 import questionary
 
 if TYPE_CHECKING:
-    from config.types import FileInfo
-    from .ui          import ThermurUI
+    from config.cli.builds import CLIConfiguration
+    from config.types      import FileInfo
+    from .ui               import ThermurUI
 
 
 class CLIPrompts:
@@ -341,7 +342,7 @@ class CLIPrompts:
             Selected file dictionary or None if cancelled
         """
         def render_file_page(
-            page_files  : list[dict[str, Any]], 
+            page_files  : list[FileInfo], 
             page_num    : int, 
             total_pages : int
         ):
@@ -407,8 +408,8 @@ class CLIPrompts:
         table = self.ui.create_aligned_table(
             box       = None,
             columns   = [
-                ("Setting", "bright_cyan",  20, "left"),
-                ("Value",   "bright_white", 40, "left")
+                TableColumn("left", "bright_cyan",  "Setting", 20),
+                TableColumn("left", "bright_white", "Value",   40)
             ],
             show_edge = False
         )

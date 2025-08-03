@@ -55,6 +55,67 @@ class EventConfig(TypedDict):
     rate    : str        # Metric name for event rate tracking
 
 
+class EventData(TypedDict, total=False):
+    """
+    Event data logged by the monitoring system.
+    
+    Contains core fields that are always present plus optional fields
+    that depend on the event type. Uses total=False to allow dynamic
+    fields added at runtime.
+    """
+    agent_id    : int          # Agent index in the flock
+    distance    : float        # Distance measurement (e.g., to boundary)
+    position    : list[float]  # 3D position coordinates
+    step        : int          # Simulation timestep
+    temperature : float        # Temperature at agent location
+
+
+class MujocoModel(TypedDict):
+    """
+    MuJoCo physics model and data pair.
+    
+    Contains the MuJoCo model definition and associated data state
+    used throughout the simulation environment.
+    """
+    data  : Any  # MjData instance
+    model : Any  # MjModel instance
+
+
+class SystemInfo(TypedDict, total=False):
+    """
+    System information dictionary returned by get_system_info.
+    
+    Contains comprehensive system details including hardware capabilities,
+    software versions, and resource availability. Uses total=False to
+    allow partial population based on available information.
+    """
+    # CUDA information
+    cuda                : bool
+    cuda_version        : str | None
+    device_count        : int
+    gpu_memory          : str | None
+    gpu_name            : str | None
+    
+    # Dataset information
+    dataset_count       : int
+    dataset_size        : float
+    has_sample          : bool
+    
+    # Resource information
+    disk_available      : float
+    disk_total          : float
+    memory_available    : float
+    memory_total        : float
+    
+    # Core versions
+    mujoco              : str | None
+    platform            : str
+    python              : str
+    python_version_info : Any
+    thermur             : str | None
+    torch               : str
+
+
 class TableColumn(NamedTuple):
     """
     Rich table column specification.

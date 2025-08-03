@@ -13,10 +13,11 @@ from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
 from torch              import __version__ as torch_version, cuda
-from typing             import Any, TYPE_CHECKING
+from typing             import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.cli.builds import CLIConfiguration
+    from config.types      import SystemInfo
 
 
 class SystemInspector:
@@ -36,7 +37,7 @@ class SystemInspector:
         """
         self.download = cfg.download
 
-    def _get_cuda_info(self) -> dict[str, Any]:
+    def _get_cuda_info(self) -> SystemInfo:
         """
         Gather CUDA-related system information.
         
@@ -55,7 +56,7 @@ class SystemInspector:
             "gpu_name"     : cuda.get_device_name(0),
         }
 
-    def _get_dataset_info(self) -> dict[str, Any]:
+    def _get_dataset_info(self) -> SystemInfo:
         """
         Gather information about downloaded dataset files.
         
@@ -76,7 +77,7 @@ class SystemInspector:
             }
         return {"dataset_count": 0, "dataset_size": 0.0, "has_sample": False}
     
-    def _get_disk_info(self) -> dict[str, float]:
+    def _get_disk_info(self) -> SystemInfo:
         """
         Gather disk usage information for the current directory.
         
@@ -92,7 +93,7 @@ class SystemInspector:
             }
         return {"disk_available": 0, "disk_total": 0}
 
-    def _get_memory_info(self) -> dict[str, float]:
+    def _get_memory_info(self) -> SystemInfo:
         """
         Gather system memory information using psutil.
         
@@ -168,7 +169,7 @@ class SystemInspector:
         
         return Path(HydraConfig.get().runtime.output_dir)
 
-    def get_system_info(self) -> dict[str, Any]:
+    def get_system_info(self) -> SystemInfo:
         """
         Gather comprehensive system information.
 
@@ -182,7 +183,7 @@ class SystemInspector:
             - System info      : platform, python, python_version_info
             - Hardware         : cuda info, memory stats, disk usage
         """
-        info: dict[str, Any] = {
+        base_info: SystemInfo = {
             "mujoco"              : self._get_package_version("mujoco"),
             "platform"            : platform(),
             "python"              : python_version(),
@@ -191,12 +192,13 @@ class SystemInspector:
             "torch"               : torch_version,
         }
         
-        info.update(self._get_cuda_info())
-        info.update(self._get_memory_info())
-        info.update(self._get_disk_info())
-        info.update(self._get_dataset_info())
-        
-        return info
+        return (
+            base_info 
+            | self._get_cuda_info() 
+            | self._get_memory_info() 
+            | self._get_disk_info() 
+            | self._get_dataset_info()
+        )
 
     
     def resolve_data_path(self, use_sample: bool = False) -> tuple[Path, str]:
