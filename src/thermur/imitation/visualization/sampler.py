@@ -9,10 +9,11 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
-from numpy                          import array, ndarray
-from pyvista                        import Axes, ImageData, PolyData
-from torch                          import from_numpy, Tensor
-from typing                         import Any
+from numpy        import array
+from numpy.typing import NDArray
+from pyvista      import Axes, ImageData, PolyData
+from torch        import from_numpy, Tensor
+from typing       import Any
 
 
 class Sampler:
@@ -46,7 +47,7 @@ class Sampler:
         self.temperature_resolution = temperature_resolution
         self.wind_resolution        = wind_resolution
     
-    def compute_grid_bounds(self, position: Tensor) -> tuple[ndarray, ndarray]:
+    def compute_grid_bounds(self, position: Tensor) -> tuple[NDArray, NDArray]:
         """
         Compute the bounding box for a grid based on agent positions.
         
