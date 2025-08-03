@@ -49,11 +49,12 @@ class Visualizer:
     
     def __init__(
         self,
-        plotter    : Plotter,
-        renderer   : Renderer,
-        sampler    : Sampler,
-        simulation : SimulationEnv,
-        vista      : VistaModel
+        max_temperature : float,
+        plotter         : Plotter,
+        renderer        : Renderer,
+        sampler         : Sampler,
+        simulation      : SimulationEnv,
+        vista           : VistaModel
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -64,17 +65,19 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            plotter    : Pre-built PyVista plotter window
-            renderer   : Pre-built renderer for visualization elements
-            sampler    : Pre-built grid sampler for spatial data sampling
-            simulation : Simulation reference for accessing environment data
-            vista      : Unified visualization configuration
+            max_temperature : Critical temperature threshold for safety boundary
+            plotter         : Pre-built PyVista plotter window
+            renderer        : Pre-built renderer for visualization elements
+            sampler         : Pre-built grid sampler for spatial data sampling
+            simulation      : Simulation reference for accessing environment data
+            vista           : Unified visualization configuration
         """
-        self.plotter    = plotter
-        self.renderer   = renderer
-        self.sampler    = sampler
-        self.simulation = simulation
-        self.vista      = vista
+        self.max_temperature = max_temperature
+        self.plotter         = plotter
+        self.renderer        = renderer
+        self.sampler         = sampler
+        self.simulation      = simulation
+        self.vista           = vista
         
         self.agent_actors          = None
         self.frame_capture_enabled = False
@@ -273,7 +276,7 @@ class Visualizer:
         
         if self.vista.show_safety_boundary:
             self.safety_actors = self.renderer.add_safety_boundary(
-                max_temperature = self.vista.max_temperature,
+                max_temperature = self.max_temperature,
                 plotter         = self.plotter,
                 position        = position,
                 temperature     = temperature
