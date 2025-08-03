@@ -11,7 +11,7 @@ from numpy.typing                import NDArray
 from torch                       import Tensor
 from xarray                      import open_dataset
 
-import torch
+import torch as th
 
 
 class WRFDataSource:
@@ -65,7 +65,7 @@ class WRFDataSource:
             Tensor with noise added if domain randomization is enabled
         """
         return (
-            data + torch.randn_like(data) * noise_std
+            data + th.randn_like(data) * noise_std
             if self.domain_randomization and noise_std > 0
             else data
         )
@@ -141,14 +141,14 @@ class WRFDataSource:
         Returns:
             Tuple of processed (temperatures, gradients) with NaNs handled
         """
-        default_grad        = torch.zeros_like(gradients)
+        default_grad        = th.zeros_like(gradients)
         default_grad[:, -1] = 1.0
-        nan_grad_mask       = torch.isnan(gradients).any(dim=1)
+        nan_grad_mask       = th.isnan(gradients).any(dim=1)
         
         gradients[nan_grad_mask] = default_grad[nan_grad_mask]
         
         return (
-            torch.nan_to_num(temperatures, self.fallback_temperature),
+            th.nan_to_num(temperatures, self.fallback_temperature),
             gradients
         )
         
@@ -241,7 +241,7 @@ class WRFDataSource:
         coords_2d   = {k: v for k, v in coords_dict.items() if k != "z"}
         
         heat_flux = self._interpolate_field(coords_2d, "GRNHFX")
-        return torch.nan_to_num(
+        return th.nan_to_num(
             Tensor(heat_flux.reshape(-1, 1), device=positions.device),
             nan = 0.0
         )
@@ -314,7 +314,7 @@ class WRFDataSource:
             Tensor [N, 3] of wind velocity vectors [u, v, w] in m/s
         """
         coords_dict = self._transform_coordinates(positions)
-        wind_values = torch.stack(
+        wind_values = th.stack(
             dim     = 1,
             tensors = [
                 Tensor(
@@ -324,6 +324,6 @@ class WRFDataSource:
             ]
         )
         
-        wind_values = torch.nan_to_num(wind_values, 0.0)
+        wind_values = th.nan_to_num(wind_values, 0.0)
 
         return self._add_domain_noise(wind_values, self.wind_noise_std)

@@ -14,7 +14,7 @@ from torchmetrics                import MeanAbsoluteError, MeanSquaredError
 from torchmetrics                import Metric, MetricCollection, R2Score
 from torchmetrics.image          import StructuralSimilarityIndexMeasure
 
-import torch
+import torch as th
 
 
 class AveragingMetric(Metric):
@@ -37,8 +37,8 @@ class AveragingMetric(Metric):
         for accumulating the values to be averaged.
         """
         super().__init__()
-        self.add_state("count", default=torch.tensor(0),   dist_reduce_fx="sum")
-        self.add_state("sum",   default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("count", default=th.tensor(0),   dist_reduce_fx="sum")
+        self.add_state("sum",   default=th.tensor(0.0), dist_reduce_fx="sum")
     
     def compute(self) -> Tensor:
         """
@@ -49,7 +49,7 @@ class AveragingMetric(Metric):
         """
         if self.count > 0:
             return self.sum / self.count
-        return torch.zeros_like(self.sum)
+        return th.zeros_like(self.sum)
 
 
 class CohesionMetric(AveragingMetric):
@@ -83,16 +83,16 @@ class CohesionMetric(AveragingMetric):
             self.count += 1
             return
         
-        adj_matrix = torch.zeros((num_agents, num_agents), device=edge_index.device)
+        adj_matrix = th.zeros((num_agents, num_agents), device=edge_index.device)
         adj_matrix.index_put_(
             (edge_index[0], edge_index[1]), 
-            torch.ones(edge_index.shape[1], device=edge_index.device)
+            th.ones(edge_index.shape[1], device=edge_index.device)
         )
         adj_matrix = ((adj_matrix + adj_matrix.T) > 0).float()
-        laplacian  = torch.diag(adj_matrix.sum(dim=1)) - adj_matrix
+        laplacian  = th.diag(adj_matrix.sum(dim=1)) - adj_matrix
         
         try:
-            eigenvalues    = torch.linalg.eigvalsh(laplacian)
+            eigenvalues    = th.linalg.eigvalsh(laplacian)
             lambda_squared = (eigenvalues[1] 
                               if eigenvalues.numel() > 1 
                               else eigenvalues.new_zeros(()))
@@ -129,8 +129,8 @@ class ColorAccuracyMetric(AveragingMetric):
             metrics: Metrics configuration containing temperature bounds
         """
         super().__init__()
-        self.register_buffer("temp_max", torch.tensor(metrics.color_temp_max))
-        self.register_buffer("temp_min", torch.tensor(metrics.color_temp_min))
+        self.register_buffer("temp_max", th.tensor(metrics.color_temp_max))
+        self.register_buffer("temp_min", th.tensor(metrics.color_temp_min))
     
     def _temperature_to_rgb(self, temperature: Tensor) -> Tensor:
         """
@@ -144,19 +144,19 @@ class ColorAccuracyMetric(AveragingMetric):
         Returns:
             RGB colors [N, 3] in range [0, 1]
         """
-        temp_norm = torch.clamp(
+        temp_norm = th.clamp(
             (temperature - self.temp_min) / (self.temp_max - self.temp_min),
             0, 1
         )
         
-        return torch.stack([
-            torch.clamp(2 * temp_norm - 0.5, 0, 1),
-            torch.where(
+        return th.stack([
+            th.clamp(2 * temp_norm - 0.5, 0, 1),
+            th.where(
                 temp_norm < 0.5,
                 2 * temp_norm,
                 2 * (1 - temp_norm)
             ),
-            torch.clamp(1 - 2 * temp_norm, 0, 1)
+            th.clamp(1 - 2 * temp_norm, 0, 1)
         ], dim=-1)
     
     def update(
@@ -178,7 +178,7 @@ class ColorAccuracyMetric(AveragingMetric):
             displayed_rgb = self._temperature_to_rgb(sensed_temperature)
             
         # Reconstruct temperature from RGB using red channel as indicator
-        reconstructed_temp = torch.lerp(self.temp_min, self.temp_max, displayed_rgb[..., 0])
+        reconstructed_temp = th.lerp(self.temp_min, self.temp_max, displayed_rgb[..., 0])
         error = (sensed_temperature - reconstructed_temp).abs()
         
         self.sum   += error.sum()
@@ -220,7 +220,7 @@ class EnergyConsumptionMetric(AveragingMetric):
             metrics : Metrics configuration containing power exponent
         """
         super().__init__()
-        self.register_buffer("gravity", torch.tensor(gravity))
+        self.register_buffer("gravity", th.tensor(gravity))
         self.power_exponent = metrics.power_exponent
     
     def update(self, u_safe: Tensor):
@@ -230,7 +230,7 @@ class EnergyConsumptionMetric(AveragingMetric):
         Args:
             u_safe : Safety-filtered control actions [N, 3] (m/s²)
         """
-        gravity_vec = torch.zeros_like(u_safe)
+        gravity_vec = th.zeros_like(u_safe)
         gravity_vec[..., 2] = -self.gravity
         
         power = (u_safe - gravity_vec).norm(dim=-1).pow(self.power_exponent)
@@ -282,8 +282,8 @@ class LegibilitySSIMMetric(AveragingMetric):
             reduction   = 'elementwise_mean'
         )
         
-        self.register_buffer("bounds_max", torch.tensor(bounds_max))
-        self.register_buffer("bounds_min", torch.zeros(3))
+        self.register_buffer("bounds_max", th.tensor(bounds_max))
+        self.register_buffer("bounds_min", th.zeros(3))
         self.register_buffer("coords", self._pre_compute_coordinates(self.grid_size))
     
     def _pre_compute_coordinates(self, grid_size: int) -> Tensor:
@@ -299,10 +299,10 @@ class LegibilitySSIMMetric(AveragingMetric):
         Returns:
             Coordinate tensor of shape [grid_size, grid_size, 2]
         """
-        return torch.stack(
-            torch.meshgrid(
-                torch.arange(grid_size),
-                torch.arange(grid_size),
+        return th.stack(
+            th.meshgrid(
+                th.arange(grid_size),
+                th.arange(grid_size),
                 indexing = 'xy'
             ), 
             dim = -1
@@ -335,13 +335,13 @@ class LegibilitySSIMMetric(AveragingMetric):
                     (bounds_max[:2] - bounds_min[:2]) * 
                     (self.grid_size - 1))
         
-        field = torch.zeros((self.grid_size, self.grid_size), device=positions.device)
+        field = th.zeros((self.grid_size, self.grid_size), device=positions.device)
         
         grid_pos_expanded = grid_pos.unsqueeze(0).unsqueeze(0)
         coords_expanded   = self.coords.unsqueeze(2)
         
         dist_sq = ((coords_expanded - grid_pos_expanded) ** 2).sum(dim=-1)
-        weights = torch.exp(-dist_sq / (2 * self.sigma**2))
+        weights = th.exp(-dist_sq / (2 * self.sigma**2))
         field   = (weights * vel_magnitude.unsqueeze(0).unsqueeze(0)).sum(dim=-1)
         
         field_max = field.max()

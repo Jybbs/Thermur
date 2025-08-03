@@ -12,8 +12,7 @@ from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
 from tensordict                  import TensorDictBase
 from torch                       import Tensor
 
-import torch
-import torch.nn.functional as F
+import torch as th
 
 
 class ExpertController:
@@ -98,7 +97,7 @@ class ExpertController:
         Returns:
             Tensor [N, dim] of alignment force vectors for all agents
         """
-        avg_velocity = torch.zeros_like(velocity)
+        avg_velocity = th.zeros_like(velocity)
         
         if self._edge_source.numel():
             avg_velocity.index_add_(
@@ -136,7 +135,7 @@ class ExpertController:
         Returns:
             Tensor [N, dim] of cohesion force vectors for all agents
         """
-        center_of_mass = torch.zeros_like(position)
+        center_of_mass = th.zeros_like(position)
         
         if self._edge_source.numel():
             center_of_mass.index_add_(
@@ -175,17 +174,17 @@ class ExpertController:
         """
         # Calculate displacement vectors and distances
         if not self._edge_source.numel():
-            return torch.zeros_like(position)
+            return th.zeros_like(position)
             
         rel_pos  = position[self._edge_source] - position[self._edge_target]
         distance = rel_pos.norm(dim=1, keepdim=True)
 
         # Apply minimum distance and calculate repulsion
-        distance  = torch.clamp(distance, min=self.expert.min_distance)
+        distance  = th.clamp(distance, min=self.expert.min_distance)
         repulsion = rel_pos / (distance.pow(2) + self.expert.epsilon)
 
         # Sum repulsion vectors for each agent
-        separation = torch.zeros_like(position)
+        separation = th.zeros_like(position)
         separation.index_add_(
             dim    = 0, 
             index  = self._edge_source, 
@@ -223,7 +222,7 @@ class ExpertController:
             Tensor [N, dim] of thermal repulsion force vectors for all agents
         """
         temperature = self._ensure_1d_temperature(temperature)
-        t_margin    = torch.clamp(
+        t_margin    = th.clamp(
             input = self.max_temperature - temperature,
             min   = self.expert.epsilon
         )
@@ -289,9 +288,9 @@ class ExpertController:
         temp_diff = temperature[self._edge_target] - temperature[self._edge_source]
         
         # Sum weighted positions and count significant neighbors
-        sig_mask   = torch.abs(temp_diff) > self.expert.epsilon
-        grad_sum   = torch.zeros_like(position)
-        sig_counts = torch.bincount(
+        sig_mask   = th.abs(temp_diff) > self.expert.epsilon
+        grad_sum   = th.zeros_like(position)
+        sig_counts = th.bincount(
             input     = self._edge_source[sig_mask],
             minlength = n
         ).float()
@@ -301,19 +300,19 @@ class ExpertController:
             index  = self._edge_source[sig_mask],
             source = pos_diff[sig_mask] * temp_diff[sig_mask].unsqueeze(dim=1)
         )
-        grad_neighbors = grad_sum / torch.clamp(sig_counts, min=1).unsqueeze(dim=1)
+        grad_neighbors = grad_sum / th.clamp(sig_counts, min=1).unsqueeze(dim=1)
 
-        return torch.where(
+        return th.where(
             condition = (sig_counts == 0).unsqueeze(dim=1), 
             input     = self._vertical_heat_gradient(position, temperature), 
             other     = grad_neighbors
         )
 
-    def _reset_shared_state(self, device: str | torch.device = 'cpu'):
+    def _reset_shared_state(self, device: str | th.device = 'cpu'):
         """
         Resets the shared graph state variables to empty tensors.
         """
-        empty = lambda: torch.tensor([], device=device, dtype=torch.long)
+        empty = lambda: th.tensor([], device=device, dtype=th.long)
         self._edge_source    = empty()
         self._edge_target    = empty()
         self._neighbor_count = empty()
@@ -335,19 +334,19 @@ class ExpertController:
         
         if edge_index.numel():
             self._edge_source, self._edge_target = edge_index
-            self._neighbor_count = torch.bincount(
+            self._neighbor_count = th.bincount(
                 self._edge_source,
                 minlength = num_agents
             ).to(device)
         else:
             self._reset_shared_state(device)
-            self._neighbor_count = torch.zeros(
+            self._neighbor_count = th.zeros(
                 num_agents, 
                 device = device,
-                dtype  = torch.long, 
+                dtype  = th.long, 
             )
 
-        self._safe_count = torch.clamp(self._neighbor_count, min=1)
+        self._safe_count = th.clamp(self._neighbor_count, min=1)
 
     def _vertical_heat_gradient(
         self,
@@ -371,13 +370,13 @@ class ExpertController:
         num_agents, dim = position.shape
 
         # Create unit vectors pointing up in the last dimension
-        vertical = F.one_hot(
+        vertical = th.nn.functional.one_hot(
             num_classes = dim,
-            tensor      = torch.full(
+            tensor      = th.full(
                 size       = (num_agents,),
                 fill_value = dim - 1,
                 device     = position.device,
-                dtype      = torch.long
+                dtype      = th.long
             )
         ).float()
 
