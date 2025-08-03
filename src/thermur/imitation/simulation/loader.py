@@ -9,6 +9,7 @@ from config.imitation.simulation import LoaderModel, PhysicsModel
 from numpy                       import zeros
 from numpy.typing                import NDArray
 from torch                       import Tensor
+from typing                      import Any
 from xarray                      import open_dataset
 
 import torch as th
@@ -72,10 +73,10 @@ class WRFDataSource:
 
     def _calculate_gradient(
         self, 
-        coords_dict   : dict,
+        coords_dict   : dict[str, NDArray[Any]],
         positions     : Tensor,
         variable_name : str
-    ) -> NDArray:
+    ) -> NDArray[Any]:
         """
         Calculates field gradient using finite differences.
         
@@ -154,9 +155,9 @@ class WRFDataSource:
         
     def _interpolate_field(
         self, 
-        coords        : dict,
+        coords        : dict[str, NDArray[Any]],
         variable_name : str
-    ) -> NDArray:
+    ) -> NDArray[Any]:
         """
         Interpolates a field variable at the specified coordinates.
         
@@ -177,7 +178,7 @@ class WRFDataSource:
             method = "linear"
         ).values.astype(float)
     
-    def _transform_coordinates(self, positions: Tensor) -> dict[str, NDArray]:
+    def _transform_coordinates(self, positions: Tensor) -> dict[str, NDArray[Any]]:
         """
         Transforms simulation coordinates to dataset coordinates.
         
@@ -200,7 +201,7 @@ class WRFDataSource:
             if i < 3 and dim_name in self.coord_vars
         }
 
-    def get_domain_info(self) -> dict:
+    def get_domain_info(self) -> dict[str, Any]:
         """
         Extract WRF domain configuration information.
         

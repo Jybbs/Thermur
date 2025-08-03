@@ -96,7 +96,7 @@ class CohesionMetric(AveragingMetric):
             lambda_squared = (eigenvalues[1] 
                               if eigenvalues.numel() > 1 
                               else eigenvalues.new_zeros(()))
-        except:
+        except RuntimeError:
             lambda_squared = laplacian.new_zeros(())
             
         self.sum += lambda_squared

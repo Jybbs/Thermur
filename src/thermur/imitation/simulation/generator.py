@@ -206,11 +206,17 @@ class XMLGenerator:
             for i in range(agent_count)
         ]
         
-        bodies, actuators = zip(*components) if components else ([], [])
+        if components:
+            body_tuple, actuator_tuple = zip(*components)
+            bodies    = list(body_tuple)
+            actuators = list(actuator_tuple)
+        else:
+            bodies    = []
+            actuators = []
         
         return self._assemble_xml(
             list(chain.from_iterable(actuators)),
-            list(bodies),
+            bodies,
             simulation_step
         )
     
