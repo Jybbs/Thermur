@@ -93,7 +93,7 @@ class TrainCommand:
         self.system      = app.system
         self.ui          = app.ui
 
-        self.data_path   = ""
+        self.data_path   = "auto"
         self.dry_run     = False
         self.force       = False
         self.interactive = True
@@ -462,7 +462,7 @@ class TrainCommand:
             raise ValueError("Training modules not provided")
             
         with open_dict(cfg):
-            cfg.simulation.loader.wrf.data_path = self.data_path
+            cfg.simulation.loader.data_path = self.data_path
 
         if cfg.optimizer.seed is not None:
             imports["seed_everything"](cfg.optimizer.seed)

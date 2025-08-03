@@ -154,6 +154,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         logger                  = "${_system.logger}",
         max_epochs              = "${lightning.optimizer.max_epochs}",
         precision               = "${lightning.hardware.precision}",
+        profiler                = "${monitoring.metrics.profiler}",
         strategy                = "${lightning.hardware.strategy}",
         val_check_interval      = "${lightning.optimizer.val_check_interval}",
         zen_partial             = True,

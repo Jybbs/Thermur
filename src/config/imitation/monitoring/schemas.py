@@ -87,10 +87,10 @@ class MetricsModel(BaseModel, extra="forbid"):
             "typically 1.5 for quadrotors based on momentum theory analysis."
         )
     )
-    profiler: Literal["simple", "advanced"] | None = Field(
-        default     = None,
+    profiler: bool | Literal["simple", "advanced", "pytorch"] = Field(
+        default     = False,
         description = (
-            "PyTorch Lightning profiler for performance analysis, 'simple' tracks basic "
-            "metrics while 'advanced' provides detailed Chrome tracing output."
+            "PyTorch Lightning profiler for performance analysis. False disables profiling, "
+            "True uses 'simple' profiler, or specify 'advanced'/'pytorch' for detailed profiling."
         )
     )
