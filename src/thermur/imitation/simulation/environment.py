@@ -16,14 +16,16 @@ from .loader                     import WRFDataSource
 from config.imitation.controller import FlockModel
 from config.imitation.simulation import PhysicsModel
 from operator                    import itemgetter
-from mujoco                      import MjData, mj_forward, mj_resetData, mj_step
+from math                        import ceil
+from mujoco                      import MjData
 from tensordict                  import TensorDictBase
 from torch                       import Size, Tensor
 from torchrl.data                import Bounded, Composite, TensorSpec, Unbounded
 from torchrl.envs                import EnvBase
 from typing                      import Any
 
-import torch as th
+import mujoco as mj
+import torch  as th
 
 
 class SimulationEnv(EnvBase):
@@ -180,7 +182,7 @@ class SimulationEnv(EnvBase):
         Returns:
             A tensor of shape [n, 3] containing agent positions
         """
-        side_length = th.ceil(n ** (1./3))
+        side_length = ceil(n ** (1./3))
         coords      = th.linspace(-1, 1, side_length)
         grid        = th.stack(
             dim     = -1,
@@ -335,13 +337,13 @@ class SimulationEnv(EnvBase):
             velocities : Tensor [N, 3] containing agent velocities
         """
         data = self.physics_model["data"]
-        mj_resetData(self.physics_model["model"], data)
+        mj.mj_resetData(self.physics_model["model"], data)
         
         data.qpos[:self.flock.agent_count * 3] = positions.reshape(-1).cpu().numpy()
         data.qvel[:self.flock.agent_count * 3] = velocities.reshape(-1).cpu().numpy()
         
         # Forward kinematics to update all derived quantities
-        mj_forward(self.physics_model["model"], data)
+        mj.mj_forward(self.physics_model["model"], data)
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """
@@ -371,7 +373,7 @@ class SimulationEnv(EnvBase):
         if ctrl_count := min(len(reshaped), len(data.ctrl)):
             data.ctrl[:ctrl_count] = reshaped[:ctrl_count]
         
-        mj_step(model, data)
+        mj.mj_step(model, data)
         
         position, velocity    = self._extract_agent_states(data)
         temperature, gradient = self.wrf.query_thermal(position)
