@@ -5,12 +5,17 @@ This module provides a comprehensive data loader for WRF-Fire NetCDF outputs,
 handling temperature, wind, and fire-specific variables with efficient 
 interpolation and gradient computation.
 """
-from config.imitation.simulation import LoaderModel, PhysicsModel
-from numpy                       import ndarray, zeros
-from torch                       import Tensor
-from xarray                      import open_dataset
+from __future__ import annotations
+from numpy      import zeros
+from typing     import Any, TYPE_CHECKING
+from xarray     import open_dataset
 
-import torch
+import torch as th
+
+if TYPE_CHECKING:
+    from config.imitation.simulation import LoaderModel, PhysicsModel
+    from numpy.typing                import NDArray
+    from torch                       import Tensor
 
 
 class WRFDataSource:
@@ -64,17 +69,17 @@ class WRFDataSource:
             Tensor with noise added if domain randomization is enabled
         """
         return (
-            data + torch.randn_like(data) * noise_std
+            data + th.randn_like(data) * noise_std
             if self.domain_randomization and noise_std > 0
             else data
         )
 
     def _calculate_gradient(
         self, 
-        coords_dict   : dict,
+        coords_dict   : dict[str, NDArray[Any]],
         positions     : Tensor,
         variable_name : str
-    ) -> ndarray:
+    ) -> NDArray[Any]:
         """
         Calculates field gradient using finite differences.
         
@@ -140,22 +145,22 @@ class WRFDataSource:
         Returns:
             Tuple of processed (temperatures, gradients) with NaNs handled
         """
-        default_grad        = torch.zeros_like(gradients)
+        default_grad        = th.zeros_like(gradients)
         default_grad[:, -1] = 1.0
-        nan_grad_mask       = torch.isnan(gradients).any(dim=1)
+        nan_grad_mask       = th.isnan(gradients).any(dim=1)
         
         gradients[nan_grad_mask] = default_grad[nan_grad_mask]
         
         return (
-            torch.nan_to_num(temperatures, self.fallback_temperature),
+            th.nan_to_num(temperatures, self.fallback_temperature),
             gradients
         )
         
     def _interpolate_field(
         self, 
-        coords        : dict,
+        coords        : dict[str, NDArray[Any]],
         variable_name : str
-    ) -> ndarray:
+    ) -> NDArray[Any]:
         """
         Interpolates a field variable at the specified coordinates.
         
@@ -176,7 +181,7 @@ class WRFDataSource:
             method = "linear"
         ).values.astype(float)
     
-    def _transform_coordinates(self, positions: Tensor) -> dict[str, ndarray]:
+    def _transform_coordinates(self, positions: Tensor) -> dict[str, NDArray[Any]]:
         """
         Transforms simulation coordinates to dataset coordinates.
         
@@ -199,7 +204,7 @@ class WRFDataSource:
             if i < 3 and dim_name in self.coord_vars
         }
 
-    def get_domain_info(self) -> dict:
+    def get_domain_info(self) -> dict[str, Any]:
         """
         Extract WRF domain configuration information.
         
@@ -240,7 +245,7 @@ class WRFDataSource:
         coords_2d   = {k: v for k, v in coords_dict.items() if k != "z"}
         
         heat_flux = self._interpolate_field(coords_2d, "GRNHFX")
-        return torch.nan_to_num(
+        return th.nan_to_num(
             Tensor(heat_flux.reshape(-1, 1), device=positions.device),
             nan = 0.0
         )
@@ -313,7 +318,7 @@ class WRFDataSource:
             Tensor [N, 3] of wind velocity vectors [u, v, w] in m/s
         """
         coords_dict = self._transform_coordinates(positions)
-        wind_values = torch.stack(
+        wind_values = th.stack(
             dim     = 1,
             tensors = [
                 Tensor(
@@ -323,6 +328,6 @@ class WRFDataSource:
             ]
         )
         
-        wind_values = torch.nan_to_num(wind_values, 0.0)
+        wind_values = th.nan_to_num(wind_values, 0.0)
 
         return self._add_domain_noise(wind_values, self.wind_noise_std)

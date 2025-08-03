@@ -5,10 +5,15 @@ This module provides a unified PyTorch Lightning callback that integrates the
 monitoring system (MetricsCollector and EventLogger) into the training loop,
 handling metric updates and event logging at appropriate lifecycle hooks.
 """
-from pytorch_lightning            import Callback, LightningModule, Trainer
-from tensordict                   import TensorDict
-from thermur.imitation.monitoring import EventLogger, MetricsCollector
-from typing                       import Any, Optional
+from __future__        import annotations
+from pytorch_lightning import Callback
+from typing            import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pytorch_lightning                 import LightningModule, Trainer
+    from pytorch_lightning.utilities.types import STEP_OUTPUT
+    from tensordict                        import TensorDictBase
+    from thermur.imitation.monitoring      import EventLogger, MetricsCollector
 
 
 class MonitoringCallback(Callback):
@@ -23,8 +28,8 @@ class MonitoringCallback(Callback):
     
     def __init__(
         self,
-        collector : Optional[MetricsCollector] = None,
-        events    : Optional[EventLogger]      = None
+        collector : MetricsCollector | None = None,
+        events    : EventLogger      | None = None
     ):
         """
         Configure monitoring components for training lifecycle integration.
@@ -39,7 +44,7 @@ class MonitoringCallback(Callback):
     
     def on_fit_end(
         self, 
-        _trainer  : Trainer,
+        trainer   : Trainer,
         pl_module : LightningModule 
     ):
         """
@@ -59,11 +64,11 @@ class MonitoringCallback(Callback):
     
     def on_train_batch_end(
         self,
-        batch      : TensorDict,
-        pl_module  : LightningModule,
-        _batch_idx : int,
-        _outputs   : Any,
-        _trainer   : Trainer
+        trainer   : Trainer,
+        pl_module : LightningModule,
+        outputs   : STEP_OUTPUT,
+        batch     : TensorDictBase,
+        batch_idx : int
     ):
         """
         Process training batch for metrics and event detection.
@@ -72,16 +77,15 @@ class MonitoringCallback(Callback):
         batch data for critical events like thermal violations.
         """
         if self.collector:
-            self.collector.update_evaluation_metrics(batch, "train")
-            self.collector.log_cbf_activation(batch)
+            self.collector.update_evaluation_metrics(batch, True)
             
         if self.events:
             self.events.analyze_batch(batch, pl_module)
     
     def on_train_epoch_end(
         self, 
-        _pl_module : LightningModule,
-        _trainer   : Trainer 
+        trainer   : Trainer,
+        pl_module : LightningModule 
     ):
         """
         Reset per-epoch counters to ensure accurate rate calculations.
@@ -89,19 +93,17 @@ class MonitoringCallback(Callback):
         Clears CBF activation counts and event statistics that are
         tracked on a per-epoch basis for trend analysis.
         """
-        if self.collector:
-            self.collector.reset_runtime_metrics()
-            
         if self.events:
             self.events.reset_epoch_metrics()
     
     def on_validation_batch_end(
         self,
-        batch      : TensorDict,
-        pl_module  : LightningModule,
-        _batch_idx : int,
-        _outputs   : Any,
-        _trainer   : Trainer
+        trainer        : Trainer,
+        pl_module      : LightningModule,
+        outputs        : STEP_OUTPUT,
+        batch          : TensorDictBase,
+        batch_idx      : int,
+        dataloader_idx : int = 0
     ):
         """
         Update metrics and detect events during validation.
@@ -110,15 +112,15 @@ class MonitoringCallback(Callback):
         model parameters, providing unbiased performance estimates.
         """
         if self.collector:
-            self.collector.update_evaluation_metrics(batch, "val")
+            self.collector.update_evaluation_metrics(batch, False)
             
         if self.events:
             self.events.analyze_batch(batch, pl_module)
     
     def on_validation_epoch_end(
         self, 
-        pl_module : LightningModule,
-        _trainer  : Trainer 
+        trainer   : Trainer,
+        pl_module : LightningModule 
     ):
         """
         Aggregate and log validation metrics for epoch-level tracking.
@@ -128,7 +130,7 @@ class MonitoringCallback(Callback):
         """
         if self.collector:
             self.collector.log_all_metrics(
-                loss   = None,
-                module = pl_module,
-                phase  = "val"
+                is_training = False,
+                module      = pl_module,
+                step_output = False
             )

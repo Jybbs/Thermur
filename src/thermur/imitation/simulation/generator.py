@@ -5,13 +5,17 @@ This module provides a class-based builder for dynamically generating and
 loading MuJoCo models with varying numbers of agents, enabling true multi-agent
 physics simulation for flock environments.
 """
-from functools import reduce
-from itertools import chain
-from operator  import methodcaller
-from pathlib   import Path
-from typing    import Any
+from __future__ import annotations
+from functools  import reduce
+from itertools  import chain
+from operator   import methodcaller
+from pathlib    import Path
+from typing     import TYPE_CHECKING
 
 import mujoco as mj
+
+if TYPE_CHECKING:
+    from config.types import MujocoModel
 
 
 class XMLGenerator:
@@ -206,15 +210,21 @@ class XMLGenerator:
             for i in range(agent_count)
         ]
         
-        bodies, actuators = zip(*components) if components else ([], [])
+        if components:
+            body_tuple, actuator_tuple = zip(*components)
+            bodies    = list(body_tuple)
+            actuators = list(actuator_tuple)
+        else:
+            bodies    = []
+            actuators = []
         
         return self._assemble_xml(
             list(chain.from_iterable(actuators)),
-            list(bodies),
+            bodies,
             simulation_step
         )
     
-    def load_model(self, xml_string: str) -> dict[str, Any]:
+    def load_model(self, xml_string: str) -> MujocoModel:
         """
         Load a MuJoCo model from an XML string.
         
@@ -228,10 +238,11 @@ class XMLGenerator:
         Returns:
             Dictionary with 'model' and 'data' keys containing MuJoCo objects
         """
-        if not (model := mj.MjModel.from_xml_string(xml_string)):
+        MjModel = getattr(mj, 'MjModel')
+        if not (model := MjModel.from_xml_string(xml_string)):
             raise ValueError("Failed to load MuJoCo model from XML")
         
         return {
-            "data"  : mj.MjData(model), 
+            "data"  : getattr(mj, 'MjData')(model), 
             "model" : model
         }

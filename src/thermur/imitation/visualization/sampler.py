@@ -9,10 +9,15 @@ data needed for 3D rendering.
 The sampling functions efficiently handle large-scale data by using vectorized
 operations and leveraging PyVista's optimized data structures.
 """
-from numpy                          import array, ndarray
-from pyvista                        import Axes, ImageData, PolyData
-from torch                          import from_numpy, Tensor
-from typing                         import Any
+from __future__   import annotations
+from numpy        import array
+from numpy.typing import NDArray
+from pyvista      import Axes, ImageData, PolyData
+from torch        import from_numpy, Tensor
+from typing       import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..simulation.environment import SimulationEnv
 
 
 class Sampler:
@@ -46,7 +51,10 @@ class Sampler:
         self.temperature_resolution = temperature_resolution
         self.wind_resolution        = wind_resolution
     
-    def compute_grid_bounds(self, position: Tensor) -> tuple[ndarray, ndarray]:
+    def compute_grid_bounds(
+        self, 
+        position : Tensor
+    ) -> tuple[NDArray[Any], NDArray[Any]]:
         """
         Compute the bounding box for a grid based on agent positions.
         
@@ -68,8 +76,7 @@ class Sampler:
     
     def create_coordinate_axes(
         self,
-        labels : tuple[str, str, str] = ("X", "Y", "Z"),
-        scale  : float = 1.0
+        scale : float = 1.0
     ) -> Axes:
         """
         Create coordinate axes for orientation reference.
@@ -80,23 +87,19 @@ class Sampler:
         of scale to the visualization.
         
         Args:
-            labels : Labels for each axis (X, Y, Z)
-            scale  : Size scaling factor for the axes
+            scale : Size scaling factor for the axes
             
         Returns:
             PyVista axes object configured for the coordinate reference
         """
         return Axes(
-            actor_scale = scale,
-            show_actor  = True,
-            x_label     = labels[0],
-            y_label     = labels[1],
-            z_label     = labels[2]
+            actor_scale = int(scale),
+            show_actor  = True
         )
     
     def create_temperature_grid(
         self,
-        environment : Any,
+        environment : SimulationEnv,
         position    : Tensor
     ) -> ImageData:
         """
@@ -131,7 +134,7 @@ class Sampler:
     def create_wind_grid(
         self,
         position   : Tensor,
-        simulation : Any
+        simulation : SimulationEnv
     ) -> PolyData:
         """
         Create a grid of wind vectors from the environment data source.

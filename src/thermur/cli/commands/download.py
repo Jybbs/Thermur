@@ -5,7 +5,7 @@ This module provides the 'download' command for acquiring simulation datasets
 from remote repositories. It manages efficient transfers of large-scale NetCDF
 files from the Moisseeva (2020) wildfire plume dataset.
 """
-from globus_sdk  import TransferClient
+from __future__  import annotations
 from itertools   import accumulate
 from pathlib     import Path
 from requests    import get
@@ -14,7 +14,14 @@ from tempfile    import NamedTemporaryFile
 from thermur.cli import app
 from time        import perf_counter
 from typer       import Exit, Option
+from typing      import IO, TYPE_CHECKING
 from webbrowser  import open as web_open
+
+if TYPE_CHECKING:
+    from config.types  import FileInfo, TransferStatus
+    from globus_sdk    import TransferClient
+    from requests      import Response
+    from rich.progress import Progress, TaskID
 
 
 def download(
@@ -75,7 +82,7 @@ class DownloadCommand:
         self.prompts       = app.prompts
         self.system        = app.system
         self.ui            = app.ui
-        self.wrf_sfire_dir = app.cfg.download.wrf_sfire_dir
+        self.wrf_sfire_dir = Path(app.cfg.download.wrf_sfire_dir)
 
     def _download_sample(self):
         """
@@ -84,7 +91,7 @@ class DownloadCommand:
         Downloads a tar.gz file containing sample WRF data and extracts it
         to the data/samples directory.
         """
-        sample_file = self.cfg.download.sample_data_path
+        sample_file = Path(self.cfg.download.sample_data_path)
         
         if sample_file.exists() and not self.prompts.confirm(
             "Sample data exists. Re-download?"
@@ -102,9 +109,9 @@ class DownloadCommand:
             with NamedTemporaryFile(delete=False, suffix='.tar.gz') as tmp:
                 tmp_path = Path(tmp.name)
                 self._stream_http_download(
-                    response = response,
-                    output   = tmp,
                     filename = "sample data (468 MB)",
+                    output   = tmp,
+                    response = response,
                     size     = int(response.headers.get('content-length', 0))
                 )
             
@@ -143,36 +150,39 @@ class DownloadCommand:
         """
         globus_client = self.globus.get_or_create_client()
         
-        if not globus_client:
-            auth_client, auth_url = self.globus.start_oauth2_flow()
-            self.ui.print_auth_prompt(auth_url)
+        if globus_client is not None:
+            return globus_client
             
-            if self.prompts.confirm("Open browser to complete authentication?"):
-                try:
-                    web_open(auth_url, new=2)
-                    self.ui.print_message(
-                        message  = "Browser opened successfully", 
-                        msg_type = "success"
-                    )
-                except Exception:
-                    self.ui.print_message(
-                        message  = "Unable to open browser automatically", 
-                        msg_type = "warning"
-                    )
-            
-            if auth_code := input("Enter the authorization code from the browser: "):
-                globus_client = self.globus.finalize_oauth2_flow(
-                    auth_code = auth_code,
-                    client    = auth_client
+        auth_client, auth_url = self.globus.start_oauth2_flow()
+        self.ui.print_auth_prompt(auth_url)
+        
+        if self.prompts.confirm("Open browser to complete authentication?"):
+            try:
+                web_open(auth_url, new=2)
+                self.ui.print_message(
+                    message  = "Browser opened successfully", 
+                    msg_type = "success"
                 )
+            except Exception:
+                self.ui.print_message(
+                    message  = "Unable to open browser automatically", 
+                    msg_type = "warning"
+                )
+        
+        if auth_code := input("Enter the authorization code from the browser: "):
+            globus_client = self.globus.finalize_oauth2_flow(
+                auth_code = auth_code,
+                client    = auth_client
+            )
             self.ui.print_message(
                 message  = "Authentication successful! Credentials saved.",
                 msg_type = "success"
             )
-        
-        return globus_client
+            return globus_client
+        else:
+            raise Exception("Authentication cancelled by user")
     
-    def _get_available_files(self, globus_client: TransferClient) -> list[dict]:
+    def _get_available_files(self, globus_client: TransferClient) -> list[FileInfo]:
         """
         Retrieve list of NetCDF files from the Globus endpoint.
         
@@ -193,7 +203,7 @@ class DownloadCommand:
             if f["type"] == "file" and f["name"].startswith("wrfout_")
         ]
     
-    def _get_download_status(self, available_files: list[dict]) -> dict[str, str]:
+    def _get_download_status(self, available_files: list[FileInfo]) -> dict[str, str]:
         """
         Check download status for each file.
         
@@ -221,43 +231,12 @@ class DownloadCommand:
             for file_info in available_files
         }
     
-    def _get_local_endpoint(self, globus_client: TransferClient) -> dict | None:
-        """
-        Retrieve and select a local Globus endpoint for transfers.
-        
-        Queries for available local Globus Connect Personal endpoints and
-        prompts the user to select one if multiple are found. Returns None
-        if no endpoints are available or selection is cancelled.
-        
-        Args:
-            globus_client : Authenticated Globus transfer client
-            
-        Returns:
-            Selected endpoint dictionary or None if unavailable
-        """
-        local_endpoints = self.globus.get_local_endpoints(globus_client)
-        
-        if not local_endpoints:
-            self.ui.print_message(
-                message  = (
-                    "No local Globus endpoint found. "
-                    "Please install and configure Globus Connect Personal."
-                ),
-                msg_type = "error"
-            )
-            return None
-            
-        if not (selected := self.prompts.select_globus_endpoint(local_endpoints)):
-            self.ui.print_message("No endpoint selected", "warning")
-            
-        return selected
-    
     def _handle_file_selection(
         self,
-        file_info     : dict,
+        file_info     : FileInfo,
         file_status   : dict[str, str],
         globus_client : TransferClient
-    ) -> None:
+    ):
         """
         Handle user's file selection with appropriate prompts.
         
@@ -281,6 +260,8 @@ class DownloadCommand:
                     f"{file_info['name']} appears incomplete. Will re-download.",
                     "warning"
                 )
+            case _:
+                pass
                 
         if self.prompts.confirm_download(file_info):
             self._perform_download(file_info, globus_client)
@@ -288,7 +269,7 @@ class DownloadCommand:
     def _initiate_transfer(
         self,
         dest_endpoint   : str,
-        file_info       : dict,
+        file_info       : FileInfo,
         globus_client   : TransferClient,
         source_endpoint : str
     ) -> str | None:
@@ -325,7 +306,7 @@ class DownloadCommand:
     
     def _monitor_transfer(
         self,
-        file_info     : dict,
+        file_info     : FileInfo,
         globus_client : TransferClient,
         task_id       : str
     ) -> bool:
@@ -350,14 +331,14 @@ class DownloadCommand:
                 total       = file_info['size']
             )
             
-            def update_callback(status):
+            def update_callback(status: TransferStatus):
                 self._update_progress(
                     progress   = progress,
                     task       = task,
                     filename   = file_info['name'],
-                    bytes_done = status.get("bytes_transferred", 0),
-                    rate_mbps  = status.get("mbps", 0),
-                    status     = status.get('nice_status', '')
+                    bytes_done = status["bytes_transferred"],
+                    rate_mbps  = status["mbps"],
+                    status     = status["nice_status"]
                 )
             
             success = self.globus.wait_for_transfer(
@@ -374,7 +355,11 @@ class DownloadCommand:
             
         return success
     
-    def _perform_download(self, file_info: dict, globus_client: TransferClient):
+    def _perform_download(
+        self, 
+        file_info     : FileInfo, 
+        globus_client : TransferClient
+    ):
         """
         Orchestrate the complete download workflow for a single file.
         
@@ -392,7 +377,16 @@ class DownloadCommand:
             title = f"Preparing transfer for {file_info['name']}"
         )
         
-        if not (local_endpoint := self._get_local_endpoint(globus_client)):
+        local_endpoint = self.globus.get_local_endpoints(globus_client)[0]
+        
+        if not local_endpoint:
+            self.ui.print_message(
+                message  = (
+                    "No local Globus endpoint found. "
+                    "Please install and configure Globus Connect Personal."
+                ),
+                msg_type = "error"
+            )
             return
         
         self.ui.print_message(
@@ -423,14 +417,20 @@ class DownloadCommand:
         if self.prompts.confirm("Wait for transfer to complete?"):
             self._monitor_transfer(file_info, globus_client, task_id)
 
-    def _stream_http_download(self, response, output, filename: str, size: int):
+    def _stream_http_download(
+        self, 
+        filename : str, 
+        output   : IO[bytes], 
+        response : Response, 
+        size     : int
+    ):
         """
         Stream HTTP download with progress tracking.
         
         Args:
-            response : requests Response object with stream=True
-            output   : File object to write to
             filename : Display name for progress bar
+            output   : File object to write to
+            response : requests Response object with stream=True
             size     : Total size in bytes
         """
         with self.ui.create_thermal_progress() as progress:
@@ -457,8 +457,8 @@ class DownloadCommand:
     
     def _update_progress(
         self,
-        progress,
-        task        : int,
+        progress    : Progress,
+        task        : TaskID,
         filename    : str,
         bytes_done  : int,
         rate_mbps   : float = 0,

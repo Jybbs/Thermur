@@ -13,9 +13,14 @@ data processing pipeline:
                    ingests high-resolution atmospheric data including wind fields,
                    temperature, humidity, and fire behavior predictions.
 """
+from __future__                   import annotations
 from .schemas                     import *
 from hydra_zen                    import builds, make_config
 from thermur.imitation.simulation import SimulationEnv, WRFDataSource
+from typing                       import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hydra_zen.typing import Builds
 
 
 SIMULATION_USER_CONFIG = make_config(
@@ -23,7 +28,7 @@ SIMULATION_USER_CONFIG = make_config(
     physics = PhysicsModel()
 )
 
-SIMULATION_SYSTEM_BUILDS = {
+SIMULATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "env": builds(
         SimulationEnv,
         physics                 = "${simulation.physics}",

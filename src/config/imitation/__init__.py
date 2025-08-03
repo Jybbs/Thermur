@@ -30,13 +30,13 @@ ImitationConfig = make_config(
     monitoring    = MONITORING_USER_CONFIG,
     simulation    = SIMULATION_USER_CONFIG,
     visualization = VISUALIZATION_USER_CONFIG,
-    _system       = make_config(
+    _system       = {
         **CONTROLLER_SYSTEM_BUILDS,
         **LIGHTNING_SYSTEM_BUILDS,
         **MONITORING_SYSTEM_BUILDS,
         **SIMULATION_SYSTEM_BUILDS,
         **VISUALIZATION_SYSTEM_BUILDS
-    )
+    }
 )
 
 __all__ = ["ImitationConfig"]

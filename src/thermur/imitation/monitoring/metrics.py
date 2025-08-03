@@ -6,48 +6,68 @@ for the training pipeline, including imitation learning losses, core evaluation
 metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
-from config.imitation.monitoring import MetricsModel
-from pytorch_lightning                   import LightningModule
-from tensordict                          import TensorDict
-from torch                               import Tensor
-from torchmetrics                        import MeanAbsoluteError, MeanSquaredError
-from torchmetrics                        import MetricCollection, R2Score, Metric
-from torchmetrics.image                  import StructuralSimilarityIndexMeasure
-from typing                              import Optional
+from __future__         import annotations
+from torchmetrics       import MeanAbsoluteError, MeanSquaredError
+from torchmetrics       import Metric, MetricCollection, R2Score
+from torchmetrics.image import StructuralSimilarityIndexMeasure
+from typing             import TYPE_CHECKING
 
-import torch
+if TYPE_CHECKING:
+    from config.imitation.monitoring import MetricsModel
+    from pytorch_lightning           import LightningModule
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
+
+import torch as th
 
 
-class CohesionMetric(Metric):
+class AveragingMetric(Metric):
+    """
+    Base class for metrics that compute running averages.
+    
+    Provides common sum/count state management and averaging logic
+    for metrics that accumulate values over batches. Subclasses should
+    implement the update() method to add values to the sum.
+    """
+    count : Tensor  # Number of measurements
+    sum   : Tensor  # Sum of measured values
+    
+    def __init__(self):
+        """
+        Initialize state variables for computing running averages.
+        
+        Creates two state variables that are synchronized across distributed
+        training: 'count' for tracking the number of measurements and 'sum'
+        for accumulating the values to be averaged.
+        """
+        super().__init__()
+        self.add_state("count", default=th.tensor(0),   dist_reduce_fx="sum")
+        self.add_state("sum",   default=th.tensor(0.0), dist_reduce_fx="sum")
+    
+    def compute(self) -> Tensor:
+        """
+        Compute the average of accumulated values.
+        
+        Returns the mean of all values accumulated via the update method,
+        or zero if no values have been recorded yet.
+        """
+        if self.count > 0:
+            return self.sum / self.count
+        return th.zeros_like(self.sum)
+
+
+class CohesionMetric(AveragingMetric):
     """
     Measures graph connectivity via the second smallest eigenvalue (λ₂).
     
     The algebraic connectivity (Fiedler value) quantifies how well-connected
     the communication graph is, with higher values indicating stronger cohesion.
     A disconnected graph has λ₂ = 0, while a complete graph has maximum λ₂.
+    
+    State variables:
+    - count : Number of graph measurements
+    - sum   : Sum of λ₂ values across all graphs
     """
-    
-    def __init__(self):
-        """
-        Sets up state variables for tracking the sum of λ₂ values and count
-        of measurements for computing the running average.
-        """
-        super().__init__()
-        self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
-        self.add_state("lambda2_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
-    
-    def compute(self) -> Tensor:
-        """
-        Compute the average algebraic connectivity.
-        
-        Returns:
-            Average λ₂ (Fiedler value) across all graph updates
-        """
-        return (
-            self.lambda2_sum / self.count 
-                if self.count > 0 
-                else torch.tensor(0.0)
-        )
     
     def update(
         self,
@@ -63,66 +83,58 @@ class CohesionMetric(Metric):
             num_agents : Total number of agents in the graph
         """
         if edge_index.numel() == 0 or num_agents < 2:
-            self.lambda2_sum += 0.0
+            self.sum += 0.0
             self.count += 1
             return
         
-        device = edge_index.device
-        
-        adj_matrix = torch.zeros((num_agents, num_agents), device=device)
+        adj_matrix = th.zeros((num_agents, num_agents), device=edge_index.device)
         adj_matrix.index_put_(
             (edge_index[0], edge_index[1]), 
-            torch.ones(edge_index.shape[1], device=device)
+            th.ones(edge_index.shape[1], device=edge_index.device)
         )
         adj_matrix = ((adj_matrix + adj_matrix.T) > 0).float()
-        
-        laplacian = torch.diag(adj_matrix.sum(dim=1)) - adj_matrix
+        laplacian  = th.diag(adj_matrix.sum(dim=1)) - adj_matrix
         
         try:
-            eigenvalues = torch.linalg.eigvalsh(laplacian)
-            lambda2 = (eigenvalues[1] 
-                      if eigenvalues.numel() > 1 
-                      else torch.tensor(0.0, device=device))
-        except:
-            lambda2 = torch.tensor(0.0, device=device)
+            eigenvalues    = th.linalg.eigvalsh(laplacian)
+            lambda_squared = (eigenvalues[1] 
+                              if eigenvalues.numel() > 1 
+                              else eigenvalues.new_zeros(()))
+        except RuntimeError:
+            lambda_squared = laplacian.new_zeros(())
             
-        self.lambda2_sum += lambda2
+        self.sum += lambda_squared
         self.count += 1
 
 
-class ColorAccuracyMetric(Metric):
+class ColorAccuracyMetric(AveragingMetric):
     """
     Measures the Mean Absolute Error (mae_color) between sensed and displayed temperatures.
     
     This metric quantifies how accurately the swarm can display temperature
     information through their RGB LEDs, using a heat colormap mapping where
     blue represents cold and red represents hot temperatures.
+    
+    State variables:
+    - count : Number of temperature measurements  
+    - sum   : Sum of absolute temperature display errors (Kelvin)
     """
+    temp_max : Tensor
+    temp_min : Tensor
     
     def __init__(self, metrics: MetricsModel):
         """
-        Initialize the color accuracy metric.
+        Initialize the color accuracy metric with temperature bounds.
+        
+        Sets up the temperature range for the heat colormap mapping,
+        where colors interpolate from blue (cold) to red (hot).
         
         Args:
-            monitoring : Monitoring configuration model
+            metrics: Metrics configuration containing temperature bounds
         """
         super().__init__()
-        self.temp_max = metrics.color_temp_max
-        self.temp_min = metrics.color_temp_min
-        self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
-        self.add_state("error_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
-    
-    def _rgb_to_temperature(self, rgb: Tensor) -> Tensor:
-        """
-        Convert RGB color to temperature using red channel as indicator.
-        
-        Args:
-            rgb : RGB colors [N, 3] in range [0, 1]
-            
-        Returns:
-            Reconstructed temperatures [N] in Kelvin
-        """
-        return torch.lerp(self.temp_min, self.temp_max, rgb[..., 0])
+        self.register_buffer("temp_max", th.tensor(metrics.color_temp_max))
+        self.register_buffer("temp_min", th.tensor(metrics.color_temp_min))
     
     def _temperature_to_rgb(self, temperature: Tensor) -> Tensor:
         """
@@ -136,38 +148,25 @@ class ColorAccuracyMetric(Metric):
         Returns:
             RGB colors [N, 3] in range [0, 1]
         """
-        temp_norm = torch.clamp(
+        temp_norm = th.clamp(
             (temperature - self.temp_min) / (self.temp_max - self.temp_min),
             0, 1
         )
         
-        return torch.stack([
-            torch.clamp(2 * temp_norm - 0.5, 0, 1),
-            torch.where(
+        return th.stack([
+            th.clamp(2 * temp_norm - 0.5, 0, 1),
+            th.where(
                 temp_norm < 0.5,
                 2 * temp_norm,
                 2 * (1 - temp_norm)
             ),
-            torch.clamp(1 - 2 * temp_norm, 0, 1)
+            th.clamp(1 - 2 * temp_norm, 0, 1)
         ], dim=-1)
-    
-    def compute(self) -> Tensor:
-        """
-        Compute the mean absolute error in temperature display.
-        
-        Returns:
-            MAE between sensed and reconstructed temperatures in Kelvin
-        """
-        return (
-            self.error_sum / self.count 
-                if self.count > 0 
-                else torch.tensor(0.0)
-        )
     
     def update(
         self,
         sensed_temperature : Tensor,
-        displayed_rgb      : Optional[Tensor] = None
+        displayed_rgb      : Tensor | None = None
     ):
         """
         Update metric with temperature and color data.
@@ -177,15 +176,20 @@ class ColorAccuracyMetric(Metric):
             displayed_rgb      : RGB colors displayed by agents [N, 3] or None
         """
         sensed_temperature = sensed_temperature.flatten()
-            
-        displayed_rgb = displayed_rgb or self._temperature_to_rgb(sensed_temperature)
-        error = (sensed_temperature - self._rgb_to_temperature(displayed_rgb)).abs()
         
-        self.error_sum += error.sum()
-        self.count     += sensed_temperature.numel()
+        # TODO: Currently using computed RGB as placeholder until actual RGB display data is available
+        if displayed_rgb is None:
+            displayed_rgb = self._temperature_to_rgb(sensed_temperature)
+            
+        # Reconstruct temperature from RGB using red channel as indicator
+        reconstructed_temp = th.lerp(self.temp_min, self.temp_max, displayed_rgb[..., 0])
+        error = (sensed_temperature - reconstructed_temp).abs()
+        
+        self.sum   += error.sum()
+        self.count += sensed_temperature.numel()
 
 
-class EnergyConsumptionMetric(Metric):
+class EnergyConsumptionMetric(AveragingMetric):
     """
     Estimates average power consumption based on control inputs.
     
@@ -196,38 +200,32 @@ class EnergyConsumptionMetric(Metric):
         - u_safe : safety-filtered control vector
         - g : gravity vector pointing downward
         - k : power exponent (typically 1.5 for quadrotors)
+        
+    State variables:
+    - count : Number of control action measurements
+    - sum   : Sum of power estimates P = ||u - g||^k
     """
+    gravity: Tensor
     
     def __init__(
         self,
-        gravity    : float,
-        metrics    : MetricsModel
+        gravity : float,
+        metrics : MetricsModel
     ):
         """
-        Initialize the energy metric.
+        Initialize the energy metric with physics parameters.
+        
+        Sets up the gravity constant and power exponent for the
+        quadrotor power consumption model. The power is proportional
+        to the thrust magnitude relative to gravity.
         
         Args:
-            gravity    : Gravitational acceleration from physics config
-            monitoring : Monitoring configuration model
+            gravity : Gravitational acceleration from physics config
+            metrics : Metrics configuration containing power exponent
         """
         super().__init__()
-        self.gravity        = gravity
+        self.register_buffer("gravity", th.tensor(gravity))
         self.power_exponent = metrics.power_exponent
-        self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
-        self.add_state("power_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
-    
-    def compute(self) -> Tensor:
-        """
-        Compute the average power consumption per agent.
-        
-        Returns:
-            Average power consumption in arbitrary units
-        """
-        return (
-            self.power_sum / self.count 
-                if self.count > 0 
-                else torch.tensor(0.0)
-        )
     
     def update(self, u_safe: Tensor):
         """
@@ -236,23 +234,30 @@ class EnergyConsumptionMetric(Metric):
         Args:
             u_safe : Safety-filtered control actions [N, 3] (m/s²)
         """
-        gravity_vec = torch.zeros_like(u_safe)
+        gravity_vec = th.zeros_like(u_safe)
         gravity_vec[..., 2] = -self.gravity
         
         power = (u_safe - gravity_vec).norm(dim=-1).pow(self.power_exponent)
         
-        self.power_sum += power.sum()
-        self.count     += u_safe.shape[0]
+        self.sum   += power.sum()
+        self.count += u_safe.shape[0]
 
 
-class LegibilitySSIMMetric(Metric):
+class LegibilitySSIMMetric(AveragingMetric):
     """
     Computes Structural Similarity Index Measure (ssim) between swarm and wind fields.
     
     This metric measures how well the swarm's collective motion pattern matches
     the underlying wind field, quantifying the visual "legibility" of the display.
     Uses kernel density estimation to render velocity fields onto 2D grids.
+    
+    State variables:
+    - count : Number of SSIM measurements
+    - sum   : Sum of SSIM scores (0-1 range per measurement)
     """
+    bounds_max : Tensor
+    bounds_min : Tensor
+    coords     : Tensor
     
     def __init__(
         self,
@@ -260,26 +265,52 @@ class LegibilitySSIMMetric(Metric):
         metrics    : MetricsModel
     ):
         """
-        Initialize the legibility metric.
+        Initialize the legibility metric with rendering parameters.
+        
+        Sets up the grid resolution and kernel parameters for converting
+        discrete agent positions and velocities into continuous fields
+        that can be compared using SSIM.
         
         Args:
             bounds_max : Maximum workspace bounds from physics config
-            monitoring : Monitoring configuration model
+            metrics    : Metrics configuration with grid and kernel settings
         """
         super().__init__()
-        self.bounds_max  = bounds_max
         self.grid_size   = metrics.legibility_grid_size
         self.kernel_size = metrics.legibility_kernel_size
         self.sigma       = metrics.legibility_sigma
         
         self.ssim_metric = StructuralSimilarityIndexMeasure(
-            data_range=1.0,
-            kernel_size=self.kernel_size,
-            reduction='elementwise_mean'
+            data_range  = 1.0,
+            kernel_size = self.kernel_size,
+            reduction   = 'elementwise_mean'
         )
         
-        self.add_state("count",    default=torch.tensor(0),   dist_reduce_fx="sum")
-        self.add_state("ssim_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.register_buffer("bounds_max", th.tensor(bounds_max))
+        self.register_buffer("bounds_min", th.zeros(3))
+        self.register_buffer("coords", self._pre_compute_coordinates(self.grid_size))
+    
+    def _pre_compute_coordinates(self, grid_size: int) -> Tensor:
+        """
+        Pre-compute the coordinate grid for rendering.
+        
+        Creates a 2D grid of coordinates that will be used for
+        kernel density estimation when rendering velocity fields.
+        
+        Args:
+            grid_size : Resolution of the grid
+            
+        Returns:
+            Coordinate tensor of shape [grid_size, grid_size, 2]
+        """
+        return th.stack(
+            th.meshgrid(
+                th.arange(grid_size),
+                th.arange(grid_size),
+                indexing = 'xy'
+            ), 
+            dim = -1
+        ).float()
     
     def _render_velocity_field(
         self,
@@ -301,8 +332,6 @@ class LegibilitySSIMMetric(Metric):
         Returns:
             2D tensor representing the velocity magnitude field
         """
-        device = positions.device
-        
         pos_2d = positions[:, :2]
         vel_magnitude = velocities[:, :2].norm(dim=1)
         
@@ -310,39 +339,20 @@ class LegibilitySSIMMetric(Metric):
                     (bounds_max[:2] - bounds_min[:2]) * 
                     (self.grid_size - 1))
         
-        field = torch.zeros((self.grid_size, self.grid_size), device=device)
-        
-        coords = torch.stack(torch.meshgrid(
-            torch.arange(self.grid_size, device=device),
-            torch.arange(self.grid_size, device=device),
-            indexing='xy'
-        ), dim=-1).float()
+        field = th.zeros((self.grid_size, self.grid_size), device=positions.device)
         
         grid_pos_expanded = grid_pos.unsqueeze(0).unsqueeze(0)
-        coords_expanded = coords.unsqueeze(2)
+        coords_expanded   = self.coords.unsqueeze(2)
         
         dist_sq = ((coords_expanded - grid_pos_expanded) ** 2).sum(dim=-1)
-        weights = torch.exp(-dist_sq / (2 * self.sigma**2))
-        field = (weights * vel_magnitude.unsqueeze(0).unsqueeze(0)).sum(dim=-1)
+        weights = th.exp(-dist_sq / (2 * self.sigma**2))
+        field   = (weights * vel_magnitude.unsqueeze(0).unsqueeze(0)).sum(dim=-1)
         
         field_max = field.max()
         return field / field_max if field_max > 0 else field
     
-    def compute(self) -> Tensor:
-        """
-        Compute the average SSIM score.
-        
-        Returns:
-            Average SSIM score in range [0, 1], where 1 indicates perfect match
-        """
-        return (self.ssim_sum / self.count 
-                if self.count > 0 
-                else torch.tensor(0.0))
-    
     def update(
         self,
-        bounds_max : Tensor,
-        bounds_min : Tensor,
         positions  : Tensor,
         velocities : Tensor,
         wind_field : Tensor
@@ -356,28 +366,26 @@ class LegibilitySSIMMetric(Metric):
         where:
             - μ_x, μ_y : mean values of swarm and wind fields
             - σ_x, σ_y : standard deviations of fields
-            - σ_xy : covariance between fields
-            - C1, C2 : small constants to avoid division by zero
+            - σ_xy     : covariance between fields
+            - C1, C2   : small constants to avoid division by zero
         
         Args:
-            bounds_max : Maximum workspace bounds [3]
-            bounds_min : Minimum workspace bounds [3]
             positions  : Agent positions [N, 3]
             velocities : Agent velocities [N, 3]
             wind_field : Ground truth wind velocities [N, 3]
         """
         swarm_field = self._render_velocity_field(
-            bounds_min, bounds_max, positions, velocities
+            self.bounds_min, self.bounds_max, positions, velocities
         ).unsqueeze(0).unsqueeze(0)
         
         wind_field_rendered = self._render_velocity_field(
-            bounds_min, bounds_max, positions, wind_field
+            self.bounds_min, self.bounds_max, positions, wind_field
         ).unsqueeze(0).unsqueeze(0)
         
         ssim_value = self.ssim_metric(swarm_field, wind_field_rendered)
         
-        self.ssim_sum += ssim_value
-        self.count    += 1
+        self.sum   += ssim_value
+        self.count += 1
 
 
 class MetricsCollector:
@@ -388,15 +396,12 @@ class MetricsCollector:
     and log metrics throughout the training process. It handles:
     
     1. Imitation learning metrics (MSE, RMSE, MAE, R²)
-    2. Core evaluation metrics (thermal safety, legibility, cohesion, energy, color)
-    3. Runtime metrics (CBF activations, trajectories)
-    4. Event logging for debugging
+    2. Core evaluation metrics (legibility, cohesion, energy, color)
     
     The collector is designed to work with PyTorch Lightning's logging system
     and automatically syncs metrics to Weights & Biases through the configured
     logger.
     """
-    
     def __init__(
         self,
         bounds_max      : list[float],
@@ -418,185 +423,169 @@ class MetricsCollector:
         self.max_temperature = max_temperature
         self.metrics         = metrics
         
-        self._init_imitation_metrics(3)
+        self._init_imitation_metrics()
         self._init_evaluation_metrics()
-        self._init_runtime_trackers()
+    
+    def _get_metrics(self, metric_type: str, is_training: bool) -> MetricCollection:
+        """
+        Get the appropriate metrics collection based on type and phase.
+        
+        Args:
+            metric_type : Either "imitation" or "evaluation"
+            is_training : Whether this is training (True) or validation (False)
+            
+        Returns:
+            The corresponding MetricCollection instance
+        """
+        return getattr(
+            self, 
+            f"{("train" if is_training else "val")}_{metric_type}"
+        )
     
     def _init_evaluation_metrics(self):
         """
-        Creates TorchMetrics instances for all five core performance metrics.
+        Initialize the four core evaluation metrics that assess swarm performance.
+        
+        These metrics evaluate how well the swarm achieves its mission objectives:
+        - λ₂ (Cohesion)     : Algebraic connectivity measuring flock cohesion
+        - SSIM (Legibility) : How well flock motion visualizes the wind field  
+        - MAE Color         : Accuracy of temperature display through RGB LEDs
+        - Average Power     : Energy consumption for mission endurance
+        
+        Each metric is wrapped in MetricCollection for automatic train/val splitting
+        and distributed training synchronization.
         """
         self.train_evaluation = MetricCollection({
             "avg_power"  : EnergyConsumptionMetric(self.gravity, self.metrics),
             "λ₂"         : CohesionMetric(),
             "mae_color"  : ColorAccuracyMetric(self.metrics),
             "ssim"       : LegibilitySSIMMetric(self.bounds_max, self.metrics),
-            "tvr"        : ThermalSafetyMetric(self.max_temperature),
         })
         self.val_evaluation = self.train_evaluation.clone(prefix="val_")
     
-    def _init_imitation_metrics(self, output_dim: int):
+    def _init_imitation_metrics(self):
         """
-        Creates standard regression metrics for behavioral cloning loss.
+        Initialize metrics for evaluating imitation learning performance.
         
-        Args:
-            output_dim: Dimensionality of action space for R² calculation
+        These regression metrics measure how well the neural network policy
+        mimics the expert controller's behavior:
+        - MSE  : Mean squared error of velocity predictions
+        - RMSE : Root mean squared error for interpretable units
+        - MAE  : Mean absolute error for robustness to outliers
+        - R²   : Coefficient of determination for overall fit quality
+        
+        All metrics track 3D velocity predictions (x, y, z).
         """
         self.train_imitation = MetricCollection({
             "mae"  : MeanAbsoluteError(),
             "mse"  : MeanSquaredError(),
-            "r2"   : R2Score(num_outputs=output_dim),
+            "r2"   : R2Score(num_outputs=3),
             "rmse" : MeanSquaredError(False),
         })
         self.val_imitation = self.train_imitation.clone(prefix="val_")
     
-    def _init_runtime_trackers(self):
-        """
-        Sets up counters for tracking CBF activations and other runtime events
-        that don't fit into the standard TorchMetrics framework.
-        """
-        self.cbf_activation_count = 0
-        self.total_steps          = 0
-    
-    def get_cbf_activation_rate(self) -> float:
-        """
-        Calculate the rate of CBF activations during the current epoch.
-        
-        Returns:
-            CBF activation rate as a float between 0 and 1
-        """
-        return (
-            self.cbf_activation_count / self.total_steps 
-                if self.total_steps > 0 
-                else 0.0
-        )
-    
     def log_all_metrics(
         self,
+        is_training : bool,
         module      : LightningModule,
-        phase       : str,
-        loss        : Optional[Tensor] = None,
-        predictions : Optional[Tensor] = None,
-        targets     : Optional[Tensor] = None
+        step_output : bool,
+        loss        : Tensor | None = None,
+        predictions : Tensor | None = None,
+        targets     : Tensor | None = None
     ):
         """
-        Handles logging of all metric types and ensures proper
-        synchronization with the Lightning logger (including W&B).
+        Log all metrics to PyTorch Lightning and external loggers.
+        
+        Orchestrates the logging of different metric categories with appropriate
+        frequencies and visualization settings. Imitation metrics are logged at
+        every training step for close monitoring of learning progress, while
+        evaluation metrics are logged only at epoch boundaries to reduce noise.
+        
+        Special handling includes:
+        - Loss displayed in progress bar for immediate feedback
+        - Per-dimension velocity MSE for debugging specific axes
+        - Automatic train/val prefixing for metric organization
         
         Args:
-            module      : Lightning module for logging
-            phase       : Training phase ("train" or "val")
-            loss        : Optional loss value to log
-            predictions : Optional model predictions for dimension-wise logging
-            targets     : Optional targets for dimension-wise logging
+            is_training : Whether this is training (True) or validation (False)
+            module      : Lightning module providing the logger interface
+            step_output : Whether this is step-level output or epoch-end aggregation
+            loss        : Behavioral cloning loss    (required if step_output=True)
+            predictions : Model velocity predictions (required if step_output=True)
+            targets     : Expert velocity commands   (required if step_output=True)
         """
-        is_train = phase == "train"
+        phase = "train" if is_training else "val"
         
-        def log_metric(name, value, on_step=None, prog_bar=False):
-            """
-            Helper to log metrics with consistent settings.
+        if step_output:
+            assert loss        is not None, "Loss required for step logging"
+            assert predictions is not None, "Predictions required for step logging"
+            assert targets     is not None, "Targets required for step logging"
             
-            Args:
-                name     : Metric name with phase prefix (e.g., "train/loss")
-                value    : Scalar metric value to log
-                on_step  : Whether to log per step (defaults to is_train)
-                prog_bar : Whether to show in progress bar
-            """
             module.log(
-                name     = name,
-                value    = value,
-                on_epoch = True,
-                on_step  = is_train if on_step is None else on_step,
-                prog_bar = prog_bar
-            )
-        
-        if loss is not None:
-            log_metric(
                 name     = f"{phase}/loss",
-                prog_bar = True,
-                value    = loss
+                value    = loss,
+                on_epoch = True,
+                on_step  = is_training,
+                prog_bar = True
             )
+            
+            for i, dim in enumerate(["x", "y", "z"]):
+                module.log(
+                    name     = f"{phase}/velocity_{dim}_mse",
+                    value    = (predictions[..., i] - targets[..., i]).pow(2).mean(),
+                    on_epoch = True,
+                    on_step  = False
+                )
         
-        for metrics, on_step in [
-            (self.train_imitation  if is_train else self.val_imitation,  is_train),
-            (self.train_evaluation if is_train else self.val_evaluation, False)
+        for metric_type, on_step in [
+            ("imitation",  is_training), 
+            ("evaluation", False)
         ]:
             module.log_dict(
-                dictionary = metrics,
+                dictionary = self._get_metrics(metric_type, is_training),
                 on_epoch   = True,
                 on_step    = on_step
             )
         
-        if predictions is not None and targets is not None:
-            for i, dim in enumerate(["x", "y", "z"]):
-                log_metric(
-                    name    = f"{phase}/velocity_{dim}_mse",
-                    on_step = False,
-                    value   = (predictions[..., i] - targets[..., i]).pow(2).mean()
-                )
-        
-        if is_train:
-            log_metric(
-                name    = "train/cbf_activation_rate",
-                on_step = False,
-                value   = self.get_cbf_activation_rate()
-            )
-    
-    def log_cbf_activation(self, batch: TensorDict):
-        """
-        Updates internal counters used to compute CBF activation rate.
-        
-        Args:
-            batch: TensorDict containing CBF activation information
-        """
-        if "cbf_active" in batch:
-            self.cbf_activation_count += batch["cbf_active"].sum().item()
-            self.total_steps          += batch["cbf_active"].numel()
-    
-    def reset_runtime_metrics(self):
-        """
-        Should be called at epoch boundaries to ensure accurate per-epoch
-        CBF activation rates.
-        """
-        self.cbf_activation_count = 0
-        self.total_steps          = 0
-    
     def update_evaluation_metrics(
         self,
-        batch : TensorDict,
-        phase : str
+        batch       : TensorDictBase,
+        is_training : bool
     ):
         """
-        Extract relevant fields from batch and update each metric.
+        Update all evaluation metrics from a single simulation batch.
         
-        Handles missing fields gracefully.
+        Intelligently extracts relevant data for each metric based on what
+        fields are available in the batch. This allows graceful handling of
+        partial data during different training stages or evaluation modes.
+        
+        Field requirements by metric:
+        - Color accuracy  : temperature
+        - Legibility SSIM : position, velocity, wind  
+        - Cohesion λ₂     : edge_index, position (for agent count)
+        - Energy          : u_safe or action (control inputs)
         
         Args:
-            batch : TensorDict containing simulation state and actions
-            phase : Training phase ("train" or "val")
+            batch       : TensorDict containing simulation state and actions
+            is_training : Whether this is training (True) or validation (False)
         """
-        metrics = (
-            self.train_evaluation if phase == "train" else self.val_evaluation
-        )
+        metrics = self._get_metrics("evaluation", is_training)
         
         if "temperature" in batch:
-            metrics["tvr"].update(temperature=batch["temperature"])
             metrics["mae_color"].update(batch["temperature"])
         
         if all(k in batch for k in ["position", "velocity", "wind"]):
-            device = batch["position"].device
             metrics["ssim"].update(
-                bounds_max = torch.tensor(self.bounds_max, device=device),
-                bounds_min = torch.zeros(3, device=device),
                 positions  = batch["position"],
                 velocities = batch["velocity"],
                 wind_field = batch["wind"]
             )
         
         if "edge_index" in batch:
+            num_agents = batch["position"].shape[0] if "position" in batch else 0
             metrics["λ₂"].update(
-                edge_index=batch["edge_index"], 
-                num_agents=batch.get("position", torch.empty(0)).shape[0]
+                edge_index = batch["edge_index"], 
+                num_agents = num_agents
             )
         
         if u_control := batch.get("u_safe") or batch.get("action"):
@@ -604,68 +593,21 @@ class MetricsCollector:
     
     def update_imitation_metrics(
         self,
-        phase       : str,
+        is_training : bool,
         predictions : Tensor,
         targets     : Tensor
     ):
         """
-        Update imitation learning metrics with predictions and targets.
+        Update regression metrics measuring behavioral cloning accuracy.
+        
+        Computes multiple error metrics between the neural network's velocity
+        predictions and the expert controller's demonstrated actions. These
+        metrics guide the imitation learning process and help diagnose
+        prediction quality across different error characteristics.
         
         Args:
-            phase       : Training phase ("train" or "val")
-            predictions : Model predictions [batch_size, output_dim]
-            targets     : Expert actions    [batch_size, output_dim]
+            is_training : Whether this is training (True) or validation (False)
+            predictions : Model velocity outputs [batch_size, 3] in m/s
+            targets     : Expert velocity commands [batch_size, 3] in m/s
         """
-        imitation_metrics = (
-            self.train_imitation if phase == "train" else self.val_imitation
-        )
-        imitation_metrics.update(predictions, targets)
-
-
-class ThermalSafetyMetric(Metric):
-    """
-    Tracks the thermal violation rate (TVR): P(T_agent > T_max).
-    
-    This metric monitors how often agents exceed the maximum safe temperature
-    threshold, which is critical for mission success and agent survival.
-    Violations indicate failures of the safety system.
-    """
-    
-    def __init__(self, max_temperature: float):
-        """
-        Initialize the thermal safety metric.
-        
-        Args:
-            max_temperature : Maximum safe temperature from flock config
-        """
-        super().__init__()
-        self.max_temperature = max_temperature
-        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
-        self.add_state("violations", default=torch.tensor(0.0), dist_reduce_fx="sum")
-    
-    def compute(self) -> Tensor:
-        """
-        Compute the violation rate.
-        
-        Returns:
-            Fraction of temperature readings that exceeded T_max
-        """
-        return (
-            self.violations / self.total 
-                if self.total > 0 
-                else torch.tensor(0.0)
-        )
-    
-    def update(self, temperature: Tensor):
-        """
-        Update metric with new temperature readings.
-        
-        Args:
-            temperature: Agent temperatures [N] or [N, 1] in Kelvin
-        """
-        temperature = temperature.flatten()
-            
-        self.violations += (
-            (temperature > self.max_temperature).sum(dtype=torch.float32)
-        )
-        self.total      += temperature.numel()
+        self._get_metrics("imitation", is_training).update(predictions, targets)

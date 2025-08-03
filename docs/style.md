@@ -163,7 +163,7 @@ from tensordict                          import TensorDict, TensorDictBase
 from time                                import perf_counter
 from torch                               import where
 from torchrl.envs                        import EnvBase
-from typing                              import Any, Callable, Optional
+from typing                              import Any, Callable
 
 import mujoco
 import torch
@@ -226,7 +226,7 @@ def __init__(
     compute_edge_index : Callable,
     observation_spec   : TensorDictBase,
     action_spec        : TensorDictBase,
-    seed_fn            : Optional[Callable] = None,
+    seed_fn            : Callable | None = None,
 ):
 ```
 
@@ -366,7 +366,7 @@ def initialize_agent(
     position : torch.Tensor,
     velocity : torch.Tensor, 
     temp     : float,
-    state    : Optional[dict] = None
+    state    : dict | None = None
 ) -> Agent:
     """
     Initialize agent with the given parameters.

@@ -11,9 +11,14 @@ This module provides pre-built components for the controller domain:
                      control commands when agents get too close. Uses configurable
                      thresholds for minimum separation distances.
 """
+from __future__                   import annotations
 from .schemas                     import *
 from hydra_zen                    import builds, make_config
 from thermur.imitation.controller import ExpertController, SafetyFilter
+from typing                       import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hydra_zen.typing import Builds
 
 
 CONTROLLER_USER_CONFIG = make_config(
@@ -23,7 +28,7 @@ CONTROLLER_USER_CONFIG = make_config(
     thresholds = ThresholdsModel()
 )
 
-CONTROLLER_SYSTEM_BUILDS = {
+CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "expert_controller": builds(
         ExpertController,
         expert                  = "${controller.expert}",

@@ -7,14 +7,16 @@ optimal trajectory datasets for imitation learning. The expert combines
 Reynolds flocking rules with thermal constraints to demonstrate safe
 collective behavior.
 """
-from .safety                     import SafetyFilter
-from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
-from tensordict                  import TensorDict
-from torch                       import Tensor
-from typing                      import Optional
+from __future__ import annotations
+from typing     import TYPE_CHECKING
 
-import torch
-import torch.nn.functional as F
+import torch as th
+
+if TYPE_CHECKING:
+    from .safety                     import SafetyFilter
+    from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
 
 
 class ExpertController:
@@ -37,7 +39,7 @@ class ExpertController:
         expert        : ExpertModel,
         flock         : FlockModel,
         thresholds    : ThresholdsModel,
-        safety_filter : Optional[SafetyFilter] = None
+        safety_filter : SafetyFilter | None = None
     ):
         """
         Initializes the controller with the necessary configuration models.
@@ -56,6 +58,24 @@ class ExpertController:
         self.safety_filter   = safety_filter
         self.thresholds      = thresholds
         self._reset_shared_state()
+    
+    def __call__(self, flock: TensorDictBase) -> TensorDictBase:
+        """
+        Compute control actions in TorchRL-compatible format.
+        
+        This method makes ExpertController compatible with TorchRL's
+        expected policy interface by wrapping the nominal action
+        computation and returning a TensorDict with the action.
+        
+        Args:
+            flock: TensorDict containing the current flock state
+            
+        Returns:
+            TensorDict with the computed action added
+        """
+        action = self.compute_nominal_action(flock)
+        flock["action"] = action
+        return flock
 
     def _compute_alignment(self, velocity: Tensor) -> Tensor:
         """
@@ -81,13 +101,15 @@ class ExpertController:
         Returns:
             Tensor [N, dim] of alignment force vectors for all agents
         """
-        avg_velocity = torch.zeros_like(velocity)
-        avg_velocity.index_add_(
-            dim    = 0, 
-            index  = self._edge_source, 
-            source = velocity[self._edge_target]
-        )
-        avg_velocity = torch.divide(avg_velocity, self._safe_count.unsqueeze(1))
+        avg_velocity = th.zeros_like(velocity)
+        
+        if self._edge_source.numel():
+            avg_velocity.index_add_(
+                dim    = 0, 
+                index  = self._edge_source, 
+                source = velocity[self._edge_target]
+            )
+            avg_velocity = avg_velocity / self._safe_count.unsqueeze(1)
 
         # Apply force only to agents with neighbors
         has_neighbors = (self._neighbor_count > 0).float().unsqueeze(1)
@@ -117,17 +139,15 @@ class ExpertController:
         Returns:
             Tensor [N, dim] of cohesion force vectors for all agents
         """
-        center_of_mass = torch.zeros_like(position)
-        center_of_mass.index_add_(
-            dim    = 0, 
-            index  = self._edge_source, 
-            source = position[self._edge_target]
-        )
-
-        center_of_mass = torch.divide(
-            input = center_of_mass, 
-            other = self._safe_count.unsqueeze(1)
-        )
+        center_of_mass = th.zeros_like(position)
+        
+        if self._edge_source.numel():
+            center_of_mass.index_add_(
+                dim    = 0, 
+                index  = self._edge_source, 
+                source = position[self._edge_target]
+            )
+            center_of_mass = center_of_mass / self._safe_count.unsqueeze(1)
 
         # Apply force only to agents with neighbors
         has_neighbors = (self._neighbor_count > 0).float().unsqueeze(1)
@@ -157,22 +177,18 @@ class ExpertController:
             Tensor [N, dim] of separation force vectors for all agents
         """
         # Calculate displacement vectors and distances
+        if not self._edge_source.numel():
+            return th.zeros_like(position)
+            
         rel_pos  = position[self._edge_source] - position[self._edge_target]
-        distance = torch.norm(
-            dim     = 1, 
-            input   = rel_pos, 
-            keepdim = True
-        )
+        distance = rel_pos.norm(dim=1, keepdim=True)
 
         # Apply minimum distance and calculate repulsion
-        distance  = torch.clamp(distance, self.expert.min_distance)
-        repulsion = torch.divide(
-            input = rel_pos, 
-            other = distance.pow(2) + self.expert.epsilon
-        )
+        distance  = th.clamp(distance, min=self.expert.min_distance)
+        repulsion = rel_pos / (distance.pow(2) + self.expert.epsilon)
 
         # Sum repulsion vectors for each agent
-        separation = torch.zeros_like(position)
+        separation = th.zeros_like(position)
         separation.index_add_(
             dim    = 0, 
             index  = self._edge_source, 
@@ -183,9 +199,8 @@ class ExpertController:
     
     def _compute_thermal(
         self,
-        position    : Tensor,
         temperature : Tensor,
-        gradient    : Tensor | None = None
+        gradient    : Tensor
     ) -> Tensor:
         """
         Calculates the thermal repulsion force for each agent.
@@ -204,32 +219,20 @@ class ExpertController:
         configurable parameter controlling the overall repulsion strength.
         
         Args:
-            position    : Tensor [N, dim] containing agent positions 𝐱
             temperature : Tensor [N] or [N, 1] containing temperatures T
-            gradient    : Optional[Tensor] tensor [N, dim] of pre-computed temperature
-                          gradients ∇T. If None, gradients are estimated.
+            gradient    : Tensor [N, dim] of temperature gradients ∇T
         
         Returns:
             Tensor [N, dim] of thermal repulsion force vectors for all agents
         """
         temperature = self._ensure_1d_temperature(temperature)
-        t_margin    = torch.clamp(
+        t_margin    = th.clamp(
             input = self.max_temperature - temperature,
             min   = self.expert.epsilon
         )
 
-        magnitude = torch.divide(
-            input = self.expert.temperature_scaling, 
-            other = t_margin
-        )
+        magnitude = self.expert.temperature_scaling / t_margin
 
-        gradient = (
-            gradient if gradient is not None 
-            else self._estimate_gradient(
-                position    = position, 
-                temperature = temperature
-            )
-        )
 
         # Force points away from high temperatures
         return -gradient * magnitude.unsqueeze(1)
@@ -277,23 +280,23 @@ class ExpertController:
         temperature = self._ensure_1d_temperature(temperature)
 
         # Handle the edge case of a completely disconnected graph
-        if self._edge_source is None or not self._edge_source.numel():
+        if not self._edge_source.numel():
             return self._vertical_heat_gradient(
                 position    = position, 
                 temperature = temperature
             )
 
         # Calculate the neighbor-based gradient for all agents
-        num_agents, _ = position.shape
-        pos_diff      = position[self._edge_target]    - position[self._edge_source]
-        temp_diff     = temperature[self._edge_target] - temperature[self._edge_source]
+        n, _      = position.shape
+        pos_diff  = position[self._edge_target]    - position[self._edge_source]
+        temp_diff = temperature[self._edge_target] - temperature[self._edge_source]
         
         # Sum weighted positions and count significant neighbors
-        sig_mask   = torch.abs(temp_diff) > self.expert.epsilon
-        grad_sum   = torch.zeros_like(position)
-        sig_counts = torch.bincount(
+        sig_mask   = th.abs(temp_diff) > self.expert.epsilon
+        grad_sum   = th.zeros_like(position)
+        sig_counts = th.bincount(
             input     = self._edge_source[sig_mask],
-            minlength = num_agents
+            minlength = n
         ).float()
 
         grad_sum.index_add_(
@@ -301,25 +304,23 @@ class ExpertController:
             index  = self._edge_source[sig_mask],
             source = pos_diff[sig_mask] * temp_diff[sig_mask].unsqueeze(dim=1)
         )
-        grad_neighbors = torch.divide(
-            input = grad_sum,
-            other = torch.clamp(sig_counts, min=1).unsqueeze(dim=1)
-        )
+        grad_neighbors = grad_sum / th.clamp(sig_counts, min=1).unsqueeze(dim=1)
 
-        return torch.where(
+        return th.where(
             condition = (sig_counts == 0).unsqueeze(dim=1), 
             input     = self._vertical_heat_gradient(position, temperature), 
             other     = grad_neighbors
         )
 
-    def _reset_shared_state(self):
+    def _reset_shared_state(self, device: str | th.device = 'cpu'):
         """
-        Resets the shared graph state variables to None.
+        Resets the shared graph state variables to empty tensors.
         """
-        self._edge_source    = None
-        self._edge_target    = None
-        self._neighbor_count = None
-        self._safe_count     = None
+        empty = lambda: th.tensor([], device=device, dtype=th.long)
+        self._edge_source    = empty()
+        self._edge_target    = empty()
+        self._neighbor_count = empty()
+        self._safe_count     = empty()
 
     def _update_graph_state(
         self, 
@@ -333,20 +334,23 @@ class ExpertController:
             edge_index : Tensor defining the communication graph topology Gₜ = (V, Eₜ)
             num_agents : The total number of agents N in the flock
         """
+        device = edge_index.device
+        
         if edge_index.numel():
             self._edge_source, self._edge_target = edge_index
+            self._neighbor_count = th.bincount(
+                self._edge_source,
+                minlength = num_agents
+            ).to(device)
         else:
-            # Handle empty graph case to prevent errors
-            device            = edge_index.device
-            self._edge_source = torch.tensor([], dtype=torch.long, device=device)
-            self._edge_target = torch.tensor([], dtype=torch.long, device=device)
+            self._reset_shared_state(device)
+            self._neighbor_count = th.zeros(
+                num_agents, 
+                device = device,
+                dtype  = th.long, 
+            )
 
-        self._neighbor_count = torch.bincount(
-            self._edge_source,
-            minlength = num_agents
-        ).to(edge_index.device)
-
-        self._safe_count = torch.clamp(self._neighbor_count, min=1)
+        self._safe_count = th.clamp(self._neighbor_count, min=1)
 
     def _vertical_heat_gradient(
         self,
@@ -370,24 +374,21 @@ class ExpertController:
         num_agents, dim = position.shape
 
         # Create unit vectors pointing up in the last dimension
-        vertical = F.one_hot(
+        vertical = th.nn.functional.one_hot(
             num_classes = dim,
-            tensor      = torch.full(
+            tensor      = th.full(
                 size       = (num_agents,),
                 fill_value = dim - 1,
                 device     = position.device,
-                dtype      = torch.long
+                dtype      = th.long
             )
         ).float()
 
         # Scale by normalized temperature
-        norm_temp = torch.divide(
-            input = self._ensure_1d_temperature(temperature),
-            other = self.max_temperature
-        )
+        norm_temp = self._ensure_1d_temperature(temperature) / self.max_temperature
         return vertical * norm_temp.unsqueeze(1)
     
-    def compute_nominal_action(self, flock: TensorDict) -> Tensor:
+    def compute_nominal_action(self, flock: TensorDictBase) -> Tensor:
         """
         Computes the collective nominal control action for the entire flock.
 
@@ -407,25 +408,24 @@ class ExpertController:
         Returns:
             A tensor of velocity commands for all agents.
         """
-        self._reset_shared_state()
         self._update_graph_state(flock["edge_index"], flock["position"].size(0))
 
         # Compute the nominal control based on Reynolds rules and thermal potential
-        forces = [
-            (self.expert.w_cohesion,   self._compute_cohesion(flock["position"])),
-            (self.expert.w_separation, self._compute_separation(flock["position"])),
-            (self.expert.w_alignment,  self._compute_alignment(flock["velocity"])),
-            (self.expert.w_thermal,    self._compute_thermal(
-                gradient    = flock.get("gradient", None),
-                position    = flock["position"],
-                temperature = flock["temperature"]
-            ))
-        ]
-        
-        u_nominal = sum(weight * force for weight, force in forces)
-        
-        return (
-            self.safety_filter.filter(flock, u_nominal)
-            if self.safety_filter is not None
-            else u_nominal
+        cohesion   = self._compute_cohesion(flock["position"])
+        separation = self._compute_separation(flock["position"])
+        alignment  = self._compute_alignment(flock["velocity"])
+        thermal    = self._compute_thermal(
+            gradient    = flock["gradient"],
+            temperature = flock["temperature"]
         )
+        
+        u_nominal = (
+            self.expert.w_cohesion   * cohesion   +
+            self.expert.w_separation * separation +
+            self.expert.w_alignment  * alignment  +
+            self.expert.w_thermal    * thermal
+        )
+        
+        if self.safety_filter is not None:
+            return self.safety_filter.filter(flock, u_nominal)
+        return u_nominal
