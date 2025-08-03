@@ -6,12 +6,16 @@ preset selection, wandb configuration, override collection, and training
 confirmation. It uses the ThermurUI class to render complex components and 
 structured configuration objects for all static text and configuration.
 """
-from config.cli.builds import CLIConfiguration
-from config.types      import FileInfo
-from itertools         import islice
-from typing            import Any, Callable, Sequence
+from __future__ import annotations
+from config.cli import CLIConfiguration
+from itertools  import islice
+from typing     import Any, Callable, Sequence, TYPE_CHECKING
 
 import questionary
+
+if TYPE_CHECKING:
+    from config.types import FileInfo
+    from .ui          import ThermurUI
 
 
 class CLIPrompts:
@@ -27,7 +31,7 @@ class CLIPrompts:
     def __init__(
         self,
         cfg : CLIConfiguration,
-        ui  : Any
+        ui  : ThermurUI
     ):
         """
         Initializes the prompt orchestrator.

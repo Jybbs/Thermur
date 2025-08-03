@@ -5,10 +5,9 @@ This module provides a consistent console interface leveraging Rich's
 built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
-from .system      import SystemInspector
+from __future__   import annotations
 from collections  import Counter
 from config.cli   import DisplayModel
-from config.types import FileInfo, TableColumn
 from pathlib      import Path
 from rich         import box, progress
 from rich.align   import Align
@@ -19,7 +18,11 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
-from typing       import Any, Literal, Sequence
+from typing       import Any, Literal, Sequence, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .system      import SystemInspector
+    from config.types import FileInfo, TableColumn
 
 
 class ThermurUI:

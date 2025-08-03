@@ -12,12 +12,17 @@ vectorized operations where possible and PyVista's optimized rendering
 pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
-from config.imitation.visualization import VistaModel
-from pyvista                        import Actor, Color, ImageData, Plotter, PolyData
-from torch                          import Tensor
+from __future__ import annotations
+from pyvista    import Color
+from typing     import TYPE_CHECKING
 
 import numpy   as np
 import pyvista as pv
+
+if TYPE_CHECKING:
+    from config.imitation.visualization import VistaModel
+    from pyvista                        import Actor, ImageData, Plotter, PolyData
+    from torch                          import Tensor
 
 
 class Renderer:

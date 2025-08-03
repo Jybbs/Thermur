@@ -5,11 +5,12 @@ This module provides a class-based builder for dynamically generating and
 loading MuJoCo models with varying numbers of agents, enabling true multi-agent
 physics simulation for flock environments.
 """
+from __future__ import annotations
 from functools import reduce
 from itertools import chain
 from operator  import methodcaller
 from pathlib   import Path
-from typing    import Any
+from typing    import Any, TYPE_CHECKING
 
 import mujoco as mj
 

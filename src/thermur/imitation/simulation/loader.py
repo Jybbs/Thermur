@@ -5,14 +5,17 @@ This module provides a comprehensive data loader for WRF-Fire NetCDF outputs,
 handling temperature, wind, and fire-specific variables with efficient 
 interpolation and gradient computation.
 """
-from config.imitation.simulation import LoaderModel, PhysicsModel
-from numpy                       import zeros
-from numpy.typing                import NDArray
-from torch                       import Tensor
-from typing                      import Any
-from xarray                      import open_dataset
+from __future__ import annotations
+from numpy      import zeros
+from typing     import Any, TYPE_CHECKING
+from xarray     import open_dataset
 
 import torch as th
+
+if TYPE_CHECKING:
+    from config.imitation.simulation import LoaderModel, PhysicsModel
+    from numpy.typing                import NDArray
+    from torch                       import Tensor
 
 
 class WRFDataSource:

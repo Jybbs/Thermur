@@ -73,5 +73,7 @@ def main_callback(
 
 
 def main():
-    """Entry point for the thermur console script."""
+    """
+    Entry point for the thermur console script.
+    """
     cli()

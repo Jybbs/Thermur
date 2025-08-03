@@ -6,16 +6,19 @@ tracking individual agent decisions, CBF activations, and critical events during
 training and simulation. It integrates with PyTorch Lightning's logging system
 and provides structured outputs for post-hoc analysis.
 """
-from collections                 import Counter, defaultdict
-from config.imitation.controller import ThresholdsModel
-from config.imitation.monitoring import EventsModel
-from config.types                import EventConfig
-from pytorch_lightning           import LightningModule
-from tensordict                  import TensorDictBase
-from time                        import perf_counter
-from torch                       import Tensor
-from typing                      import Any
-from wandb                       import Table
+from __future__   import annotations
+from collections  import Counter, defaultdict
+from config.types import EventConfig
+from time         import perf_counter
+from typing       import Any, TYPE_CHECKING
+from wandb        import Table
+
+if TYPE_CHECKING:
+    from config.imitation.controller import ThresholdsModel
+    from config.imitation.monitoring import EventsModel
+    from pytorch_lightning           import LightningModule
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
 
 
 class EventLogger:

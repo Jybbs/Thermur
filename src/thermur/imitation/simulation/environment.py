@@ -11,17 +11,22 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from .generator                  import XMLGenerator
-from .loader                     import WRFDataSource
-from config.imitation.controller import FlockModel
-from config.imitation.simulation import PhysicsModel
-from operator                    import itemgetter
-from math                        import ceil
-from tensordict                  import TensorDictBase
-from torch                       import Size, Tensor
-from torchrl.data                import Bounded, Composite, TensorSpec, Unbounded
-from torchrl.envs                import EnvBase
-from typing                      import Any
+from __future__   import annotations
+from .generator   import XMLGenerator
+from operator     import itemgetter
+from math         import ceil
+from torch        import Size
+from torchrl.data import Bounded, Composite, Unbounded
+from torchrl.envs import EnvBase
+from typing       import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .loader                     import WRFDataSource
+    from config.imitation.controller import FlockModel
+    from config.imitation.simulation import PhysicsModel
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
+    from torchrl.data                import TensorSpec
 
 import mujoco as mj
 import torch  as th
@@ -141,7 +146,7 @@ class SimulationEnv(EnvBase):
             wind        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
         )
     
-    def _extract_agent_states(self, data: Any) -> tuple[Tensor, Tensor]:
+    def _extract_agent_states(self, data: Any) -> tuple[Tensor, Tensor]:  # MjData
         """
         Extracts the position and velocity states for all agents from MuJoCo data.
         

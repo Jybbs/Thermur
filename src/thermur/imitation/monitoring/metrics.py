@@ -6,13 +6,17 @@ for the training pipeline, including imitation learning losses, core evaluation
 metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
-from config.imitation.monitoring import MetricsModel
-from pytorch_lightning           import LightningModule
-from tensordict                  import TensorDictBase
-from torch                       import Tensor
-from torchmetrics                import MeanAbsoluteError, MeanSquaredError
-from torchmetrics                import Metric, MetricCollection, R2Score
-from torchmetrics.image          import StructuralSimilarityIndexMeasure
+from __future__         import annotations
+from torchmetrics       import MeanAbsoluteError, MeanSquaredError
+from torchmetrics       import Metric, MetricCollection, R2Score
+from torchmetrics.image import StructuralSimilarityIndexMeasure
+from typing             import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config.imitation.monitoring import MetricsModel
+    from pytorch_lightning           import LightningModule
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
 
 import torch as th
 

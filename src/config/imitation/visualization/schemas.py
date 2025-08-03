@@ -166,4 +166,11 @@ class VistaModel(BaseModel, extra="forbid"):
             "Render window dimensions in pixels (width, height)."
         )
     )
+    max_temperature: PositiveFloat = Field(
+        default     = 475.0,
+        description = (
+            "Critical temperature threshold T_max for safety boundary visualization, "
+            "must match the value in controller.thresholds for consistency."
+        )
+    )
 
