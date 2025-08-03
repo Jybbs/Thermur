@@ -21,17 +21,22 @@ Visual Elements:
 - Themes        : Pre-configured visual themes (dark/light) for different viewing
                   conditions.
 """
+from __future__                      import annotations
 from .schemas                        import *
 from hydra_zen                       import builds, make_config
 from pyvista                         import Arrow, Plotter, themes
 from thermur.imitation.visualization import Renderer, Sampler, Visualizer
+from typing                          import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hydra_zen.typing import Builds
 
 
 VISUALIZATION_USER_CONFIG = make_config(
     vista = VistaModel()
 )
 
-VISUALIZATION_SYSTEM_BUILDS = {
+VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "agent_glyph": builds(
         Arrow,
         zen_partial             = True,
@@ -48,7 +53,6 @@ VISUALIZATION_SYSTEM_BUILDS = {
     "renderer": builds(
         Renderer,
         agent_glyph             = "${_system.agent_glyph}",
-        scalar_bar              = {},  # Default scalar bar config
         vista                   = "${visualization.vista}",
         wind_glyph              = "${_system.wind_glyph}",
         zen_partial             = True,
@@ -78,6 +82,7 @@ VISUALIZATION_SYSTEM_BUILDS = {
     
     "visualizer": builds(
         Visualizer,
+        max_temperature         = "${controller.thresholds.max_temperature}",
         plotter                 = "${_system.plotter}",
         renderer                = "${_system.renderer}",
         sampler                 = "${_system.sampler}",

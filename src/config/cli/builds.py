@@ -1,15 +1,24 @@
 """
-CLI configuration builds.
+CLI configuration container.
 
-Provides a clean namespace for all CLI configurations using SimpleNamespace.
-All configs are instantiated Pydantic models for direct use by CLI components.
+Provides a unified configuration object for all CLI components using Pydantic 
+BaseModel.
+
+All configurations are pre-instantiated for immediate use with minimal overhead.
 """
 from .schemas import *
-from types    import SimpleNamespace
+from pydantic import BaseModel
 
-cfg = SimpleNamespace(
-    display  = DisplayModel(),
-    download = DownloadModel(),
-    secrets  = GlobusSecrets(),
-    wandb    = WandbConfig()
-)
+class CLIConfiguration(BaseModel):
+    """
+    Configuration container for CLI components.
+    
+    Uses Pydantic BaseModel with pre-instantiated config objects to provide
+    type safety and validation while maintaining fast CLI startup times.
+    """
+    display  : DisplayModel  = DisplayModel()
+    download : DownloadModel = DownloadModel()
+    secrets  : GlobusSecrets = GlobusSecrets()
+    wandb    : WandbConfig   = WandbConfig()
+
+cfg = CLIConfiguration()

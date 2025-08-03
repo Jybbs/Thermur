@@ -11,19 +11,27 @@ system, step the simulation forward in time, and provide observations and
 rewards to the learning algorithm. It couples a rigid-body physics engine
 (MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
 """
-from .generator                  import XMLGenerator
-from .loader                     import WRFDataSource
-from config.imitation.controller import FlockModel
-from config.imitation.simulation import PhysicsModel
-from operator                    import itemgetter
-from tensordict                  import TensorDictBase
-from torch                       import bool, cdist, float32, inf, int64, nonzero, Tensor
-from torchrl.data                import Bounded, Composite, Unbounded
-from torchrl.envs                import EnvBase
+from __future__   import annotations
+from .generator   import XMLGenerator
+from math         import ceil
+from operator     import itemgetter
+from pathlib      import Path
+from torch        import Size
+from torchrl.data import Bounded, Composite, Unbounded
+from torchrl.envs import EnvBase
+from typing       import Any, TYPE_CHECKING
 
-import math
+if TYPE_CHECKING:
+    from .loader                     import WRFDataSource
+    from config.imitation.controller import FlockModel
+    from config.imitation.simulation import PhysicsModel
+    from config.types                import MujocoModel
+    from tensordict                  import TensorDictBase
+    from torch                       import Tensor
+    from torchrl.data                import TensorSpec
+
 import mujoco as mj
-import torch
+import torch  as th
 
 
 class SimulationEnv(EnvBase):
@@ -39,6 +47,8 @@ class SimulationEnv(EnvBase):
     defined externally, which includes agent kinematics, local thermal
     data, and the communication graph topology.
     """
+    
+    physics_model: MujocoModel
 
     def __init__(
         self,
@@ -57,7 +67,7 @@ class SimulationEnv(EnvBase):
         self.flock         = flock
         self.physics       = physics
         self.wrf           = wrf
-        self.xml_generator = XMLGenerator(self.physics.assets_dir)
+        self.xml_generator = XMLGenerator(Path(self.physics.assets_dir))
         self.physics_model = self._initialize_physics()
         super().__init__(device="cpu")
     
@@ -81,11 +91,11 @@ class SimulationEnv(EnvBase):
             An `edge_index` tensor of shape (2, num_edges), suitable for a
             `torch_geometric.data.Data` object.
         """
-        distances = cdist(position, position)
+        distances = th.cdist(position, position)
         mask      = (distances < radius) & (distances > 0)
-        return nonzero(mask, as_tuple=False).t().contiguous()
+        return th.nonzero(mask, as_tuple=False).t().contiguous()
     
-    def _create_action_space(self) -> TensorDictBase:
+    def _create_action_space(self) -> TensorSpec:
         """
         Defines the action space structure for agent control.
         
@@ -98,12 +108,12 @@ class SimulationEnv(EnvBase):
         """
         return Composite(
             action = Unbounded(
-                dtype = float32,
-                shape = (self.flock.agent_count, 3)
+                dtype = th.float32,
+                shape = Size([self.flock.agent_count, 3])
             )
         )
     
-    def _create_observation_space(self) -> TensorDictBase:
+    def _create_observation_space(self) -> TensorSpec:
         """
         Defines the observation space structure for the flock system.
         
@@ -127,24 +137,20 @@ class SimulationEnv(EnvBase):
         """
         n = self.flock.agent_count
         
-        bounded_tensors = {
-            "battery"     : Bounded(0, 1,   (n, 1),       dtype=float32),
-            "done"        : Bounded(0, 1,   (1,),         dtype=bool),
-            "edge_index"  : Bounded(0, n-1, (2, n*(n-1)), dtype=int64),
-            "temperature" : Bounded(0, inf, (n, 1),       dtype=float32),
-        }
-        
-        unbounded_tensors = {
-            "gradient" : Unbounded(shape=(n, 3), dtype=float32),
-            "position" : Unbounded(shape=(n, 3), dtype=float32),
-            "reward"   : Unbounded(shape=(n,  ), dtype=float32),
-            "velocity" : Unbounded(shape=(n, 3), dtype=float32),
-            "wind"     : Unbounded(shape=(n, 3), dtype=float32),
-        }
-        
-        return Composite(**bounded_tensors, **unbounded_tensors)
+        return Composite(
+            battery     = Bounded(0, 1,      Size([n, 1]),       dtype=th.float32),
+            done        = Bounded(0, 1,      Size([1]),          dtype=th.bool),
+            edge_index  = Bounded(0, n-1,    Size([2, n*(n-1)]), dtype=th.int64),
+            temperature = Bounded(0, th.inf, Size([n, 1]),       dtype=th.float32),
+
+            gradient    = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            position    = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            reward      = Unbounded(shape=Size([n]),    dtype=th.float32),
+            velocity    = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            wind        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+        )
     
-    def _extract_agent_states(self, data: mj.MjData) -> tuple:
+    def _extract_agent_states(self, data: Any) -> tuple[Tensor, Tensor]:  # MjData
         """
         Extracts the position and velocity states for all agents from MuJoCo data.
         
@@ -158,10 +164,10 @@ class SimulationEnv(EnvBase):
             positions  : Tensor of shape [agent_count, 3]
             velocities : Tensor of shape [agent_count, 3]
         """
-        positions = torch.from_numpy(
+        positions = th.from_numpy(
             data.qpos[:self.flock.agent_count * 3].copy().reshape(self.flock.agent_count, 3)
         )
-        velocities = torch.from_numpy(
+        velocities = th.from_numpy(
             data.qvel[:self.flock.agent_count * 3].copy().reshape(self.flock.agent_count, 3)
         )
     
@@ -184,11 +190,11 @@ class SimulationEnv(EnvBase):
         Returns:
             A tensor of shape [n, 3] containing agent positions
         """
-        side_length = math.ceil(n ** (1./3))
-        coords      = torch.linspace(-1, 1, side_length)
-        grid        = torch.stack(
+        side_length = ceil(n ** (1./3))
+        coords      = th.linspace(-1, 1, side_length)
+        grid        = th.stack(
             dim     = -1,
-            tensors = torch.meshgrid(coords, coords, coords, indexing='ij')
+            tensors = th.meshgrid(coords, coords, coords, indexing='ij')
         )
 
         return grid.reshape(-1, 3)[:n]
@@ -215,17 +221,17 @@ class SimulationEnv(EnvBase):
         Returns:
             A tensor of shape [n, 3] containing agent positions
         """
-        indices      = torch.arange(n, dtype=float32)
+        indices      = th.arange(n, dtype=th.float32)
         z            = 1 - (2 * indices) / (n - 1)
-        radius       = torch.sqrt(1 - z*z)
-        golden_angle = torch.pi * (3. - (5.**0.5))
+        radius       = th.sqrt(1 - z*z)
+        golden_angle = th.pi * (3. - (5.**0.5))
         theta        = golden_angle * indices
 
-        return torch.stack(
+        return th.stack(
             dim     = 1,
             tensors = (
-                torch.cos(theta) * radius,
-                torch.sin(theta) * radius,
+                th.cos(theta) * radius,
+                th.sin(theta) * radius,
                 z
             ),
         )
@@ -250,7 +256,7 @@ class SimulationEnv(EnvBase):
         )
         return self.xml_generator.load_model(xml_string)
 
-    def _make_spec(self, td_params):
+    def _make_spec(self, td_params: Any | None = None):
         """
         Creates action and observation specs for the environment.
         
@@ -264,7 +270,7 @@ class SimulationEnv(EnvBase):
         self.action_spec      = self._create_action_space()
         self.observation_spec = self._create_observation_space()
 
-    def _reset(self, *args, **kwargs) -> TensorDictBase:
+    def _reset(self, *args: Any, **kwargs: Any) -> TensorDictBase:
         """
         Resets the environment to an initial state for a new episode.
 
@@ -298,7 +304,7 @@ class SimulationEnv(EnvBase):
         
         initial_observation = self.observation_spec.zero()
         initial_observation.update({
-            "battery"  : torch.ones(self.flock.agent_count, 1),
+            "battery"  : th.ones(self.flock.agent_count, 1),
             "position" : scaled_positions,
         })
         
@@ -318,7 +324,7 @@ class SimulationEnv(EnvBase):
             }
         )
         
-        self._set_physics_state(positions, torch.zeros_like(positions))
+        self._set_physics_state(positions, th.zeros_like(positions))
         
         return initial_observation
 
@@ -339,15 +345,15 @@ class SimulationEnv(EnvBase):
             velocities : Tensor [N, 3] containing agent velocities
         """
         data = self.physics_model["data"]
-        mj.mj_resetData(self.physics_model["model"], data)
+        getattr(mj, 'mj_resetData')(self.physics_model["model"], data)
         
         data.qpos[:self.flock.agent_count * 3] = positions.reshape(-1).cpu().numpy()
         data.qvel[:self.flock.agent_count * 3] = velocities.reshape(-1).cpu().numpy()
         
         # Forward kinematics to update all derived quantities
-        mj.mj_forward(self.physics_model["model"], data)
+        getattr(mj, 'mj_forward')(self.physics_model["model"], data)
 
-    def _step(self, td: TensorDictBase) -> TensorDictBase:
+    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """
         Performs one discrete time step in the environment with true multi-agent physics.
         
@@ -368,14 +374,14 @@ class SimulationEnv(EnvBase):
             A `TensorDict` for the `next` state, including the new
             observation, reward, and done flag.
         """
-        actions     = td.get("action")
+        actions     = tensordict.get("action")
         model, data = itemgetter("model", "data")(self.physics_model)
         reshaped    = actions[:, :3].flatten().cpu().numpy()
 
         if ctrl_count := min(len(reshaped), len(data.ctrl)):
             data.ctrl[:ctrl_count] = reshaped[:ctrl_count]
         
-        mj.mj_step(model, data)
+        getattr(mj, 'mj_step')(model, data)
         
         position, velocity    = self._extract_agent_states(data)
         temperature, gradient = self.wrf.query_thermal(position)
@@ -387,7 +393,7 @@ class SimulationEnv(EnvBase):
         
         next_observation = self.observation_spec.zero()
         next_observation.update({
-            "battery"     : torch.ones(self.flock.agent_count, 1),
+            "battery"     : th.ones(self.flock.agent_count, 1),
             "edge_index"  : edge_index,
             "gradient"    : gradient,
             "position"    : position,

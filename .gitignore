@@ -48,6 +48,7 @@ htmlcov/
 .nox/
 tox/
 .pytest_cache/
+pyrightconfig.json
 
 # Virtual environments
 .env

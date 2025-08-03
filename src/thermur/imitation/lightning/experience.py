@@ -5,15 +5,18 @@ This module wraps TorchRL's trajectory collection and replay buffer components
 into a Lightning DataModule, managing the flow of expert demonstrations
 during imitation learning.
 """
-from config.imitation.lightning   import ExperienceModel
-from pytorch_lightning            import LightningDataModule
-from thermur.imitation.controller import ExpertController
-from thermur.imitation.simulation import SimulationEnv
-from torch.utils.data             import DataLoader
-from torchrl.collectors           import SyncDataCollector
-from torchrl.data                 import TensorDictReplayBuffer
-from torchrl.data.replay_buffers  import LazyTensorStorage, SamplerWithoutReplacement
-from typing                       import Optional
+from __future__                  import annotations
+from pytorch_lightning           import LightningDataModule
+from torchrl.collectors          import SyncDataCollector
+from torchrl.data                import TensorDictReplayBuffer
+from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
+from typing                      import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config.imitation.lightning        import ExperienceModel
+    from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
+    from thermur.imitation.controller      import ExpertController
+    from thermur.imitation.simulation      import SimulationEnv
 
 
 class DataModule(LightningDataModule):
@@ -51,8 +54,8 @@ class DataModule(LightningDataModule):
         self.experience = experience
         self.expert     = expert
         
-        self.buffer    : Optional[TensorDictReplayBuffer] = None
-        self.collector : Optional[SyncDataCollector]      = None
+        self.buffer    : TensorDictReplayBuffer | None = None
+        self.collector : SyncDataCollector      | None = None
     
     def setup(self, stage: str):
         """
@@ -68,7 +71,7 @@ class DataModule(LightningDataModule):
             return
             
         self.collector = SyncDataCollector(
-            create_env_fn       = lambda: self.env,
+            create_env_fn       = self.env,
             frames_per_batch    = self.experience.frames_per_batch,
             max_frames_per_traj = self.experience.max_frames_per_traj,
             policy              = self.expert,
@@ -94,7 +97,7 @@ class DataModule(LightningDataModule):
         if stage == "fit" and self.collector:
             self.collector.shutdown()
     
-    def train_dataloader(self) -> "ExperienceDataLoader":
+    def train_dataloader(self) -> TRAIN_DATALOADERS:
         """
         Create the training dataloader.
         
@@ -114,7 +117,7 @@ class DataModule(LightningDataModule):
         )
     
 
-class ExperienceDataLoader(DataLoader):
+class ExperienceDataLoader:
     """
     Custom DataLoader that integrates TorchRL components.
     

@@ -11,14 +11,18 @@ various visual elements, including their creation, updates, and cleanup. It
 provides runtime toggles for different visualization features and supports
 both light and dark themes through pre-configured theme objects.
 """
-from .renderer                      import Renderer
-from .sampler                       import Sampler
-from config.imitation.visualization import *
-from itertools                      import count
-from pathlib                        import Path
-from pyvista                        import Plotter
-from tensordict                     import TensorDictBase
-from typing                         import Optional
+from __future__ import annotations
+from .renderer  import Renderer
+from .sampler   import Sampler
+from itertools  import count
+from pathlib    import Path
+from pyvista    import Plotter
+from tensordict import TensorDictBase
+from typing     import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..simulation.environment       import SimulationEnv
+    from config.imitation.visualization import VistaModel
 
 
 class Visualizer:
@@ -45,11 +49,12 @@ class Visualizer:
     
     def __init__(
         self,
-        plotter    : Plotter,
-        renderer   : Renderer,
-        sampler    : Sampler,
-        simulation : object,
-        vista      : VistaModel
+        max_temperature : float,
+        plotter         : Plotter,
+        renderer        : Renderer,
+        sampler         : Sampler,
+        simulation      : SimulationEnv,
+        vista           : VistaModel
     ):
         """
         Initialize the visualizer with configuration settings.
@@ -60,17 +65,19 @@ class Visualizer:
         updates and cleanup.
         
         Args:
-            plotter    : Pre-built PyVista plotter window
-            renderer   : Pre-built renderer for visualization elements
-            sampler    : Pre-built grid sampler for spatial data sampling
-            simulation : Simulation reference for accessing environment data
-            vista      : Unified visualization configuration
+            max_temperature : Critical temperature threshold for safety boundary
+            plotter         : Pre-built PyVista plotter window
+            renderer        : Pre-built renderer for visualization elements
+            sampler         : Pre-built grid sampler for spatial data sampling
+            simulation      : Simulation reference for accessing environment data
+            vista           : Unified visualization configuration
         """
-        self.plotter    = plotter
-        self.renderer   = renderer
-        self.sampler    = sampler
-        self.simulation = simulation
-        self.vista      = vista
+        self.max_temperature = max_temperature
+        self.plotter         = plotter
+        self.renderer        = renderer
+        self.sampler         = sampler
+        self.simulation      = simulation
+        self.vista           = vista
         
         self.agent_actors          = None
         self.frame_capture_enabled = False
@@ -95,7 +102,8 @@ class Visualizer:
         during the build phase.
         """
         self.plotter.camera_position = 'xy'
-        self.plotter.camera.zoom(1.5)
+        if self.plotter.camera:
+            self.plotter.camera.zoom(1.5)
 
     def close(self):
         """
@@ -104,13 +112,11 @@ class Visualizer:
         This method properly shuts down the PyVista plotter and releases
         all associated resources. It should be called when the visualization
         is no longer needed, such as at the end of a training run or when
-        the user requests to close the window. The method includes safety
-        checks to avoid errors if the plotter is already closed.
+        the user requests to close the window.
         """
-        if self.plotter is not None:
-            self.plotter.close()
+        self.plotter.close()
 
-    def enable_frame_capture(self, output_dir: Optional[Path] = None):
+    def enable_frame_capture(self, output_dir: Path | None = None):
         """
         Enable frame capture for creating animations.
         
@@ -139,13 +145,12 @@ class Visualizer:
         If auto_save_frames is enabled, automatically captures and saves
         a screenshot after rendering.
         """
-        if self.plotter is not None:
-            self.plotter.render()
-            
-            if self.vista.auto_save_frames and self.frame_capture_enabled:
-                self.save_frame()
+        self.plotter.render()
+        
+        if self.vista.auto_save_frames and self.frame_capture_enabled:
+            self.save_frame()
     
-    def save_frame(self, filename: Optional[str] = None) -> Optional[Path]:
+    def save_frame(self, filename: str | None = None) -> Path | None:
         """
         Save the current visualization frame as an image.
         
@@ -164,6 +169,8 @@ class Visualizer:
             return None
         
         if filename is None:
+            if self.frame_counter is None:
+                return None
             filename = f"frame_{next(self.frame_counter):06d}"
         
         filepath = self.frame_dir / f"{filename}.png"
@@ -174,7 +181,7 @@ class Visualizer:
     def toggle(
         self, 
         feature : str, 
-        show    : Optional[bool] = None
+        show    : bool | None = None
     ) -> bool:
         """
         Toggle visibility of a visualization feature.
@@ -201,15 +208,15 @@ class Visualizer:
             ValueError: If feature name is not recognized
         """
         attr_name = f"show_{feature}"
-        if not hasattr(self.visualization, attr_name):
+        if not hasattr(self.vista, attr_name):
             raise ValueError(
                 f"Unknown visualization feature: '{feature}'. "
                 f"Valid options: agents, graph, safety, thermal, wind, trails"
             )
         
-        current   = getattr(self.visualization, attr_name)
+        current   = getattr(self.vista, attr_name)
         new_state = not current if show is None else show
-        setattr(self.visualization, attr_name, new_state)
+        setattr(self.vista, attr_name, new_state)
         
         return new_state
 
@@ -241,7 +248,7 @@ class Visualizer:
         temperature = observation.get("temperature")
         velocity    = observation.get("velocity")
         
-        if self.plotter.ren_win is None:
+        if not self.plotter.ren_win:
             return
             
         self.plotter.clear_actors()
@@ -269,7 +276,7 @@ class Visualizer:
         
         if self.vista.show_safety_boundary:
             self.safety_actors = self.renderer.add_safety_boundary(
-                max_temperature = self.simulation.flock.max_temperature,
+                max_temperature = self.max_temperature,
                 plotter         = self.plotter,
                 position        = position,
                 temperature     = temperature

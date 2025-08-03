@@ -11,9 +11,14 @@ during training:
 - EventLogger      : Captures and logs training events such as epoch boundaries,
                      validation runs, checkpoint saves, and early stopping triggers.
 """
+from __future__                   import annotations
 from .schemas                     import *
 from hydra_zen                    import builds, make_config
 from thermur.imitation.monitoring import EventLogger, MetricsCollector
+from typing                       import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hydra_zen.typing import Builds
 
 
 MONITORING_USER_CONFIG = make_config(
@@ -21,7 +26,7 @@ MONITORING_USER_CONFIG = make_config(
     metrics = MetricsModel() 
 )
 
-MONITORING_SYSTEM_BUILDS = {
+MONITORING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "collector": builds(
         MetricsCollector,
         metrics                 = "${monitoring.metrics}",

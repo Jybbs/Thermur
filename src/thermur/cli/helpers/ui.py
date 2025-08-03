@@ -5,8 +5,11 @@ This module provides a consistent console interface leveraging Rich's
 built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
+from __future__   import annotations
 from collections  import Counter
-from omegaconf    import DictConfig
+from config.cli   import DisplayModel
+from config.types import TableColumn
+from pathlib      import Path
 from rich         import box, progress
 from rich.align   import Align
 from rich.console import Console
@@ -16,7 +19,11 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
-from typing       import Any
+from typing       import Any, Literal, Sequence, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .system      import SystemInspector
+    from config.types import FileInfo, SystemInfo
 
 
 class ThermurUI:
@@ -30,10 +37,7 @@ class ThermurUI:
     render output.
     """
     
-    def __init__(
-        self, 
-        display  : DictConfig
-    ):
+    def __init__(self, display: DisplayModel):
         """
         Initializes the ThermurUI with a configured Rich console.
 
@@ -48,10 +52,7 @@ class ThermurUI:
             legacy_windows = False,
         )
 
-    def _create_header_panel(
-        self,
-        title : str
-    ) -> Panel:
+    def _create_header_panel(self, title: str) -> Panel:
         """
         Create a styled header panel with fire gradient for "Thermur".
         
@@ -69,14 +70,14 @@ class ThermurUI:
             parts = title.split("Thermur", 1)
             
             if parts[0]:
-                title_text.append(parts[0], style="bold bright_white")
+                title_text.append(parts[0], "bold bright_white")
             
             title_text.append_text(self._format_fire_gradient_text("Thermur"))
             
             if parts[1]:
-                title_text.append(parts[1], style="bold bright_white")
+                title_text.append(parts[1], "bold bright_white")
         else:
-            title_text.append(title, style="bold bright_white")
+            title_text.append(title, "bold bright_white")
         
         return Panel(
             Align.center(title_text),
@@ -89,7 +90,7 @@ class ThermurUI:
         self,
         color         : str,
         used_fraction : float,
-        length        : int = None
+        length        : int | None = None
     ) -> str:
         """
         Create a string-based progress bar using Rich markup for resource display.
@@ -130,7 +131,7 @@ class ThermurUI:
         Returns:
             Text object styled green for available, dim for unavailable
         """
-        return Text(text, style="bold green" if is_available else "dim")
+        return Text(text, "bold green" if is_available else "dim")
 
     def _format_fire_gradient_text(self, text: str) -> Text:
         """
@@ -151,7 +152,7 @@ class ThermurUI:
         
         for i, char in enumerate(text):
             color = colors[i % len(colors)]
-            gradient_text.append(char, style=f"bold {color}")
+            gradient_text.append(char, f"bold {color}")
             
         return gradient_text
 
@@ -192,15 +193,19 @@ class ThermurUI:
         
         return progress_bar, details_text
     
-    def _format_resource(self, available: float, total: float, 
-                        threshold: tuple[int, int]) -> str:
+    def _format_resource(
+        self, 
+        available : float, 
+        threshold : tuple[int, int],
+        total     : float, 
+    ) -> str:
         """
         Format a resource with progress bar and details.
         
         Args:
-            available: Available amount in GB
-            total: Total amount in GB  
-            threshold: (warning, critical) thresholds in GB
+            available : Available amount in GB
+            threshold : (warning, critical) thresholds in GB
+            total     : Total amount in GB  
             
         Returns:
             Formatted string with progress bar and details
@@ -214,12 +219,12 @@ class ThermurUI:
 
     def create_aligned_table(
         self,
-        columns      : list[tuple[str, str, int, str]],
-        border_style : str = None,
-        expand       : bool = False,
-        show_edge    : bool = False,
-        title        : str = "",
-        **kwargs
+        columns      : list[TableColumn],
+        border_style : str | None = None,
+        expand       : bool       = False,
+        show_edge    : bool       = False,
+        title        : str        = "",
+        **kwargs     : Any
     ) -> Table:
         """
         Create a properly aligned table with consistent thermal styling.
@@ -256,12 +261,12 @@ class ThermurUI:
             **kwargs,
         )
         
-        for col_title, style, width, align in columns:
+        for col in columns:
             table.add_column(
-                col_title,
-                style   = style,
-                width   = width,
-                justify = align,
+                col.title,
+                style   = col.style,
+                width   = col.width,
+                justify = col.justify,
             )
         
         return table
@@ -318,7 +323,7 @@ class ThermurUI:
             ),
         )
 
-    def create_system_table(self, system_info: dict) -> Table:
+    def create_system_table(self, system_info: SystemInfo) -> Table:
         """
         Create a Rich table with system information.
         
@@ -330,7 +335,12 @@ class ThermurUI:
         """
         table = self.create_aligned_table(
             columns = [
-                (c["header"], c["style"], c["width"], "left") 
+                TableColumn(
+                    justify = "left",
+                    style   = str(c["style"]),
+                    title   = str(c["header"]),
+                    width   = int(c["width"])
+                )
                 for c in self.display.system_table_columns
             ],
             show_edge = True
@@ -353,8 +363,8 @@ class ThermurUI:
                     bool(version)
                 )
             elif key == "gpu":
-                gpu_name = system_info.get("gpu")
-                available = gpu_name and gpu_name != "N/A"
+                gpu_name = system_info.get("gpu_name")
+                available = bool(gpu_name and gpu_name != "N/A")
                 value = self._create_status_indicator(
                     str(gpu_name) if available else "Not Detected",
                     available
@@ -366,7 +376,7 @@ class ThermurUI:
                     f"{size:.1f} GB ({count} files)" if size > 0
                     else "No files downloaded"
                 )
-                value = Text(text, style="white" if size > 0 else "dim")
+                value = Text(text, "white" if size > 0 else "dim")
             elif val := system_info.get(key):
                 prefix = "v" if key in version_components else ""
                 value = Text(f"{prefix}{val}", no_wrap=True)
@@ -447,32 +457,9 @@ class ThermurUI:
             )
         )
     
-    def display_panel(
-        self, 
-        content      : str, 
-        border_style : str = "dim",
-        title        : str = "" 
-    ):
-        """
-        Creates and displays a styled panel with the given content.
-        
-        Args:
-            content      : The text content to display inside the panel.
-            border_style : Style for the panel border (default: "dim").
-            title        : Optional title for the panel.
-        """
-        self.console.print(
-            Panel(
-                border_style = border_style,
-                padding      = (1, 2),
-                renderable   = content,
-                title        = title
-            )
-        )
-    
     def display_download_summary(
         self,
-        available_files : list[dict],
+        available_files : Sequence[FileInfo],
         file_status     : dict[str, str]
     ):
         """
@@ -515,7 +502,7 @@ class ThermurUI:
 
     def display_download_table(
         self,
-        available_files : list[dict],
+        available_files : list[FileInfo],
         file_status     : dict[str, str],
         title           : str  = "Available Files"
     ):
@@ -531,32 +518,72 @@ class ThermurUI:
             title           : Table title
         """
         status_symbols = {
-            'downloaded' : Text("✅", style="green"),
-            'incomplete' : Text("⚠️", style="yellow"), 
-            'missing'    : Text(" ",  style="dim")
+            'downloaded' : Text("✅", "green"),
+            'incomplete' : Text("⚠️", "yellow"), 
+            'missing'    : Text(" ",  "dim")
         }
         
         columns = [
-            ("#",      "bright_cyan", 4,  "right"),
-            ("Status", "green",       8,  "center"),
-            ("File",   "cyan",        50, "left"),
-            ("Size",   "yellow",      10, "right")
+            TableColumn("right",  "bright_cyan", "#",      4),
+            TableColumn("center", "green",       "Status", 8),
+            TableColumn("left",   "cyan",        "File",   50),
+            TableColumn("right",  "yellow",      "Size",   10)
         ]
         
-        table = self.create_aligned_table(columns=columns, title=title)
+        table = self.create_aligned_table(columns, title=title)
         
         for i, file_info in enumerate(available_files):
             name   = file_info['name']
             size   = file_info['size']
             status = file_status.get(name, 'missing')
-            row = [str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB"]
+            row: list[Any] = [str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB"]
                 
             table.add_row(*row)
             
         self.console.print()
         self.console.print(table)
 
-    def display_system_validation(self, system):
+    def display_panel(
+        self, 
+        content      : str | Table | Panel, 
+        border_style : str = "dim",
+        title        : str = "" 
+    ):
+        """
+        Creates and displays a styled panel with the given content.
+        
+        For string content, wraps it in a Panel. For Rich objects (Table, Panel),
+        displays them directly.
+        
+        Args:
+            content      : The content to display (string, Table, or Panel).
+            border_style : Style for the panel border (default: "dim").
+            title        : Optional title for the panel.
+        """
+        self.console.print(
+            Panel(
+                border_style = border_style,
+                padding      = (1, 2),
+                renderable   = content,
+                title        = title
+            )
+        )
+    
+    def display_status_legend(self):
+        """
+        Display the legend for run status indicators.
+        
+        Shows a formatted legend explaining the meaning of status symbols
+        used in run listings: ✓ for complete, ◎ for dry run, ... for incomplete.
+        """
+        self.console.print(
+            "ℹ️  Status: "
+            "[bold green](✓) Complete[/], "
+            "[bold cyan](◎) Dry Run[/], "
+            "[bold yellow](...) Incomplete[/]"
+        )
+
+    def display_system_validation(self, system: SystemInspector):
         """
         Display comprehensive system validation information.
         
@@ -576,26 +603,12 @@ class ThermurUI:
 
         self.console.print(self.create_system_table(info))
         self.console.print()
-    
-    def display_status_legend(self) -> None:
-        """
-        Display the legend for run status indicators.
-        
-        Shows a formatted legend explaining the meaning of status symbols
-        used in run listings: ✓ for complete, ◎ for dry run, ... for incomplete.
-        """
-        self.console.print(
-            "ℹ️  Status: "
-            "[bold green](✓) Complete[/], "
-            "[bold cyan](◎) Dry Run[/], "
-            "[bold yellow](...) Incomplete[/]"
-        )
 
     def display_wandb(
         self, 
         context : str = "info", 
         project : str = "thermur"
-    ) -> str | bool | None:
+    ) -> str | Literal[False] | None:
         """
         Display wandb information appropriate to the context.
         
@@ -636,12 +649,14 @@ class ThermurUI:
                 self.print_message(f"Opening {project} project dashboard...", "flock")
                 self.console.print(f"\n  [link={url}]{url}[/link]\n")
                 return url
+            case _:
+                pass
 
     def format_truncated(
         self,
-        text  : str = None, 
-        value : Any = None,
-        width : int = 50
+        text  : str | None = None, 
+        value : Any        = None,
+        width : int        = 50
     ) -> str:
         """
         Format a string or value with intelligent truncation for display.
@@ -660,13 +675,16 @@ class ThermurUI:
             Formatted string representation suitable for display
         """
         if value is not None:
-            match value:
-                case dict() if '_target_' in value:
-                    return f"{value['_target_'].split('.')[-1]}(...)"
-                case list() if len(value) > 5:
-                    preview = ', '.join(str(v) for v in value[:5])
-                    return f"[{preview}, ...] ({len(value)} items)"
-                case _:
+            if isinstance(value, str):
+                text = value
+            else:
+                try:
+                    text = (
+                        f"[{', '.join(map(str, value[:5]))}, ...] ({len(value)} items)" 
+                        if len(value) > 5 
+                        else str(value)
+                    )
+                except (TypeError, AttributeError):
                     text = str(value)
         
         if text is None:
@@ -714,7 +732,7 @@ class ThermurUI:
         displayed = separator.join(items[:max_display])
         return f"{displayed} (+{len(items) - max_display})"
     
-    def format_run_status(self, run_path) -> str:
+    def format_run_status(self, run_path: Path) -> str:
         """
         Determine and format the status indicator for a training run.
         
@@ -735,7 +753,7 @@ class ThermurUI:
             return "[bold yellow]...[/]"
     
 
-    def print_auth_prompt(self, auth_url: str) -> None:
+    def print_auth_prompt(self, auth_url: str):
         """
         Display authentication prompt with URL.
         
@@ -784,7 +802,7 @@ class ThermurUI:
         
         self.console.print()
 
-    def print_command_examples(self, examples: list[dict]):
+    def print_command_examples(self, examples: list[dict[str, str]]):
         """
         Print multiple command examples from a list.
         

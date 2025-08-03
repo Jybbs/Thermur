@@ -1,7 +1,7 @@
 """
 Defines the Graph Neural Network (GNN) policy module, π_θ.
 
-This file contains the implementation of the `torch.nn.Module` that serves as
+This file contains the implementation of the `th.nn.Module` that serves as
 the agent's brain. The policy, denoted π_θ, is a GNN designed to process the
 flock's state, which is naturally represented as a dynamic graph. It learns to
 output a nominal velocity command, 𝐮_nom, for each agent.
@@ -10,22 +10,27 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 `TensorDict` observations.
 """
-from config.imitation.lightning   import ArchitectureModel
-from hydra_zen                    import instantiate
-from hydra_zen.typing             import Builds, Partial
-from pytorch_lightning            import LightningModule
-from tensordict                   import TensorDict
-from thermur.imitation.monitoring import MetricsCollector
-from torch                        import Tensor
-from torch.nn                     import GRUCell, Linear, Module, ModuleList
-from torch.nn.functional          import mse_loss
-from torch.optim                  import Optimizer
-from torch.optim.lr_scheduler     import LRScheduler
-from torch_geometric.data         import Data
-from torch_geometric.nn           import GCNConv
-from typing                       import Type
+from __future__            import annotations
+from hydra_zen             import instantiate
+from pytorch_lightning     import LightningModule
+from torch.nn              import GRUCell, Linear, ModuleList
+from torch.nn.functional   import mse_loss
+from torch_geometric.data  import Data
+from torch_geometric.nn    import GCNConv
+from typing                import Type, TYPE_CHECKING
 
-import torch
+if TYPE_CHECKING:
+    from config.imitation.lightning        import ArchitectureModel
+    from hydra_zen.typing                  import Builds, Partial
+    from pytorch_lightning.utilities.types import LRSchedulerConfigType, OptimizerLRSchedulerConfig, STEP_OUTPUT
+    from tensordict                        import TensorDictBase
+    from thermur.imitation.monitoring      import MetricsCollector
+    from torch                             import Tensor
+    from torch.nn                          import Module
+    from torch.optim                       import Optimizer
+    from torch.optim.lr_scheduler          import LRScheduler
+
+import torch as th
 
 
 class GNNPolicy(LightningModule):
@@ -81,11 +86,40 @@ class GNNPolicy(LightningModule):
         self.training_metric  = training_metric
 
         self.save_hyperparameters(ignore=["collector"])
-        self.activation = getattr(torch.nn, architecture.activation)()
+        self.activation = getattr(th.nn, architecture.activation)()
         self.convs      = self._build_module_list(architecture, GCNConv)
         self.grus       = self._build_module_list(architecture, GRUCell)
-        self.decoder    = Linear(architecture.hidden_dim, 3)   # Output: 3D velocity
-        self.encoder    = Linear(11, architecture.hidden_dim)  # Input: 11 features
+        self.decoder    = Linear(architecture.hidden_dim, 3)
+        self.encoder    = Linear(11, architecture.hidden_dim)
+    
+    def _batch_to_data(self, batch: TensorDictBase) -> Data:
+        """
+        Convert TensorDict batch to PyTorch Geometric Data object.
+        
+        Extracts graph structure and node features from the TensorDict
+        and constructs a PyG Data object suitable for GNN processing.
+        
+        Args:
+            batch: TensorDict containing flock state with keys:
+                   - position, velocity, temperature, gradient, wind
+                   - edge_index for graph connectivity
+                   
+        Returns:
+            PyG Data object with node features and edge connectivity
+        """
+        return Data(
+            x = th.cat(
+                [
+                    batch["position"],
+                    batch["velocity"], 
+                    batch["temperature"],
+                    batch["gradient"],
+                    batch["wind"]
+                ], 
+                dim = -1
+            ),
+            edge_index = batch["edge_index"]
+        )
     
     def _build_module_list(
         self, 
@@ -114,8 +148,8 @@ class GNNPolicy(LightningModule):
     
     def _compute_loss_and_log(
         self, 
-        batch : TensorDict, 
-        phase : str
+        batch       : TensorDictBase, 
+        is_training : bool
     ) -> Tensor:
         """
         Computes behavioral cloning loss and logs metrics.
@@ -125,25 +159,27 @@ class GNNPolicy(LightningModule):
         and a* is the expert's demonstrated action.
         
         Args:
-            batch : TensorDict containing graph observations and expert actions
-            phase : Training phase ('train' or 'val') for logging
+            batch       : TensorDict containing graph observations and expert actions
+            is_training : Whether this is training (True) or validation (False)
             
         Returns:
             Scalar loss tensor for backpropagation or metric aggregation
         """
-        predictions = self(batch)
+        data        = self._batch_to_data(batch)
+        predictions = self(data)
         targets     = batch["action"]
         loss        = mse_loss(predictions, targets)
         
         self.collector.update_imitation_metrics(
-            phase       = phase,
+            is_training = is_training,
             predictions = predictions,
             targets     = targets
         )
         
         self.collector.log_all_metrics(
             module      = self,
-            phase       = phase,
+            is_training = is_training,
+            step_output = True,
             loss        = loss,
             predictions = predictions,
             targets     = targets
@@ -151,7 +187,7 @@ class GNNPolicy(LightningModule):
         
         return loss
 
-    def configure_optimizers(self) -> dict:
+    def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
         """
         Configures the optimizer and learning rate scheduler for training.
         
@@ -165,13 +201,15 @@ class GNNPolicy(LightningModule):
         optimizer = instantiate(self.optimizer, params=self.parameters())
         scheduler = instantiate(self.scheduler, optimizer=optimizer)
         
-        return {
-            "optimizer"    : optimizer,
-            "lr_scheduler" : {
-                "monitor"   : self.scheduler_metric,
-                "scheduler" : scheduler
-            }
+        lr_scheduler_config: LRSchedulerConfigType = {
+            "scheduler" : scheduler,
+            "monitor"   : self.scheduler_metric
         }
+        
+        return OptimizerLRSchedulerConfig(
+            optimizer    = optimizer,
+            lr_scheduler = lr_scheduler_config
+        )
 
     def forward(self, data: Data) -> Tensor:
         """
@@ -203,7 +241,7 @@ class GNNPolicy(LightningModule):
         
         return self.decoder(h)
     
-    def training_step(self, batch: TensorDict, batch_idx: int) -> Tensor:
+    def training_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
         """
         Executes a single training step using behavioral cloning loss.
         
@@ -218,9 +256,9 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar loss tensor for automatic backpropagation
         """
-        return self._compute_loss_and_log(batch, "train")
+        return self._compute_loss_and_log(batch, True)
     
-    def validation_step(self, batch: TensorDict, batch_idx: int) -> Tensor:
+    def validation_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
         """
         Executes validation step for model evaluation.
         
@@ -235,4 +273,4 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar validation loss for automatic metric aggregation
         """
-        return self._compute_loss_and_log(batch, "val")
+        return self._compute_loss_and_log(batch, False)
