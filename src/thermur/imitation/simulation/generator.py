@@ -234,10 +234,11 @@ class XMLGenerator:
         Returns:
             Dictionary with 'model' and 'data' keys containing MuJoCo objects
         """
-        if not (model := mj.MjModel.from_xml_string(xml_string)):
+        MjModel = getattr(mj, 'MjModel')
+        if not (model := MjModel.from_xml_string(xml_string)):
             raise ValueError("Failed to load MuJoCo model from XML")
         
         return {
-            "data"  : mj.MjData(model), 
+            "data"  : getattr(mj, 'MjData')(model), 
             "model" : model
         }

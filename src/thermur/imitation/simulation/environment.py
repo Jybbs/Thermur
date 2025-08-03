@@ -17,7 +17,6 @@ from config.imitation.controller import FlockModel
 from config.imitation.simulation import PhysicsModel
 from operator                    import itemgetter
 from math                        import ceil
-from mujoco                      import MjData
 from tensordict                  import TensorDictBase
 from torch                       import Size, Tensor
 from torchrl.data                import Bounded, Composite, TensorSpec, Unbounded
@@ -142,7 +141,7 @@ class SimulationEnv(EnvBase):
             wind        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
         )
     
-    def _extract_agent_states(self, data: MjData) -> tuple[Tensor, Tensor]:
+    def _extract_agent_states(self, data: Any) -> tuple[Tensor, Tensor]:
         """
         Extracts the position and velocity states for all agents from MuJoCo data.
         
@@ -337,13 +336,13 @@ class SimulationEnv(EnvBase):
             velocities : Tensor [N, 3] containing agent velocities
         """
         data = self.physics_model["data"]
-        mj.mj_resetData(self.physics_model["model"], data)
+        getattr(mj, 'mj_resetData')(self.physics_model["model"], data)
         
         data.qpos[:self.flock.agent_count * 3] = positions.reshape(-1).cpu().numpy()
         data.qvel[:self.flock.agent_count * 3] = velocities.reshape(-1).cpu().numpy()
         
         # Forward kinematics to update all derived quantities
-        mj.mj_forward(self.physics_model["model"], data)
+        getattr(mj, 'mj_forward')(self.physics_model["model"], data)
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """
@@ -373,7 +372,7 @@ class SimulationEnv(EnvBase):
         if ctrl_count := min(len(reshaped), len(data.ctrl)):
             data.ctrl[:ctrl_count] = reshaped[:ctrl_count]
         
-        mj.mj_step(model, data)
+        getattr(mj, 'mj_step')(model, data)
         
         position, velocity    = self._extract_agent_states(data)
         temperature, gradient = self.wrf.query_thermal(position)

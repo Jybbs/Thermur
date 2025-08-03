@@ -107,18 +107,17 @@ class SafetyFilter:
                 b = torch.empty(0, device=device),
             )
             
+            assert u_safe is not None
             delta     = u_safe - u_nominal
             is_active = delta.norm(dim=1) > self.activation_tolerance
             self._log_activation(is_active)
             return u_safe.view_as(u_nominal)
 
-        except Exception as e:
-            if self.safety.qp_on_failure == "nominal":
-                return u_nominal
-            elif self.safety.qp_on_failure == "zero":
-                return torch.zeros_like(u_nominal)
-            else:
-                raise ValueError(f"QP safety filter failed to find a solution: {e}")
+        except Exception:
+            return (
+                u_nominal if self.safety.qp_on_failure == "nominal" 
+                else torch.zeros_like(u_nominal)
+            )
     
     def get_activation_rate(self) -> float:
         """

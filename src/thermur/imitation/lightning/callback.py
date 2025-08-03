@@ -72,8 +72,7 @@ class MonitoringCallback(Callback):
         batch data for critical events like thermal violations.
         """
         if self.collector:
-            self.collector.update_evaluation_metrics(batch, "train")
-            self.collector.log_cbf_activation(batch)
+            self.collector.update_evaluation_metrics(batch, True)
             
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -89,9 +88,6 @@ class MonitoringCallback(Callback):
         Clears CBF activation counts and event statistics that are
         tracked on a per-epoch basis for trend analysis.
         """
-        if self.collector:
-            self.collector.reset_runtime_metrics()
-            
         if self.events:
             self.events.reset_epoch_metrics()
     
@@ -111,7 +107,7 @@ class MonitoringCallback(Callback):
         model parameters, providing unbiased performance estimates.
         """
         if self.collector:
-            self.collector.update_evaluation_metrics(batch, "val")
+            self.collector.update_evaluation_metrics(batch, False)
             
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -129,7 +125,7 @@ class MonitoringCallback(Callback):
         """
         if self.collector:
             self.collector.log_all_metrics(
-                loss   = None,
-                module = pl_module,
-                phase  = "val"
+                is_training = False,
+                module      = pl_module,
+                step_output = False
             )
