@@ -18,6 +18,7 @@ from itertools                      import count
 from pathlib                        import Path
 from pyvista                        import Plotter
 from tensordict                     import TensorDictBase
+from typing                         import Any
 
 
 class Visualizer:
@@ -47,7 +48,7 @@ class Visualizer:
         plotter    : Plotter,
         renderer   : Renderer,
         sampler    : Sampler,
-        simulation : object,
+        simulation : Any,
         vista      : VistaModel
     ):
         """
@@ -94,7 +95,8 @@ class Visualizer:
         during the build phase.
         """
         self.plotter.camera_position = 'xy'
-        self.plotter.camera.zoom(1.5)
+        if self.plotter.camera:
+            self.plotter.camera.zoom(1.5)
 
     def close(self):
         """
@@ -103,11 +105,9 @@ class Visualizer:
         This method properly shuts down the PyVista plotter and releases
         all associated resources. It should be called when the visualization
         is no longer needed, such as at the end of a training run or when
-        the user requests to close the window. The method includes safety
-        checks to avoid errors if the plotter is already closed.
+        the user requests to close the window.
         """
-        if self.plotter is not None:
-            self.plotter.close()
+        self.plotter.close()
 
     def enable_frame_capture(self, output_dir: Path | None = None):
         """
@@ -138,11 +138,10 @@ class Visualizer:
         If auto_save_frames is enabled, automatically captures and saves
         a screenshot after rendering.
         """
-        if self.plotter is not None:
-            self.plotter.render()
-            
-            if self.vista.auto_save_frames and self.frame_capture_enabled:
-                self.save_frame()
+        self.plotter.render()
+        
+        if self.vista.auto_save_frames and self.frame_capture_enabled:
+            self.save_frame()
     
     def save_frame(self, filename: str | None = None) -> Path | None:
         """
@@ -163,6 +162,8 @@ class Visualizer:
             return None
         
         if filename is None:
+            if self.frame_counter is None:
+                return None
             filename = f"frame_{next(self.frame_counter):06d}"
         
         filepath = self.frame_dir / f"{filename}.png"
@@ -200,15 +201,15 @@ class Visualizer:
             ValueError: If feature name is not recognized
         """
         attr_name = f"show_{feature}"
-        if not hasattr(self.visualization, attr_name):
+        if not hasattr(self.vista, attr_name):
             raise ValueError(
                 f"Unknown visualization feature: '{feature}'. "
                 f"Valid options: agents, graph, safety, thermal, wind, trails"
             )
         
-        current   = getattr(self.visualization, attr_name)
+        current   = getattr(self.vista, attr_name)
         new_state = not current if show is None else show
-        setattr(self.visualization, attr_name, new_state)
+        setattr(self.vista, attr_name, new_state)
         
         return new_state
 
@@ -240,7 +241,7 @@ class Visualizer:
         temperature = observation.get("temperature")
         velocity    = observation.get("velocity")
         
-        if self.plotter.ren_win is None:
+        if not self.plotter.ren_win:
             return
             
         self.plotter.clear_actors()
