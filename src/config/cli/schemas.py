@@ -5,12 +5,13 @@ This module provides configuration models for CLI components that need to be
 configurable or contain structured data (arrays/dicts). Single-use strings
 have been moved inline to reduce indirection.
 """
-from pathlib           import Path
 from pydantic          import BaseModel, computed_field, Field, PositiveInt, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing            import Literal
 
-SECRETS_DIR = Path.home() / ".config" / "thermur" / "secrets"
+from pathlib import Path
+
+SECRETS_DIR = str(Path.home() / ".config" / "thermur" / "secrets")
 
 
 class DisplayModel(BaseModel, extra="forbid"):
@@ -281,8 +282,8 @@ class DownloadModel(BaseModel, extra="forbid"):
             "for different atmospheric and vegetation conditions."
         )
     )
-    sample_data_path: Path = Field(
-        default     = Path("data/samples/wrf_sample.nc"),
+    sample_data_path: str = Field(
+        default     = "data/samples/wrf_sample.nc",
         description = (
             "Filesystem path where extracted sample NetCDF dataset file will be saved "
             "after download and decompression."
@@ -295,8 +296,8 @@ class DownloadModel(BaseModel, extra="forbid"):
             "on Hugging Face model hub."
         )
     )
-    sample_extract_dir: Path = Field(
-        default     = Path("data"),
+    sample_extract_dir: str = Field(
+        default     = "data",
         description = (
             "Target directory for extracting downloaded sample dataset archive files "
             "during the download process."
@@ -316,8 +317,8 @@ class DownloadModel(BaseModel, extra="forbid"):
             "timing out with 24-hour default."
         )
     )
-    wrf_sfire_dir: Path = Field(
-        default     = Path("data/wrf-sfire"),
+    wrf_sfire_dir: str = Field(
+        default     = "data/wrf-sfire",
         description = (
             "Local filesystem directory designated for storing downloaded WRF-SFIRE "
             "simulation dataset files from Globus transfers."
@@ -347,7 +348,7 @@ class GlobusSecrets(BaseSettings):
             "token for Globus API access."
         )
     )
-    secrets_path: Path = Field(
+    secrets_path: str = Field(
         default     = SECRETS_DIR,
         description = (
             "Local filesystem directory used for persisting OAuth2 tokens and other "
@@ -357,7 +358,7 @@ class GlobusSecrets(BaseSettings):
     
     model_config = SettingsConfigDict(
         case_sensitive = False,
-        secrets_dir    = str(SECRETS_DIR) if SECRETS_DIR.exists() else None
+        secrets_dir    = SECRETS_DIR if Path(SECRETS_DIR).exists() else None
     )
     
     @computed_field

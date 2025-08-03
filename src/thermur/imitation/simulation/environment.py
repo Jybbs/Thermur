@@ -13,8 +13,9 @@ rewards to the learning algorithm. It couples a rigid-body physics engine
 """
 from __future__   import annotations
 from .generator   import XMLGenerator
-from operator     import itemgetter
 from math         import ceil
+from operator     import itemgetter
+from pathlib      import Path
 from torch        import Size
 from torchrl.data import Bounded, Composite, Unbounded
 from torchrl.envs import EnvBase
@@ -66,7 +67,7 @@ class SimulationEnv(EnvBase):
         self.flock         = flock
         self.physics       = physics
         self.wrf           = wrf
-        self.xml_generator = XMLGenerator(self.physics.assets_dir)
+        self.xml_generator = XMLGenerator(Path(self.physics.assets_dir))
         self.physics_model = self._initialize_physics()
         super().__init__(device="cpu")
     

@@ -64,7 +64,7 @@ class GlobusManager:
         This allows Pydantic's secrets_dir functionality to automatically load
         these values on the next instantiation.
         """
-        self.secrets.secrets_path.mkdir(exist_ok=True, parents=True)
+        Path(self.secrets.secrets_path).mkdir(exist_ok=True, parents=True)
         
         for field_name, value in self.secrets.model_dump(
             exclude      = {'is_valid', 'secrets_path'},
@@ -75,7 +75,7 @@ class GlobusManager:
                 value = value.get_secret_value()
             
             if value is not None:
-                file_path = self.secrets.secrets_path / field_name
+                file_path = Path(self.secrets.secrets_path) / field_name
                 file_path.write_text(str(value))
                 with suppress(OSError):
                     file_path.chmod(0o600)

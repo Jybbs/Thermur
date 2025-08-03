@@ -4,8 +4,7 @@ Simulation domain schemas for Pydantic validation.
 This module consolidates all simulation configuration models including
 physics settings, data loading, and environment parameters.
 """
-from pathlib  import Path
-from pydantic import BaseModel, DirectoryPath, Field, FilePath
+from pydantic import BaseModel, Field
 from pydantic import NonNegativeFloat, PositiveFloat
 
 
@@ -19,7 +18,7 @@ class LoaderModel(BaseModel, extra="forbid"):
     The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
     uses staggered grids where U, V, W wind components are offset from cell centers.
     """
-    data_path: FilePath | None = Field(
+    data_path: str | None = Field(
         default     = None,
         description = (
             "Path to WRF-Fire NetCDF dataset file. Defaults to first available: "
@@ -68,8 +67,8 @@ class PhysicsModel(BaseModel, extra="forbid"):
     
     where ê_i are the standard basis vectors in ℝ^d.
     """
-    assets_dir: DirectoryPath = Field(
-        default     = Path("src/thermur/simulation/assets"),
+    assets_dir: str = Field(
+        default     = "src/thermur/simulation/assets",
         description = (
             "Root directory containing MuJoCo XML model definitions for drone "
             "dynamics, including mesh files and physical parameters."

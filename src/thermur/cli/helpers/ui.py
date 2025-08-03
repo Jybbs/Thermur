@@ -8,6 +8,7 @@ ThermurUI class.
 from __future__   import annotations
 from collections  import Counter
 from config.cli   import DisplayModel
+from config.types import TableColumn
 from pathlib      import Path
 from rich         import box, progress
 from rich.align   import Align
@@ -22,7 +23,7 @@ from typing       import Any, Literal, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .system      import SystemInspector
-    from config.types import FileInfo, SystemInfo, TableColumn
+    from config.types import FileInfo, SystemInfo
 
 
 class ThermurUI:
