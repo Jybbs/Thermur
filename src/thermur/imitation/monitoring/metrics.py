@@ -422,6 +422,22 @@ class MetricsCollector:
         self._init_imitation_metrics()
         self._init_evaluation_metrics()
     
+    def _get_metrics(self, metric_type: str, is_training: bool) -> MetricCollection:
+        """
+        Get the appropriate metrics collection based on type and phase.
+        
+        Args:
+            metric_type : Either "imitation" or "evaluation"
+            is_training : Whether this is training (True) or validation (False)
+            
+        Returns:
+            The corresponding MetricCollection instance
+        """
+        return getattr(
+            self, 
+            f"{("train" if is_training else "val")}_{metric_type}"
+        )
+    
     def _init_evaluation_metrics(self):
         """
         Initialize the four core evaluation metrics that assess swarm performance.
@@ -466,8 +482,9 @@ class MetricsCollector:
     
     def log_all_metrics(
         self,
+        is_training : bool,
         module      : LightningModule,
-        phase       : str,
+        step_output : bool,
         loss        : Tensor | None = None,
         predictions : Tensor | None = None,
         targets     : Tensor | None = None
@@ -486,66 +503,50 @@ class MetricsCollector:
         - Automatic train/val prefixing for metric organization
         
         Args:
+            is_training : Whether this is training (True) or validation (False)
             module      : Lightning module providing the logger interface
-            phase       : Training phase ("train" or "val") for metric prefixing
-            loss        : Optional behavioral cloning loss to display
-            predictions : Optional model velocity predictions for per-axis metrics
-            targets     : Optional expert velocities for per-axis metrics
+            step_output : Whether this is step-level output or epoch-end aggregation
+            loss        : Behavioral cloning loss    (required if step_output=True)
+            predictions : Model velocity predictions (required if step_output=True)
+            targets     : Expert velocity commands   (required if step_output=True)
         """
-        is_train = phase == "train"
+        phase = "train" if is_training else "val"
         
-        def log_metric(
-            name     : str,
-            value    : float | Tensor,
-            on_step  : bool  | None = None,
-            prog_bar : bool         = False
-        ):
-            """
-            Helper to log metrics with consistent settings.
+        if step_output:
+            assert loss        is not None, "Loss required for step logging"
+            assert predictions is not None, "Predictions required for step logging"
+            assert targets     is not None, "Targets required for step logging"
             
-            Args:
-                name     : Metric name with phase prefix (e.g., "train/loss")
-                value    : Scalar metric value to log
-                on_step  : Whether to log per step (defaults to is_train)
-                prog_bar : Whether to show in progress bar
-            """
             module.log(
-                name     = name,
-                value    = value,
-                on_epoch = True,
-                on_step  = is_train if on_step is None else on_step,
-                prog_bar = prog_bar
-            )
-        
-        if loss is not None:
-            log_metric(
                 name     = f"{phase}/loss",
-                prog_bar = True,
-                value    = loss
+                value    = loss,
+                on_epoch = True,
+                on_step  = is_training,
+                prog_bar = True
             )
+            
+            for i, dim in enumerate(["x", "y", "z"]):
+                module.log(
+                    name     = f"{phase}/velocity_{dim}_mse",
+                    value    = (predictions[..., i] - targets[..., i]).pow(2).mean(),
+                    on_epoch = True,
+                    on_step  = False
+                )
         
-        for metrics, on_step in [
-            (self.train_imitation  if is_train else self.val_imitation,  is_train),
-            (self.train_evaluation if is_train else self.val_evaluation, False)
+        for metric_type, on_step in [
+            ("imitation",  is_training), 
+            ("evaluation", False)
         ]:
             module.log_dict(
-                dictionary = metrics,
+                dictionary = self._get_metrics(metric_type, is_training),
                 on_epoch   = True,
                 on_step    = on_step
             )
         
-        if predictions is not None and targets is not None:
-            for i, dim in enumerate(["x", "y", "z"]):
-                log_metric(
-                    name    = f"{phase}/velocity_{dim}_mse",
-                    on_step = False,
-                    value   = (predictions[..., i] - targets[..., i]).pow(2).mean()
-                )
-        
     def update_evaluation_metrics(
         self,
-        batch : TensorDictBase,
-        phase : str
+        batch       : TensorDictBase,
+        is_training : bool
     ):
         """
         Update all evaluation metrics from a single simulation batch.
@@ -561,12 +562,10 @@ class MetricsCollector:
         - Energy          : u_safe or action (control inputs)
         
         Args:
-            batch : TensorDict containing simulation state and actions
-            phase : Training phase ("train" or "val") for metric selection
+            batch       : TensorDict containing simulation state and actions
+            is_training : Whether this is training (True) or validation (False)
         """
-        metrics = (
-            self.train_evaluation if phase == "train" else self.val_evaluation
-        )
+        metrics = self._get_metrics("evaluation", is_training)
         
         if "temperature" in batch:
             metrics["mae_color"].update(batch["temperature"])
@@ -590,7 +589,7 @@ class MetricsCollector:
     
     def update_imitation_metrics(
         self,
-        phase       : str,
+        is_training : bool,
         predictions : Tensor,
         targets     : Tensor
     ):
@@ -603,11 +602,8 @@ class MetricsCollector:
         prediction quality across different error characteristics.
         
         Args:
-            phase       : Training phase ("train" or "val") for metric selection
+            is_training : Whether this is training (True) or validation (False)
             predictions : Model velocity outputs [batch_size, 3] in m/s
             targets     : Expert velocity commands [batch_size, 3] in m/s
         """
-        imitation_metrics = (
-            self.train_imitation if phase == "train" else self.val_imitation
-        )
-        imitation_metrics.update(predictions, targets)
+        self._get_metrics("imitation", is_training).update(predictions, targets)

@@ -13,9 +13,7 @@ pipeline. Each function returns a list of actors that can be managed by
 the main visualizer for updates and cleanup.
 """
 from config.imitation.visualization import VistaModel
-from contextlib                     import suppress
-from numpy.typing                   import NDArray
-from pyvista                        import Actor, ImageData, Plotter, PolyData
+from pyvista                        import Actor, Color, ImageData, Plotter, PolyData
 from torch                          import Tensor
 
 import numpy   as np
@@ -59,61 +57,67 @@ class Renderer:
     
     def _create_agent_trails(
         self,
-        colormap    : str | None,
+        colormap    : str,
         plotter     : Plotter,
-        positions   : NDArray,
-        temperature : NDArray | None,
-        velocities  : NDArray
+        point_cloud : PolyData
     ) -> list[Actor]:
         """
         Create motion trail visualization for agents.
         
         Creates fading trail lines behind each agent based on their velocity.
-        Trails fade out with distance/time for visual clarity. This is a
-        private helper method used by the agents rendering method.
+        Trails fade out with distance/time for visual clarity.
         
         Args:
-            colormap    : Temperature colormap (optional)
+            colormap    : Temperature colormap
             plotter     : PyVista Plotter instance
-            positions   : Agent positions array [N, 3]
-            temperature : Agent temperatures array [N] (optional)
-            velocities  : Agent velocities array [N, 3]
+            point_cloud : PolyData containing agent positions, velocities, and temperatures
             
         Returns:
             List of actors for the trails
         """
-        n_agents = len(positions)
-        n_points = self.vista.trail_length
+        positions    = point_cloud.points
+        n_agents     = len(positions)
+        n_points     = self.vista.trail_length
+        velocities   = point_cloud["velocity"]
+        temperatures = point_cloud["temperature"]
         
-        offsets    = velocities[:, None] * self.trail_t * self.trail_decay
-        points     = (positions[:, None] - offsets).reshape(-1, 3)
-        indices    = np.arange(n_agents * n_points).reshape(n_agents, n_points)
-        trail_mesh = pv.MultipleLines(points=points, lines=indices)
+        trail_mesh = pv.PolyData(
+            (
+                positions[:, None]
+                - velocities[:, None] * self.trail_t * self.trail_decay
+            ).reshape(-1, 3)
+        )
         
-        if temperature is not None:
-            trail_mesh["temperature"] = np.repeat(temperature, n_points)
+        trail_mesh.lines = np.column_stack([
+            np.full(n_agents, n_points),
+            np.arange(0, n_agents * n_points, n_points),
+            np.arange(0, n_agents * n_points, n_points) + np.arange(n_points)
+        ]).ravel()
+        trail_mesh["temperature"] = np.repeat(temperatures, n_points)
         
-        params = self.trail_params.copy()
-        
-        if temperature is not None and colormap:
-            params |= {
-                "clim"    : (temperature.min(), temperature.max()),
-                "cmap"    : colormap,
-                "scalars" : "temperature",
-            }
-        else:
-            params["color"] = self.color_trail
-        
-        return [plotter.add_mesh(trail_mesh, **params)]
+        return [
+            plotter.add_mesh(
+                clim                  = (
+                    float(temperatures.min()),  
+                    float(temperatures.max())
+                ),
+                cmap                  = colormap,
+                line_width            = self.trail_params["line_width"],
+                mesh                  = trail_mesh,
+                opacity               = self.trail_params["opacity"],
+                render_lines_as_tubes = self.trail_params["render_lines_as_tubes"],
+                scalars               = "temperature",
+            )
+        ]
     
     def add_agents(
         self,
         plotter     : Plotter,
         position    : Tensor,
-        colormap    : str | None    = None,
-        show_trails : bool          = False,
-        temperature : Tensor | None = None,
-        velocity    : Tensor | None = None
+        temperature : Tensor,
+        velocity    : Tensor,
+        colormap    : str | None = None,
+        show_trails : bool       = False
     ) -> list[Actor]:
         """
         Add agent visualizations to the plotter.
@@ -131,65 +135,52 @@ class Renderer:
         Args:
             plotter     : PyVista Plotter instance to render to
             position    : Agent positions tensor of shape [N, 3]
+            temperature : Agent temperatures tensor of shape [N, 1]
+            velocity    : Agent velocities tensor of shape [N, 3]
             colormap    : Temperature colormap for thermal visualization
             show_trails : Whether to render motion trails behind agents
-            temperature : Agent temperatures tensor of shape [N, 1] (optional)
-            velocity    : Agent velocities tensor of shape [N, 3] (optional)
             
         Returns:
             List of PyVista actors created for the agents
         """
-        actors      = []
-        positions   = position.detach().cpu().numpy()
-        point_cloud = pv.PolyData(positions)
-
-        if temperature is not None:
-            temps = temperature.detach().cpu().numpy().flatten()
-            point_cloud["temperature"] = temps
-        
-        if velocity is not None:
-            velocities = velocity.detach().cpu().numpy()
-            point_cloud["velocity"] = velocities
-        
-        glyph_geom = self.agent_glyph
-        
-        if velocity is not None:
-            norms      = np.linalg.norm(velocities, axis=1, keepdims=True)
-            safe_norms = np.maximum(norms, 1e-6)
-            point_cloud["direction"] = velocities / safe_norms
-            orient = "direction"
-        else:
-            orient = False
+        point_cloud = pv.PolyData(position.detach().cpu().numpy())
+        point_cloud["temperature"] = temperature.detach().cpu().numpy().flatten()
+        point_cloud["velocity"]    = velocity.detach().cpu().numpy()
+        point_cloud["direction"]   = np.nan_to_num(
+            point_cloud["velocity"] / 
+            np.linalg.norm(point_cloud["velocity"], axis=1, keepdims=True)
+        )
         
         agent_glyphs = point_cloud.glyph(
-            geom   = glyph_geom, 
-            orient = orient,
+            geom   = self.agent_glyph,
+            orient = "direction",
             scale  = False
         )
         
-        mesh_params = {"opacity": self.vista.agent_opacity}
-        
-        if temperature is not None and colormap:
-            mesh_params |= {
-                "clim"    : (temps.min(), temps.max()),
-                "cmap"    : colormap,
-                "scalars" : "temperature",
-            }
-        else:
-            mesh_params["color"] = self.vista.agent_color
-        
-        actors.append(plotter.add_mesh(agent_glyphs, **mesh_params))
-        
-        if show_trails and velocity is not None:
-            actors.extend(
-                self._create_agent_trails(
-                    colormap    = colormap,
-                    plotter     = plotter,
-                    positions   = positions,
-                    temperature = temps if temperature is not None else None,
-                    velocities  = velocities
+        if colormap:
+            actors = [
+                plotter.add_mesh(
+                    clim    = (
+                        float(point_cloud["temperature"].min()), 
+                        float(point_cloud["temperature"].max())
+                    ),
+                    cmap    = colormap,
+                    mesh    = agent_glyphs,
+                    opacity = self.vista.agent_opacity,
+                    scalars = "temperature"
                 )
-            )
+            ]
+        else:
+            actors = [
+                plotter.add_mesh(
+                    color   = self.vista.agent_color,
+                    mesh    = agent_glyphs,
+                    opacity = self.vista.agent_opacity
+                )
+            ]
+        
+        if show_trails and colormap:
+            actors.extend(self._create_agent_trails(colormap, plotter, point_cloud))
         
         return actors
     
@@ -224,13 +215,11 @@ class Renderer:
             return []
         
         edges = edge_index.cpu().numpy()
-        lines = np.column_stack(
-            [
-                np.full(edges.shape[1], self.line_segment_size),
-                edges[0],
-                edges[1]
-            ]
-        ).ravel()
+        lines = np.column_stack([
+            np.full(edges.shape[1], self.line_segment_size),
+            edges[0],
+            edges[1]
+        ]).ravel()
         
         mesh = pv.PolyData(position.cpu().numpy())
         mesh.lines = lines
@@ -286,18 +275,17 @@ class Renderer:
             spacing    = (max_bounds - min_bounds) / (resolution - 1),
         )
         
-        grid = target_grid.sample(point_cloud)
-        
-        with suppress(Exception):
-            if (contour := grid.contour([max_temperature])).n_points == 0:
-                return []
-        return [
-            plotter.add_mesh(
-                color   = self.color_safety,
-                mesh    = contour.smooth(n_iter=50),
-                opacity = 0.3,
-            )
-        ]
+        try:
+            contour = target_grid.sample(point_cloud).contour([max_temperature])
+            return [
+                plotter.add_mesh(
+                    color   = self.color_safety,
+                    mesh    = contour.smooth(n_iter=50),
+                    opacity = 0.3
+                )
+            ]
+        except Exception:
+            return []
     
     def add_temperature_volume(
         self,
@@ -320,17 +308,15 @@ class Renderer:
         Returns:
             List of PyVista actors created for the temperature volume
         """
-        bounds = temp_grid.get_data_range("temperature")
-        
-        return [
-            plotter.add_volume(
-                clim                  = bounds,
-                cmap                  = self.vista.colormap,
-                opacity               = "sigmoid",
-                opacity_unit_distance = 0.1,
-                volume                = temp_grid,
-            )
-        ]
+        result = plotter.add_volume(
+            clim                  = temp_grid.get_data_range("temperature"),
+            cmap                  = self.vista.colormap,
+            opacity               = "sigmoid",
+            opacity_unit_distance = 0.1,
+            volume                = temp_grid
+        )
+        assert not isinstance(result, list)
+        return [result]
     
     def add_wind_vectors(
         self,
@@ -402,10 +388,10 @@ class Renderer:
             "render_lines_as_tubes" : True,
         }
         
-        self.color_graph  = (0.7, 0.7, 0.9)
-        self.color_safety = (0.9, 0.3, 0.3)
-        self.color_trail  = (0.8, 0.8, 0.8)
-        self.color_wind   = (0.7, 0.7, 0.7)
+        self.color_graph  = Color((0.7, 0.7, 0.9))
+        self.color_safety = Color((0.9, 0.3, 0.3))
+        self.color_trail  = Color((0.8, 0.8, 0.8))
+        self.color_wind   = Color((0.7, 0.7, 0.7))
         
         self.line_segment_size     = 2
         self.wind_threshold_factor = 0.1

@@ -85,8 +85,8 @@ class GNNPolicy(LightningModule):
         self.activation = getattr(th.nn, architecture.activation)()
         self.convs      = self._build_module_list(architecture, GCNConv)
         self.grus       = self._build_module_list(architecture, GRUCell)
-        self.decoder    = Linear(architecture.hidden_dim, 3)   # Output: 3D velocity
-        self.encoder    = Linear(11, architecture.hidden_dim)  # Input: 11 features
+        self.decoder    = Linear(architecture.hidden_dim, 3)
+        self.encoder    = Linear(11, architecture.hidden_dim)
     
     def _batch_to_data(self, batch: TensorDictBase) -> Data:
         """
@@ -144,8 +144,8 @@ class GNNPolicy(LightningModule):
     
     def _compute_loss_and_log(
         self, 
-        batch : TensorDictBase, 
-        phase : str
+        batch       : TensorDictBase, 
+        is_training : bool
     ) -> Tensor:
         """
         Computes behavioral cloning loss and logs metrics.
@@ -155,8 +155,8 @@ class GNNPolicy(LightningModule):
         and a* is the expert's demonstrated action.
         
         Args:
-            batch : TensorDict containing graph observations and expert actions
-            phase : Training phase ('train' or 'val') for logging
+            batch       : TensorDict containing graph observations and expert actions
+            is_training : Whether this is training (True) or validation (False)
             
         Returns:
             Scalar loss tensor for backpropagation or metric aggregation
@@ -167,14 +167,15 @@ class GNNPolicy(LightningModule):
         loss        = mse_loss(predictions, targets)
         
         self.collector.update_imitation_metrics(
-            phase       = phase,
+            is_training = is_training,
             predictions = predictions,
             targets     = targets
         )
         
         self.collector.log_all_metrics(
             module      = self,
-            phase       = phase,
+            is_training = is_training,
+            step_output = True,
             loss        = loss,
             predictions = predictions,
             targets     = targets
@@ -251,7 +252,7 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar loss tensor for automatic backpropagation
         """
-        return self._compute_loss_and_log(batch, "train")
+        return self._compute_loss_and_log(batch, True)
     
     def validation_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
         """
@@ -268,4 +269,4 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar validation loss for automatic metric aggregation
         """
-        return self._compute_loss_and_log(batch, "val")
+        return self._compute_loss_and_log(batch, False)
