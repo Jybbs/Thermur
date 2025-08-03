@@ -82,7 +82,7 @@ class DownloadCommand:
         self.prompts       = app.prompts
         self.system        = app.system
         self.ui            = app.ui
-        self.wrf_sfire_dir = app.cfg.download.wrf_sfire_dir
+        self.wrf_sfire_dir = Path(app.cfg.download.wrf_sfire_dir)
 
     def _download_sample(self):
         """
@@ -91,7 +91,7 @@ class DownloadCommand:
         Downloads a tar.gz file containing sample WRF data and extracts it
         to the data/samples directory.
         """
-        sample_file = self.cfg.download.sample_data_path
+        sample_file = Path(self.cfg.download.sample_data_path)
         
         if sample_file.exists() and not self.prompts.confirm(
             "Sample data exists. Re-download?"

@@ -4,7 +4,6 @@ Lightning domain schemas for Pydantic validation.
 This module consolidates all PyTorch Lightning configuration models including
 policy architecture, training hardware, optimization, and experiment tracking.
 """
-from pathlib  import Path
 from pydantic import BaseModel, Field, NonNegativeFloat
 from pydantic import NonNegativeInt, PositiveFloat, PositiveInt
 from typing   import Literal
@@ -52,8 +51,8 @@ class CheckpointModel(BaseModel, extra="forbid"):
     Controls how and when model checkpoints are saved during training,
     enabling recovery from interruptions and model selection.
     """
-    dirpath: Path = Field(
-        default     = Path("checkpoints"),
+    dirpath: str = Field(
+        default     = "checkpoints",
         description = (
             "Directory path for saving model checkpoints during training, enabling "
             "recovery from interruptions and model comparison across runs."

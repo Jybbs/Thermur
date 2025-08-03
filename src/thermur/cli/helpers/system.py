@@ -65,7 +65,7 @@ class SystemInspector:
         """
         with suppress(Exception):
             all_files   = self._get_wrf_files()
-            sample_path = self.download.sample_data_path
+            sample_path = Path(self.download.sample_data_path)
             
             if sample_path.exists():
                 all_files.append(sample_path)
@@ -136,7 +136,7 @@ class SystemInspector:
         Returns:
             List of Path objects for WRF files, empty list if none found.
         """
-        wrf_dir = self.download.wrf_sfire_dir
+        wrf_dir = Path(self.download.wrf_sfire_dir)
         if not wrf_dir.exists():
             return []
             
@@ -223,7 +223,7 @@ class SystemInspector:
         if not hasattr(self, 'download'):
             raise ValueError("SystemInspector missing download configuration")
             
-        sample_path = self.download.sample_data_path
+        sample_path = Path(self.download.sample_data_path)
         wrf_files   = [] if use_sample else self._get_wrf_files()
         
         match (use_sample, bool(wrf_files), sample_path.exists()):

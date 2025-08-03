@@ -7,18 +7,18 @@ between runs, clean up old experiments, and inspect detailed configuration
 settings with pagination support for large configurations.
 """
 from __future__   import annotations
+from config.types import ConfigItem, TableColumn
 from contextlib   import contextmanager, suppress
 from itertools    import chain
 from pathlib      import Path
+from yaml         import safe_load
 from shutil       import rmtree
 from thermur.cli  import app
 from typer        import Argument, Context, Exit, Option, Typer
 from typing       import Any, Iterator, TYPE_CHECKING
-from yaml         import Loader, load, safe_load
 
 if TYPE_CHECKING:
-    from config.types import ConfigItem, TableColumn
-    from rich.table   import Table
+    from rich.table import Table
 
 runs = Typer(
     help             = "🏃 Explore training runs and configurations",
@@ -45,7 +45,7 @@ def load_yaml(path: Path) -> Iterator[Any]:
     """
     try:
         with open(path) as f:
-            yield load(f, Loader)
+            yield safe_load(f)
 
     except Exception as e:
         app.ui.print_message(f"Failed to load {path}: {e}", "error")
