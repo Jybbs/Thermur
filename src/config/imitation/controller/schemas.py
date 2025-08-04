@@ -11,20 +11,20 @@ from typing   import Literal
 class ExpertModel(BaseModel, extra="forbid"):
     """
     Unified control system configuration for expert flocking behavior.
-    
+
     Combines Reynolds flocking weights and numerical parameters into
     a single configuration for the expert controller that generates
     demonstrations for imitation learning.
-    
+
     The controller computes nominal actions 𝐮_nom from the negative
     gradient of a potential function U, where:
-    
+
         𝐮_nom = -∇_x U(S_t)
-    
+
     The potential U combines classical Reynolds rules with thermal constraints:
-    
+
         U = ω_coh · U_coh + ω_sep · U_sep + ω_align · U_align + ω_thermal · U_thermal
-    
+
     where the individual potentials are:
         - Cohesion:   U_coh   = (1/2) · Σ_j∈N(i) ||𝐱_i - 𝐱_j||²
         - Separation: U_sep   = Σ_j∈N(i) 1/||𝐱_i - 𝐱_j||
@@ -85,29 +85,29 @@ class ExpertModel(BaseModel, extra="forbid"):
 class FlockModel(BaseModel, extra="forbid"):
     """
     Unified configuration for the thermal drone flock.
-    
+
     Combines agent physical properties, collective behavior parameters,
     and spatial settings into a single coherent configuration used across
     simulation, control, and safety components.
-    
+
     The thermal properties govern agent survivability and safety constraints.
     The maximum temperature T_max defines the Control Barrier Function's safety
     boundary:
-    
+
         h(𝐱) = T_max - T(𝐱)
-    
+
     The thermal time constant τ models heat dissipation dynamics using an RC
     thermal circuit analogy, allowing estimation of core temperature from surface
     measurements:
-    
+
         T_core ≈ T_skin - τ · dT_skin/dt
-    
+
     The communication range R_comm determines the dynamic neighborhood graph
     G_t = (V, E_t) at each timestep t, where edges exist between agents i and j
     when:
-    
+
         ||𝐱_i - 𝐱_j|| ≤ R_comm
-    
+
     This metric-based connectivity contrasts with topological neighborhoods used
     in biological flocks (typically 6-7 nearest neighbors regardless of distance).
     """
@@ -153,7 +153,7 @@ class FlockModel(BaseModel, extra="forbid"):
 class SafetyModel(BaseModel, extra="forbid"):
     """
     Unified safety system configuration.
-    
+
     Combines Control Barrier Function parameters and QP solver settings
     into a single configuration for the safety filtering system that
     ensures all control commands respect thermal constraints.
@@ -198,7 +198,7 @@ class SafetyModel(BaseModel, extra="forbid"):
 class ThresholdsModel(BaseModel, extra="forbid"):
     """
     Safety threshold configuration used across multiple domains.
-    
+
     Defines critical thresholds for thermal safety and control intervention
     detection that must be consistent across controller, monitoring, and
     safety filter components.

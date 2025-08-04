@@ -23,12 +23,12 @@ def monitor():
             try:
                 open(url)
                 app.ui.print_message(
-                    message  = "Dashboard opened in your default browser!", 
+                    message  = "Dashboard opened in your default browser!",
                     msg_type = "success"
                 )
             except Exception as e:
                 app.ui.print_message(
-                    message  = f"Failed to open browser: {e}", 
+                    message  = f"Failed to open browser: {e}",
                     msg_type = "error"
                 )
                 app.ui.print_message(

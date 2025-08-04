@@ -11,7 +11,7 @@ from typing   import Literal
 class EventsModel(BaseModel, extra="forbid"):
     """
     Configuration for event detection and logging system.
-    
+
     Defines parameters for detecting and logging critical events during
     simulation, including safety violations and control interventions.
     """
@@ -27,7 +27,7 @@ class EventsModel(BaseModel, extra="forbid"):
 class MetricsModel(BaseModel, extra="forbid"):
     """
     Configuration for metrics collection and performance monitoring.
-    
+
     Defines parameters for metric computation, logging frequency, and
     visualization settings used by the MetricsCollector.
     """

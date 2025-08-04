@@ -54,7 +54,7 @@ class GNNPolicy(LightningModule):
         back to a tangible control action (a 3D velocity vector).
     """
     def __init__(
-        self, 
+        self,
         architecture     : ArchitectureModel,
         collector        : MetricsCollector,
         optimizer        : Builds[Partial[Optimizer]],
@@ -66,13 +66,13 @@ class GNNPolicy(LightningModule):
         Initializes the GNN policy network.
 
         Args:
-            architecture     : Configuration for GNN architecture including hidden 
-                               dimensions, number of layers, activation function, and 
+            architecture     : Configuration for GNN architecture including hidden
+                               dimensions, number of layers, activation function, and
                                I/O dimensions.
             collector        : Centralized metrics collection and management system.
-            optimizer        : Partial optimizer build from hydra-zen that will be 
+            optimizer        : Partial optimizer build from hydra-zen that will be
                                instantiated with model parameters at runtime.
-            scheduler        : Partial scheduler build from hydra-zen that will be 
+            scheduler        : Partial scheduler build from hydra-zen that will be
                                instantiated with the optimizer at runtime.
             scheduler_metric : Metric name for learning rate scheduler to monitor.
             training_metric  : Metric name to monitor for training loss.
@@ -91,19 +91,19 @@ class GNNPolicy(LightningModule):
         self.grus       = self._build_module_list(architecture, GRUCell)
         self.decoder    = Linear(architecture.hidden_dim, 3)
         self.encoder    = Linear(11, architecture.hidden_dim)
-    
+
     def _batch_to_data(self, batch: TensorDictBase) -> Data:
         """
         Convert TensorDict batch to PyTorch Geometric Data object.
-        
+
         Extracts graph structure and node features from the TensorDict
         and constructs a PyG Data object suitable for GNN processing.
-        
+
         Args:
             batch: TensorDict containing flock state with keys:
                    - position, velocity, temperature, gradient, wind
                    - edge_index for graph connectivity
-                   
+
         Returns:
             PyG Data object with node features and edge connectivity
         """
@@ -111,33 +111,33 @@ class GNNPolicy(LightningModule):
             x = th.cat(
                 [
                     batch["position"],
-                    batch["velocity"], 
+                    batch["velocity"],
                     batch["temperature"],
                     batch["gradient"],
                     batch["wind"]
-                ], 
+                ],
                 dim = -1
             ),
             edge_index = batch["edge_index"]
         )
-    
+
     def _build_module_list(
-        self, 
+        self,
         architecture : ArchitectureModel,
         module_type  : Type[Module]
     ) -> ModuleList:
         """
         Creates a stack of neural network modules of the specified type.
-        
+
         This method unifies the creation of both convolutional and recurrent
         layers, reducing code duplication. For GCN layers, it performs message
         passing: h_i^(l+1) = σ(W^(l) · Σ_j∈N(i) h_j^(l) / |N(i)|). For GRU
         cells, it maintains temporal state with gating mechanisms.
-        
+
         Args:
             module_type : The class of module to instantiate (GCNConv or GRUCell)
             learning    : Configuration containing architecture parameters
-            
+
         Returns:
             ModuleList containing num_layers of the specified module type
         """
@@ -145,23 +145,23 @@ class GNNPolicy(LightningModule):
         return ModuleList([
             module_type(dim, dim) for _ in range(architecture.num_layers)
         ])
-    
+
     def _compute_loss_and_log(
-        self, 
-        batch       : TensorDictBase, 
+        self,
+        batch       : TensorDictBase,
         is_training : bool
     ) -> Tensor:
         """
         Computes behavioral cloning loss and logs metrics.
-        
+
         This method implements the standard behavioral cloning objective:
         L = MSE(π_θ(s), a*), where π_θ(s) is the policy's predicted action
         and a* is the expert's demonstrated action.
-        
+
         Args:
             batch       : TensorDict containing graph observations and expert actions
             is_training : Whether this is training (True) or validation (False)
-            
+
         Returns:
             Scalar loss tensor for backpropagation or metric aggregation
         """
@@ -169,13 +169,13 @@ class GNNPolicy(LightningModule):
         predictions = self(data)
         targets     = batch["action"]
         loss        = mse_loss(predictions, targets)
-        
+
         self.collector.update_imitation_metrics(
             is_training = is_training,
             predictions = predictions,
             targets     = targets
         )
-        
+
         self.collector.log_all_metrics(
             module      = self,
             is_training = is_training,
@@ -184,28 +184,28 @@ class GNNPolicy(LightningModule):
             predictions = predictions,
             targets     = targets
         )
-        
+
         return loss
 
     def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
         """
         Configures the optimizer and learning rate scheduler for training.
-        
+
         Lightning calls this method to set up optimizers and learning rate
         schedulers. Uses the partial configurations from hydra-zen builds
         to create the actual optimizer and scheduler instances.
-        
+
         Returns:
             Dictionary with optimizer and scheduler configuration
         """
         optimizer = instantiate(self.optimizer, params=self.parameters())
         scheduler = instantiate(self.scheduler, optimizer=optimizer)
-        
+
         lr_scheduler_config: LRSchedulerConfigType = {
             "scheduler" : scheduler,
             "monitor"   : self.scheduler_metric
         }
-        
+
         return OptimizerLRSchedulerConfig(
             optimizer    = optimizer,
             lr_scheduler = lr_scheduler_config
@@ -223,10 +223,10 @@ class GNNPolicy(LightningModule):
         Returns:
             A tensor of shape (num_nodes, out_dim) representing the nominal
             velocity command for each agent in the batch.
-            
+
         The forward pass follows the sequence:
             x → encoder → h → [GCN → activation → GRU → h]ₗ → decoder → u_nom
-        
+
         where:
             - x: Input node features (position, velocity, temperature, etc.)
             - h: Hidden state representations of each agent
@@ -235,41 +235,41 @@ class GNNPolicy(LightningModule):
         """
         x, edge_index = data.x, data.edge_index
         h = self.activation(self.encoder(x))
-        
+
         for conv, gru in zip(self.convs, self.grus, strict=True):
             h = gru(self.activation(conv(h, edge_index)), h)
-        
+
         return self.decoder(h)
-    
+
     def training_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
         """
         Executes a single training step using behavioral cloning loss.
-        
-        In PyTorch Lightning, the model defines its own training logic. This is 
-        Lightning's standard pattern, in that the model knows how to train itself, 
+
+        In PyTorch Lightning, the model defines its own training logic. This is
+        Lightning's standard pattern, in that the model knows how to train itself,
         eliminating the need for external training loops.
-        
+
         Args:
             batch     : TensorDict containing graph observations and expert actions
             batch_idx : Current batch index (automatically provided by Lightning)
-            
+
         Returns:
             Scalar loss tensor for automatic backpropagation
         """
         return self._compute_loss_and_log(batch, True)
-    
+
     def validation_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
         """
         Executes validation step for model evaluation.
-        
+
         Lightning calls this method during validation to assess the model's
         performance on held-out data. This helps monitor generalization and
         detect overfitting during training.
-        
+
         Args:
             batch     : TensorDict containing validation observations and actions
             batch_idx : Current batch index (automatically provided by Lightning)
-            
+
         Returns:
             Scalar validation loss for automatic metric aggregation
         """

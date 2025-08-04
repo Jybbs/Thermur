@@ -27,11 +27,11 @@ class SystemInspector:
     This class manages system inspection with access to configuration,
     reducing the need to pass configuration objects to every method call.
     """
-    
+
     def __init__(self, cfg: CLIConfiguration):
         """
         Initialize the system inspector with configuration.
-        
+
         Args:
             cfg: The CLI configuration object containing all settings.
         """
@@ -40,14 +40,14 @@ class SystemInspector:
     def _get_cuda_info(self) -> SystemInfo:
         """
         Gather CUDA-related system information.
-        
+
         Returns:
             Dictionary containing CUDA availability, device count, GPU name,
             memory, and CUDA version if available.
         """
         if not cuda.is_available():
             return {"cuda": False, "device_count": 0}
-        
+
         return {
             "cuda"         : True,
             "cuda_version" : torch_version.split('+')[0] if '+' in torch_version else torch_version,
@@ -59,28 +59,28 @@ class SystemInspector:
     def _get_dataset_info(self) -> SystemInfo:
         """
         Gather information about downloaded dataset files.
-        
+
         Returns:
             Dictionary with dataset_size in GB, dataset_count, and has_sample.
         """
         with suppress(Exception):
             all_files   = self._get_wrf_files()
             sample_path = Path(self.download.sample_data_path)
-            
+
             if sample_path.exists():
                 all_files.append(sample_path)
-            
+
             return {
                 "dataset_count" : len(all_files),
                 "dataset_size"  : sum(f.stat().st_size for f in all_files) / 1e9,
                 "has_sample"    : sample_path.exists(),
             }
         return {"dataset_count": 0, "dataset_size": 0.0, "has_sample": False}
-    
+
     def _get_disk_info(self) -> SystemInfo:
         """
         Gather disk usage information for the current directory.
-        
+
         Returns:
             Dictionary with disk_available and disk_total in GB.
             Returns zeros if disk information cannot be retrieved.
@@ -96,7 +96,7 @@ class SystemInspector:
     def _get_memory_info(self) -> SystemInfo:
         """
         Gather system memory information using psutil.
-        
+
         Returns:
             Dictionary with memory_available and memory_total in GB.
             Returns zeros if psutil is not installed.
@@ -111,17 +111,17 @@ class SystemInspector:
         return {"memory_available": 0, "memory_total": 0}
 
     def _get_package_version(
-        self, 
-        package_name : str, 
+        self,
+        package_name : str,
         default      : str | None = None
     ) -> str | None:
         """
         Get version of an installed package.
-        
+
         Args:
             package_name : Name of the package to check.
             default      : Default value if package is not found.
-            
+
         Returns:
             Version string or default value.
         """
@@ -132,41 +132,41 @@ class SystemInspector:
     def _get_wrf_files(self) -> list[Path]:
         """
         Get list of WRF-SFIRE NetCDF files from configured directory.
-        
+
         Returns:
             List of Path objects for WRF files, empty list if none found.
         """
         wrf_dir = Path(self.download.wrf_sfire_dir)
         if not wrf_dir.exists():
             return []
-            
+
         return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
 
     def create_status_marker(self, status: str, output_dir: Path | None = None):
         """
         Create a status marker file in the output directory.
-        
+
         Args:
             status     : The status type ('training_complete' or 'dry_run')
             output_dir : The output directory path. If None, uses Hydra's current output dir
         """
         if output_dir is None:
             output_dir = self.get_hydra_output_dir()
-        
+
         (output_dir / status).touch()
 
     def get_hydra_output_dir(self) -> Path:
         """
         Get the current Hydra runtime output directory.
-        
+
         Returns:
             Path to the current Hydra output directory
-            
+
         Raises:
             RuntimeError: If called outside of a Hydra run context
         """
         from hydra.core.hydra_config import HydraConfig
-        
+
         return Path(HydraConfig.get().runtime.output_dir)
 
     def get_system_info(self) -> SystemInfo:
@@ -191,41 +191,40 @@ class SystemInspector:
             "thermur"             : self._get_package_version("thermur", "dev"),
             "torch"               : torch_version,
         }
-        
+
         return (
-            base_info 
-            | self._get_cuda_info() 
-            | self._get_memory_info() 
-            | self._get_disk_info() 
+            base_info
+            | self._get_cuda_info()
+            | self._get_memory_info()
+            | self._get_disk_info()
             | self._get_dataset_info()
         )
 
-    
     def resolve_data_path(self, use_sample: bool = False) -> tuple[Path, str]:
         """
         Resolves the appropriate data path based on availability and user preference.
-        
+
         This method implements a fallback strategy for data selection:
         1. If sample explicitly requested and exists          -> use sample
         2. If WRF-SFIRE data exists and not requesting sample -> use first WRF file
-        3. If no WRF data but sample exists                   -> fallback to sample  
+        3. If no WRF data but sample exists                   -> fallback to sample
         4. Otherwise                                          -> no data available
-        
+
         Args:
             use_sample : Whether the user explicitly requested sample data
-            
+
         Returns:
             Tuple of (data_path, status_message)
-            
+
         Raises:
             FileNotFoundError: If no data is available for training
         """
         if not hasattr(self, 'download'):
             raise ValueError("SystemInspector missing download configuration")
-            
+
         sample_path = Path(self.download.sample_data_path)
         wrf_files   = [] if use_sample else self._get_wrf_files()
-        
+
         match (use_sample, bool(wrf_files), sample_path.exists()):
             case (True, _, True):
                 return sample_path, "Using sample dataset as requested."
@@ -258,7 +257,7 @@ class SystemInspector:
             return []
 
         issues: list[str] = []
-        
+
         for o in overrides:
             if "=" not in o:
                 issues.append(
@@ -274,7 +273,7 @@ class SystemInspector:
                 issues.append(
                     f"Invalid override key (must be alphanumeric): {o}"
                 )
-        
+
         if not cuda.is_available():
             issues.append("GPU not available - training will be slower on CPU")
 

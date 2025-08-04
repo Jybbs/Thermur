@@ -9,7 +9,7 @@ thermal constraints through a potential-based approach:
 
 where the potential U incorporates:
 - Cohesion: Attraction to local center of mass
-- Separation: Repulsion from nearby agents  
+- Separation: Repulsion from nearby agents
 - Alignment: Velocity matching with neighbors
 - Thermal avoidance: Repulsion from high-temperature regions
 

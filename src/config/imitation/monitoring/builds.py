@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 MONITORING_USER_CONFIG = make_config(
     events  = EventsModel(),
-    metrics = MetricsModel() 
+    metrics = MetricsModel()
 )
 
 MONITORING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
@@ -33,7 +33,7 @@ MONITORING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "events": builds(
         EventLogger,
         events                  = "${monitoring.events}",

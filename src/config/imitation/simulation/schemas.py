@@ -11,10 +11,10 @@ from pydantic import NonNegativeFloat, PositiveFloat
 class LoaderModel(BaseModel, extra="forbid"):
     """
     Configuration for WRF data loader.
-    
-    This model defines data structure parameters (variable names, processing 
+
+    This model defines data structure parameters (variable names, processing
     options) and caching configuration for the Moisseeva (2020) dataset.
-    
+
     The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
     uses staggered grids where U, V, W wind components are offset from cell centers.
     """
@@ -51,20 +51,20 @@ class LoaderModel(BaseModel, extra="forbid"):
 class PhysicsModel(BaseModel, extra="forbid"):
     """
     Unified physics and environmental simulation configuration.
-    
+
     Controls the MuJoCo physics engine settings, simulation timestep,
     spatial bounds, and thermal field interpolation parameters used
     throughout the system.
-    
+
     The simulation operates on a discrete timestep Δt, advancing the
     physics state according to the equations of motion. The thermal
     field provides spatially-varying temperature data T(𝐱) through
     interpolation of gridded measurements.
-    
+
     Gradient computation uses finite differences with step size ε:
-    
+
         ∇T(𝐱) ≈ [T(𝐱 + εê_i) - T(𝐱 - εê_i)] / 2ε
-    
+
     where ê_i are the standard basis vectors in ℝ^d.
     """
     assets_dir: str = Field(
