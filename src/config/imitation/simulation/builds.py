@@ -35,7 +35,7 @@ SIMULATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "wrf": builds(
         WRFDataSource,
         loader                  = "${simulation.loader}",

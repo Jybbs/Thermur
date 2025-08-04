@@ -15,7 +15,7 @@ RGBColor  = tuple[UnitFloat, UnitFloat, UnitFloat]
 class VistaModel(BaseModel, extra="forbid"):
     """
     Unified configuration for the 3D visualization system.
-    
+
     This comprehensive schema controls all aspects of the real-time simulation
     visualization including agent rendering, environmental field display, visual
     aesthetics, and interactive settings. Parameters are organized alphabetically
@@ -166,4 +166,3 @@ class VistaModel(BaseModel, extra="forbid"):
             "Render window dimensions in pixels (width, height)."
         )
     )
-

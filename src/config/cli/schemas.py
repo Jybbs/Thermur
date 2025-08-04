@@ -17,7 +17,7 @@ SECRETS_DIR = str(Path.home() / ".config" / "thermur" / "secrets")
 class DisplayModel(BaseModel, extra="forbid"):
     """
     Display configuration for structured UI elements.
-    
+
     Contains arrays and dictionaries that define the CLI's visual structure
     and may need to be extended or modified.
     """
@@ -108,12 +108,12 @@ class DisplayModel(BaseModel, extra="forbid"):
     )
     fire_gradient: list[str] = Field(
         default = [
-            "red3", 
-            "red1", 
-            "orange_red1", 
-            "dark_orange", 
-            "orange1", 
-            "yellow1", 
+            "red3",
+            "red1",
+            "orange_red1",
+            "dark_orange",
+            "orange1",
+            "yellow1",
             "bright_yellow"
         ],
         description = (
@@ -228,7 +228,7 @@ class DisplayModel(BaseModel, extra="forbid"):
 class DownloadModel(BaseModel, extra="forbid"):
     """
     Download and management configuration for the CLI.
-    
+
     This model contains settings for file downloads, display options, and
     caching behavior, separate from the dataset schema used for training.
     """
@@ -329,7 +329,7 @@ class DownloadModel(BaseModel, extra="forbid"):
 class GlobusSecrets(BaseSettings):
     """
     Secure storage for Globus OAuth2 tokens.
-    
+
     Uses Pydantic's BaseSettings with secrets_dir for automatic persistence.
     Each token field is stored as a separate file in the secrets directory,
     with the filename matching the field name.
@@ -355,12 +355,12 @@ class GlobusSecrets(BaseSettings):
             "sensitive authentication credentials."
         )
     )
-    
+
     model_config = SettingsConfigDict(
         case_sensitive = False,
         secrets_dir    = SECRETS_DIR if Path(SECRETS_DIR).exists() else None
     )
-    
+
     @computed_field
     @property
     def is_valid(self) -> bool:
@@ -368,7 +368,7 @@ class GlobusSecrets(BaseSettings):
         Check if all required token fields are present.
         """
         return all(
-            getattr(self, field) is not None 
+            getattr(self, field) is not None
             for field in ['refresh_token', 'scope']
         )
 
@@ -376,7 +376,7 @@ class GlobusSecrets(BaseSettings):
 class WandbConfig(BaseModel, extra="forbid"):
     """
     W&B configuration for training runs.
-    
+
     Used by both CLI display and the imitation training pipeline
     for configuring Weights & Biases experiment tracking.
     """
@@ -389,9 +389,6 @@ class WandbConfig(BaseModel, extra="forbid"):
         description = "W&B logging mode for training runs"
     )
     project: str = Field(
-        default     = "thermur-imitation",
+        default     = "imitation",
         description = "W&B project name for organizing experiments"
     )
-
-
-

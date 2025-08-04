@@ -7,10 +7,10 @@ Training Components:
 - Trainer                : PyTorch Lightning trainer with hardware configuration,
                            gradient clipping, distributed training support, and
                            callback management.
-- DataModule             : Handles experience replay buffer management, batch 
+- DataModule             : Handles experience replay buffer management, batch
                            generation, and data loading for the imitation learning
                            pipeline.
-- GNNPolicy              : Graph Neural Network policy that processes agent 
+- GNNPolicy              : Graph Neural Network policy that processes agent
                            observations and produces control actions using attention
                            mechanisms.
 
@@ -68,7 +68,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "datamodule": builds(
         DataModule,
         env                     = "${_system.env}",
@@ -77,7 +77,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "early_stopping_callback": builds(
         EarlyStopping,
         monitor                 = "${lightning.optimizer.training_metric}",
@@ -86,7 +86,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "logger": builds(
         WandbLogger,
         log_model               = "${lightning.wandb.log_model}",
@@ -95,13 +95,13 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "lr_monitor_callback": builds(
         LearningRateMonitor,
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "monitoring_callback": builds(
         MonitoringCallback,
         collector               = "${_system.collector}",
@@ -109,7 +109,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "optimizer": builds(
         AdamW,
         lr                      = "${lightning.optimizer.learning_rate}",
@@ -117,7 +117,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "policy": builds(
         GNNPolicy,
         architecture            = "${lightning.architecture}",
@@ -126,7 +126,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "scheduler": builds(
         ReduceLROnPlateau,
         optimizer               = "${_system.optimizer}",
@@ -136,7 +136,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "trainer": builds(
         Trainer,
         accelerator             = "${lightning.hardware.accelerator}",

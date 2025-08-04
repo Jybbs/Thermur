@@ -6,7 +6,7 @@ are static settings that don't require runtime instantiation or interpolation,
 they are created as simple Pydantic model instances.
 
 The configuration is organized by domain:
-- display  : Terminal UI themes and formatting  
+- display  : Terminal UI themes and formatting
 - download : Globus data transfer settings
 - secrets  : Secure token storage
 - wandb    : Weights & Biases integration settings

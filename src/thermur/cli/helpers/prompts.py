@@ -2,8 +2,8 @@
 Orchestrates the CLI's interactive dialogues using the questionary library.
 
 This module manages the interactive prompts for the training command, including
-preset selection, wandb configuration, override collection, and training 
-confirmation. It uses the ThermurUI class to render complex components and 
+preset selection, wandb configuration, override collection, and training
+confirmation. It uses the ThermurUI class to render complex components and
 structured configuration objects for all static text and configuration.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ class CLIPrompts:
     Manages all interactive command-line dialogues for the Thermur CLI.
 
     This class encapsulates the logic for asking the user questions, presenting
-    choices, and confirming actions. It relies on a `ThermurUI` instance and 
+    choices, and confirming actions. It relies on a `ThermurUI` instance and
     CLIConfiguration for prompts and messages, both provided during initialization,
     to render visuals and access static text. This keeps the interactive logic separate
     from both the UI rendering and the core application orchestration.
@@ -102,19 +102,19 @@ class CLIPrompts:
             )
 
         return overrides
-    
+
     def confirm(
-        self, 
-        message : str, 
+        self,
+        message : str,
         default : bool = True
     ) -> bool:
         """
         General purpose confirmation prompt.
-        
+
         Args:
             message : The question to ask the user
             default : Default value if user just presses enter
-            
+
         Returns:
             True if user confirms, False otherwise
         """
@@ -123,9 +123,9 @@ class CLIPrompts:
             message = message,
             style   = self.thermal
         ).ask()
-    
+
     def confirm_deletion(
-        self, 
+        self,
         count  : int,
         items  : str = "items",
         keep   : int = 0,
@@ -133,52 +133,52 @@ class CLIPrompts:
     ) -> bool:
         """
         Confirm deletion of items with warning panel.
-        
+
         Displays a warning panel with deletion details and prompts for confirmation.
         Useful for any destructive operation that needs user confirmation.
-        
+
         Args:
             count  : Number of items to delete
             items  : Plural name of items (e.g., "runs", "files")
             keep   : Number of items being kept (0 if deleting all)
             force  : Skip confirmation if True
-            
+
         Returns:
             True if user confirms deletion, False otherwise
         """
         if force:
             return True
-            
+
         issues = [
             f"This will permanently delete {count} {items}",
             "This action cannot be undone"
         ]
-        
+
         if keep > 0:
             issues.append(f"Keeping only the {keep} most recent {items}")
         else:
             issues.append(f"Use --keep N to preserve N recent {items}")
-            
+
         warning_panel = self.ui.create_warning_panel(
             issues = issues,
             title  = "⚠️  Confirm Deletion"
         )
         self.ui.display_panel(warning_panel)
-        
+
         return self.confirm(f"Delete {count} {items}?")
-    
+
     def confirm_download(self, file_info: FileInfo) -> bool:
         """
         Prompts user to confirm file download operation.
-        
+
         Args:
             file_info: File information dictionary with name and size
-            
+
         Returns:
             True if user confirms download, False otherwise
         """
         size_gb = file_info['size'] / 1e9
-        
+
         self.ui.console.print()
         self.ui.print_message(
             f"Ready to download: {file_info['name']}",
@@ -190,7 +190,7 @@ class CLIPrompts:
             "internet connection[/grey70]"
         )
         self.ui.console.print()
-        
+
         return self.confirm(message = "Proceed with download?")
 
     def confirm_system_override(self, issues: list[str]) -> bool:
@@ -220,7 +220,7 @@ class CLIPrompts:
             message = "Do you want to proceed anyway?",
             default = False
         )
-    
+
     def paginate(
         self,
         items            : Sequence[Any],
@@ -230,63 +230,63 @@ class CLIPrompts:
     ) -> Any | None:
         """
         Generic pagination handler for any list of items.
-        
+
         Provides a reusable pagination interface that delegates page rendering
         to a callback function. Handles navigation, selection, and clearing.
         Displays navigation options and handles user input.
-        
+
         Args:
             items            : List of items to paginate
             render_page      : Callback function to render each page
             allow_row_select : Whether to allow row selection
             page_size        : Number of items per page
-            
+
         Returns:
             Selected item if allow_row_select=True and item selected, None otherwise
         """
         if not items:
             return None
-            
+
         page        = 0
         items_count = len(items)
         total_pages = -(-items_count // page_size)
-        
+
         # Save cursor position before pagination starts
         self.ui.console.file.write('\033[s')
         self.ui.console.file.flush()
-        
+
         while True:
             start      = page * page_size
             page_items = list(islice(items, start, start + page_size))
-            
+
             # Restore cursor and clear to end of screen
             self.ui.console.file.write('\033[u\033[J')
             self.ui.console.file.flush()
-            
+
             render_page(page_items, page + 1, total_pages)
             nav_options: list[tuple[str, str]] = []
-            
+
             if allow_row_select and len(page_items) > 0:
                 nav_options.append(("[0-9] Select", ""))
-            
+
             if page > 0:
                 nav_options.append(("[P]revious", "p"))
             if page < total_pages - 1:
                 nav_options.append(("[N]ext", "n"))
-                
+
             nav_options.append(("[Q]uit", "q"))
-            
+
             nav_display = " | ".join(
                 f"[bold cyan]{opt[0]}[/]" for opt in nav_options
             )
             self.ui.console.print(nav_display + "\n")
-            
+
             valids = ["p", "n", "q", ""] + (
-                [str(i) for i in range(len(page_items))] 
-                if allow_row_select and page_items 
+                [str(i) for i in range(len(page_items))]
+                if allow_row_select and page_items
                 else []
             )
-            
+
             validate: Callable[[str], bool] = lambda x: x.strip().lower() in valids
             try:
                 choice = questionary.text(
@@ -294,7 +294,7 @@ class CLIPrompts:
                     style    = self.thermal,
                     validate = validate
                 ).ask()
-                
+
                 if not choice:
                     return None
 
@@ -303,7 +303,7 @@ class CLIPrompts:
                 choice = input().strip().lower()
                 if choice not in valids:
                     continue
-            
+
             match choice.strip().lower():
                 case "q" | "":
                     return None
@@ -317,7 +317,7 @@ class CLIPrompts:
                     return page_items[int(n)]
                 case _:
                     pass
-    
+
     def select_file_from_pages(
         self,
         available_files : Sequence[FileInfo],
@@ -327,23 +327,23 @@ class CLIPrompts:
     ) -> FileInfo | None:
         """
         Display files in paginated table format and allow selection.
-        
+
         Presents a paginated view of available files with their download status,
         allowing users to navigate between pages and select files using keyboard
         commands. Uses Rich tables for display and questionary for input handling.
-        
+
         Args:
             available_files : List of file dictionaries with 'name' and 'size' keys
             file_status     : Dict mapping filename to status
             page_size       : Number of files to display per page
             title_prefix    : Prefix for the page title display
-            
+
         Returns:
             Selected file dictionary or None if cancelled
         """
         def render_file_page(
-            page_files  : list[FileInfo], 
-            page_num    : int, 
+            page_files  : list[FileInfo],
+            page_num    : int,
             total_pages : int
         ):
             """
@@ -355,14 +355,14 @@ class CLIPrompts:
                 title           = f"{title_prefix} (Page {page_num}/{total_pages})"
             )
             self.ui.console.print()
-        
+
         return self.paginate(
             allow_row_select = True,
             items            = available_files,
             page_size        = page_size,
             render_page      = render_file_page
         )
-    
+
     def select_from_list(
         self,
         choices : list[tuple[str, str]],
@@ -370,24 +370,24 @@ class CLIPrompts:
     ) -> str | None:
         """
         Present a list of choices for selection.
-        
+
         Args:
             choices : List of (value, description) tuples
             message : The prompt message
-            
+
         Returns:
             Selected value or None if cancelled
         """
         return questionary.select(
             choices = [
-                questionary.Choice(desc, val) 
+                questionary.Choice(desc, val)
                 for val, desc in choices
             ],
             message = message,
             style   = self.thermal,
             instruction = "(↑↓)"
         ).ask()
-            
+
     def show_training_summary(self, config: dict[str, Any]) -> bool:
         """
         Presents a final summary of all chosen configurations for user confirmation.
@@ -417,11 +417,11 @@ class CLIPrompts:
         num_overrides = config.get('overrides', 0)
         summary_data  = [
             (
-                "Hardware", 
+                "Hardware",
                 "🎮 GPU Acceleration" if config.get("gpu_available") else "💻 CPU Mode"
             ),
             (
-                "Overrides", 
+                "Overrides",
                 f"[{self.ui.display.styles['drone']}]{num_overrides} custom settings[/]"
             ),
             (

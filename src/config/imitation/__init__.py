@@ -8,7 +8,7 @@ system uses hydra-zen's hierarchical pattern for type-safe, modular configuratio
 The configuration is organized by domains:
 - controller    : Expert policy and safety systems
 - lightning     : Training infrastructure and optimization
-- monitoring    : Metrics and event tracking  
+- monitoring    : Metrics and event tracking
 - simulation    : Environment and physics
 - visualization : 3D visualization with PyVista
 
