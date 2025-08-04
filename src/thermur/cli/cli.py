@@ -69,7 +69,7 @@ def main_callback(
 
         app.ui.console.print()
         app.ui.print_message(
-            message  = "Ready to train some thermal flocks? 🔥", 
+            message  = "Ready to train some thermal flocks? 🔥",
             msg_type = "thermal"
         )
 

@@ -35,17 +35,17 @@ def validate(
 
     app.ui.print_message(
         message  = (
-            "Configuration issues found:" if issues 
+            "Configuration issues found:" if issues
             else "Configuration validation passed!"
         ),
         msg_type = "warning" if issues else "success"
     )
-    
+
     for i, issue in enumerate(issues, start=1):
         app.ui.console.print(f"  [warning]⚠️  {i}. {issue}[/warning]")
 
     app.ui.console.print()
-    
+
     if issues:
         app.ui.print_message(
             message  = "Validation completed with warnings",

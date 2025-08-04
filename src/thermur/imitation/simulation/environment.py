@@ -47,7 +47,7 @@ class SimulationEnv(EnvBase):
     defined externally, which includes agent kinematics, local thermal
     data, and the communication graph topology.
     """
-    
+
     physics_model: MujocoModel
 
     def __init__(
@@ -70,10 +70,10 @@ class SimulationEnv(EnvBase):
         self.xml_generator = XMLGenerator(Path(self.physics.assets_dir))
         self.physics_model = self._initialize_physics()
         super().__init__(device="cpu")
-    
+
     def _compute_edge_index(
-        self, 
-        position : Tensor, 
+        self,
+        position : Tensor,
         radius   : float
     ) -> Tensor:
         """
@@ -94,15 +94,15 @@ class SimulationEnv(EnvBase):
         distances = th.cdist(position, position)
         mask      = (distances < radius) & (distances > 0)
         return th.nonzero(mask, as_tuple=False).t().contiguous()
-    
+
     def _create_action_space(self) -> TensorSpec:
         """
         Defines the action space structure for agent control.
-        
+
         The action space consists of velocity commands u_nom ∈ ℝ^d for each agent,
         which are processed by the safety filter before execution to ensure thermal
         constraint satisfaction.
-        
+
         Returns:
             Composite tensor specification defining the action structure
         """
@@ -112,15 +112,15 @@ class SimulationEnv(EnvBase):
                 shape = Size([self.flock.agent_count, 3])
             )
         )
-    
+
     def _create_observation_space(self) -> TensorSpec:
         """
         Defines the observation space structure for the flock system.
-        
+
         Creates a complete state representation including agent kinematics,
         thermal data, and communication topology. This structure serves as the
         contract for data exchange between simulation components.
-        
+
         The observation space includes:
         - battery     : Energy remaining ∈ [0, 1] for each agent
         - done        : Episode termination flag
@@ -131,12 +131,12 @@ class SimulationEnv(EnvBase):
         - temperature : Thermal state in Kelvin
         - velocity    : Motion vectors in ℝ^d
         - wind        : Environmental wind field at agent positions
-        
+
         Returns:
             Composite tensor specification defining the observation structure
         """
         n = self.flock.agent_count
-        
+
         return Composite(
             battery     = Bounded(0, 1,      Size([n, 1]),       dtype=th.float32),
             done        = Bounded(0, 1,      Size([1]),          dtype=th.bool),
@@ -149,17 +149,17 @@ class SimulationEnv(EnvBase):
             velocity    = Unbounded(shape=Size([n, 3]), dtype=th.float32),
             wind        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
         )
-    
+
     def _extract_agent_states(self, data: Any) -> tuple[Tensor, Tensor]:  # MjData
         """
         Extracts the position and velocity states for all agents from MuJoCo data.
-        
+
         This method reads the actual physical state of each agent from the MuJoCo
         simulation data, enabling true multi-agent physics with individual states.
-        
+
         Args:
             data: MjData object with current simulation state
-            
+
         Returns:
             positions  : Tensor of shape [agent_count, 3]
             velocities : Tensor of shape [agent_count, 3]
@@ -170,20 +170,20 @@ class SimulationEnv(EnvBase):
         velocities = th.from_numpy(
             data.qvel[:self.flock.agent_count * 3].copy().reshape(self.flock.agent_count, 3)
         )
-    
+
         return positions, velocities
-    
+
     def _generate_cube_formation(self, n: int) -> Tensor:
         """
         Generates points distributed in a hypercube grid formation.
-        
+
         Creates a regular grid in N-dimensional space with points arranged
         in a hypercube. The algorithm:
             - Calculates the side length needed to accommodate N agents in a
               d-dimensional space: ceil(N^(1/d))
             - Creates a coordinate grid spanning [-1, 1] in each dimension
             - Returns the first N points from the flattened grid
-        
+
         Args:
             n: Number of agents in the flock
 
@@ -198,23 +198,23 @@ class SimulationEnv(EnvBase):
         )
 
         return grid.reshape(-1, 3)[:n]
-    
+
     def _generate_sphere_formation(self, n: int) -> Tensor:
         """
         Generates points distributed evenly on a sphere (3D) or circle (2D).
 
         For 2D, places points evenly on a circle. For 3D, uses the Fibonacci
         lattice method, which provides excellent uniformity for arbitrary N.
-        
+
         The Fibonacci lattice method creates a nearly-uniform distribution by:
             - Using the golden ratio φ = (1 + √5)/2 to create optimal angular spacing
             - Setting z-coordinates using a linear spacing from -1 to 1
             - Computing radius at each z value: r = √(1 - z²)
-        
+
         Points are then placed at:
-         
+
             (r·cos(θ), r·sin(θ), z) where θ = 2π·k/φ
-        
+
         Args:
             n: Number of agents in the flock
 
@@ -235,7 +235,7 @@ class SimulationEnv(EnvBase):
                 z
             ),
         )
-    
+
     def _initialize_physics(self):
         """
         Dynamically generates and loads the MuJoCo physics model.
@@ -243,7 +243,7 @@ class SimulationEnv(EnvBase):
         This method creates a MuJoCo model with N distinct drone bodies based on
         the `agent_count` configuration parameter. Each drone has its own set of
         joints and actuators, enabling true multi-agent physics simulation.
-        
+
         Args:
             physics: Physics configuration containing assets_dir and simulation_step
 
@@ -259,11 +259,11 @@ class SimulationEnv(EnvBase):
     def _make_spec(self, td_params: Any | None = None):
         """
         Creates action and observation specs for the environment.
-        
+
         Called by torchrl.EnvBase during initialization to set up the
         action_spec and observation_spec attributes that define the
         environment's input/output structure.
-        
+
         Args:
             td_params: Unused parameter required by base class interface
         """
@@ -277,9 +277,9 @@ class SimulationEnv(EnvBase):
         This method creates an initial `TensorDict` observation by placing agents
         according to the `initial_formation` specified in the flock config and
         querying the environmental data at these starting positions.
-        
+
         The supported formation types include:
-        - 'sphere'      : Agents are distributed evenly on a sphere surface using 
+        - 'sphere'      : Agents are distributed evenly on a sphere surface using
                           the Fibonacci lattice method for uniform distribution
         - 'cube'        : Agents are arranged in a uniform N-dimensional grid
         - 'murmuration' : (TBD) Agents mimic the controlled chaos of starlings
@@ -297,21 +297,21 @@ class SimulationEnv(EnvBase):
                 positions = self._generate_sphere_formation(self.flock.agent_count)
 
         scaled_positions = (
-            positions * 
+            positions *
             self.flock.communication_range *
             self.flock.formation_scale_factor
         )
-        
+
         initial_observation = self.observation_spec.zero()
         initial_observation.update({
             "battery"  : th.ones(self.flock.agent_count, 1),
             "position" : scaled_positions,
         })
-        
+
         positions             = initial_observation["position"]
         temperature, gradient = self.wrf.query_thermal(positions)
         wind                  = self.wrf.query_wind(positions)
-        
+
         initial_observation.update(
             {
                 "edge_index"  : self._compute_edge_index(
@@ -323,40 +323,40 @@ class SimulationEnv(EnvBase):
                 "wind"        : wind
             }
         )
-        
+
         self._set_physics_state(positions, th.zeros_like(positions))
-        
+
         return initial_observation
 
     def _set_physics_state(
-        self, 
-        positions  : Tensor, 
+        self,
+        positions  : Tensor,
         velocities : Tensor
     ):
         """
         Sets the physics state for all agents in the MuJoCo simulation.
-        
+
         This method updates the MuJoCo simulation state to match the provided
         positions and velocities for all agents. This is used both during reset
         to set the initial state and can be used to manually update agent positions.
-        
+
         Args:
             positions  : Tensor [N, 3] containing agent positions
             velocities : Tensor [N, 3] containing agent velocities
         """
         data = self.physics_model["data"]
         getattr(mj, 'mj_resetData')(self.physics_model["model"], data)
-        
+
         data.qpos[:self.flock.agent_count * 3] = positions.reshape(-1).cpu().numpy()
         data.qvel[:self.flock.agent_count * 3] = velocities.reshape(-1).cpu().numpy()
-        
+
         # Forward kinematics to update all derived quantities
         getattr(mj, 'mj_forward')(self.physics_model["model"], data)
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """
         Performs one discrete time step in the environment with true multi-agent physics.
-        
+
         The process follows these steps:
             1. Extract individual agent control actions from the input `td`
             2. Apply each action to its corresponding agent's actuators
@@ -365,7 +365,7 @@ class SimulationEnv(EnvBase):
             5. Create a new observation with environmental data at these positions
             6. Compute "reward" and "done" flags for each agent
             7. Return a `td` with the complete next state
-        
+
         Args:
             td: A `TensorDict` containing the control `action` to apply,
                 with shape [n_agents, action_dims]
@@ -380,9 +380,9 @@ class SimulationEnv(EnvBase):
 
         if ctrl_count := min(len(reshaped), len(data.ctrl)):
             data.ctrl[:ctrl_count] = reshaped[:ctrl_count]
-        
+
         getattr(mj, 'mj_step')(model, data)
-        
+
         position, velocity    = self._extract_agent_states(data)
         temperature, gradient = self.wrf.query_thermal(position)
         wind                  = self.wrf.query_wind(position)
@@ -390,7 +390,7 @@ class SimulationEnv(EnvBase):
             position = position,
             radius   = self.flock.communication_range
         )
-        
+
         next_observation = self.observation_spec.zero()
         next_observation.update({
             "battery"     : th.ones(self.flock.agent_count, 1),
@@ -401,5 +401,5 @@ class SimulationEnv(EnvBase):
             "velocity"    : velocity,
             "wind"        : wind,
         })
-    
+
         return next_observation

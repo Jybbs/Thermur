@@ -42,14 +42,14 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "plotter": builds(
         Plotter,
         window_size             = "${visualization.vista.window_size}",
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "renderer": builds(
         Renderer,
         agent_glyph             = "${_system.agent_glyph}",
@@ -58,7 +58,7 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "sampler": builds(
         Sampler,
         grid_padding            = "${visualization.vista.grid_padding}",
@@ -67,19 +67,19 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "theme_dark": builds(
         themes.DarkTheme,
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "theme_light": builds(
         themes.DocumentTheme,
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "visualizer": builds(
         Visualizer,
         max_temperature         = "${controller.thresholds.max_temperature}",
@@ -91,7 +91,7 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "wind_glyph": builds(
         Arrow,
         zen_partial             = True,

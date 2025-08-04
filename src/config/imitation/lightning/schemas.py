@@ -12,12 +12,12 @@ from typing   import Literal
 class ArchitectureModel(BaseModel, extra="forbid"):
     """
     GNN architecture configuration.
-    
-    Defines the neural network structure for processing the dynamic graph 
+
+    Defines the neural network structure for processing the dynamic graph
     G_t = (V, E_t) through message passing layers, where each layer performs:
-    
+
         h_i^(l+1) = GRU(h_i^(l), Σ_j∈N(i) MLP(h_j^(l)))
-    
+
     This allows the policy to learn decentralized control while respecting
     the communication topology.
     """
@@ -47,7 +47,7 @@ class ArchitectureModel(BaseModel, extra="forbid"):
 class CheckpointModel(BaseModel, extra="forbid"):
     """
     Model checkpoint configuration.
-    
+
     Controls how and when model checkpoints are saved during training,
     enabling recovery from interruptions and model selection.
     """
@@ -84,7 +84,7 @@ class CheckpointModel(BaseModel, extra="forbid"):
 class ExperienceModel(BaseModel, extra="forbid"):
     """
     Experience data handling and batching configuration.
-    
+
     Manages how experience data is collected, stored, and sampled during
     imitation learning from expert demonstrations.
     """
@@ -135,7 +135,7 @@ class ExperienceModel(BaseModel, extra="forbid"):
 class HardwareModel(BaseModel, extra="forbid"):
     """
     Hardware and compute configuration.
-    
+
     Configures the computational resources and strategies used for training,
     including device selection, precision, and distributed training options.
     """
@@ -190,12 +190,12 @@ class HardwareModel(BaseModel, extra="forbid"):
 class OptimizerModel(BaseModel, extra="forbid"):
     """
     Optimization and learning rate configuration.
-    
+
     Defines the optimization algorithm parameters and learning rate scheduling
     for training the imitation policy to minimize:
-    
+
         L_imitation = ||π_θ(s) - u_nom||²
-    
+
     where π_θ is the learned GNN policy and π* is the expert controller.
     """
     early_stopping_patience: PositiveInt = Field(
@@ -286,17 +286,17 @@ class OptimizerModel(BaseModel, extra="forbid"):
 class WandbModel(BaseModel, extra="forbid"):
     """
     Configuration for Weights & Biases experiment tracking.
-    
+
     W&B provides comprehensive experiment tracking for machine learning workflows,
     including metric logging, hyperparameter tracking, model versioning, and
     visualization. This configuration controls how Lightning integrates with W&B
     during training and how the CLI accesses W&B for monitoring.
-    
+
     The mode parameter allows flexible deployment:
     - "online": Full cloud synchronization for collaborative work
-    - "offline": Local logging for air-gapped environments  
+    - "offline": Local logging for air-gapped environments
     - "disabled": No W&B integration (useful for debugging)
-    
+
     The API key is read from an environment variable to avoid hardcoding
     credentials in configuration files.
     """
