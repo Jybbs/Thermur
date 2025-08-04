@@ -6,7 +6,7 @@ This module provides pre-built components for the controller domain:
 - ExpertController : Coordinates multi-agent behavior using Reynolds flocking rules
                      (separation, alignment, cohesion) with safety filtering to
                      maintain minimum separation distances between agents.
-                     
+
 - SafetyFilter     : Monitors agent positions and prevents collisions by overriding
                      control commands when agents get too close. Uses configurable
                      thresholds for minimum separation distances.
@@ -38,7 +38,7 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         zen_partial             = True,
         populate_full_signature = True
     ),
-    
+
     "safety_filter": builds(
         SafetyFilter,
         flock                   = "${controller.flock}",

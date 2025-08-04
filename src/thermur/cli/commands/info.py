@@ -17,21 +17,21 @@ def info():
     environment in which the training is running.
     """
     app.ui.print_header("Thermur System Information")
-    
+
     app.ui.print_section("System Information")
     info = app.system.get_system_info()
     app.ui.console.print(app.ui.create_system_table(info))
     app.ui.console.print()
-    
+
     app.ui.display_wandb("info")
     app.ui.console.print()
-    
+
     app.ui.print_section("Configuration System")
     app.ui.print_config_value(
         align_width = 11,
         key         = "Config Path",
         value       = "configs/"
     )
-    
+
     app.ui.print_section("Common Commands")
     app.ui.print_command_examples(app.cfg.display.commands_examples)

@@ -36,7 +36,7 @@ class SafetyFilter:
     """
 
     def __init__(
-        self, 
+        self,
         flock      : FlockModel,
         safety     : SafetyModel,
         thresholds : ThresholdsModel
@@ -63,7 +63,7 @@ class SafetyFilter:
     def _log_activation(self, is_active: Tensor):
         """
         Records barrier function activations for debugging and monitoring.
-        
+
         Args:
             is_active: Boolean tensor indicating which agents had the CBF
                        actively modify their control input.
@@ -72,8 +72,8 @@ class SafetyFilter:
         self.total_queries    += is_active.shape[0]
 
     def filter(
-        self, 
-        flock     : TensorDictBase, 
+        self,
+        flock     : TensorDictBase,
         u_nominal : Tensor
     ) -> Tensor:
         """
@@ -104,7 +104,7 @@ class SafetyFilter:
             eps     = self.safety.qp_eps,
             maxIter = self.safety.qp_max_iter,
         )
-            
+
         try:
             u_safe = solver(
                 Q = self.Q.to(device).expand(agent_count, -1, -1),
@@ -114,7 +114,7 @@ class SafetyFilter:
                 A = th.empty(0, device=device),
                 b = th.empty(0, device=device),
             )
-            
+
             assert u_safe is not None
             delta     = u_safe - u_nominal
             is_active = delta.norm(dim=1) > self.activation_tolerance
@@ -123,18 +123,18 @@ class SafetyFilter:
 
         except Exception:
             return (
-                u_nominal if self.safety.qp_on_failure == "nominal" 
+                u_nominal if self.safety.qp_on_failure == "nominal"
                 else th.zeros_like(u_nominal)
             )
-    
+
     def get_activation_rate(self) -> float:
         """
         Returns the percentage of queries where the CBF was active.
-        
+
         Returns:
             The activation rate as a percentage.
         """
         return (
-            0.0 if self.total_queries == 0 
+            0.0 if self.total_queries == 0
             else (self.activation_count / self.total_queries) * 100.0
         )
