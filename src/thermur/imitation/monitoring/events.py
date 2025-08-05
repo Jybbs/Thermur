@@ -1,7 +1,7 @@
 """
 Event logging system for tracking agent-level decisions and state transitions.
 
-This module provides detailed logging capabilities for debugging swarm behavior,
+This module provides detailed logging capabilities for debugging flock behavior,
 tracking individual agent decisions, CBF activations, and critical events during
 training and simulation. It integrates with PyTorch Lightning's logging system
 and provides structured outputs for post-hoc analysis.

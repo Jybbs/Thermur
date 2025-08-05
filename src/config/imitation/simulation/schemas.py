@@ -94,11 +94,32 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "fails outside data bounds or during initialization."
         )
     )
+    drag_coefficient: NonNegativeFloat = Field(
+        default     = 0.1,
+        description = (
+            "Quadratic drag coefficient Cd for aerodynamic resistance modeling, "
+            "where F_drag = -Cd * v * |v| simulates air resistance effects."
+        )
+    )
     gravity: PositiveFloat = Field(
         default     = 9.81,
         description = (
             "Gravitational acceleration g in m/s². Used for physics calculations "
             "and energy consumption estimation."
+        )
+    )
+    initial_spacing_factor: PositiveFloat = Field(
+        default     = 0.5,
+        description = (
+            "Multiplicative factor for initial Fibonacci lattice spacing relative to "
+            "communication range, ensuring strong initial k-NN connectivity."
+        )
+    )
+    max_speed: PositiveFloat = Field(
+        default     = 20.0,
+        description = (
+            "Maximum agent velocity v_max in m/s enforced as a hard constraint, "
+            "representing physical limitations of drone propulsion systems."
         )
     )
     simulation_step: PositiveFloat = Field(
