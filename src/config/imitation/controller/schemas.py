@@ -8,29 +8,55 @@ from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat, Positive
 from typing   import Literal
 
 
-class ExpertModel(BaseModel, extra="forbid"):
+class MurmurationModel(BaseModel, extra="forbid"):
     """
-    Unified control system configuration for expert flocking behavior.
-
-    Combines Reynolds flocking weights and numerical parameters into
-    a single configuration for the expert controller that generates
-    demonstrations for imitation learning.
-
-    The controller computes nominal actions 𝐮_nom from the negative
-    gradient of a potential function U, where:
-
-        𝐮_nom = -∇_x U(S_t)
-
-    The potential U combines classical Reynolds rules with thermal constraints:
-
-        U = ω_coh · U_coh + ω_sep · U_sep + ω_align · U_align + ω_thermal · U_thermal
-
-    where the individual potentials are:
-        - Cohesion:   U_coh   = (1/2) · Σ_j∈N(i) ||𝐱_i - 𝐱_j||²
-        - Separation: U_sep   = Σ_j∈N(i) 1/||𝐱_i - 𝐱_j||
-        - Alignment:  U_align = (1/2) · Σ_j∈N(i) ||𝐯_i - 𝐯_j||²
-        - Thermal:    U_thermal = 1/(T_max - T_i)
+    Unified configuration for murmuration dynamics and control weights.
+    
+    Combines topological interaction parameters, critical state dynamics,
+    and Reynolds rule weights into a single model that fully specifies
+    the murmuration behavior. The controller uses these parameters to
+    implement biologically-inspired flocking with scale-free correlations
+    and rapid information propagation.
+    
+    The murmuration exists at a critical state (phase transition) where
+    susceptibility diverges, enabling near-instantaneous response to threats
+    while maintaining cohesion through topological neighbor tracking.
     """
+    alert_threshold: PositiveFloat = Field(
+        default     = 0.3,
+        description = (
+            "Normalized threat level θ_alert ∈ [0,1] triggering transition from cruise "
+            "to alert mode, where 0 represents ambient temperature and 1 represents T_max."
+        )
+    )
+    correlation_exponent: PositiveFloat = Field(
+        default     = 0.333,
+        description = (
+            "Target power-law exponent γ ≈ 1/3 for velocity correlation decay C(r) ∼ r^(-γ), "
+            "matching empirical observations of scale-free correlations in starling flocks."
+        )
+    )
+    correlation_strength: PositiveFloat = Field(
+        default     = 1.5,
+        description = (
+            "Additional alignment weight α_corr applied in alert mode to enhance velocity "
+            "correlation and create tighter, more responsive collective motion."
+        )
+    )
+    coupling_decay: PositiveFloat = Field(
+        default     = 0.5,
+        description = (
+            "Exponential decay rate λ for topological interaction strength J_ij = J_0 exp(-d_ij/λ), "
+            "controlling how influence diminishes with topological distance."
+        )
+    )
+    density_strength: PositiveFloat = Field(
+        default     = 0.8,
+        description = (
+            "Additional cohesion weight β_dense applied in alert mode to increase flock "
+            "density, creating the characteristic 'ink-like' appearance during evasion."
+        )
+    )
     epsilon: PositiveFloat = Field(
         default     = 1e-8,
         description = (
@@ -38,11 +64,32 @@ class ExpertModel(BaseModel, extra="forbid"):
             "potential gradient calculations, particularly for separation forces."
         )
     )
+    k_neighbors: PositiveInt = Field(
+        default     = 7,
+        description = (
+            "Number of topological nearest neighbors each agent tracks, based on "
+            "empirical observations of 6-7 neighbors in real starling flocks."
+        )
+    )
     min_distance: PositiveFloat = Field(
         default     = 0.1,
         description = (
             "Minimum inter-agent distance ε_dist in meters enforced during separation "
             "force computation to prevent singularities in U_sep = Σ 1/||𝐱_i - 𝐱_j||."
+        )
+    )
+    susceptibility_amplification: PositiveFloat = Field(
+        default     = 2.0,
+        description = (
+            "Amplification factor α_χ for alignment weight modulation based on susceptibility, "
+            "creating stronger velocity correlation as the flock approaches critical state."
+        )
+    )
+    susceptibility_target: PositiveFloat = Field(
+        default     = 10.0,
+        description = (
+            "Target susceptibility χ_target for maintaining critical state dynamics, where "
+            "χ = N·Var[Φ] measures the flock's responsiveness to perturbations."
         )
     )
     temperature_scaling: PositiveFloat = Field(
@@ -53,24 +100,24 @@ class ExpertModel(BaseModel, extra="forbid"):
         )
     )
     w_alignment: NonNegativeFloat = Field(
-        default     = 0.8,
+        default     = 1.0,
         description = (
-            "Weight ω_align for velocity alignment potential U_align = (1/2)Σ||𝐯_i - 𝐯_j||², "
-            "promoting coordinated motion and reducing relative velocities within neighborhoods."
+            "Base weight ω_align for velocity alignment potential U_align = (1/2)Σ||𝐯_i - 𝐯_j||², "
+            "modulated by susceptibility to achieve critical state dynamics."
         )
     )
     w_cohesion: NonNegativeFloat = Field(
-        default     = 1.0,
+        default     = 0.8,
         description = (
-            "Weight ω_coh for cohesion potential U_coh = (1/2)Σ||𝐱_i - 𝐱_j||², creating "
-            "attractive forces toward local neighborhood center of mass."
+            "Weight ω_coh for cohesion potential U_coh = (1/2)Σ||𝐱_i - 𝐱_j||², slightly "
+            "reduced from baseline to account for topological neighborhood effects."
         )
     )
     w_separation: NonNegativeFloat = Field(
-        default     = 1.5,
+        default     = 1.2,
         description = (
-            "Weight ω_sep for separation potential U_sep = Σ 1/||𝐱_i - 𝐱_j||, generating "
-            "repulsive forces that increase rapidly as agents approach collision."
+            "Weight ω_sep for separation potential U_sep = Σ 1/||𝐱_i - 𝐱_j||, maintained "
+            "at standard level to ensure collision avoidance regardless of formation."
         )
     )
     w_thermal: NonNegativeFloat = Field(
@@ -108,8 +155,9 @@ class FlockModel(BaseModel, extra="forbid"):
 
         ||𝐱_i - 𝐱_j|| ≤ R_comm
 
-    This metric-based connectivity contrasts with topological neighborhoods used
-    in biological flocks (typically 6-7 nearest neighbors regardless of distance).
+    Note: With murmuration dynamics, this metric-based connectivity is overridden
+    by topological neighborhoods (k-nearest neighbors) for control calculations,
+    though R_comm still affects simulation and safety constraints.
     """
     agent_count: PositiveInt = Field(
         default     = 30,
@@ -124,21 +172,6 @@ class FlockModel(BaseModel, extra="forbid"):
         description = (
             "Maximum distance R_comm in meters for edge formation in dynamic graph "
             "G_t where (i,j) ∈ E_t iff ||𝐱_i - 𝐱_j|| ≤ R_comm."
-        )
-    )
-    formation_scale_factor: PositiveFloat = Field(
-        default     = 0.5,
-        le          = 1,
-        description = (
-            "Formation density factor γ ∈ (0, 1] scaling initial agent spacing as "
-            "γ × R_comm, balancing connectivity versus spatial coverage at startup."
-        )
-    )
-    initial_formation: Literal["cube", "sphere", "random"] = Field(
-        default     = "sphere",
-        description = (
-            "Starting geometric pattern for agent positions, affecting initial graph "
-            "topology and convergence dynamics of the flocking controller."
         )
     )
     thermal_time_constant: PositiveFloat = Field(
