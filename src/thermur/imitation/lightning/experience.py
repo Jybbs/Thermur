@@ -15,7 +15,7 @@ from typing                      import TYPE_CHECKING
 if TYPE_CHECKING:
     from config.imitation.lightning        import ExperienceModel
     from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
-    from thermur.imitation.controller      import ExpertController
+    from thermur.imitation.controller      import MurmurationController
     from thermur.imitation.simulation      import SimulationEnv
 
 
@@ -39,7 +39,7 @@ class DataModule(LightningDataModule):
         self,
         env        : SimulationEnv,
         experience : ExperienceModel,
-        expert     : ExpertController
+        expert     : MurmurationController
     ):
         """
         Initialize the experience module.

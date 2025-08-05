@@ -189,7 +189,6 @@ class DisplayModel(BaseModel, extra="forbid"):
             'disk'     : '💿 Disk',
             'gpu'      : '💎 GPU',
             'memory'   : '💾 Memory',
-            'mujoco'   : '🥽 MuJoCo',
             'platform' : '🖥️  Platform',
             'python'   : '🐍 Python',
             'thermur'  : '🔥 Thermur',

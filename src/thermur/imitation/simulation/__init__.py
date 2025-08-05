@@ -4,13 +4,11 @@ Simulation environment for thermally-aware drone flocks.
 This package provides the core simulation components for training and evaluating
 multi-agent flocking policies in wildfire scenarios. The main components include:
 
-- SimulationEnv: TorchRL-compatible environment managing agent physics and observations
+- SimulationEnv: TorchRL-compatible environment with simple physics integration
 - WRFDataSource: Loader for environmental data (wind, temperature fields)
-- XMLGenerator: Dynamic MuJoCo model generation for N-agent systems
 
-The simulation integrates rigid-body physics (MuJoCo) with dynamic environmental
-hazards, providing a realistic testbed for thermal-aware navigation policies.
+The simulation uses Euler integration for agent dynamics and interfaces with
+environmental data to provide realistic thermal navigation scenarios.
 """
 from .environment import *
-from .generator   import *
 from .loader      import *
