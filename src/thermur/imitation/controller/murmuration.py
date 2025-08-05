@@ -77,7 +77,7 @@ class MurmurationController:
         computation and returning a TensorDict with the action.
 
         Args:
-            flock : TensorDict containing the current flock state
+            flock: TensorDict containing the current flock state
 
         Returns:
             TensorDict with the computed action added
@@ -86,7 +86,6 @@ class MurmurationController:
         flock["action"] = action
         return flock
 
-    
     def _compute_hamiltonian_forces(
         self,
         gradient   : Tensor,
@@ -161,6 +160,61 @@ class MurmurationController:
 
         return forces
     
+    def _compute_susceptibility(self, velocities: Tensor) -> Tensor:
+        """
+        Compute flock susceptibility χ = N · Var[Φ].
+
+        From Cavagna et al. (2010), susceptibility measures the flock's
+        responsiveness to perturbations:
+
+            χ = N · ⟨(Φ - ⟨Φ⟩)²⟩
+
+        where Φ = |Σ_i 𝐬_i|/N is the polarization order parameter. At critical
+        state, χ diverges, enabling rapid information propagation with speed:
+
+            v_info = c_0 √(χ/m_eff) ∈ [15, 45] m/s
+
+        Note: For real-time control, we use instantaneous variance. Full temporal
+        variance would require maintaining history across timesteps.
+
+        Args:
+            velocities: Tensor [N, 3] containing agent velocities 𝐯
+
+        Returns:
+            Scalar susceptibility value χ
+        """
+        spin_vectors = velocities / velocities.norm(dim=1, keepdim=True).clamp(
+            min=1e-8
+        )
+        mean_spin  = spin_vectors.mean(dim=0)
+        deviations = spin_vectors - mean_spin
+        variance   = (deviations.norm(dim=1) ** 2).mean()
+
+        return len(velocities) * variance
+    
+    def _compute_threat_level(self, temperature: Tensor) -> Tensor:
+        """
+        Compute normalized threat level for mode switching.
+
+        Maps temperature to [0, 1] range where:
+            - θ < 0.3: Cruise mode (normal murmuration)
+            - θ ≥ 0.3: Alert mode (enhanced cohesion and correlation)
+
+        The threshold at 0.7 * T_max provides a safety margin before critical
+        temperature is reached.
+
+        Args:
+            temperature: Tensor [N] or [N, 1] containing agent temperatures T
+
+        Returns:
+            Tensor [N] of normalized threat levels θ ∈ [0, 1]
+        """
+        threat_threshold = self.safety.max_temperature * self.mmm.threat_threshold_ratio
+        threat_range     = self.safety.max_temperature * self.mmm.threat_range_ratio
+        threat_level     = (temperature - threat_threshold) / threat_range
+
+        return threat_level.clamp(0, 1)
+    
     def _compute_topological_distances(
         self,
         edge_index : Tensor,
@@ -231,61 +285,6 @@ class MurmurationController:
             device = positions.device,
             dtype  = th.long
         )
-    
-    def _compute_susceptibility(self, velocities: Tensor) -> Tensor:
-        """
-        Compute flock susceptibility χ = N · Var[Φ].
-
-        From Cavagna et al. (2010), susceptibility measures the flock's
-        responsiveness to perturbations:
-
-            χ = N · ⟨(Φ - ⟨Φ⟩)²⟩
-
-        where Φ = |Σ_i 𝐬_i|/N is the polarization order parameter. At critical
-        state, χ diverges, enabling rapid information propagation with speed:
-
-            v_info = c_0 √(χ/m_eff) ∈ [15, 45] m/s
-
-        Note: For real-time control, we use instantaneous variance. Full temporal
-        variance would require maintaining history across timesteps.
-
-        Args:
-            velocities: Tensor [N, 3] containing agent velocities 𝐯
-
-        Returns:
-            Scalar susceptibility value χ
-        """
-        spin_vectors = velocities / velocities.norm(dim=1, keepdim=True).clamp(
-            min=1e-8
-        )
-        mean_spin    = spin_vectors.mean(dim=0)
-        deviations   = spin_vectors - mean_spin
-        variance     = (deviations.norm(dim=1) ** 2).mean()
-
-        return len(velocities) * variance
-    
-    def _compute_threat_level(self, temperature: Tensor) -> Tensor:
-        """
-        Compute normalized threat level for mode switching.
-
-        Maps temperature to [0, 1] range where:
-            - θ < 0.3: Cruise mode (normal murmuration)
-            - θ ≥ 0.3: Alert mode (enhanced cohesion and correlation)
-
-        The threshold at 0.7 * T_max provides a safety margin before critical
-        temperature is reached.
-
-        Args:
-            temperature : Tensor [N] or [N, 1] containing agent temperatures T
-
-        Returns:
-            Tensor [N] of normalized threat levels θ ∈ [0, 1]
-        """
-        threat_threshold = self.safety.max_temperature * self.mmm.threat_threshold_ratio
-        threat_range     = self.safety.max_temperature * self.mmm.threat_range_ratio
-        threat_level     = (temperature - threat_threshold) / threat_range
-
-        return threat_level.clamp(0, 1)
 
     def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
         """
@@ -474,7 +473,7 @@ class MurmurationController:
         flock density during threat response.
 
         Args:
-            flock : TensorDict containing positions, velocities, temperatures
+            flock: TensorDict containing positions, velocities, temperatures
 
         Returns:
             Tensor [N, 3] of control accelerations (m/s²)
