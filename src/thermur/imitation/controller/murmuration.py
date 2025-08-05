@@ -1,11 +1,10 @@
 """
-Implements the expert controller based on classic Reynolds rules
-and thermal-aware potential fields.
+Implements murmuration dynamics with topological interactions.
 
-This module provides a physics-based expert controller that generates
-optimal trajectory datasets for imitation learning. The expert combines
-Reynolds flocking rules with thermal constraints to demonstrate safe
-collective behavior.
+This module provides a biologically-inspired controller based on starling
+murmurations, using topological neighborhoods (k-nearest neighbors) rather
+than metric distances. The flock maintains critical state dynamics for
+rapid information propagation and exhibits distinct cruise/alert modes.
 """
 from __future__ import annotations
 from typing     import TYPE_CHECKING
@@ -14,30 +13,30 @@ import torch as th
 
 if TYPE_CHECKING:
     from .safety                     import SafetyFilter
-    from config.imitation.controller import ExpertModel, FlockModel, ThresholdsModel
+    from config.imitation.controller import MurmurationModel, FlockModel, ThresholdsModel
     from tensordict                  import TensorDictBase
     from torch                       import Tensor
 
 
-class ExpertController:
+class MurmurationController:
     """
-    Calculates the nominal control action `𝐮_nom` using potential fields.
-
-    This controller computes a desired velocity for each agent by summing forces
-    derived from the negative gradient of several potential functions, where the
-    individual potential components follow classical Reynolds rules:
-        - U_coh^(i)     = (1/2) · Σⱼ∈N(i) ||𝐱ᵢ - 𝐱ⱼ||²
-        - U_sep^(i)     = Σⱼ∈N(i) 1/||𝐱ᵢ - 𝐱ⱼ||
-        - U_align^(i,j) = (1/2) · ||𝐯ᵢ - 𝐯ⱼ||²
-        - U_therm^(i)   = 1/(T_max - T_i)
-
-    The nominal control action is then 𝐮_nom^(i) = -∇ₓᵢU(𝐒ₜ)
+    Implements murmuration dynamics with topological interactions.
+    
+    This controller generates biologically-inspired flocking behavior based on
+    starling murmurations, using topological neighborhoods (k-nearest neighbors)
+    rather than metric distances. The flock maintains critical state dynamics
+    for rapid information propagation and exhibits distinct cruise/alert modes.
+    
+    The controller implements an enhanced Hamiltonian formulation:
+        E = -Σ J_ij 𝐬_i · 𝐬_j - Σ 𝐡_i · 𝐬_i
+    
+    where 𝐬_i are normalized velocities and J_ij decay with topological distance.
     """
 
     def __init__(
         self,
-        expert        : ExpertModel,
         flock         : FlockModel,
+        mmm           : MurmurationModel,
         thresholds    : ThresholdsModel,
         safety_filter : SafetyFilter | None = None
     ):
@@ -45,16 +44,15 @@ class ExpertController:
         Initializes the controller with the necessary configuration models.
 
         Args:
-            expert        : Contains both Reynolds weights and numerical parameters
-                            for stable force calculations.
             flock         : Flock configuration containing agent properties.
+            mmm           : Murmuration model with dynamics and weight parameters.
+            thresholds    : Safety threshold configuration used across domains.
             safety_filter : Optional safety filter for CBF-based control limiting.
                             If None, no safety filtering is applied.
-            thresholds    : Safety threshold configuration used across domains.
         """
-        self.expert          = expert
         self.flock           = flock
         self.max_temperature = thresholds.max_temperature
+        self.mmm             = mmm
         self.safety_filter   = safety_filter
         self.thresholds      = thresholds
         self._reset_shared_state()
@@ -184,8 +182,8 @@ class ExpertController:
         distance = rel_pos.norm(dim=1, keepdim=True)
 
         # Apply minimum distance and calculate repulsion
-        distance  = th.clamp(distance, min=self.expert.min_distance)
-        repulsion = rel_pos / (distance.pow(2) + self.expert.epsilon)
+        distance  = th.clamp(distance, min=self.mmm.min_distance)
+        repulsion = rel_pos / (distance.pow(2) + self.mmm.epsilon)
 
         # Sum repulsion vectors for each agent
         separation = th.zeros_like(position)
@@ -228,10 +226,10 @@ class ExpertController:
         temperature = self._ensure_1d_temperature(temperature)
         t_margin    = th.clamp(
             input = self.max_temperature - temperature,
-            min   = self.expert.epsilon
+            min   = self.mmm.epsilon
         )
 
-        magnitude = self.expert.temperature_scaling / t_margin
+        magnitude = self.mmm.temperature_scaling / t_margin
 
 
         # Force points away from high temperatures
@@ -292,7 +290,7 @@ class ExpertController:
         temp_diff = temperature[self._edge_target] - temperature[self._edge_source]
 
         # Sum weighted positions and count significant neighbors
-        sig_mask   = th.abs(temp_diff) > self.expert.epsilon
+        sig_mask   = th.abs(temp_diff) > self.mmm.epsilon
         grad_sum   = th.zeros_like(position)
         sig_counts = th.bincount(
             input     = self._edge_source[sig_mask],
@@ -420,10 +418,10 @@ class ExpertController:
         )
 
         u_nominal = (
-            self.expert.w_cohesion   * cohesion   +
-            self.expert.w_separation * separation +
-            self.expert.w_alignment  * alignment  +
-            self.expert.w_thermal    * thermal
+            self.mmm.w_cohesion   * cohesion   +
+            self.mmm.w_separation * separation +
+            self.mmm.w_alignment  * alignment  +
+            self.mmm.w_thermal    * thermal
         )
 
         if self.safety_filter is not None:
