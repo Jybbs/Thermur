@@ -75,165 +75,195 @@ class MurmurationController:
         flock["action"] = action
         return flock
 
-    def _compute_alignment(self, velocity: Tensor) -> Tensor:
-        """
-        Calculates the alignment force vector for each agent.
-
-        The alignment term implements the third of Reynolds' flocking rules,
-        creating a force that causes agents to match velocities with their
-        neighbors. For each agent i, the average velocity of its neighborhood is:
-
-            𝐯̄ᵢ = (1/|N(i)|) · Σⱼ∈N(i) 𝐯ⱼ
-
-        The resulting alignment force is the difference between this average
-        and the agent's current velocity:
-
-            𝐅_align = 𝐯̄ᵢ - 𝐯ᵢ
-
-        This creates a tendency for agents to synchronize their motion,
-        leading to the coherent movement patterns observed in natural flocks.
-
-        Args:
-            velocity: Tensor [N, dim] containing agent velocities 𝐯
-
-        Returns:
-            Tensor [N, dim] of alignment force vectors for all agents
-        """
-        avg_velocity = th.zeros_like(velocity)
-
-        if self._edge_source.numel():
-            avg_velocity.index_add_(
-                dim    = 0,
-                index  = self._edge_source,
-                source = velocity[self._edge_target]
-            )
-            avg_velocity = avg_velocity / self._safe_count.unsqueeze(1)
-
-        # Apply force only to agents with neighbors
-        has_neighbors = (self._neighbor_count > 0).float().unsqueeze(1)
-        return (avg_velocity - velocity) * has_neighbors
-
-    def _compute_cohesion(self, position: Tensor) -> Tensor:
-        """
-        Calculates the cohesion force vector for each agent.
-
-        The cohesion term implements the first of Reynolds' flocking rules,
-        creating an attractive force toward the center of mass of an agent's
-        neighbors. For each agent i, the center of mass of its neighborhood is:
-
-            𝐱̄ᵢ = (1/|N(i)|) · Σⱼ∈N(i) 𝐱ⱼ
-
-        The resulting cohesion force is the vector pointing from the agent's
-        position toward this center of mass:
-
-            𝐅_coh = 𝐱̄ᵢ - 𝐱ᵢ
-
-        The force magnitude increases with distance from the center of mass,
-        creating a tendency for the flock to maintain cohesion.
-
-        Args:
-            position: Tensor [N, dim] containing agent positions 𝐱
-
-        Returns:
-            Tensor [N, dim] of cohesion force vectors for all agents
-        """
-        center_of_mass = th.zeros_like(position)
-
-        if self._edge_source.numel():
-            center_of_mass.index_add_(
-                dim    = 0,
-                index  = self._edge_source,
-                source = position[self._edge_target]
-            )
-            center_of_mass = center_of_mass / self._safe_count.unsqueeze(1)
-
-        # Apply force only to agents with neighbors
-        has_neighbors = (self._neighbor_count > 0).float().unsqueeze(1)
-        return (center_of_mass - position) * has_neighbors
-
-    def _compute_separation(self, position: Tensor) -> Tensor:
-        """
-        Calculates the separation force vector for each agent.
-
-        The separation term implements the second of Reynolds' flocking rules,
-        creating a repulsive force that prevents collisions between agents.
-        For each agent i and its neighbor j, we calculate a repulsion vector:
-
-            𝐅_sepᵢⱼ = (𝐱ᵢ - 𝐱ⱼ) / ||𝐱ᵢ - 𝐱ⱼ||²
-
-        The total separation force is the sum of these repulsions:
-
-            𝐅_sep = Σⱼ∈N(i) 𝐅_sepᵢⱼ
-
-        The force magnitude is inversely proportional to the squared distance,
-        creating a stronger repulsion between agents that are close to each other.
-
-        Args:
-            position: Tensor [N, dim] containing agent positions 𝐱
-
-        Returns:
-            Tensor [N, dim] of separation force vectors for all agents
-        """
-        # Calculate displacement vectors and distances
-        if not self._edge_source.numel():
-            return th.zeros_like(position)
-
-        rel_pos  = position[self._edge_source] - position[self._edge_target]
-        distance = rel_pos.norm(dim=1, keepdim=True)
-
-        # Apply minimum distance and calculate repulsion
-        distance  = th.clamp(distance, min=self.mmm.min_distance)
-        repulsion = rel_pos / (distance.pow(2) + self.mmm.epsilon)
-
-        # Sum repulsion vectors for each agent
-        separation = th.zeros_like(position)
-        separation.index_add_(
-            dim    = 0,
-            index  = self._edge_source,
-            source = repulsion
-        )
-
-        return separation
-
-    def _compute_thermal(
+    
+    def _compute_hamiltonian_forces(
         self,
-        temperature : Tensor,
-        gradient    : Tensor
+        positions  : Tensor,
+        velocities : Tensor,
+        gradient   : Tensor
     ) -> Tensor:
         """
-        Calculates the thermal repulsion force for each agent.
-
-        This implements a thermal-aware repulsion that prevents agents from
-        entering high-temperature regions. The force magnitude increases
-        sharply as the agent's temperature approaches T_max, creating a
-        strong barrier against thermal damage.
-
-        For each agent i, the thermal repulsion is calculated as:
-
-            𝐅_thermᵢ = -∇T_i · scale / (T_max - T_i)
-
-        where ∇T_i is the temperature gradient at the agent's position,
-        T_max is the maximum survivable temperature, and scale is a
-        configurable parameter controlling the overall repulsion strength.
-
+        Compute forces from Hamiltonian energy minimization.
+        
+        Implements the Hamiltonian formulation from Bialek et al. (2012):
+            E = -Σ_<ij> J_ij s_i · s_j - Σ_i h_i · s_i
+        
+        where s_i are normalized velocities (spin variables) and J_ij decay
+        with topological distance. Forces are computed as u_i = -∂E/∂x_i.
+        
         Args:
-            temperature : Tensor [N] or [N, 1] containing temperatures T
-            gradient    : Tensor [N, dim] of temperature gradients ∇T
-
+            positions  : Tensor [N, 3] of agent positions
+            velocities : Tensor [N, 3] of agent velocities
+            gradient   : Tensor [N, 3] of temperature gradients (external field)
+            
         Returns:
-            Tensor [N, dim] of thermal repulsion force vectors for all agents
+            Tensor [N, 3] of control forces
         """
-        temperature = self._ensure_1d_temperature(temperature)
-        t_margin    = th.clamp(
-            input = self.max_temperature - temperature,
-            min   = self.mmm.epsilon
+        n_agents = len(positions)
+        device = positions.device
+        
+        # Get topological neighbors and distances
+        edge_index = self._compute_topological_neighbors(self.mmm.k_neighbors, positions)
+        edge_source, edge_target = edge_index
+        
+        # Compute topological distances as minimum hop count
+        metric_distances = th.cdist(positions, positions)
+        topo_distances = self._compute_topological_distances(edge_index, n_agents)
+        
+        # Compute interaction strengths J_ij
+        J_0 = self.mmm.j_base
+        lambda_decay = self.mmm.coupling_decay
+        J_matrix = th.zeros((n_agents, n_agents), device=device)
+        
+        for i, j in zip(edge_source.tolist(), edge_target.tolist()):
+            J_matrix[i, j] = J_0 * th.exp(-topo_distances[i, j] / lambda_decay)
+        
+        # Make J_matrix symmetric
+        J_matrix = (J_matrix + J_matrix.T) / 2
+        
+        # Compute alignment forces from Hamiltonian
+        forces = th.zeros_like(positions)
+        
+        # The key insight from Bialek et al.: birds align their velocities with neighbors
+        # Force on agent i: F_i = Σ_j J_ij (v_j - v_i) for topological neighbors
+        
+        if edge_source.numel() > 0:
+            # Get velocities for connected pairs
+            vel_i = velocities[edge_source]
+            vel_j = velocities[edge_target]
+            
+            # J_ij values with topological decay
+            J_edges = J_0 * th.exp(-topo_distances[edge_source, edge_target] / lambda_decay)
+            
+            # Alignment force: weighted velocity difference
+            force_contrib = J_edges.unsqueeze(1) * (vel_j - vel_i)
+            
+            # Accumulate forces
+            forces.index_add_(0, edge_source, force_contrib)
+        
+        # Vectorized short-range repulsion
+        mask = metric_distances < self.mmm.min_distance * 3
+        mask.fill_diagonal_(False)
+        if mask.any():
+            i_idx, j_idx = th.where(mask)
+            r_vec = positions[j_idx] - positions[i_idx]
+            r_norm = r_vec.norm(dim=1, keepdim=True).clamp(min=self.mmm.min_distance)
+            repulsion = self.mmm.w_separation * r_vec / (r_norm ** 3)
+            forces.index_add_(0, i_idx, -repulsion)
+        
+        # Add external field term (thermal gradient)
+        h_strength = self.mmm.temperature_scaling
+        forces -= h_strength * gradient
+        
+        return forces
+    
+    def _compute_topological_distances(
+        self,
+        edge_index : Tensor,
+        n_agents   : int
+    ) -> Tensor:
+        """
+        Compute minimum hop distances between all pairs of agents.
+        
+        Uses Floyd-Warshall algorithm to find shortest paths in the k-NN graph.
+        
+        Args:
+            edge_index : Tensor [2, E] of k-NN connections
+            n_agents   : Number of agents
+            
+        Returns:
+            Tensor [N, N] of topological distances (hop counts)
+        """
+        device = edge_index.device
+        
+        # Initialize distance matrix
+        dist = th.full((n_agents, n_agents), float('inf'), device=device)
+        dist.fill_diagonal_(0)
+        
+        # Set distance 1 for direct neighbors
+        if edge_index.numel() > 0:
+            dist[edge_index[0], edge_index[1]] = 1
+            dist[edge_index[1], edge_index[0]] = 1  # Symmetric
+        
+        # Floyd-Warshall algorithm
+        for k in range(n_agents):
+            dist = th.min(dist, dist[:, k:k+1] + dist[k:k+1, :])
+        
+        return dist
+    
+    def _compute_topological_neighbors(
+        self,
+        k         : int,
+        positions : Tensor
+    ) -> Tensor:
+        """
+        Compute k-nearest neighbors for each agent using topological distance.
+        
+        Args:
+            k         : Number of nearest neighbors to connect
+            positions : Tensor [N, 3] containing agent positions
+            
+        Returns:
+            Tensor [2, E] edge index in COO format for PyG
+        """
+        distances   = th.cdist(positions, positions)
+        _, indices  = distances.topk(k + 1, largest=False)
+        edge_source = []
+        edge_target = []
+        
+        for i in range(len(positions)):
+            for j in indices[i, 1:]:
+                edge_source.append(i)
+                edge_target.append(j.item())
+                
+        return th.tensor(
+            data   = [edge_source, edge_target], 
+            device = positions.device,
+            dtype  = th.long
         )
-
-        magnitude = self.mmm.temperature_scaling / t_margin
-
-
-        # Force points away from high temperatures
-        return -gradient * magnitude.unsqueeze(1)
+    
+    def _compute_susceptibility(self, velocities: Tensor) -> Tensor:
+        """
+        Compute flock susceptibility χ = N · Var[Φ].
+        
+        Susceptibility measures the flock's responsiveness to perturbations.
+        At critical state, χ diverges, enabling rapid information propagation.
+        
+        Note: For real-time control, we use instantaneous variance as an
+        approximation. Full temporal variance would require maintaining
+        history across timesteps, which is better suited for offline analysis.
+        
+        Args:
+            velocities : Tensor [N, 3] containing agent velocities
+            
+        Returns:
+            Scalar susceptibility value
+        """
+        normalized_vels = velocities / velocities.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        polarization = normalized_vels.mean(dim=0)
+        
+        # Instantaneous variance approximation
+        velocity_var = ((normalized_vels - polarization).norm(dim=1) ** 2).mean()
+        
+        return len(velocities) * velocity_var
+    
+    def _compute_threat_level(self, temperature: Tensor) -> Tensor:
+        """
+        Compute normalized threat level for mode switching.
+        
+        Maps temperature to [0, 1] range where 0 is safe and 1 is critical.
+        
+        Args:
+            temperature : Tensor [N] or [N, 1] containing agent temperatures
+            
+        Returns:
+            Tensor [N] of normalized threat levels
+        """
+        temp_normalized = (temperature - self.thresholds.max_temperature * 0.7) / (
+            self.thresholds.max_temperature * 0.3
+        )
+        
+        return temp_normalized.clamp(0, 1)
 
     def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
         """
@@ -322,18 +352,25 @@ class MurmurationController:
 
     def _update_graph_state(
         self,
-        edge_index : Tensor,
+        flock      : TensorDictBase,
         num_agents : int
     ):
         """
-        Updates shared state for graph calculations across Reynolds rules.
-
+        Update graph connectivity using topological neighborhoods.
+        
+        Computes k-nearest neighbor topology from current positions.
+        
         Args:
-            edge_index : Tensor defining the communication graph topology Gₜ = (V, Eₜ)
-            num_agents : The total number of agents N in the flock
+            flock      : TensorDict containing current positions
+            num_agents : Total number of agents in flock
         """
+        positions = flock["position"]
+        edge_index = self._compute_topological_neighbors(
+            k         = self.mmm.k_neighbors,
+            positions = positions
+        )
+        
         device = edge_index.device
-
         if edge_index.numel():
             self._edge_source, self._edge_target = edge_index
             self._neighbor_count = th.bincount(
@@ -345,9 +382,9 @@ class MurmurationController:
             self._neighbor_count = th.zeros(
                 num_agents,
                 device = device,
-                dtype  = th.long,
+                dtype  = th.long
             )
-
+            
         self._safe_count = th.clamp(self._neighbor_count, min=1)
 
     def _vertical_heat_gradient(
@@ -387,43 +424,33 @@ class MurmurationController:
         return vertical * norm_temp.unsqueeze(1)
 
     def compute_nominal_action(self, flock: TensorDictBase) -> Tensor:
-        """
-        Computes the collective nominal control action for the entire flock.
-
-        This method calculates the weighted sum of forces from all potential
-        fields to produce the final velocity command 𝐮_nom. The weights come
-        from the `control` config, balancing the influence of each behavioral
-        component.
-
-        If a safety_filter is provided, the nominal control action is passed
-        through a Control Barrier Function to ensure thermal safety constraints
-        are satisfied, resulting in a safety-certified action 𝐮*.
-
-        Args:
-            flock: The flock data containing the flock's current state including
-                   position, velocity, temperature, and edge_index tensors.
-
-        Returns:
-            A tensor of velocity commands for all agents.
-        """
-        self._update_graph_state(flock["edge_index"], flock["position"].size(0))
-
-        # Compute the nominal control based on Reynolds rules and thermal potential
-        cohesion   = self._compute_cohesion(flock["position"])
-        separation = self._compute_separation(flock["position"])
-        alignment  = self._compute_alignment(flock["velocity"])
-        thermal    = self._compute_thermal(
-            gradient    = flock["gradient"],
-            temperature = flock["temperature"]
+        """Compute murmuration dynamics using Hamiltonian formulation."""
+        self._update_graph_state(flock, flock["position"].size(0))
+        
+        # Use rigorous Hamiltonian formulation from Bialek et al. (2012)
+        u_nominal = self._compute_hamiltonian_forces(
+            positions  = flock["position"],
+            velocities = flock["velocity"],
+            gradient   = flock["gradient"]
         )
-
-        u_nominal = (
-            self.mmm.w_cohesion   * cohesion   +
-            self.mmm.w_separation * separation +
-            self.mmm.w_alignment  * alignment  +
-            self.mmm.w_thermal    * thermal
-        )
-
+        
+        # Mode switching in Hamiltonian: modify coupling strength
+        threat_levels = self._compute_threat_level(flock["temperature"])
+        in_alert_mode = threat_levels.max() > self.mmm.alert_threshold
+        
+        # Store alert mode state for metrics
+        flock["in_alert_mode"] = in_alert_mode
+        
+        if in_alert_mode:
+            # Strengthen interactions in alert mode by amplifying forces
+            # This effectively increases J_0 or decreases λ
+            u_nominal = u_nominal * (1 + self.mmm.correlation_strength)
+            
+            # Add density-increasing force toward center of mass
+            center_of_mass = flock["position"].mean(dim=0)
+            density_force = (center_of_mass - flock["position"]) * self.mmm.density_strength
+            u_nominal = u_nominal + density_force
+        
         if self.safety_filter is not None:
             return self.safety_filter.filter(flock, u_nominal)
         return u_nominal

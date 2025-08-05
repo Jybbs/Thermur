@@ -219,13 +219,10 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` containing the initial observation of the flock.
         """
-        # TODO: Implement proper murmuration initial positions
-        # For now, using compact spherical formation as placeholder
         positions = self._generate_initial_positions(self.flock.agent_count)
         
-        # Scale positions by communication range
-        # TODO: Add proper initial spacing configuration parameter
-        scaled_positions = positions * self.flock.communication_range * 0.5
+        # Scale positions by communication range and spacing factor
+        scaled_positions = positions * self.flock.communication_range * self.physics.initial_spacing_factor
 
         initial_observation = self.observation_spec.zero()
         initial_observation.update({
@@ -277,14 +274,52 @@ class SimulationEnv(EnvBase):
         # Extract control actions (accelerations)
         actions = tensordict.get("action")
         
-        # Euler integration
+        # Ensure velocities and positions are initialized
+        if self.velocities is None:
+            self.velocities = th.zeros_like(actions)
+        if self.positions is None:
+            self.positions = th.zeros_like(actions)
+        
+        # Euler integration with forces
         dt = self.physics.simulation_step
         
+        # Apply gravity force (downward in z-direction)
+        gravity_force = th.zeros_like(self.velocities)
+        gravity_force[:, 2] = -self.physics.gravity
+        
+        # Apply drag force proportional to velocity squared
+        drag_coefficient = self.physics.drag_coefficient
+        speed = self.velocities.norm(dim=1, keepdim=True)
+        drag_force = -drag_coefficient * self.velocities * speed
+        
+        # Total acceleration = control input + gravity + drag
+        total_acceleration = actions + gravity_force + drag_force
+        
         # Update velocities: v(t+dt) = v(t) + a(t) * dt
-        self.velocities = self.velocities + actions * dt
+        self.velocities = self.velocities + total_acceleration * dt
+        
+        # Clamp velocities to reasonable limits
+        max_speed = self.physics.max_speed
+        speed = self.velocities.norm(dim=1, keepdim=True)
+        self.velocities = th.where(
+            speed > max_speed,
+            self.velocities * max_speed / speed,
+            self.velocities
+        )
         
         # Update positions: x(t+dt) = x(t) + v(t+dt) * dt
         self.positions = self.positions + self.velocities * dt
+        
+        # Enforce boundary constraints
+        for i in range(3):
+            self.positions[:, i] = self.positions[:, i].clamp(
+                min=self.physics.bounds_min[i],
+                max=self.physics.bounds_max[i]
+            )
+            # Zero out velocity component if hitting boundary
+            at_min = self.positions[:, i] == self.physics.bounds_min[i]
+            at_max = self.positions[:, i] == self.physics.bounds_max[i]
+            self.velocities[at_min | at_max, i] = 0
         
         # Query environmental data at new positions
         temperature, gradient = self.wrf.query_thermal(self.positions)

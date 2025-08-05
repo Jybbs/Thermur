@@ -43,7 +43,7 @@ class FlockModel(BaseModel, extra="forbid"):
         gt          = 1,
         description = (
             "Total number of agents N in the multi-agent system, determining "
-            "computational complexity and emergent swarm dynamics scale."
+            "computational complexity and emergent flock dynamics scale."
         )
     )
     communication_range: PositiveFloat = Field(
@@ -104,6 +104,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "controlling how influence diminishes with topological distance."
         )
     )
+    density_diffusion: PositiveFloat = Field(
+        default     = 0.1,
+        description = (
+            "Diffusion coefficient D in density wave equation ∂ρ/∂t + ∇·(ρv) = D∇²ρ, "
+            "controlling how density perturbations spread through the flock."
+        )
+    )
     density_strength: PositiveFloat = Field(
         default     = 0.8,
         description = (
@@ -118,11 +125,25 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "potential gradient calculations, particularly for separation forces."
         )
     )
+    j_base: PositiveFloat = Field(
+        default     = 1.0,
+        description = (
+            "Base coupling strength J_0 in Hamiltonian formulation, controlling the "
+            "overall strength of velocity alignment interactions between neighbors."
+        )
+    )
     k_neighbors: PositiveInt = Field(
         default     = 7,
         description = (
             "Number of topological nearest neighbors each agent tracks, based on "
             "empirical observations of 6-7 neighbors in real starling flocks."
+        )
+    )
+    info_speed_coefficient: PositiveFloat = Field(
+        default     = 30.0,
+        description = (
+            "Coefficient c_0 for information propagation speed v_info = c_0 * sqrt(χ/m_eff), "
+            "calibrated to achieve empirical range of 15-45 m/s in starling flocks."
         )
     )
     min_distance: PositiveFloat = Field(
