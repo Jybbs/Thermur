@@ -9,7 +9,7 @@ Key components:
 - imitation/: Complete imitation learning pipeline including:
   - controller/: Expert controllers with Reynolds flocking and thermal constraints
   - lightning/: PyTorch Lightning training infrastructure
-  - simulation/: MuJoCo-based physics environment
+  - simulation/: Physics environment with Euler integration
   - sources/: WRF-Fire data loading and interpolation
   - visualization/: Real-time 3D rendering with PyVista
 

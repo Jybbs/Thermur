@@ -179,12 +179,11 @@ class SystemInspector:
 
         Returns:
             Dictionary containing all system information with keys:
-            - Package versions : mujoco, thermur, torch
+            - Package versions : thermur, torch
             - System info      : platform, python, python_version_info
             - Hardware         : cuda info, memory stats, disk usage
         """
         base_info: SystemInfo = {
-            "mujoco"              : self._get_package_version("mujoco"),
             "platform"            : platform(),
             "python"              : python_version(),
             "python_version_info" : version_info,

@@ -347,7 +347,7 @@ class ThermurUI:
         )
 
         resource_thresholds = {"memory": (4, 8), "disk": (5, 20)}
-        version_components  = {"python", "torch", "mujoco", "thermur"}
+        version_components  = {"python", "torch", "thermur"}
 
         for key, title in self.display.system_components.items():
             if key in resource_thresholds:

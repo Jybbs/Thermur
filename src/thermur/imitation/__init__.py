@@ -12,7 +12,7 @@ policy from expert demonstrations. The training process involves:
 The package is organized into:
 - controller/    : Expert controller implementations (flocking, safety)
 - lightning/     : PyTorch Lightning components (models, data, training)
-- simulation/    : Environment and physics simulation (MuJoCo, XML generation)
+- simulation/    : Environment and physics simulation with Euler integration
 - sources/       : Environmental data sources (WRF-Fire loaders)
 - visualization/ : 3D rendering and monitoring (PyVista-based)
 

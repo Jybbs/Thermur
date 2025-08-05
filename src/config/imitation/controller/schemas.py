@@ -8,6 +8,60 @@ from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat, Positive
 from typing   import Literal
 
 
+class FlockModel(BaseModel, extra="forbid"):
+    """
+    Unified configuration for the thermal drone flock.
+
+    Combines agent physical properties, collective behavior parameters,
+    and spatial settings into a single coherent configuration used across
+    simulation, control, and safety components.
+
+    The thermal properties govern agent survivability and safety constraints.
+    The maximum temperature T_max defines the Control Barrier Function's safety
+    boundary:
+
+        h(𝐱) = T_max - T(𝐱)
+
+    The thermal time constant τ models heat dissipation dynamics using an RC
+    thermal circuit analogy, allowing estimation of core temperature from surface
+    measurements:
+
+        T_core ≈ T_skin - τ · dT_skin/dt
+
+    The communication range R_comm determines the dynamic neighborhood graph
+    G_t = (V, E_t) at each timestep t, where edges exist between agents i and j
+    when:
+
+        ||𝐱_i - 𝐱_j|| ≤ R_comm
+
+    Note: With murmuration dynamics, this metric-based connectivity is overridden
+    by topological neighborhoods (k-nearest neighbors) for control calculations,
+    though R_comm still affects simulation and safety constraints.
+    """
+    agent_count: PositiveInt = Field(
+        default     = 30,
+        gt          = 1,
+        description = (
+            "Total number of agents N in the multi-agent system, determining "
+            "computational complexity and emergent swarm dynamics scale."
+        )
+    )
+    communication_range: PositiveFloat = Field(
+        default     = 50.0,
+        description = (
+            "Maximum distance R_comm in meters for edge formation in dynamic graph "
+            "G_t where (i,j) ∈ E_t iff ||𝐱_i - 𝐱_j|| ≤ R_comm."
+        )
+    )
+    thermal_time_constant: PositiveFloat = Field(
+        default     = 5.0,
+        description = (
+            "Thermal response time τ in seconds for RC circuit heat model, governing "
+            "temperature evolution dynamics via T_core ≈ T_skin - τ·dT_skin/dt."
+        )
+    )
+
+
 class MurmurationModel(BaseModel, extra="forbid"):
     """
     Unified configuration for murmuration dynamics and control weights.
@@ -125,60 +179,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Weight ω_thermal for thermal potential U_thermal = 1/(T_max - T_i), creating "
             "exponentially stronger avoidance forces as temperature approaches T_max."
-        )
-    )
-
-
-class FlockModel(BaseModel, extra="forbid"):
-    """
-    Unified configuration for the thermal drone flock.
-
-    Combines agent physical properties, collective behavior parameters,
-    and spatial settings into a single coherent configuration used across
-    simulation, control, and safety components.
-
-    The thermal properties govern agent survivability and safety constraints.
-    The maximum temperature T_max defines the Control Barrier Function's safety
-    boundary:
-
-        h(𝐱) = T_max - T(𝐱)
-
-    The thermal time constant τ models heat dissipation dynamics using an RC
-    thermal circuit analogy, allowing estimation of core temperature from surface
-    measurements:
-
-        T_core ≈ T_skin - τ · dT_skin/dt
-
-    The communication range R_comm determines the dynamic neighborhood graph
-    G_t = (V, E_t) at each timestep t, where edges exist between agents i and j
-    when:
-
-        ||𝐱_i - 𝐱_j|| ≤ R_comm
-
-    Note: With murmuration dynamics, this metric-based connectivity is overridden
-    by topological neighborhoods (k-nearest neighbors) for control calculations,
-    though R_comm still affects simulation and safety constraints.
-    """
-    agent_count: PositiveInt = Field(
-        default     = 30,
-        gt          = 1,
-        description = (
-            "Total number of agents N in the multi-agent system, determining "
-            "computational complexity and emergent swarm dynamics scale."
-        )
-    )
-    communication_range: PositiveFloat = Field(
-        default     = 50.0,
-        description = (
-            "Maximum distance R_comm in meters for edge formation in dynamic graph "
-            "G_t where (i,j) ∈ E_t iff ||𝐱_i - 𝐱_j|| ≤ R_comm."
-        )
-    )
-    thermal_time_constant: PositiveFloat = Field(
-        default     = 5.0,
-        description = (
-            "Thermal response time τ in seconds for RC circuit heat model, governing "
-            "temperature evolution dynamics via T_core ≈ T_skin - τ·dT_skin/dt."
         )
     )
 

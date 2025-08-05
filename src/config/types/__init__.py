@@ -55,17 +55,6 @@ class EventConfig(TypedDict):
     rate    : str        # Metric name for event rate tracking
 
 
-class MujocoModel(TypedDict):
-    """
-    MuJoCo physics model and data pair.
-
-    Contains the MuJoCo model definition and associated data state
-    used throughout the simulation environment.
-    """
-    data  : Any  # MjData instance
-    model : Any  # MjModel instance
-
-
 class SystemInfo(TypedDict, total=False):
     """
     System information dictionary returned by get_system_info.
@@ -93,7 +82,6 @@ class SystemInfo(TypedDict, total=False):
     memory_total        : float
 
     # Core versions
-    mujoco              : str | None
     platform            : str
     python              : str
     python_version_info : Any
