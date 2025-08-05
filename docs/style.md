@@ -447,8 +447,8 @@ else:  # Default to sphere formation
 # General ordering within a class:
 # 1. Class-level constants and variables
 # 2. __init__ method
-# 3. Public methods
-# 4. Private methods (with _)
+# 3. Private methods (with _)
+# 4. Public methods
 # 5. Static or class methods
 ```
 

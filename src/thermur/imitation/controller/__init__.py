@@ -16,7 +16,7 @@ The flock exhibits two distinct modes:
 - Cruise : Standard Reynolds rules with susceptibility-modulated alignment
 - Alert  : Enhanced correlation and density for rapid threat response
 
-The SafetyFilter ensures all control actions respect physical constraints and
+The CBFSafetyFilter ensures all control actions respect physical constraints and
 maintain safe distances from thermal hazards using Control Barrier Functions.
 """
 from .murmuration import *

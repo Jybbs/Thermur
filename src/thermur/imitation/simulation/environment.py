@@ -222,7 +222,10 @@ class SimulationEnv(EnvBase):
         positions = self._generate_initial_positions(self.flock.agent_count)
         
         # Scale positions by communication range and spacing factor
-        scaled_positions = positions * self.flock.communication_range * self.physics.initial_spacing_factor
+        scaled_positions = (
+            positions * self.flock.communication_range * 
+            self.physics.initial_spacing_factor
+        )
 
         initial_observation = self.observation_spec.zero()
         initial_observation.update({
@@ -284,13 +287,13 @@ class SimulationEnv(EnvBase):
         dt = self.physics.simulation_step
         
         # Apply gravity force (downward in z-direction)
-        gravity_force = th.zeros_like(self.velocities)
+        gravity_force       = th.zeros_like(self.velocities)
         gravity_force[:, 2] = -self.physics.gravity
         
         # Apply drag force proportional to velocity squared
         drag_coefficient = self.physics.drag_coefficient
-        speed = self.velocities.norm(dim=1, keepdim=True)
-        drag_force = -drag_coefficient * self.velocities * speed
+        speed            = self.velocities.norm(dim=1, keepdim=True)
+        drag_force       = -drag_coefficient * self.velocities * speed
         
         # Total acceleration = control input + gravity + drag
         total_acceleration = actions + gravity_force + drag_force
@@ -300,7 +303,7 @@ class SimulationEnv(EnvBase):
         
         # Clamp velocities to reasonable limits
         max_speed = self.physics.max_speed
-        speed = self.velocities.norm(dim=1, keepdim=True)
+        speed     = self.velocities.norm(dim=1, keepdim=True)
         self.velocities = th.where(
             speed > max_speed,
             self.velocities * max_speed / speed,

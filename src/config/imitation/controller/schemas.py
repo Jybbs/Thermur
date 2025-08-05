@@ -80,27 +80,31 @@ class MurmurationModel(BaseModel, extra="forbid"):
         default     = 0.3,
         description = (
             "Normalized threat level θ_alert ∈ [0,1] triggering transition from cruise "
-            "to alert mode, where 0 represents ambient temperature and 1 represents T_max."
+            "to alert mode, where 0 represents ambient temperature and 1 represents "
+            "T_max."
         )
     )
     correlation_exponent: PositiveFloat = Field(
         default     = 0.333,
         description = (
-            "Target power-law exponent γ ≈ 1/3 for velocity correlation decay C(r) ∼ r^(-γ), "
-            "matching empirical observations of scale-free correlations in starling flocks."
+            "Target power-law exponent γ ≈ 1/3 for velocity correlation decay "
+            "C(r) ∼ r^(-γ), matching empirical observations of scale-free "
+            "correlations in starling flocks."
         )
     )
     correlation_strength: PositiveFloat = Field(
         default     = 1.5,
         description = (
-            "Additional alignment weight α_corr applied in alert mode to enhance velocity "
+            "Additional alignment weight α_corr applied in alert mode to enhance "
+            "velocity "
             "correlation and create tighter, more responsive collective motion."
         )
     )
     coupling_decay: PositiveFloat = Field(
         default     = 0.5,
         description = (
-            "Exponential decay rate λ for topological interaction strength J_ij = J_0 exp(-d_ij/λ), "
+            "Exponential decay rate λ for topological interaction strength "
+            "J_ij = J_0 exp(-d_ij/λ), "
             "controlling how influence diminishes with topological distance."
         )
     )
@@ -114,7 +118,8 @@ class MurmurationModel(BaseModel, extra="forbid"):
     density_strength: PositiveFloat = Field(
         default     = 0.8,
         description = (
-            "Additional cohesion weight β_dense applied in alert mode to increase flock "
+            "Additional cohesion weight β_dense applied in alert mode to increase "
+            "flock "
             "density, creating the characteristic 'ink-like' appearance during evasion."
         )
     )
@@ -142,7 +147,8 @@ class MurmurationModel(BaseModel, extra="forbid"):
     info_speed_coefficient: PositiveFloat = Field(
         default     = 30.0,
         description = (
-            "Coefficient c_0 for information propagation speed v_info = c_0 * sqrt(χ/m_eff), "
+            "Coefficient c_0 for information propagation speed "
+            "v_info = c_0 * sqrt(χ/m_eff), "
             "calibrated to achieve empirical range of 15-45 m/s in starling flocks."
         )
     )
@@ -156,14 +162,16 @@ class MurmurationModel(BaseModel, extra="forbid"):
     susceptibility_amplification: PositiveFloat = Field(
         default     = 2.0,
         description = (
-            "Amplification factor α_χ for alignment weight modulation based on susceptibility, "
-            "creating stronger velocity correlation as the flock approaches critical state."
+            "Amplification factor α_χ for alignment weight modulation based on "
+            "susceptibility, creating stronger velocity correlation as the flock "
+            "approaches critical state."
         )
     )
     susceptibility_target: PositiveFloat = Field(
         default     = 10.0,
         description = (
-            "Target susceptibility χ_target for maintaining critical state dynamics, where "
+            "Target susceptibility χ_target for maintaining critical state "
+            "dynamics, where "
             "χ = N·Var[Φ] measures the flock's responsiveness to perturbations."
         )
     )
@@ -174,31 +182,51 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "relative to Reynolds forces, balancing safety versus cohesive behavior."
         )
     )
+    threat_range_ratio: PositiveFloat = Field(
+        default     = 0.3,
+        le          = 1.0,
+        description = (
+            "Fraction of T_max over which threat level scales from 0 to 1, controlling "
+            "the temperature range for gradual alert mode transition."
+        )
+    )
+    threat_threshold_ratio: PositiveFloat = Field(
+        default     = 0.7,
+        le          = 1.0,
+        description = (
+            "Fraction of T_max where threat detection begins, defining the temperature "
+            "at which the flock starts transitioning toward alert readiness."
+        )
+    )
     w_alignment: NonNegativeFloat = Field(
         default     = 1.0,
         description = (
-            "Base weight ω_align for velocity alignment potential U_align = (1/2)Σ||𝐯_i - 𝐯_j||², "
+            "Base weight ω_align for velocity alignment potential "
+            "U_align = (1/2)Σ||𝐯_i - 𝐯_j||², "
             "modulated by susceptibility to achieve critical state dynamics."
         )
     )
     w_cohesion: NonNegativeFloat = Field(
         default     = 0.8,
         description = (
-            "Weight ω_coh for cohesion potential U_coh = (1/2)Σ||𝐱_i - 𝐱_j||², slightly "
+            "Weight ω_coh for cohesion potential U_coh = (1/2)Σ||𝐱_i - 𝐱_j||², "
+            "slightly "
             "reduced from baseline to account for topological neighborhood effects."
         )
     )
     w_separation: NonNegativeFloat = Field(
         default     = 1.2,
         description = (
-            "Weight ω_sep for separation potential U_sep = Σ 1/||𝐱_i - 𝐱_j||, maintained "
+            "Weight ω_sep for separation potential U_sep = Σ 1/||𝐱_i - 𝐱_j||, "
+            "maintained "
             "at standard level to ensure collision avoidance regardless of formation."
         )
     )
     w_thermal: NonNegativeFloat = Field(
         default     = 2.0,
         description = (
-            "Weight ω_thermal for thermal potential U_thermal = 1/(T_max - T_i), creating "
+            "Weight ω_thermal for thermal potential U_thermal = 1/(T_max - T_i), "
+            "creating "
             "exponentially stronger avoidance forces as temperature approaches T_max."
         )
     )
@@ -208,9 +236,10 @@ class SafetyModel(BaseModel, extra="forbid"):
     """
     Unified safety system configuration.
 
-    Combines Control Barrier Function parameters and QP solver settings
-    into a single configuration for the safety filtering system that
-    ensures all control commands respect thermal constraints.
+    Combines Control Barrier Function parameters, QP solver settings,
+    and critical safety thresholds into a single configuration for the
+    safety filtering system that ensures all control commands respect
+    thermal constraints.
     """
     cbf_alpha: PositiveFloat = Field(
         default     = 2.5,
@@ -219,11 +248,26 @@ class SafetyModel(BaseModel, extra="forbid"):
             "rate via CBF constraint ∇h(x)ᵀu ≥ -αh(x) where h(x) = T_max - T(x)."
         )
     )
+    cbf_tolerance: PositiveFloat = Field(
+        default     = 3.0,
+        description = (
+            "Control deviation threshold in m/s for detecting CBF interventions, "
+            "used by both safety filter and event logging systems."
+        )
+    )
     log_violations: bool = Field(
         default     = True,
         description = (
             "Enable logging of thermal safety violations and CBF activations for "
-            "debugging controller behavior and monitoring safety-critical events during training."
+            "debugging controller behavior and monitoring safety-critical events "
+            "during training."
+        )
+    )
+    max_temperature: PositiveFloat = Field(
+        default     = 475.0,
+        description = (
+            "Critical temperature threshold T_max in Kelvin defining the safety set "
+            "C = {𝐱 | T(𝐱) ≤ T_max} enforced across all components."
         )
     )
     qp_eps: PositiveFloat = Field(
@@ -244,30 +288,9 @@ class SafetyModel(BaseModel, extra="forbid"):
         default     = "zero",
         description = (
             "Fallback strategy when QP fails: 'zero' applies zero control for safety, "
-            "'nominal' uses unfiltered input, 'raise' propagates exception for debugging."
+            "'nominal' uses unfiltered input, 'raise' propagates exception for "
+            "debugging."
         )
     )
 
 
-class ThresholdsModel(BaseModel, extra="forbid"):
-    """
-    Safety threshold configuration used across multiple domains.
-
-    Defines critical thresholds for thermal safety and control intervention
-    detection that must be consistent across controller, monitoring, and
-    safety filter components.
-    """
-    activation_tolerance: PositiveFloat = Field(
-        default     = 3.0,
-        description = (
-            "Control deviation threshold in m/s for detecting CBF interventions, "
-            "used by both safety filter and event logging systems."
-        )
-    )
-    max_temperature: PositiveFloat = Field(
-        default     = 475.0,
-        description = (
-            "Critical temperature threshold T_max in Kelvin defining the safety set "
-            "C = {𝐱 | T(𝐱) ≤ T_max} enforced across all components."
-        )
-    )
