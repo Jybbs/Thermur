@@ -533,10 +533,12 @@ class ThermurUI:
         table = self.create_aligned_table(columns, title=title)
 
         for i, file_info in enumerate(available_files):
-            name   = file_info['name']
-            size   = file_info['size']
-            status = file_status.get(name, 'missing')
-            row: list[Any] = [str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB"]
+            name           = file_info['name']
+            size           = file_info['size']
+            status         = file_status.get(name, 'missing')
+            row: list[Any] = [
+                str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB"
+            ]
 
             table.add_row(*row)
 
@@ -743,7 +745,8 @@ class ThermurUI:
             run_path : Path to the run directory
 
         Returns:
-            Rich-formatted status indicator: ✓ (complete), ◎ (dry run), or ... (incomplete)
+            Rich-formatted status indicator: ✓ (complete), ◎ (dry run), or
+            ... (incomplete)
         """
         if (run_path / "training_complete").exists():
             return "[bold green]✓[/]"

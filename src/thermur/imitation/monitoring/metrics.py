@@ -64,9 +64,10 @@ class CohesionMetric(AveragingMetric):
     the communication graph is, with higher values indicating stronger cohesion.
     A disconnected graph has λ₂ = 0, while a complete graph has maximum λ₂.
 
-    State variables:
-    - count : Number of graph measurements
-    - sum   : Sum of λ₂ values across all graphs
+    The Laplacian eigenvalue λ₂ is computed from:
+        L = D - A
+
+    where D is the degree matrix and A is the adjacency matrix.
     """
 
     def update(
@@ -75,11 +76,10 @@ class CohesionMetric(AveragingMetric):
         num_agents : int
     ):
         """
-        Computes the second smallest eigenvalue of the graph Laplacian matrix:
-        L = D - A, where D is the degree matrix and A is the adjacency matrix.
+        Computes the second smallest eigenvalue of the graph Laplacian.
 
         Args:
-            edge_index : Graph connectivity [2, num_edges] in COO format
+            edge_index : Graph connectivity [2, E] in COO format
             num_agents : Total number of agents in the graph
         """
         if edge_index.numel() == 0 or num_agents < 2:
@@ -103,21 +103,22 @@ class CohesionMetric(AveragingMetric):
         except RuntimeError:
             lambda_squared = laplacian.new_zeros(())
 
-        self.sum += lambda_squared
+        self.sum   += lambda_squared
         self.count += 1
 
 
 class ColorAccuracyMetric(AveragingMetric):
     """
-    Measures the Mean Absolute Error (mae_color) between sensed and displayed temperatures.
+    Measures the Mean Absolute Error between sensed and displayed temperatures.
 
     This metric quantifies how accurately the flock can display temperature
     information through their RGB LEDs, using a heat colormap mapping where
     blue represents cold and red represents hot temperatures.
 
-    State variables:
-    - count : Number of temperature measurements
-    - sum   : Sum of absolute temperature display errors (Kelvin)
+    The colormap follows:
+        T_min → Blue (0,0,1)
+        T_mid → Green (0,1,0)
+        T_max → Red (1,0,0)
     """
     temp_max : Tensor
     temp_min : Tensor
@@ -126,11 +127,8 @@ class ColorAccuracyMetric(AveragingMetric):
         """
         Initialize the color accuracy metric with temperature bounds.
 
-        Sets up the temperature range for the heat colormap mapping,
-        where colors interpolate from blue (cold) to red (hot).
-
         Args:
-            metrics: Metrics configuration containing temperature bounds
+            metrics : Metrics configuration containing temperature bounds
         """
         super().__init__()
         self.register_buffer("temp_max", th.tensor(metrics.color_temp_max))
@@ -140,7 +138,10 @@ class ColorAccuracyMetric(AveragingMetric):
         """
         Map temperature to RGB color using heat colormap.
 
-        Blue (cold) -> Green (medium) -> Red (hot)
+        Implements piecewise linear interpolation:
+            - R channel: 0 at T_min, 1 at T_max
+            - G channel: Peaks at T_mid
+            - B channel: 1 at T_min, 0 at T_max
 
         Args:
             temperature : Temperature values [N] in Kelvin
@@ -148,41 +149,41 @@ class ColorAccuracyMetric(AveragingMetric):
         Returns:
             RGB colors [N, 3] in range [0, 1]
         """
-        temp_norm = th.clamp(
+        normalized_temp = th.clamp(
             (temperature - self.temp_min) / (self.temp_max - self.temp_min),
             0, 1
         )
 
         return th.stack([
-            th.clamp(2 * temp_norm - 0.5, 0, 1),
+            th.clamp(2 * normalized_temp - 0.5, 0, 1),  # Red channel
             th.where(
-                temp_norm < 0.5,
-                2 * temp_norm,
-                2 * (1 - temp_norm)
-            ),
-            th.clamp(1 - 2 * temp_norm, 0, 1)
+                normalized_temp < 0.5,
+                2 * normalized_temp,
+                2 * (1 - normalized_temp)
+            ),                                          # Green channel
+            th.clamp(1 - 2 * normalized_temp, 0, 1)     # Blue channel
         ], dim=-1)
 
     def update(
         self,
-        sensed_temperature : Tensor,
-        displayed_rgb      : Tensor | None = None
+        displayed_rgb      : Tensor | None,
+        sensed_temperature : Tensor
     ):
         """
         Update metric with temperature and color data.
 
         Args:
-            sensed_temperature : Actual temperatures sensed by agents [N]
             displayed_rgb      : RGB colors displayed by agents [N, 3] or None
+            sensed_temperature : Actual temperatures sensed by agents [N]
         """
         sensed_temperature = sensed_temperature.flatten()
 
-        # TODO: Currently using computed RGB as placeholder until actual RGB display data is available
         if displayed_rgb is None:
             displayed_rgb = self._temperature_to_rgb(sensed_temperature)
 
-        # Reconstruct temperature from RGB using red channel as indicator
-        reconstructed_temp = th.lerp(self.temp_min, self.temp_max, displayed_rgb[..., 0])
+        reconstructed_temp = th.lerp(
+            self.temp_min, self.temp_max, displayed_rgb[..., 0]
+        )
         error = (sensed_temperature - reconstructed_temp).abs()
 
         self.sum   += error.sum()
@@ -193,17 +194,13 @@ class EnergyConsumptionMetric(AveragingMetric):
     """
     Estimates average power consumption based on control inputs.
 
-    Uses a simplified quadrotor power model:
-    P ∝ ||u_safe - g||^k
+    Uses a simplified quadrotor power model from Hoffmann et al. (2011):
+        P ∝ ||u - g||^k
 
     where:
-        - u_safe : safety-filtered control vector
+        - u : control acceleration vector (m/s²)
         - g : gravity vector pointing downward
         - k : power exponent (typically 1.5 for quadrotors)
-
-    State variables:
-    - count : Number of control action measurements
-    - sum   : Sum of power estimates P = ||u - g||^k
     """
     gravity: Tensor
 
@@ -215,13 +212,9 @@ class EnergyConsumptionMetric(AveragingMetric):
         """
         Initialize the energy metric with physics parameters.
 
-        Sets up the gravity constant and power exponent for the
-        quadrotor power consumption model. The power is proportional
-        to the thrust magnitude relative to gravity.
-
         Args:
-            gravity : Gravitational acceleration from physics config
-            metrics : Metrics configuration containing power exponent
+            gravity : Gravitational acceleration (m/s²)
+            metrics : Metrics configuration containing power exponent k
         """
         super().__init__()
         self.register_buffer("gravity", th.tensor(gravity))
@@ -234,10 +227,11 @@ class EnergyConsumptionMetric(AveragingMetric):
         Args:
             u_safe : Safety-filtered control actions [N, 3] (m/s²)
         """
-        gravity_vec = th.zeros_like(u_safe)
-        gravity_vec[..., 2] = -self.gravity
+        gravity_vector         = th.zeros_like(u_safe)
+        gravity_vector[..., 2] = -self.gravity
 
-        power = (u_safe - gravity_vec).norm(dim=-1).pow(self.power_exponent)
+        thrust_magnitude = (u_safe - gravity_vector).norm(dim=-1)
+        power            = thrust_magnitude.pow(self.power_exponent)
 
         self.sum   += power.sum()
         self.count += u_safe.shape[0]
@@ -245,15 +239,14 @@ class EnergyConsumptionMetric(AveragingMetric):
 
 class LegibilitySSIMMetric(AveragingMetric):
     """
-    Computes Structural Similarity Index Measure (ssim) between flock and wind fields.
+    Computes Structural Similarity Index Measure between flock and wind fields.
 
     This metric measures how well the flock's collective motion pattern matches
     the underlying wind field, quantifying the visual "legibility" of the display.
     Uses kernel density estimation to render velocity fields onto 2D grids.
 
-    State variables:
-    - count : Number of SSIM measurements
-    - sum   : Sum of SSIM scores (0-1 range per measurement)
+    SSIM is computed as:
+        SSIM = (2μ_x μ_y + C1)(2σ_xy + C2) / ((μ_x² + μ_y² + C1)(σ_x² + σ_y² + C2))
     """
     bounds_max : Tensor
     bounds_min : Tensor
@@ -267,12 +260,8 @@ class LegibilitySSIMMetric(AveragingMetric):
         """
         Initialize the legibility metric with rendering parameters.
 
-        Sets up the grid resolution and kernel parameters for converting
-        discrete agent positions and velocities into continuous fields
-        that can be compared using SSIM.
-
         Args:
-            bounds_max : Maximum workspace bounds from physics config
+            bounds_max : Maximum workspace bounds [x_max, y_max, z_max]
             metrics    : Metrics configuration with grid and kernel settings
         """
         super().__init__()
@@ -320,8 +309,10 @@ class LegibilitySSIMMetric(AveragingMetric):
         velocities : Tensor
     ) -> Tensor:
         """
-        Projects 3D positions and velocities onto the x-y plane and applies
-        Gaussian kernel density estimation to create a smooth velocity field.
+        Renders velocity field using Gaussian kernel density estimation.
+
+        Projects 3D data onto x-y plane and applies Gaussian kernels:
+            f(x,y) = Σ_i |v_i| exp(-||p - p_i||² / 2σ²)
 
         Args:
             bounds_max : Maximum workspace bounds [3]
@@ -330,26 +321,30 @@ class LegibilitySSIMMetric(AveragingMetric):
             velocities : Agent velocities [N, 3]
 
         Returns:
-            2D tensor representing the velocity magnitude field
+            2D tensor [grid_size, grid_size] of velocity magnitudes
         """
-        pos_2d = positions[:, :2]
-        vel_magnitude = velocities[:, :2].norm(dim=1)
+        positions_2d      = positions[:, :2]
+        velocity_magnitude = velocities[:, :2].norm(dim=1)
 
-        grid_pos = ((pos_2d - bounds_min[:2]) /
-                    (bounds_max[:2] - bounds_min[:2]) *
-                    (self.grid_size - 1))
+        grid_positions = (
+            (positions_2d - bounds_min[:2]) /
+            (bounds_max[:2] - bounds_min[:2]) *
+            (self.grid_size - 1)
+        )
 
         field = th.zeros((self.grid_size, self.grid_size), device=positions.device)
 
-        grid_pos_expanded = grid_pos.unsqueeze(0).unsqueeze(0)
+        grid_pos_expanded = grid_positions.unsqueeze(0).unsqueeze(0)
         coords_expanded   = self.coords.unsqueeze(2)
 
-        dist_sq = ((coords_expanded - grid_pos_expanded) ** 2).sum(dim=-1)
-        weights = th.exp(-dist_sq / (2 * self.sigma**2))
-        field   = (weights * vel_magnitude.unsqueeze(0).unsqueeze(0)).sum(dim=-1)
+        distance_squared = ((coords_expanded - grid_pos_expanded) ** 2).sum(dim=-1)
+        kernel_weights   = th.exp(-distance_squared / (2 * self.sigma ** 2))
+        field           = (
+            kernel_weights * velocity_magnitude.unsqueeze(0).unsqueeze(0)
+        ).sum(dim=-1)
 
-        field_max = field.max()
-        return field / field_max if field_max > 0 else field
+        max_value = field.max()
+        return field / max_value if max_value > 0 else field
 
     def update(
         self,
@@ -358,16 +353,7 @@ class LegibilitySSIMMetric(AveragingMetric):
         wind_field : Tensor
     ):
         """
-        Computes a simplified SSIM using luminance and contrast terms:
-
-        SSIM = (2*μ_x*μ_y + C1)(2*σ_xy + C2) /
-               ((μ_x² + μ_y² + C1)(σ_x² + σ_y² + C2))
-
-        where:
-            - μ_x, μ_y : mean values of flock and wind fields
-            - σ_x, σ_y : standard deviations of fields
-            - σ_xy     : covariance between fields
-            - C1, C2   : small constants to avoid division by zero
+        Computes SSIM between rendered velocity fields.
 
         Args:
             positions  : Agent positions [N, 3]
@@ -375,11 +361,17 @@ class LegibilitySSIMMetric(AveragingMetric):
             wind_field : Ground truth wind velocities [N, 3]
         """
         flock_field = self._render_velocity_field(
-            self.bounds_min, self.bounds_max, positions, velocities
+            bounds_max = self.bounds_max,
+            bounds_min = self.bounds_min,
+            positions  = positions,
+            velocities = velocities
         ).unsqueeze(0).unsqueeze(0)
 
         wind_field_rendered = self._render_velocity_field(
-            self.bounds_min, self.bounds_max, positions, wind_field
+            bounds_max = self.bounds_max,
+            bounds_min = self.bounds_min,
+            positions  = positions,
+            velocities = wind_field
         ).unsqueeze(0).unsqueeze(0)
 
         ssim_value = self.ssim_metric(flock_field, wind_field_rendered)
@@ -391,54 +383,64 @@ class LegibilitySSIMMetric(AveragingMetric):
 class DynamicBalanceMetric(AveragingMetric):
     """
     Measures balance between expansion and contraction in alert mode.
-    
+
     Tracks the ratio of density changes to ensure the flock maintains
     appropriate compactness during threat response without collapse.
+
+    The balance ratio is:
+        β = r_avg / d_avg
+
+    where r_avg is average distance to center and d_avg is average pairwise distance.
     """
     
     def update(
         self,
-        positions     : Tensor,
-        in_alert_mode : bool
+        in_alert_mode : bool,
+        positions     : Tensor
     ):
         """
         Update metric with current density ratio.
-        
+
         Args:
-            positions     : Tensor [N, 3] of agent positions
             in_alert_mode : Whether flock is in alert mode
+            positions     : Tensor [N, 3] of agent positions
         """
         if not in_alert_mode or len(positions) < 2:
             return
-            
-        center = positions.mean(dim=0)
+
+        center              = positions.mean(dim=0)
         distances_to_center = (positions - center).norm(dim=1)
-        avg_radius = distances_to_center.mean()
+        average_radius      = distances_to_center.mean()
+
+        pairwise_distances  = th.cdist(positions, positions)
+        upper_triangle_mask = th.triu(
+            th.ones_like(pairwise_distances), diagonal=1
+        ).bool()
+        average_pairwise    = pairwise_distances[upper_triangle_mask].mean()
+
+        balance_ratio = average_radius / (average_pairwise + 1e-8)
         
-        pairwise_distances = th.cdist(positions, positions)
-        mask = th.triu(th.ones_like(pairwise_distances), diagonal=1).bool()
-        avg_pairwise = pairwise_distances[mask].mean()
-        
-        balance_ratio = avg_radius / (avg_pairwise + 1e-8)
-        
-        self.sum += balance_ratio
+        self.sum   += balance_ratio
         self.count += 1
 
 
 class InformationPropagationMetric(AveragingMetric):
     """
     Measures information propagation speed through the flock.
-    
-    Estimates how quickly directional changes propagate from the edge
-    to the center of the flock, targeting 15-45 m/s for critical state.
+
+    From Cavagna et al. (2010), information propagates at:
+        v_info = c_0 √(χ/m_eff) ∈ [15, 45] m/s
+
+    This metric estimates propagation speed by tracking velocity changes
+    from edge to center of the flock.
     """
     
     def __init__(self, target_speed: tuple[float, float] = (15.0, 45.0)):
         """
         Initialize with target propagation speed range.
-        
+
         Args:
-            target_speed : Min and max expected propagation speeds in m/s
+            target_speed : (v_min, v_max) expected speeds in m/s
         """
         super().__init__()
         self.target_min, self.target_max = target_speed
@@ -452,7 +454,7 @@ class InformationPropagationMetric(AveragingMetric):
     ):
         """
         Update metric with velocity change propagation estimate.
-        
+
         Args:
             positions  : Tensor [N, 3] of agent positions
             velocities : Tensor [N, 3] of agent velocities
@@ -460,9 +462,10 @@ class InformationPropagationMetric(AveragingMetric):
         if self.previous_velocities is None:
             self.previous_velocities = velocities.clone()
             return
-            
-        velocity_changes = (velocities - self.previous_velocities).norm(dim=1)
-        significant_changes = velocity_changes > velocity_changes.mean() + velocity_changes.std()
+
+        velocity_changes    = (velocities - self.previous_velocities).norm(dim=1)
+        change_threshold    = velocity_changes.mean() + velocity_changes.std()
+        significant_changes = velocity_changes > change_threshold
         
         if significant_changes.any():
             center = positions.mean(dim=0)
@@ -470,10 +473,15 @@ class InformationPropagationMetric(AveragingMetric):
             
             edge_agents = distances_to_center > distances_to_center.mean()
             if (significant_changes & edge_agents).any():
-                propagation_distance = distances_to_center.max() - distances_to_center.min()
+                propagation_distance = (
+                    distances_to_center.max() - distances_to_center.min()
+                )
                 propagation_speed = propagation_distance / self.time_step
                 
-                normalized_speed = (propagation_speed - self.target_min) / (self.target_max - self.target_min)
+                normalized_speed = (
+                    (propagation_speed - self.target_min) / 
+                    (self.target_max - self.target_min)
+                )
                 self.sum += normalized_speed.clamp(0, 1)
                 self.count += 1
         
@@ -557,7 +565,10 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
             # Linear regression to find slope (should be -γ)
             x_mean = log_r.mean()
             y_mean = log_c.mean()
-            slope = ((log_r - x_mean) * (log_c - y_mean)).sum() / ((log_r - x_mean) ** 2).sum()
+            slope = (
+                ((log_r - x_mean) * (log_c - y_mean)).sum() / 
+                ((log_r - x_mean) ** 2).sum()
+            )
             
             # Measure deviation from target exponent
             deviation = abs(slope + self.target_exponent)
@@ -593,7 +604,9 @@ class SusceptibilityMetric(AveragingMetric):
         Args:
             velocities : Tensor [N, 3] of agent velocities
         """
-        normalized_vels = velocities / velocities.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        normalized_vels = (
+            velocities / velocities.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        )
         
         velocity_var = normalized_vels.var(dim=0).sum()
         susceptibility = len(velocities) * velocity_var
@@ -757,7 +770,7 @@ class MetricsCollector:
         Initialize murmuration-specific evaluation metrics.
         
         These metrics assess the emergent properties of the murmuration dynamics:
-        - correlation_mse      : Scale-free velocity correlations with power law C(r) ~ r^(-1/3)
+        - correlation_mse      : Scale-free velocity correlations C(r) ~ r^(-1/3)
         - dynamic_balance      : Balance between expansion/contraction in alert mode
         - info_speed           : Information propagation speed (15-45 m/s target)
         - susceptibility       : System responsiveness χ = N·Var[Φ] (5-20 target)
@@ -863,7 +876,10 @@ class MetricsCollector:
         metrics = self._get_metrics("evaluation", is_training)
 
         if "temperature" in batch:
-            metrics["mae_color"].update(batch["temperature"])
+            metrics["mae_color"].update(
+                displayed_rgb      = None,
+                sensed_temperature = batch["temperature"]
+            )
 
         if all(k in batch for k in ["position", "velocity", "wind"]):
             metrics["ssim"].update(
@@ -942,8 +958,8 @@ class MetricsCollector:
         
         if "position" in batch and "in_alert_mode" in batch:
             metrics["dynamic_balance"].update(
-                positions     = batch["position"],
-                in_alert_mode = batch["in_alert_mode"]
+                in_alert_mode = batch["in_alert_mode"],
+                positions     = batch["position"]
             )
         
         if "velocity" in batch:

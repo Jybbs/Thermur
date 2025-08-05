@@ -17,12 +17,12 @@ with catch_warnings():
     from qpth.qp import QPFunction
 
 if TYPE_CHECKING:
-    from config.imitation.controller import FlockModel, SafetyModel, ThresholdsModel
+    from config.imitation.controller import FlockModel, SafetyModel
     from tensordict                  import TensorDictBase
     from torch                       import Tensor
 
 
-class SafetyFilter:
+class CBFSafetyFilter:
     """
     A safety layer that uses a thermal CBF to filter unsafe control actions.
 
@@ -37,9 +37,8 @@ class SafetyFilter:
 
     def __init__(
         self,
-        flock      : FlockModel,
-        safety     : SafetyModel,
-        thresholds : ThresholdsModel
+        flock  : FlockModel,
+        safety : SafetyModel
     ):
         """
         Initializes the safety filter with thermal barrier configuration.
@@ -48,14 +47,13 @@ class SafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            flock      : Flock configuration model containing agent properties
-            safety     : QP solver configuration model
-            thresholds : Safety threshold configuration with temperature limits
+            flock  : Flock configuration model containing agent properties
+            safety : Safety configuration with CBF parameters and thresholds
         """
         self.activation_count     = 0
-        self.activation_tolerance = thresholds.activation_tolerance
+        self.activation_tolerance = safety.cbf_tolerance
         self.agent_count          = flock.agent_count
-        self.max_temperature      = thresholds.max_temperature
+        self.max_temperature      = safety.max_temperature
         self.safety               = safety
         self.total_queries        = 0
         self.Q                    = th.eye(3, dtype=th.float32)

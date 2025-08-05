@@ -50,7 +50,9 @@ class SystemInspector:
 
         return {
             "cuda"         : True,
-            "cuda_version" : torch_version.split('+')[0] if '+' in torch_version else torch_version,
+            "cuda_version" : (
+                torch_version.split('+')[0] if '+' in torch_version else torch_version
+            ),
             "device_count" : cuda.device_count(),
             "gpu_memory"   : f"{cuda.mem_get_info(0)[1] / 1e9:.1f}GB",
             "gpu_name"     : cuda.get_device_name(0),
@@ -148,7 +150,8 @@ class SystemInspector:
 
         Args:
             status     : The status type ('training_complete' or 'dry_run')
-            output_dir : The output directory path. If None, uses Hydra's current output dir
+            output_dir : The output directory path. If None, uses Hydra's current
+                         output dir
         """
         if output_dir is None:
             output_dir = self.get_hydra_output_dir()
