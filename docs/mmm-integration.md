@@ -10,15 +10,21 @@ To embed murmuration as the core concept of Thermur, we propose the following co
 
 ### Core Component Renaming
 - **`ExpertController` → `MurmurationController`** - The primary controller implementing murmuration dynamics
+
 - **`ExpertModel` → `MurmurationModel`** - Unified configuration for all murmuration parameters
+
 - **`expert.py` → `murmuration.py`** - File renaming to match the controller
+
 - **Keep `FlockModel`** - Represents the overall swarm configuration with murmuration as its behavior
+
 - **Use `mmm` abbreviation** - Delightful shorthand for MurmurationModel (e.g., `self.mmm`)
 
 ### Conceptual Shift
 Rather than having murmuration as one formation option among many, it becomes THE fundamental behavior:
 - Remove `initial_formation` field from `FlockModel`
+
 - Add `murmuration: MurmurationDynamics` field directly to `FlockModel`
+
 - All swarm dynamics are murmuration dynamics
 
 This renaming makes murmuration the defining behavior of every flock, not an optional formation.
@@ -29,62 +35,98 @@ This renaming makes murmuration the defining behavior of every flock, not an opt
 
 Following Bialek et al. (2012), we extend the current potential-based controller to incorporate an Ising-like Hamiltonian for velocity alignment:
 
-$$E = -\sum_{i,j} J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j - \sum_i \mathbf{h}_i \cdot \mathbf{s}_i$$
+$`
+\hspace{0.5cm} \displaystyle
+E = -\sum_{i,j} J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j - \sum_i \mathbf{h}_i \cdot \mathbf{s}_i
+`$  
+<br>
 
 where:
-- $\mathbf{s}_i = \mathbf{v}_i / |\mathbf{v}_i|$ are normalized velocity vectors
-- $J_{ij}$ are pairwise interaction strengths with topological decay
-- $\mathbf{h}_i$ represents external fields (thermal gradients)
+- $`\mathbf{s}_i = \mathbf{v}_i / |\mathbf{v}_i|`$ are normalized velocity vectors
+
+- $`J_{ij}`$ are pairwise interaction strengths with topological decay
+
+- $`\mathbf{h}_i`$ represents external fields (thermal gradients)
 
 ### 2.2 Topological Interaction Model
 
-The interaction strength between agents follows topological distance $d_{ij}$ rather than metric distance:
+The interaction strength between agents follows topological distance $`d_{ij}`$ rather than metric distance:
 
-$$J_{ij} = J_0 \exp\left(-\frac{d_{ij}}{\lambda}\right) \cdot \mathbb{1}_{d_{ij} \leq k}$$
+$`
+\hspace{0.5cm} \displaystyle
+J_{ij} = J_0 \exp\left(-\frac{d_{ij}}{\lambda}\right) \cdot \mathbb{1}_{d_{ij} \leq k}
+`$  
+<br>
 
 where:
-- $d_{ij}$ is the number of nearest-neighbor hops
-- $k = 6-7$ is the topological interaction range (Ballerini et al., 2008)
-- $\lambda$ is the decay length scale
+- $`d_{ij}`$ is the number of nearest-neighbor hops
+
+- $`k = 6-7`$ is the topological interaction range (Ballerini et al., 2008)
+
+- $`\lambda`$ is the decay length scale
 
 ### 2.3 Mode-Dependent Dynamics
 
 The control law switches between cruise and alert modes based on thermal threat level:
 
-$$\mathbf{u}_{\text{nom}}^{(i)} = \begin{cases}
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{u}_{\text{nom}}^{(i)} = \begin{cases}
     -\nabla_{\mathbf{x}_i} U_{\text{cruise}}(\mathbf{S}_t) & \text{if } h_{\text{threat}}(i) < \theta_{\text{alert}} \\
     -\nabla_{\mathbf{x}_i} U_{\text{alert}}(\mathbf{S}_t) & \text{otherwise}
-\end{cases}$$
+\end{cases}
+`$  
+<br>
 
 where the alert potential includes enhanced correlation terms:
 
-$$U_{\text{alert}} = U_{\text{cruise}} + \alpha_{\text{corr}} \sum_{i,j} w_{ij} |\mathbf{v}_i - \mathbf{v}_j|^2 + \beta_{\text{dense}} \sum_{i,j} \|\mathbf{x}_i - \mathbf{x}_j\|^2$$
+$`
+\hspace{0.5cm} \displaystyle
+U_{\text{alert}} = U_{\text{cruise}} + \alpha_{\text{corr}} \sum_{i,j} w_{ij} |\mathbf{v}_i - \mathbf{v}_j|^2 + \beta_{\text{dense}} \sum_{i,j} \|\mathbf{x}_i - \mathbf{x}_j\|^2
+`$  
+<br>
 
 The cruise mode uses standard Reynolds potentials:
 
-$$U_{\text{cruise}} = \omega_c U_{\text{coh}} + \omega_s U_{\text{sep}} + \omega_a U_{\text{align}} + \omega_t U_{\text{therm}}$$
+$`
+\hspace{0.5cm} \displaystyle
+U_{\text{cruise}} = \omega_c U_{\text{coh}} + \omega_s U_{\text{sep}} + \omega_a U_{\text{align}} + \omega_t U_{\text{therm}}
+`$  
+<br>
 
 For murmuration, the alignment weight becomes state-dependent:
 
-$$\omega_a = \omega_a^{(0)} \cdot (1 + \alpha_{\chi} \cdot \chi(\mathbf{S}_t))$$
+$`
+\hspace{0.5cm} \displaystyle
+\omega_a = \omega_a^{(0)} \cdot (1 + \alpha_{\chi} \cdot \chi(\mathbf{S}_t))
+`$  
+<br>
 
-where $\chi(\mathbf{S}_t)$ is the susceptibility measuring proximity to critical state.
+where $`\chi(\mathbf{S}_t)`$ is the susceptibility measuring proximity to critical state.
 
 ### 2.4 Information Propagation Speed
 
 The speed of information transfer through the flock follows:
 
-$$v_{\text{info}} = c_0 \sqrt{\frac{\chi}{m_{\text{eff}}}}$$
+$`
+\hspace{0.5cm} \displaystyle
+v_{\text{info}} = c_0 \sqrt{\frac{\chi}{m_{\text{eff}}}}
+`$  
+<br>
 
-where $\chi$ is the susceptibility and $m_{\text{eff}}$ is the effective mass. Empirically, $v_{\text{info}} \in [15, 45]$ m/s.
+where $`\chi`$ is the susceptibility and $`m_{\text{eff}}`$ is the effective mass. Empirically, $`v_{\text{info}} \in [15, 45]`$ m/s.
 
 ### 2.5 Density Wave Dynamics
 
 In alert mode, density waves propagate according to:
 
-$$\frac{\partial \rho}{\partial t} + \nabla \cdot (\rho \mathbf{v}) = D \nabla^2 \rho + S_{\text{threat}}$$
+$`
+\hspace{0.5cm} \displaystyle
+\frac{\partial \rho}{\partial t} + \nabla \cdot (\rho \mathbf{v}) = D \nabla^2 \rho + S_{\text{threat}}
+`$  
+<br>
 
-where $S_{\text{threat}}$ is a source term that increases density near thermal threats.
+where $`S_{\text{threat}}`$ is a source term that increases density near thermal threats.
 
 ## 3. Supervised Learning Approach
 
@@ -93,16 +135,22 @@ where $S_{\text{threat}}$ is a source term that increases density near thermal t
 Generate synthetic demonstrations using the enhanced Hamiltonian dynamics:
 
 1. Initialize flock with small random velocities
-2. Simulate dynamics with known parameters $(J_0, \lambda, k)$
-3. Record state-action pairs: $\mathcal{D} = \{(\mathbf{s}_t^{(i)}, \mathbf{u}_t^{(i)})\}_{t,i}$
+
+2. Simulate dynamics with known parameters $`(J_0, \lambda, k)`$
+
+3. Record state-action pairs: $`\mathcal{D} = \{(\mathbf{s}_t^{(i)}, \mathbf{u}_t^{(i)})\}_{t,i}`$
 
 ### 3.2 Learning Objectives
 
-Train the GNN policy $\pi_\theta$ to minimize:
+Train the GNN policy $`\pi_\theta`$ to minimize:
 
-$$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{imitation}} + \sum_{m} \alpha_m \mathcal{L}_m$$
+$`
+\hspace{0.5cm} \displaystyle
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{imitation}} + \sum_{m} \alpha_m \mathcal{L}_m
+`$  
+<br>
 
-where $\mathcal{L}_m$ are formation-specific metric losses defined in Section 3.
+where $`\mathcal{L}_m`$ are formation-specific metric losses defined in Section 3.
 
 ## 4. Murmuration-Specific Metrics
 
@@ -110,52 +158,76 @@ where $\mathcal{L}_m$ are formation-specific metric losses defined in Section 3.
 
 Measures deviation from theoretical power-law decay (Cavagna et al., 2010):
 
-$$\mathcal{M}_{\text{corr}} = \frac{1}{N_r} \sum_{r} \left( \log C(r) - \log C_0 + \gamma \log r \right)^2$$
+$`
+\hspace{0.5cm} \displaystyle
+\mathcal{M}_{\text{corr}} = \frac{1}{N_r} \sum_{r} \left( \log C(r) - \log C_0 + \gamma \log r \right)^2
+`$  
+<br>
 
 where:
-- $C(r) = \langle \delta\mathbf{v}_i \cdot \delta\mathbf{v}_j \rangle_{|r_i-r_j|=r}$ is the velocity correlation function
-- $\gamma = 1/3$ is the theoretical exponent
-- $C_0$ is a normalization constant
+- $`C(r) = \langle \delta\mathbf{v}_i \cdot \delta\mathbf{v}_j \rangle_{|r_i-r_j|=r}`$ is the velocity correlation function
+
+- $`\gamma = 1/3`$ is the theoretical exponent
+
+- $`C_0`$ is a normalization constant
 
 ### 4.2 Topological Fidelity Metric
 
 Quantifies concentration of interaction on k-nearest neighbors:
 
-$$\mathcal{M}_{\text{topo}} = \frac{1}{N} \sum_i \frac{\sum_{j \in \mathcal{N}_k(i)} w_{ij}}{\sum_{j \in \mathcal{N}(i)} w_{ij}}$$
+$`
+\hspace{0.5cm} \displaystyle
+\mathcal{M}_{\text{topo}} = \frac{1}{N} \sum_i \frac{\sum_{j \in \mathcal{N}_k(i)} w_{ij}}{\sum_{j \in \mathcal{N}(i)} w_{ij}}
+`$  
+<br>
 
 where:
-- $\mathcal{N}_k(i)$ are the k-nearest neighbors of agent $i$
-- $w_{ij} = |\mathbf{v}_i \cdot \mathbf{v}_j|$ measures velocity alignment
+- $`\mathcal{N}_k(i)`$ are the k-nearest neighbors of agent $`i`$
 
-Target: $\mathcal{M}_{\text{topo}} \geq 0.85$
+- $`w_{ij} = |\mathbf{v}_i \cdot \mathbf{v}_j|`$ measures velocity alignment
+
+Target: $`\mathcal{M}_{\text{topo}} \geq 0.85`$
 
 ### 4.3 Susceptibility Metric
 
 Measures responsiveness to perturbations:
 
-$$\chi = N \cdot \text{Var}[\Phi], \quad \Phi = \frac{1}{N}\left|\sum_i \frac{\mathbf{v}_i}{|\mathbf{v}_i|}\right|$$
+$`
+\hspace{0.5cm} \displaystyle
+\chi = N \cdot \text{Var}[\Phi], \quad \Phi = \frac{1}{N}\left|\sum_i \frac{\mathbf{v}_i}{|\mathbf{v}_i|}\right|
+`$  
+<br>
 
-Target range: $\chi \in [5, 20]$ for critical state behavior
+Target range: $`\chi \in [5, 20]`$ for critical state behavior
 
 ### 4.4 Information Propagation Speed
 
 Measures velocity of perturbation propagation:
 
-$$v_{\text{info}} = \frac{\Delta r}{\Delta t}$$
+$`
+\hspace{0.5cm} \displaystyle
+v_{\text{info}} = \frac{\Delta r}{\Delta t}
+`$  
+<br>
 
-where $\Delta r$ is the distance traveled by a velocity perturbation in time $\Delta t$.
+where $`\Delta r`$ is the distance traveled by a velocity perturbation in time $`\Delta t`$.
 
-Target: $v_{\text{info}} \in [15, 45]$ m/s (empirical range)
+Target: $`v_{\text{info}} \in [15, 45]`$ m/s (empirical range)
 
 ### 4.5 Dynamic Balance Score
 
 Combines local disorder with global order:
 
-$$\mathcal{M}_{\text{balance}} = \exp\left(-\left|\Phi - \Phi_{\text{target}}\right|\right) \cdot \left(1 - \exp(-\sigma_v^2)\right)$$
+$`
+\hspace{0.5cm} \displaystyle
+\mathcal{M}_{\text{balance}} = \exp\left(-\left|\Phi - \Phi_{\text{target}}\right|\right) \cdot \left(1 - \exp(-\sigma_v^2)\right)
+`$  
+<br>
 
 where:
-- $\Phi_{\text{target}} = 0.7$ represents moderate alignment
-- $\sigma_v^2$ is the local velocity variance
+- $`\Phi_{\text{target}} = 0.7`$ represents moderate alignment
+
+- $`\sigma_v^2`$ is the local velocity variance
 
 ## 5. Implementation Architecture
 
@@ -571,7 +643,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         Initialize with target power-law exponent.
         
         Args:
-            target_exponent : Expected γ value (1/3 for 3D murmurations)
+            target_exponent : Expected gamma value (1/3 for 3D murmurations)
         """
         super().__init__()
         self.target_exponent = target_exponent
@@ -597,7 +669,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         
         # Compute correlation for each distance bin
         # Implementation would bin distances and compute average correlation
-        # per bin, then fit log C(r) = log C_0 - γ log r
+        # per bin, then fit log C(r) = log C_0 - gamma log r
         
         # For now, compute simplified metric
         correlation_sum = 0.0
@@ -642,18 +714,146 @@ The existing imitation learning pipeline requires minimal changes:
 
 For initial implementation, we use a simple linear Control Barrier Function:
 - Define a vertical plane at x = x_barrier as the safety boundary
+
 - The CBF constraint becomes: h(x) = x - x_barrier ≥ 0
+
 - This creates a "wall" that the murmuration must avoid
+
 - The safety filter modifies control actions to ensure the flock stays on the safe side
 
 ### 6.2 Training Approach
 
 1. **Generate demonstrations**: Run MurmurationController to create state-action pairs
+
 2. **Train GNN policy**: Use behavioral cloning to learn from demonstrations
+
 3. **Evaluate metrics**: Monitor the five murmuration-specific metrics during validation
 
-## References
+### 6.3 Supervised Learning Justification
+
+This implementation uses three concrete supervised learning techniques from class:
+
+**1. Non-linear Regression**
+- **What**: The GNN policy learns to predict continuous control actions $`u \in \mathbb{R}^3`$ from input states
+
+- **Training Data**: (state, action) pairs from MurmurationController demonstrations
+
+- **Loss Function**: MSE between predicted and expert actions: $`L = ||u_{\text{predicted}} - u_{\text{expert}}||^2`$
+
+- **Non-linearity**: Multiple GNN layers with ReLU activations capture complex state-action mappings
+
+**2. K-Nearest Neighbors (KNN)**
+- **What**: Each agent connects to exactly k=7 nearest neighbors in 3D space
+
+- **Implementation**: `_compute_topological_neighbors()` finds k-NN for graph construction
+
+- **Difference from Metric**: Traditional uses radius r, we use neighbor count k
+
+- **Direct Application**: The topological distance metric is pure KNN - no learned parameters
+
+**3. Loss Minimization with Multiple Objectives**
+- **Primary Loss**: Behavioral cloning MSE (standard supervised learning)
+
+- **Auxiliary Losses**: Regression targets for emergent properties:
+  - Scale-free correlation coefficient (target: $`R^2 > 0.9`$)
+  - Susceptibility value (target: $`\chi \in [5, 20]`$)
+  - Information propagation speed (target: $`v \in [15, 45]`$ m/s)
+
+- **Training**: Gradient descent on combined loss: $`L_{\text{total}} = L_{\text{BC}} + \sum_i \alpha_i L_{\text{metric}_i}`$
+
+These are the tangible supervised ML components, and everything else emerges from these three core techniques.
+
+## 7. Implementation Plan
+
+### Phase 1: Foundation (Week 1)
+1. **Rename Core Components**
+   - Rename `expert.py` → `murmuration.py`
+   - Update all imports and references
+   - Commit: `refactor: rename expert controller to murmuration controller`
+
+2. **Implement MurmurationModel Schema**
+   - Add schema to `schemas.py` with all parameters
+   - Ensure alphabetical ordering and proper field descriptions
+   - Commit: `feat: add MurmurationModel configuration schema`
+
+3. **Update Builds Configuration**
+   - Modify `builds.py` to use MurmurationController
+   - Add proper hydra-zen interpolation patterns
+   - Remove formation-related builds
+   - Commit: `feat: update hydra-zen builds for murmuration architecture`
+
+### Phase 2: Core Dynamics (Week 2)
+4. **Implement Topological Neighborhoods**
+   - Add `_compute_topological_neighbors()` method
+   - Override `_update_graph_state()` to use k-NN
+   - Test with k=7 neighbors
+   - Commit: `feat: implement topological neighbor computation`
+
+5. **Add Susceptibility Computation**
+   - Implement `_compute_susceptibility()` method
+   - Add susceptibility-based weight modulation
+   - Verify $`\chi \in [5, 20]`$ range
+   - Commit: `feat: add susceptibility-based critical state dynamics`
+
+6. **Implement Mode Switching**
+   - Add threat level computation
+   - Implement cruise/alert mode logic
+   - Add enhanced correlation and density terms
+   - Commit: `feat: implement adaptive cruise/alert mode switching`
+
+### Phase 3: Metrics and Evaluation (Week 3)
+7. **Implement Scale-Free Correlation Metric**
+   - Add correlation function computation
+   - Implement power-law fitting
+   - Verify $`\gamma \approx 1/3`$ exponent
+   - Commit: `feat: add scale-free correlation metric`
+
+8. **Add Remaining Murmuration Metrics**
+   - Topological fidelity metric
+   - Information propagation speed
+   - Dynamic balance score
+   - Commit: `feat: complete murmuration evaluation metrics`
+
+9. **Integrate Metrics into Training Pipeline**
+   - Add to MetricsCollector
+   - Update logging to track murmuration metrics
+   - Commit: `feat: integrate murmuration metrics into training`
+
+### Phase 4: Training and Validation (Week 4)
+10. **Generate Murmuration Demonstrations**
+    - Create dataset using MurmurationController
+    - Verify emergent behaviors in demonstrations
+    - Commit: `feat: generate murmuration training demonstrations`
+
+11. **Train Initial GNN Policy**
+    - Use existing imitation learning pipeline
+    - Monitor all five murmuration metrics
+    - Achieve baseline performance
+    - Commit: `feat: train baseline murmuration GNN policy`
+
+12. **Optimize and Fine-tune**
+    - Adjust MurmurationModel parameters
+    - Fine-tune for better metric scores
+    - Validate emergent behaviors
+    - Commit: `feat: optimize murmuration dynamics parameters`
+
+### Validation Criteria
+- Scale-free correlation: $`R^2 > 0.9`$ for power-law fit
+- Topological fidelity: > 85% interaction concentration on k-NN
+- Susceptibility: $`\chi \in [5, 20]`$ during cruise mode
+- Information speed: $`v_{\text{info}} \in [15, 45]`$ m/s
+- Dynamic balance: score > 0.7
+
+### Risk Mitigation
+- Start with reduced flock size (N=10) for faster iteration
+- Use simple 2D scenarios before full 3D dynamics
+- Implement comprehensive unit tests for each component
+- Monitor computational performance (GNN + k-NN overhead)
+
+## 8. References
 
 - Ballerini, M. et al. (2008). "Interaction ruling animal collective behavior depends on topological rather than metric distance." PNAS.
+
 - Bialek, W. et al. (2012). "Statistical mechanics for natural flocks of birds." PNAS.
+
 - Cavagna, A. et al. (2010). "Scale-free correlations in starling flocks." PNAS.
