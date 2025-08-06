@@ -31,6 +31,7 @@ SIMULATION_USER_CONFIG = make_config(
 SIMULATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "env": builds(
         SimulationEnv,
+        k_neighbors             = "${controller.mmm.k_neighbors}",
         physics                 = "${simulation.physics}",
         zen_partial             = True,
         populate_full_signature = True

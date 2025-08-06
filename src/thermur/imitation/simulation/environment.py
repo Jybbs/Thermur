@@ -44,53 +44,56 @@ class SimulationEnv(EnvBase):
 
     def __init__(
         self,
-        flock   : FlockModel,
-        physics : PhysicsModel,
-        safety  : SafetyModel,
-        wrf     : WRFDataSource,
+        flock       : FlockModel,
+        k_neighbors : int,
+        physics     : PhysicsModel,
+        safety      : SafetyModel,
+        wrf         : WRFDataSource,
     ):
         """
         Initializes the Thermur environment with dependency injection.
 
         Args:
-            flock   : Flock parameters configuration.
-            physics : Physics simulation configuration.
-            safety  : Safety configuration with temperature thresholds.
-            wrf     : WRF data source providing environmental data queries.
+            flock       : Flock parameters configuration.
+            k_neighbors : Number of topological neighbors for murmuration.
+            physics     : Physics simulation configuration.
+            safety      : Safety configuration with temperature thresholds.
+            wrf         : WRF data source providing environmental data queries.
         """
-        self.flock   = flock
-        self.physics = physics
-        self.safety  = safety
-        self.wrf     = wrf
+        self.flock       = flock
+        self.k_neighbors = k_neighbors
+        self.physics     = physics
+        self.safety      = safety
+        self.wrf         = wrf
         
         self.positions  = None
         self.velocities = None
         
         super().__init__(device="cpu")
 
-    def _compute_edge_index(
-        self,
-        position : Tensor,
-        radius   : float
-    ) -> Tensor:
+    def _compute_edge_index(self, position: Tensor) -> Tensor:
         """
-        Computes the graph connectivity based on metric distance.
+        Computes topological k-nearest neighbor connectivity.
 
-        This function builds an `edge_index` for `torch-geometric` by finding all
-        pairs of nodes (i, j) where the Euclidean distance is less than `r`.
-        It avoids self-loops.
+        Following Ballerini et al. (2008), builds graph connectivity based on
+        k-nearest neighbors rather than metric distance. Each agent connects
+        to exactly k nearest neighbors regardless of distance, matching
+        the topological interaction rule observed in real murmurations.
 
         Args:
-            position : A tensor of node positions, shape (num_nodes, num_dims).
-            radius   : The communication radius.
+            position: A tensor of node positions, shape (num_nodes, num_dims).
 
         Returns:
             An `edge_index` tensor of shape (2, num_edges), suitable for a
             `torch_geometric.data.Data` object.
         """
-        distances = th.cdist(position, position)
-        mask      = (distances < radius) & (distances > 0)
-        return mask.nonzero(as_tuple=False).t().contiguous()
+        distances   = th.cdist(position, position)
+        _, indices  = distances.topk(self.k_neighbors + 1, largest=False)
+        n_agents    = len(position)
+        edge_source = th.arange(n_agents).repeat_interleave(self.k_neighbors)
+        edge_target = indices[:, 1:].flatten()
+        
+        return th.stack([edge_source, edge_target])
 
     def _compute_forces(
         self,
@@ -354,10 +357,7 @@ class SimulationEnv(EnvBase):
             "wind"        : wind,
         })
 
-        initial_observation["edge_index"] = self._compute_edge_index(
-            position = positions,
-            radius   = self.flock.communication_range
-        )
+        initial_observation["edge_index"] = self._compute_edge_index(positions)
 
         self.positions  = positions.clone()
         self.velocities = th.zeros_like(positions)
@@ -413,10 +413,7 @@ class SimulationEnv(EnvBase):
         next_observation.update({
             "battery"     : th.ones(self.flock.agent_count, 1),
             "done"        : at_bounds.any().unsqueeze(0),
-            "edge_index"  : self._compute_edge_index(
-                position = self.positions,
-                radius   = self.flock.communication_range
-            ),
+            "edge_index"  : self._compute_edge_index(self.positions),
             "gradient"    : gradient,
             "position"    : self.positions.clone(),
             "reward"      : th.zeros(self.flock.agent_count, dtype=th.float32),
