@@ -7,6 +7,7 @@ metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
 from __future__         import annotations
+from itertools          import combinations, pairwise
 from torchmetrics       import MeanAbsoluteError, MeanSquaredError
 from torchmetrics       import Metric, MetricCollection, R2Score
 from torchmetrics.image import StructuralSimilarityIndexMeasure
@@ -52,24 +53,53 @@ class AveragingMetric(Metric):
         Returns the mean of all values accumulated via the update method,
         or zero if no values have been recorded yet.
         """
-        if self.count > 0:
-            return self.sum / self.count
-        return th.zeros_like(self.sum)
+        return (
+            self.sum / self.count if self.count > 0 
+            else th.zeros_like(self.sum)
+        )
 
 
 class CohesionMetric(AveragingMetric):
     """
-    Measures graph connectivity via the second smallest eigenvalue (λ₂).
+    Measure graph connectivity via the Fiedler value λ₂.
 
-    The algebraic connectivity (Fiedler value) quantifies how well-connected
-    the communication graph is, with higher values indicating stronger cohesion.
-    A disconnected graph has λ₂ = 0, while a complete graph has maximum λ₂.
+    The algebraic connectivity quantifies how well-connected the flock's
+    communication graph is. Higher values indicate stronger cohesion, with
+    λ₂ = 0 for disconnected graphs and λ₂ > 0 for connected components.
 
-    The Laplacian eigenvalue λ₂ is computed from:
+    The metric computes the second-smallest eigenvalue of the graph Laplacian:
+
         L = D - A
 
     where D is the degree matrix and A is the adjacency matrix.
     """
+
+    def _compute_graph_laplacian(
+        self,
+        edge_index : Tensor,
+        num_agents : int
+    ) -> Tensor:
+        """
+        Construct the graph Laplacian matrix L = D - A.
+
+        Builds a symmetric adjacency matrix from the edge list and computes
+        the Laplacian for spectral analysis.
+
+        Args:
+            edge_index : Graph edges [2, E] in COO format  
+            num_agents : Number of nodes in the graph
+
+        Returns:
+            Tensor [n, n] symmetric Laplacian matrix
+        """
+        adj_sparse = th.sparse_coo_tensor(
+            indices = edge_index,
+            values  = th.ones(edge_index.shape[1], device=edge_index.device),
+            size    = (num_agents, num_agents)
+        )
+        adj_matrix = (adj_sparse + adj_sparse.t()).to_dense().bool().float()
+        
+        return th.diag_embed(adj_matrix.sum(1)) - adj_matrix
 
     def update(
         self,
@@ -77,10 +107,13 @@ class CohesionMetric(AveragingMetric):
         num_agents : int
     ):
         """
-        Computes the second smallest eigenvalue of the graph Laplacian.
+        Update metric with graph connectivity measurement.
+
+        Computes the Fiedler value (second-smallest eigenvalue) of the
+        graph Laplacian to quantify algebraic connectivity.
 
         Args:
-            edge_index : Graph connectivity [2, E] in COO format
+            edge_index : Graph connectivity tensor [2, E] in COO format
             num_agents : Total number of agents in the graph
         """
         if edge_index.numel() == 0 or num_agents < 2:
@@ -88,21 +121,13 @@ class CohesionMetric(AveragingMetric):
             self.count += 1
             return
 
-        adj_matrix = th.zeros((num_agents, num_agents), device=edge_index.device)
-        adj_matrix.index_put_(
-            (edge_index[0], edge_index[1]),
-            th.ones(edge_index.shape[1], device=edge_index.device)
-        )
-        adj_matrix = ((adj_matrix + adj_matrix.T) > 0).float()
-        laplacian  = th.diag(adj_matrix.sum(dim=1)) - adj_matrix
+        laplacian = self._compute_graph_laplacian(edge_index, num_agents)
 
         try:
             eigenvalues    = th.linalg.eigvalsh(laplacian)
-            lambda_squared = (eigenvalues[1]
-                              if eigenvalues.numel() > 1
-                              else eigenvalues.new_zeros(()))
+            lambda_squared = eigenvalues[1] if len(eigenvalues) > 1 else 0.0
         except RuntimeError:
-            lambda_squared = laplacian.new_zeros(())
+            lambda_squared = 0.0
 
         self.sum   += lambda_squared
         self.count += 1
@@ -150,10 +175,10 @@ class ColorAccuracyMetric(AveragingMetric):
         Returns:
             RGB colors [N, 3] in range [0, 1]
         """
-        normalized_temp = th.clamp(
-            (temperature - self.temp_min) / (self.temp_max - self.temp_min),
-            0, 1
-        )
+        normalized_temp = (
+            (temperature - self.temp_min) / 
+            (self.temp_max - self.temp_min)
+        ).clamp(0, 1)
 
         return th.stack([
             th.clamp(2 * normalized_temp - 0.5, 0, 1),
@@ -185,10 +210,10 @@ class ColorAccuracyMetric(AveragingMetric):
         reconstructed_temp = th.lerp(
             self.temp_min, self.temp_max, displayed_rgb[..., 0]
         )
-        error = (sensed_temperature - reconstructed_temp).abs()
 
-        self.sum   += error.sum()
-        self.count += sensed_temperature.numel()
+        if (n_temps := sensed_temperature.numel()) > 0:
+            self.sum   += (sensed_temperature - reconstructed_temp).abs().sum()
+            self.count += n_temps
 
 
 class DynamicBalanceMetric(AveragingMetric):
@@ -219,20 +244,14 @@ class DynamicBalanceMetric(AveragingMetric):
         if not in_alert_mode or len(positions) < 2:
             return
 
-        center              = positions.mean(dim=0)
-        distances_to_center = (positions - center).norm(dim=1)
-        average_radius      = distances_to_center.mean()
-
-        pairwise_distances  = th.cdist(positions, positions)
-        upper_triangle_mask = th.triu(
-            th.ones_like(pairwise_distances), diagonal=1
-        ).bool()
-        average_pairwise = pairwise_distances[upper_triangle_mask].mean()
-
-        balance_ratio = average_radius / (average_pairwise + 1e-8)
+        center     = positions.mean(dim=0)
+        avg_radius = (positions - center).norm(dim=1).mean()
+        pairwise   = th.cdist(positions, positions).triu(1)
         
-        self.sum   += balance_ratio
-        self.count += 1
+        if (n_pairs := pairwise.gt(0).sum()) > 0:
+            avg_dist = pairwise.sum() / n_pairs
+            self.sum   += avg_radius / avg_dist.clamp_min(1e-8)
+            self.count += 1
 
 
 class EnergyConsumptionMetric(AveragingMetric):
@@ -276,9 +295,8 @@ class EnergyConsumptionMetric(AveragingMetric):
         gravity_vector[..., 2] = -self.gravity
 
         thrust_magnitude = (u_safe - gravity_vector).norm(dim=-1)
-        power            = thrust_magnitude.pow(self.power_exponent)
 
-        self.sum   += power.sum()
+        self.sum   += thrust_magnitude.pow(self.power_exponent).sum()
         self.count += u_safe.shape[0]
 
 
@@ -301,9 +319,9 @@ class InformationPropagationMetric(AveragingMetric):
             metrics : Metrics configuration containing propagation speeds
         """
         super().__init__()
+        self.previous_velocities = None
         self.target_min          = metrics.info_propagation_min_speed
         self.target_max          = metrics.info_propagation_max_speed
-        self.previous_velocities = None
         self.time_step           = metrics.info_propagation_time_step
     
     def update(
@@ -322,26 +340,25 @@ class InformationPropagationMetric(AveragingMetric):
             self.previous_velocities = velocities.clone()
             return
 
-        velocity_changes    = (velocities - self.previous_velocities).norm(dim=1)
-        change_threshold    = velocity_changes.mean() + velocity_changes.std()
-        significant_changes = velocity_changes > change_threshold
+        v_changes = (velocities - self.previous_velocities).norm(dim=1)
         
-        if significant_changes.any():
-            center = positions.mean(dim=0)
-            distances_to_center = (positions - center).norm(dim=1)
+        if (threshold := v_changes.mean() + v_changes.std()) > 0 and \
+           (significant := v_changes > threshold).any():
+            center      = positions.mean(dim=0)
+            radii       = (positions - center).norm(dim=1)
+            mean_radius = radii.mean()
             
-            edge_agents = distances_to_center > distances_to_center.mean()
-            if (significant_changes & edge_agents).any():
-                propagation_distance = (
-                    distances_to_center.max() - distances_to_center.min()
+            if (edge_agents := significant & (radii > mean_radius)).any():
+                propagation_speed = (
+                    (radii.max() - radii.min()) / self.time_step
                 )
-                propagation_speed = propagation_distance / self.time_step
                 
-                normalized_speed = (
+                normalized = (
                     (propagation_speed - self.target_min) / 
-                    (self.target_max - self.target_min)
-                )
-                self.sum += normalized_speed.clamp(0, 1)
+                    (self.target_max   - self.target_min)
+                ).clamp(0, 1)
+                
+                self.sum   += normalized
                 self.count += 1
         
         self.previous_velocities = velocities.clone()
@@ -349,14 +366,18 @@ class InformationPropagationMetric(AveragingMetric):
 
 class LegibilitySSIMMetric(AveragingMetric):
     """
-    Computes Structural Similarity Index Measure between flock and wind fields.
+    Measure visual similarity between flock motion and wind field.
 
-    This metric measures how well the flock's collective motion pattern matches
-    the underlying wind field, quantifying the visual "legibility" of the display.
-    Uses kernel density estimation to render velocity fields onto 2D grids.
+    Quantifies how well the flock's collective motion pattern matches
+    the underlying wind field, assessing the "legibility" of the aerial
+    display. Uses kernel density estimation to render velocity fields
+    onto 2D grids for comparison.
 
-    SSIM is computed as:
-        SSIM = (2μ_x μ_y + C1)(2σ_xy + C2) / ((μ_x² + μ_y² + C1)(σ_x² + σ_y² + C2))
+    The Structural Similarity Index is computed as:
+
+        SSIM = (2μ_xμ_y + C₁)(2σ_xy + C₂) / ((μ_x² + μ_y² + C₁)(σ_x² + σ_y² + C₂))
+
+    where μ, σ are local means and variances, and C₁, C₂ are stability constants.
     """
     bounds_max : Tensor
     bounds_min : Tensor
@@ -368,11 +389,14 @@ class LegibilitySSIMMetric(AveragingMetric):
         metrics    : MetricsModel
     ):
         """
-        Initialize the legibility metric with rendering parameters.
+        Initialize legibility metric with rendering parameters.
+
+        Sets up the SSIM computation with kernel density estimation
+        parameters for rendering velocity fields onto 2D grids.
 
         Args:
             bounds_max : Maximum workspace bounds [x_max, y_max, z_max]
-            metrics    : Metrics configuration with grid and kernel settings
+            metrics    : Configuration with grid size and kernel parameters
         """
         super().__init__()
         self.grid_size   = metrics.legibility_grid_size
@@ -391,16 +415,16 @@ class LegibilitySSIMMetric(AveragingMetric):
 
     def _pre_compute_coordinates(self, grid_size: int) -> Tensor:
         """
-        Pre-compute the coordinate grid for rendering.
+        Pre-compute 2D coordinate grid for KDE rendering.
 
-        Creates a 2D grid of coordinates that will be used for
-        kernel density estimation when rendering velocity fields.
+        Creates a meshgrid of (x, y) coordinates used for evaluating
+        Gaussian kernels during velocity field rendering.
 
         Args:
-            grid_size : Resolution of the grid
+            grid_size : Resolution of the rendering grid
 
         Returns:
-            Coordinate tensor of shape [grid_size, grid_size, 2]
+            Tensor [grid_size, grid_size, 2] of grid coordinates
         """
         return th.stack(
             th.meshgrid(
@@ -419,72 +443,73 @@ class LegibilitySSIMMetric(AveragingMetric):
         velocities : Tensor
     ) -> Tensor:
         """
-        Renders velocity field using Gaussian kernel density estimation.
+        Render velocity field using Gaussian kernel density estimation.
 
-        Projects 3D data onto x-y plane and applies Gaussian kernels:
-            f(x,y) = Σ_i |v_i| exp(-||p - p_i||² / 2σ²)
+        Projects 3D velocity data onto the x-y plane and applies Gaussian
+        kernels to create a continuous field representation:
+
+            f(𝐱) = Σᵢ |𝐯ᵢ| exp(-‖𝐱 - 𝐱ᵢ‖² / 2σ²)
 
         Args:
             bounds_max : Maximum workspace bounds [3]
-            bounds_min : Minimum workspace bounds [3]
-            positions  : Agent positions [N, 3]
-            velocities : Agent velocities [N, 3]
+            bounds_min : Minimum workspace bounds [3]  
+            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
+            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
 
         Returns:
-            2D tensor [grid_size, grid_size] of velocity magnitudes
+            Tensor [grid_size, grid_size] of normalized velocity magnitudes
         """
-        positions_2d       = positions[:, :2]
         velocity_magnitude = velocities[:, :2].norm(dim=1)
-
-        grid_positions = (
-            (positions_2d - bounds_min[:2]) /
-            (bounds_max[:2] - bounds_min[:2]) *
+        grid_positions     = (
+            (positions[:, :2] - bounds_min[:2]) /
+            (bounds_max[:2]   - bounds_min[:2]) *
             (self.grid_size - 1)
         )
 
-        field = th.zeros((self.grid_size, self.grid_size), device=positions.device)
-
-        grid_pos_expanded = grid_positions.unsqueeze(0).unsqueeze(0)
-        coords_expanded   = self.coords.unsqueeze(2)
-
-        distance_squared = ((coords_expanded - grid_pos_expanded) ** 2).sum(dim=-1)
-        kernel_weights   = th.exp(-distance_squared / (2 * self.sigma ** 2))
-        field           = (
-            kernel_weights * velocity_magnitude.unsqueeze(0).unsqueeze(0)
+        distance_squared = (
+            (self.coords.unsqueeze(2) - grid_positions) ** 2
         ).sum(dim=-1)
+        
+        kernel_weights = th.exp(-distance_squared / (2 * self.sigma ** 2))
+        field          = (kernel_weights * velocity_magnitude).sum(dim=-1)
 
-        max_value = field.max()
-        return field / max_value if max_value > 0 else field
+        return field / field.max().clamp_min(1e-8)
 
     def update(
         self,
         positions  : Tensor,
-        velocities : Tensor,
-        wind_field : Tensor
+        velocities : Tensor, 
+        wind       : Tensor
     ):
         """
-        Computes SSIM between rendered velocity fields.
+        Update metric with SSIM between flock and wind velocity fields.
+
+        Renders both the flock's velocity field and the environmental wind
+        field onto 2D grids, then computes their structural similarity.
 
         Args:
-            positions  : Agent positions [N, 3]
-            velocities : Agent velocities [N, 3]
-            wind_field : Ground truth wind velocities [N, 3]
+            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
+            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)  
+            wind       : Environmental wind field 𝐰 ∈ ℝ^(n×3)
         """
         flock_field = self._render_velocity_field(
             bounds_max = self.bounds_max,
             bounds_min = self.bounds_min,
             positions  = positions,
             velocities = velocities
-        ).unsqueeze(0).unsqueeze(0)
+        )
 
-        wind_field_rendered = self._render_velocity_field(
+        wind_field = self._render_velocity_field(
             bounds_max = self.bounds_max,
             bounds_min = self.bounds_min,
             positions  = positions,
-            velocities = wind_field
-        ).unsqueeze(0).unsqueeze(0)
+            velocities = wind
+        )
 
-        ssim_value = self.ssim_metric(flock_field, wind_field_rendered)
+        ssim_value = self.ssim_metric(
+            preds  = flock_field.unsqueeze(0).unsqueeze(0),
+            target = wind_field.unsqueeze(0).unsqueeze(0)
+        )
 
         self.sum   += ssim_value
         self.count += 1
@@ -492,81 +517,122 @@ class LegibilitySSIMMetric(AveragingMetric):
 
 class ScaleFreeCorrelationMetric(AveragingMetric):
     """
-    Measures deviation from power-law velocity correlations.
+    Measure deviation from scale-free velocity correlations.
     
-    Computes the velocity correlation function C(r) and fits a power law
-    to verify scale-free behavior characteristic of critical systems.
+    Verifies that the flock exhibits power-law velocity correlations
+    characteristic of critical systems. The correlation function C(r)
+    should follow:
+
+        C(r) ~ r^(-γ)
+
+    where γ ≈ 1/3 for natural murmurations (Cavagna et al. 2010).
     """
     
     def __init__(self, mmm: MurmurationModel):
         """
-        Initialize with target power-law exponent.
+        Initialize with target correlation exponent.
         
         Args:
-            mmm : Murmuration model containing correlation exponent
+            mmm: Murmuration model with expected exponent γ
         """
         super().__init__()
         self.target_exponent = mmm.correlation_exponent
     
+    def _compute_velocity_correlations(
+        self,
+        positions  : Tensor,
+        velocities : Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Compute pairwise velocity correlations and distances.
+
+        Calculates the correlation function C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ for all
+        pairs of agents, where δ𝐯 = 𝐯 - ⟨𝐯⟩ are velocity fluctuations.
+
+        Args:
+            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
+            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
+
+        Returns:
+            Tuple of (correlation_matrix, distance_matrix)
+        """
+        spins      = th.nn.functional.normalize(velocities, dim=1)
+        delta_spin = spins - spins.mean(dim=0, keepdim=True)
+        
+        distances = th.cdist(positions, positions)
+        corr_mat  = delta_spin @ delta_spin.T
+        
+        return corr_mat, distances
+
+    def _fit_power_law(
+        self,
+        bin_distances    : Tensor,
+        bin_correlations : Tensor
+    ) -> float:
+        """
+        Fit power law to binned correlation data.
+
+        Uses log-log linear regression to estimate the exponent γ in:
+            log C(r) = -γ log r + const
+
+        Args:
+            bin_distances    : Mean distance per bin [n_bins]
+            bin_correlations : Mean correlation per bin [n_bins]
+
+        Returns:
+            Estimated power law exponent γ
+        """
+        log_r = bin_distances.log()
+        log_c = bin_correlations.abs().clamp_min(1e-8).log()
+        
+        X = log_r - log_r.mean()
+        Y = log_c - log_c.mean()
+        
+        return -(X @ Y) / (X @ X) if (X @ X) > 0 else 0
+
     def update(
         self,
         positions  : Tensor,
         velocities : Tensor
     ):
         """
-        Update metric with current flock state.
+        Update metric with scale-free correlation measurement.
         
-        Computes velocity correlation function C(r) = <δv_i · δv_j>
-        and measures deviation from expected power law C(r) ~ r^(-γ).
+        Computes velocity correlations, bins by distance, and fits
+        a power law to measure deviation from expected exponent.
         
         Args:
-            positions  : Tensor [N, 3] of agent positions
-            velocities : Tensor [N, 3] of agent velocities
+            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
+            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
         """
-        speeds = velocities.norm(dim=1, keepdim=True).clamp(min=1e-8)
-        spins  = velocities / speeds
+        corr_mat, distances = self._compute_velocity_correlations(
+            positions, velocities
+        )
         
-        spin_mean  = spins.mean(dim=0, keepdim=True)
-        delta_spin = spins - spin_mean
-        
-        distances = th.cdist(positions, positions)
-        n = len(positions)
-        
-        r_min     = distances[distances > 0].min()
-        r_max     = distances.max()
-        n_bins    = 10
-        bin_edges = th.logspace(th.log10(r_min), th.log10(r_max), n_bins + 1)
-        
-        correlations = []
-        r_values     = []
-        
-        for i in range(n_bins):
-            mask = (distances > bin_edges[i]) & (distances <= bin_edges[i+1])
-            if mask.sum() > 0:
-                corr_sum = 0.0
-                count    = 0
-                for j in range(n):
-                    for k in range(j+1, n):
-                        if mask[j, k]:
-                            corr_sum += th.dot(delta_spin[j], delta_spin[k])
-                            count += 1
-                if count > 0:
-                    correlations.append(corr_sum / count)
-                    r_values.append((bin_edges[i] + bin_edges[i+1]) / 2)
-        
-        if len(correlations) >= 3:
-            log_r = th.log(th.tensor(r_values))
-            log_c = th.log(th.abs(th.tensor(correlations)) + 1e-8)
+        triu_mask = th.triu(th.ones_like(distances), diagonal=1).bool()
+        if not triu_mask.any():
+            return
             
-            x_mean = log_r.mean()
-            y_mean = log_c.mean()
-            slope  = (
-                ((log_r - x_mean) * (log_c - y_mean)).sum() / 
-                ((log_r - x_mean) ** 2).sum()
+        bin_edges = th.logspace(
+            end   = distances[triu_mask].max().log10(),
+            start = distances[triu_mask].min().log10(),
+            steps = 11
+        )
+        
+        bin_stats = [
+            (corr_mat[mask].mean(), distances[mask].mean())
+            for low, high in pairwise(bin_edges)
+            if (mask := triu_mask & distances.gt(low) & distances.le(high)).any()
+        ]
+        
+        if len(bin_stats) >= 3:
+            bin_data = th.tensor(bin_stats)
+            fitted_exponent = self._fit_power_law(
+                bin_distances   = bin_data[:, 1],
+                bin_correlations = bin_data[:, 0]
             )
             
-            deviation = abs(slope + self.target_exponent)
-            self.sum += deviation
+            self.sum   += (fitted_exponent - self.target_exponent).abs()
             self.count += 1
 
 
@@ -600,15 +666,18 @@ class SusceptibilityMetric(AveragingMetric):
             velocities : Tensor [N, 3] of agent velocities
         """
         normalized_vels = (
-            velocities / velocities.norm(dim=1, keepdim=True).clamp(min=1e-8)
+            velocities / 
+            velocities.norm(dim=1, keepdim=True).clamp(min=1e-8)
         )
         
-        velocity_var   = normalized_vels.var(dim=0).sum()
-        susceptibility = len(velocities) * velocity_var
-        
-        in_range    = (self.target_min <= susceptibility <= self.target_max).float()
-        self.sum   += in_range
-        self.count += 1
+        if (n := len(velocities)) > 0:
+            susceptibility = n * normalized_vels.var(dim=0).sum()
+            in_range = (
+                (self.target_min <= susceptibility) & 
+                (susceptibility  <= self.target_max)
+            )
+            self.sum   += in_range.float()
+            self.count += 1
 
 
 class TopologicalFidelityMetric(AveragingMetric):
@@ -640,25 +709,23 @@ class TopologicalFidelityMetric(AveragingMetric):
         Args:
             positions : Tensor [N, 3] of agent positions
         """
-        n_agents = len(positions)
-        if n_agents < self.k_neighbors + 1:
+        if (n_agents := len(positions)) < self.k_neighbors + 1:
             return
             
-        distances  = th.cdist(positions, positions)
-        _, indices = distances.topk(self.k_neighbors + 1, largest=False)
+        _, indices = th.cdist(positions, positions).topk(
+            k       = self.k_neighbors + 1, 
+            largest = False
+        )
+
         current_neighbors = indices[:, 1:]
-        
         if self.previous_neighbors is not None:
-            consistency_sum = 0.0
-            for i in range(n_agents):
-                prev_set = set(self.previous_neighbors[i].tolist())
-                curr_set = set(current_neighbors[i].tolist())
-                overlap = len(prev_set & curr_set)
-                consistency_sum += overlap / self.k_neighbors
+            overlap_count = (
+                self.previous_neighbors.unsqueeze(2) == 
+                current_neighbors.unsqueeze(1)
+            ).any(dim=2).sum(dim=1).float()
             
-            avg_consistency = consistency_sum / n_agents
-            self.sum       += avg_consistency
-            self.count     += 1
+            self.sum   += overlap_count.mean() / self.k_neighbors
+            self.count += 1
         
         self.previous_neighbors = current_neighbors.clone()
 
@@ -679,41 +746,49 @@ class MetricsCollector:
     """
     def __init__(
         self,
-        bounds_max      : list[float],
-        gravity         : float,
-        max_temperature : float,
-        metrics         : MetricsModel,
-        mmm             : MurmurationModel
+        bounds_max : list[float],
+        gravity    : float,
+        metrics    : MetricsModel,
+        mmm        : MurmurationModel
     ):
         """
-        Initialize the metrics collector with all metric instances.
+        Initialize metrics collector with configuration parameters.
+
+        Creates all metric instances for tracking imitation learning,
+        evaluation, and murmuration-specific measurements.
 
         Args:
-            bounds_max      : Maximum workspace bounds from physics config
-            gravity         : Gravitational acceleration from physics config
-            max_temperature : Maximum safe temperature from flock config
-            metrics         : Metrics configuration model
+            bounds_max : Maximum workspace bounds [x_max, y_max, z_max]
+            gravity    : Gravitational acceleration [m/s²]
+            metrics    : Metrics configuration model
+            mmm        : Murmuration dynamics configuration
         """
-        self.bounds_max      = bounds_max
-        self.gravity         = gravity
-        self.max_temperature = max_temperature
-        self.metrics         = metrics
-        self.mmm             = mmm
+        self.bounds_max = bounds_max
+        self.gravity    = gravity
+        self.metrics    = metrics
+        self.mmm        = mmm
 
         self._init_evaluation_metrics()
         self._init_imitation_metrics()
         self._init_murmuration_metrics()
 
-    def _get_metrics(self, metric_type: str, is_training: bool) -> MetricCollection:
+    def _get_metrics(
+        self, 
+        is_training : bool, 
+        metric_type : str
+    ) -> MetricCollection:
         """
-        Get the appropriate metrics collection based on type and phase.
+        Get appropriate metrics collection by type and phase.
+
+        Retrieves the correct MetricCollection instance based on whether
+        we're in training/validation and which metric category is needed.
 
         Args:
-            metric_type : Either "imitation" or "evaluation"
-            is_training : Whether this is training (True) or validation (False)
+            is_training : Whether in training (True) or validation (False) phase
+            metric_type : Category name ("imitation", "evaluation", "murmuration")
 
         Returns:
-            The corresponding MetricCollection instance
+            MetricCollection for the specified type and phase
         """
         return getattr(
             self,
@@ -787,11 +862,11 @@ class MetricsCollector:
     def log_all_metrics(
         self,
         is_training : bool,
+        loss        : Tensor | None,
         module      : LightningModule,
+        predictions : Tensor | None,
         step_output : bool,
-        loss        : Tensor | None = None,
-        predictions : Tensor | None = None,
-        targets     : Tensor | None = None
+        targets     : Tensor | None
     ):
         """
         Log all metrics to PyTorch Lightning and external loggers.
@@ -807,12 +882,12 @@ class MetricsCollector:
         - Automatic train/val prefixing for metric organization
 
         Args:
-            is_training : Whether this is training (True) or validation (False)
+            is_training : Whether in training (True) or validation (False) phase
+            loss        : Behavioral cloning loss (required if step_output=True)
             module      : Lightning module providing the logger interface
-            step_output : Whether this is step-level output or epoch-end aggregation
-            loss        : Behavioral cloning loss    (required if step_output=True)
-            predictions : Model velocity predictions (required if step_output=True)
-            targets     : Expert velocity commands   (required if step_output=True)
+            predictions : Model velocity predictions 𝐯_pred ∈ ℝ^(n×3) [m/s]
+            step_output : Whether this is step-level or epoch-end logging
+            targets     : Expert velocity commands 𝐯_expert ∈ ℝ^(n×3) [m/s]
         """
         phase = "train" if is_training else "val"
 
@@ -823,18 +898,18 @@ class MetricsCollector:
 
             module.log(
                 name     = f"{phase}/loss",
-                value    = loss,
                 on_epoch = True,
                 on_step  = is_training,
-                prog_bar = True
+                prog_bar = True,
+                value    = loss
             )
 
             for i, dim in enumerate(["x", "y", "z"]):
                 module.log(
                     name     = f"{phase}/velocity_{dim}_mse",
-                    value    = (predictions[..., i] - targets[..., i]).pow(2).mean(),
                     on_epoch = True,
-                    on_step  = False
+                    on_step  = False,
+                    value    = (predictions[..., i] - targets[..., i]).pow(2).mean()
                 )
 
         for metric_type, on_step in [
@@ -892,7 +967,7 @@ class MetricsCollector:
                 num_agents = num_agents
             )
 
-        if u_control := batch.get("u_safe") or batch.get("action"):
+        if u_control := (batch.get("u_safe") or batch.get("action")):
             metrics["avg_power"].update(u_safe=u_control)
 
     def update_imitation_metrics(
