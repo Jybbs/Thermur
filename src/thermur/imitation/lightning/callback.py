@@ -132,5 +132,5 @@ class MonitoringCallback(Callback):
             self.collector.log_all_metrics(
                 is_training = False,
                 module      = pl_module,
-                step_output = False
+                step_data   = None
             )

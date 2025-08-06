@@ -7,7 +7,7 @@ metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
 from __future__         import annotations
-from itertools          import combinations, pairwise
+from itertools          import pairwise
 from torchmetrics       import MeanAbsoluteError, MeanSquaredError
 from torchmetrics       import Metric, MetricCollection, R2Score
 from torchmetrics.image import StructuralSimilarityIndexMeasure
@@ -16,6 +16,7 @@ from typing             import TYPE_CHECKING
 if TYPE_CHECKING:
     from config.imitation.controller import MurmurationModel
     from config.imitation.monitoring import MetricsModel
+    from config.types                import StepMetrics
     from pytorch_lightning           import LightningModule
     from tensordict                  import TensorDictBase
     from torch                       import Tensor
@@ -348,7 +349,7 @@ class InformationPropagationMetric(AveragingMetric):
             radii       = (positions - center).norm(dim=1)
             mean_radius = radii.mean()
             
-            if (edge_agents := significant & (radii > mean_radius)).any():
+            if (significant & (radii > mean_radius)).any():
                 propagation_speed = (
                     (radii.max() - radii.min()) / self.time_step
                 )
@@ -588,7 +589,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         X = log_r - log_r.mean()
         Y = log_c - log_c.mean()
         
-        return -(X @ Y) / (X @ X) if (X @ X) > 0 else 0
+        return float(-(X @ Y) / (X @ X)) if (X @ X) > 0 else 0.0
 
     def update(
         self,
@@ -632,7 +633,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
                 bin_correlations = bin_data[:, 0]
             )
             
-            self.sum   += (fitted_exponent - self.target_exponent).abs()
+            self.sum   += abs(fitted_exponent - self.target_exponent)
             self.count += 1
 
 
@@ -709,7 +710,7 @@ class TopologicalFidelityMetric(AveragingMetric):
         Args:
             positions : Tensor [N, 3] of agent positions
         """
-        if (n_agents := len(positions)) < self.k_neighbors + 1:
+        if len(positions) < self.k_neighbors + 1:
             return
             
         _, indices = th.cdist(positions, positions).topk(
@@ -821,7 +822,7 @@ class MetricsCollector:
         Initialize metrics for evaluating imitation learning performance.
 
         These regression metrics measure how well the neural network policy
-        mimics the expert controller's behavior:
+        mimics the murmuration controller's behavior:
         - MSE  : Mean squared error of velocity predictions
         - RMSE : Root mean squared error for interpretable units
         - MAE  : Mean absolute error for robustness to outliers
@@ -862,11 +863,8 @@ class MetricsCollector:
     def log_all_metrics(
         self,
         is_training : bool,
-        loss        : Tensor | None,
         module      : LightningModule,
-        predictions : Tensor | None,
-        step_output : bool,
-        targets     : Tensor | None
+        step_data   : StepMetrics | None = None
     ):
         """
         Log all metrics to PyTorch Lightning and external loggers.
@@ -883,25 +881,19 @@ class MetricsCollector:
 
         Args:
             is_training : Whether in training (True) or validation (False) phase
-            loss        : Behavioral cloning loss (required if step_output=True)
             module      : Lightning module providing the logger interface
-            predictions : Model velocity predictions 𝐯_pred ∈ ℝ^(n×3) [m/s]
-            step_output : Whether this is step-level or epoch-end logging
-            targets     : Expert velocity commands 𝐯_expert ∈ ℝ^(n×3) [m/s]
+            step_data   : Optional step metrics (loss, predictions, targets) for
+                          step-level logging. When None, only logs aggregated metrics.
         """
         phase = "train" if is_training else "val"
 
-        if step_output:
-            assert loss        is not None, "Loss required for step logging"
-            assert predictions is not None, "Predictions required for step logging"
-            assert targets     is not None, "Targets required for step logging"
-
+        if step_data is not None:
             module.log(
                 name     = f"{phase}/loss",
                 on_epoch = True,
                 on_step  = is_training,
                 prog_bar = True,
-                value    = loss
+                value    = step_data["loss"]
             )
 
             for i, dim in enumerate(["x", "y", "z"]):
@@ -909,7 +901,8 @@ class MetricsCollector:
                     name     = f"{phase}/velocity_{dim}_mse",
                     on_epoch = True,
                     on_step  = False,
-                    value    = (predictions[..., i] - targets[..., i]).pow(2).mean()
+                    value    = (step_data["predictions"][..., i] - 
+                               step_data["targets"][..., i]).pow(2).mean()
                 )
 
         for metric_type, on_step in [
@@ -918,7 +911,7 @@ class MetricsCollector:
             ("murmuration", False)
         ]:
             module.log_dict(
-                dictionary = self._get_metrics(metric_type, is_training),
+                dictionary = self._get_metrics(is_training, metric_type),
                 on_epoch   = True,
                 on_step    = on_step
             )
@@ -945,7 +938,7 @@ class MetricsCollector:
             batch       : TensorDict containing simulation state and actions
             is_training : Whether this is training (True) or validation (False)
         """
-        metrics = self._get_metrics("evaluation", is_training)
+        metrics = self._get_metrics(is_training, "evaluation")
 
         if "temperature" in batch:
             metrics["mae_color"].update(
@@ -980,7 +973,7 @@ class MetricsCollector:
         Update regression metrics measuring behavioral cloning accuracy.
 
         Computes multiple error metrics between the neural network's velocity
-        predictions and the expert controller's demonstrated actions. These
+        predictions and the murmuration controller's demonstrated actions. These
         metrics guide the imitation learning process and help diagnose
         prediction quality across different error characteristics.
 
@@ -989,7 +982,7 @@ class MetricsCollector:
             predictions : Model velocity outputs [batch_size, 3] in m/s
             targets     : Expert velocity commands [batch_size, 3] in m/s
         """
-        self._get_metrics("imitation", is_training).update(predictions, targets)
+        self._get_metrics(is_training, "imitation").update(predictions, targets)
     
     def update_murmuration_metrics(
         self,
@@ -1015,7 +1008,7 @@ class MetricsCollector:
             batch       : TensorDict containing simulation state
             is_training : Whether this is training (True) or validation (False)
         """
-        metrics = self._get_metrics("murmuration", is_training)
+        metrics = self._get_metrics(is_training, "murmuration")
         
         if all(k in batch for k in ["position", "velocity"]):
             metrics["correlation_mse"].update(

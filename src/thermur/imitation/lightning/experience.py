@@ -48,7 +48,7 @@ class DataModule(LightningDataModule):
             env        : The simulation environment for data collection
             experience : Experience data configuration with batch sizes and buffer
                          settings
-            expert     : The expert controller policy that generates actions
+            expert     : The murmuration controller that generates actions
         """
         super().__init__()
         self.env        = env

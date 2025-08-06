@@ -177,12 +177,13 @@ class GNNPolicy(LightningModule):
         )
 
         self.collector.log_all_metrics(
-            module      = self,
             is_training = is_training,
-            step_output = True,
-            loss        = loss,
-            predictions = predictions,
-            targets     = targets
+            module      = self,
+            step_data   = {
+                "loss"        : loss,
+                "predictions" : predictions,
+                "targets"     : targets
+            }
         )
 
         return loss

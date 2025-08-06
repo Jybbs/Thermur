@@ -255,14 +255,13 @@ class SimulationEnv(EnvBase):
                 at_bounds     : Tensor [n, 1] boundary collision indicators
         """
         new_positions = positions + velocities * timestep
-        new_positions = new_positions.clamp(
-            min = th.as_tensor(self.physics.bounds_min, device=positions.device),
-            max = th.as_tensor(self.physics.bounds_max, device=positions.device)
-        )
         
-        at_bounds = (
-            (new_positions == self.physics.bounds_min) | 
-            (new_positions == self.physics.bounds_max)
+        bounds_min    = th.as_tensor(self.physics.bounds_min, device=positions.device)
+        bounds_max    = th.as_tensor(self.physics.bounds_max, device=positions.device)
+        new_positions = new_positions.clamp(bounds_min, bounds_max)
+        at_bounds     = (
+            (new_positions == bounds_min) | 
+            (new_positions == bounds_max)
         ).any(dim=-1, keepdim=True)
         
         velocities.masked_fill_(at_bounds.expand_as(velocities), 0.0)
@@ -390,10 +389,11 @@ class SimulationEnv(EnvBase):
         if self.positions is None:
             self.positions = th.zeros_like(actions)
         
+        wind = self.wrf.query_wind(self.positions)
         total_acceleration = self._compute_forces(
             actions    = actions,
             velocities = self.velocities,
-            wind       = self.wrf.query_wind(self.positions)
+            wind       = wind
         )
         
         self.velocities = self._integrate_velocities(
