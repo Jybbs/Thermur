@@ -19,7 +19,7 @@ from typing       import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .loader                     import WRFDataSource
-    from config.imitation.controller import FlockModel
+    from config.imitation.controller import FlockModel, SafetyModel
     from config.imitation.simulation import PhysicsModel
     from tensordict                  import TensorDictBase
     from torch                       import Tensor
@@ -46,6 +46,7 @@ class SimulationEnv(EnvBase):
         self,
         flock   : FlockModel,
         physics : PhysicsModel,
+        safety  : SafetyModel,
         wrf     : WRFDataSource,
     ):
         """
@@ -54,13 +55,14 @@ class SimulationEnv(EnvBase):
         Args:
             flock   : Flock parameters configuration.
             physics : Physics simulation configuration.
+            safety  : Safety configuration with temperature thresholds.
             wrf     : WRF data source providing environmental data queries.
         """
         self.flock   = flock
         self.physics = physics
+        self.safety  = safety
         self.wrf     = wrf
         
-        # Initialize state tensors for physics integration
         self.positions  = None
         self.velocities = None
         
@@ -88,7 +90,44 @@ class SimulationEnv(EnvBase):
         """
         distances = th.cdist(position, position)
         mask      = (distances < radius) & (distances > 0)
-        return th.nonzero(mask, as_tuple=False).t().contiguous()
+        return mask.nonzero(as_tuple=False).t().contiguous()
+
+    def _compute_forces(
+        self,
+        actions    : Tensor,
+        velocities : Tensor,
+        wind       : Tensor,
+    ) -> Tensor:
+        """
+        Compute total acceleration from control and environmental forces.
+
+        Aggregates forces following Newton's second law to determine the
+        net acceleration on each agent:
+
+            𝐚_total = 𝐚_control + 𝐚_gravity + 𝐚_drag + 𝐚_wind
+
+        The drag model assumes quadratic resistance proportional to speed,
+        while wind coupling uses a reduced coefficient to model partial
+        sheltering effects in the flock.
+
+        Args:
+            actions    : Control accelerations 𝐚_nom ∈ ℝ^(n×3) [m/s²]
+            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3) [m/s]
+            wind       : Environmental wind field 𝐰 ∈ ℝ^(n×3) [m/s]
+
+        Returns:
+            Tensor [n, 3] of total accelerations [m/s²]
+        """
+        gravity = th.zeros_like(velocities)
+        gravity[:, 2] = -self.physics.gravity
+        
+        drag_force = (
+            -self.physics.drag_coefficient * velocities *
+            velocities.norm(dim=1, keepdim=True)
+        )
+        wind_force = wind * self.physics.drag_coefficient * 0.5
+        
+        return actions + gravity + drag_force + wind_force
 
     def _create_action_space(self) -> TensorSpec:
         """
@@ -145,7 +184,6 @@ class SimulationEnv(EnvBase):
             wind        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
         )
 
-
     def _generate_initial_positions(self, n: int) -> Tensor:
         """
         Generates initial positions for murmuration dynamics.
@@ -188,6 +226,86 @@ class SimulationEnv(EnvBase):
             ),
         )
 
+    def _integrate_positions(
+        self,
+        positions  : Tensor,
+        timestep   : float,
+        velocities : Tensor,
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Update positions with hard boundary constraints.
+
+        Performs forward Euler integration of positions with collision
+        detection at simulation boundaries:
+
+            𝐱(t+Δt) = 𝐱(t) + 𝐯(t)·Δt
+
+        When agents reach boundaries, positions are clamped and velocities
+        are zeroed in the constrained dimensions to prevent penetration.
+        This implements a perfectly inelastic collision model.
+
+        Args:
+            positions  : Current positions 𝐱 ∈ ℝ^(n×3) [m]
+            timestep   : Integration timestep Δt [s]
+            velocities : Current velocities 𝐯 ∈ ℝ^(n×3) [m/s]
+
+        Returns:
+            Tuple of (new_positions, at_bounds) where:
+                new_positions : Tensor [n, 3] of updated positions [m]
+                at_bounds     : Tensor [n, 1] boundary collision indicators
+        """
+        new_positions = positions + velocities * timestep
+        new_positions = new_positions.clamp(
+            min = th.as_tensor(self.physics.bounds_min, device=positions.device),
+            max = th.as_tensor(self.physics.bounds_max, device=positions.device)
+        )
+        
+        at_bounds = (
+            (new_positions == self.physics.bounds_min) | 
+            (new_positions == self.physics.bounds_max)
+        ).any(dim=-1, keepdim=True)
+        
+        velocities.masked_fill_(at_bounds.expand_as(velocities), 0.0)
+        
+        return new_positions, at_bounds
+
+    def _integrate_velocities(
+        self,
+        acceleration : Tensor,
+        timestep     : float,
+        velocities   : Tensor,
+    ) -> Tensor:
+        """
+        Update velocities with maximum speed constraint.
+
+        Performs forward Euler integration with speed limiting:
+
+            𝐯(t+Δt) = 𝐯(t) + 𝐚(t)·Δt
+            
+        If |𝐯| > v_max, the velocity is rescaled to preserve direction:
+
+            𝐯_limited = 𝐯 · (v_max / |𝐯|)
+
+        This maintains smooth trajectories at the speed boundary rather
+        than component-wise clamping which would cause discontinuities.
+
+        Args:
+            acceleration : Total acceleration 𝐚 ∈ ℝ^(n×3) [m/s²]
+            timestep     : Integration timestep Δt [s]
+            velocities   : Current velocities 𝐯 ∈ ℝ^(n×3) [m/s]
+
+        Returns:
+            Tensor [n, 3] of updated velocities [m/s]
+        """
+        new_velocities = velocities + acceleration * timestep
+        
+        if (speed := new_velocities.norm(dim=1, keepdim=True)) > self.physics.max_speed:
+            new_velocities *= (
+                self.physics.max_speed / 
+                speed.clamp_min(self.physics.epsilon)
+            )
+        
+        return new_velocities
 
     def _make_spec(self, td_params: Any | None = None):
         """
@@ -219,42 +337,33 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` containing the initial observation of the flock.
         """
-        positions = self._generate_initial_positions(self.flock.agent_count)
-        
-        # Scale positions by communication range and spacing factor
-        scaled_positions = (
-            positions * self.flock.communication_range * 
+        positions = (
+            self._generate_initial_positions(self.flock.agent_count) *
+            self.flock.communication_range * 
             self.physics.initial_spacing_factor
         )
 
-        initial_observation = self.observation_spec.zero()
-        initial_observation.update({
-            "battery"  : th.ones(self.flock.agent_count, 1),
-            "position" : scaled_positions,
-        })
-
-        positions             = initial_observation["position"]
         temperature, gradient = self.wrf.query_thermal(positions)
         wind                  = self.wrf.query_wind(positions)
+        
+        initial_observation = self.observation_spec.zero()
+        initial_observation.update({
+            "battery"     : th.ones(self.flock.agent_count, 1),
+            "position"    : positions,
+            "temperature" : temperature,
+            "gradient"    : gradient,
+            "wind"        : wind,
+        })
 
-        initial_observation.update(
-            {
-                "edge_index"  : self._compute_edge_index(
-                    position = positions,
-                    radius   = self.flock.communication_range
-                ),
-                "gradient"    : gradient,
-                "temperature" : temperature,
-                "wind"        : wind
-            }
+        initial_observation["edge_index"] = self._compute_edge_index(
+            position = positions,
+            radius   = self.flock.communication_range
         )
 
-        # Initialize physics state
-        self.positions  = scaled_positions.clone()
-        self.velocities = th.zeros_like(scaled_positions)
+        self.positions  = positions.clone()
+        self.velocities = th.zeros_like(positions)
 
         return initial_observation
-
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """
@@ -274,80 +383,47 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` for the next state, including the new observation
         """
-        # Extract control actions (accelerations)
         actions = tensordict.get("action")
         
-        # Ensure velocities and positions are initialized
         if self.velocities is None:
             self.velocities = th.zeros_like(actions)
         if self.positions is None:
             self.positions = th.zeros_like(actions)
         
-        # Euler integration with forces
-        dt = self.physics.simulation_step
-        
-        # Apply gravity force (downward in z-direction)
-        gravity_force       = th.zeros_like(self.velocities)
-        gravity_force[:, 2] = -self.physics.gravity
-        
-        # Apply drag force proportional to velocity squared
-        drag_coefficient = self.physics.drag_coefficient
-        speed            = self.velocities.norm(dim=1, keepdim=True)
-        drag_force       = -drag_coefficient * self.velocities * speed
-        
-        # Total acceleration = control input + gravity + drag
-        total_acceleration = actions + gravity_force + drag_force
-        
-        # Update velocities: v(t+dt) = v(t) + a(t) * dt
-        self.velocities = self.velocities + total_acceleration * dt
-        
-        # Clamp velocities to reasonable limits
-        max_speed = self.physics.max_speed
-        speed     = self.velocities.norm(dim=1, keepdim=True)
-        self.velocities = th.where(
-            speed > max_speed,
-            self.velocities * max_speed / speed,
-            self.velocities
+        total_acceleration = self._compute_forces(
+            actions    = actions,
+            velocities = self.velocities,
+            wind       = self.wrf.query_wind(self.positions)
         )
         
-        # Update positions: x(t+dt) = x(t) + v(t+dt) * dt
-        self.positions = self.positions + self.velocities * dt
+        self.velocities = self._integrate_velocities(
+            acceleration = total_acceleration,
+            timestep     = self.physics.simulation_step,
+            velocities   = self.velocities
+        )
         
-        # Enforce boundary constraints
-        for i in range(3):
-            self.positions[:, i] = self.positions[:, i].clamp(
-                min=self.physics.bounds_min[i],
-                max=self.physics.bounds_max[i]
-            )
-            # Zero out velocity component if hitting boundary
-            at_min = self.positions[:, i] == self.physics.bounds_min[i]
-            at_max = self.positions[:, i] == self.physics.bounds_max[i]
-            self.velocities[at_min | at_max, i] = 0
+        self.positions, at_bounds = self._integrate_positions(
+            positions  = self.positions,
+            timestep   = self.physics.simulation_step,
+            velocities = self.velocities
+        )
         
-        # Query environmental data at new positions
         temperature, gradient = self.wrf.query_thermal(self.positions)
-        wind                  = self.wrf.query_wind(self.positions)
-        edge_index            = self._compute_edge_index(
-            position = self.positions,
-            radius   = self.flock.communication_range
-        )
-        
-        # Create next observation
-        next_observation = self.observation_spec.zero()
+        next_observation      = self.observation_spec.zero()
         next_observation.update({
             "battery"     : th.ones(self.flock.agent_count, 1),
-            "edge_index"  : edge_index,
+            "done"        : at_bounds.any().unsqueeze(0),
+            "edge_index"  : self._compute_edge_index(
+                position = self.positions,
+                radius   = self.flock.communication_range
+            ),
             "gradient"    : gradient,
             "position"    : self.positions.clone(),
+            "reward"      : th.zeros(self.flock.agent_count, dtype=th.float32),
             "temperature" : temperature,
             "velocity"    : self.velocities.clone(),
             "wind"        : wind,
         })
         
-        # TODO: Consider the following for full TorchRL compatibility:
-        # - Add done/terminated flags based on bounds or thermal limits
-        # - Update input tensordict with next observation (TorchRL convention)
-        # - Add any additional physics constraints (e.g., velocity limits)
-        # - Handle episode resets when agents exceed boundaries
-        
-        return next_observation
+        tensordict["next"] = next_observation
+        return tensordict

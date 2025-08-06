@@ -119,11 +119,10 @@ class MurmurationController:
         """
         n_agents = len(positions)
 
-        edge_index = self._compute_topological_neighbors(
+        edge_source, edge_target = edge_index = self._compute_topological_neighbors(
             k         = self.mmm.k_neighbors,
             positions = positions
         )
-        edge_source, edge_target = edge_index
         
         topo_distances = self._compute_topological_distances(
             edge_index = edge_index,
@@ -144,17 +143,27 @@ class MurmurationController:
             forces.index_add_(0, edge_source, force_contrib)
         
         metric_distances = th.cdist(positions, positions)
-        repulsion_radius = self.mmm.min_distance * 3
-        mask = (metric_distances < repulsion_radius) & (metric_distances > 0)
+        mask = (
+            (metric_distances < self.mmm.min_distance * 3) & 
+            (metric_distances > 0)
+        )
 
         if mask.any():
-            i_idx, j_idx = th.where(mask)
-            displacement = positions[j_idx] - positions[i_idx]
-            distance     = displacement.norm(dim=1, keepdim=True).clamp(
-                min=self.mmm.min_distance
+            i_idx, j_idx  = mask.nonzero(as_tuple=True)
+            displacement  = positions[j_idx] - positions[i_idx]
+            soft_distance = displacement.norm(
+                dim     = 1, 
+                keepdim = True
+            ).clamp_min(self.mmm.min_distance)
+
+            forces.index_add_(
+                dim    = 0, 
+                index  = i_idx, 
+                source = (
+                    -self.mmm.w_separation * displacement / 
+                    soft_distance ** 3
+                )
             )
-            repulsion = self.mmm.w_separation * displacement / (distance ** 3)
-            forces.index_add_(0, i_idx, -repulsion)
         
         forces -= self.mmm.temperature_scaling * gradient
 
@@ -183,12 +192,12 @@ class MurmurationController:
         Returns:
             Scalar susceptibility value χ
         """
-        spin_vectors = velocities / velocities.norm(dim=1, keepdim=True).clamp(
-            min=1e-8
+        spin_vectors = (
+            velocities / 
+            velocities.norm(dim=1, keepdim=True).clamp_min(1e-8)
         )
         mean_spin  = spin_vectors.mean(dim=0)
-        deviations = spin_vectors - mean_spin
-        variance   = (deviations.norm(dim=1) ** 2).mean()
+        variance   = ((spin_vectors - mean_spin).norm(dim=1) ** 2).mean()
 
         return len(velocities) * variance
     
@@ -209,9 +218,11 @@ class MurmurationController:
         Returns:
             Tensor [N] of normalized threat levels θ ∈ [0, 1]
         """
-        threat_threshold = self.safety.max_temperature * self.mmm.threat_threshold_ratio
-        threat_range     = self.safety.max_temperature * self.mmm.threat_range_ratio
-        threat_level     = (temperature - threat_threshold) / threat_range
+        max_temp = self.safety.max_temperature
+        threat_level = (
+            (temperature - max_temp * self.mmm.threat_threshold_ratio) /
+            (max_temp * self.mmm.threat_range_ratio)
+        )
 
         return threat_level.clamp(0, 1)
     
@@ -246,7 +257,7 @@ class MurmurationController:
             dist[edge_index[1], edge_index[0]] = 1
 
         for k in range(n_agents):
-            dist = th.min(dist, dist[:, k:k+1] + dist[k:k+1, :])
+            dist = th.minimum(dist, dist[:, k:k+1] + dist[k:k+1, :])
 
         return dist
     
@@ -272,19 +283,11 @@ class MurmurationController:
         distances  = th.cdist(positions, positions)
         _, indices = distances.topk(k + 1, largest=False)
 
-        edge_source = []
-        edge_target = []
+        n_agents    = len(positions)
+        edge_source = th.arange(n_agents).repeat_interleave(k)
+        edge_target = indices[:, 1:].flatten()
 
-        for i in range(len(positions)):
-            for j in indices[i, 1:]:  # Skip self (index 0)
-                edge_source.append(i)
-                edge_target.append(j.item())
-
-        return th.tensor(
-            data   = [edge_source, edge_target],
-            device = positions.device,
-            dtype  = th.long
-        )
+        return th.stack([edge_source, edge_target])
 
     def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
         """
@@ -298,7 +301,7 @@ class MurmurationController:
         """
         return (
             temperature.squeeze(1)
-            if temperature.dim() > 1 and temperature.size(1) == 1
+            if temperature.ndim > 1 and temperature.shape[1] == 1
             else temperature
         )
 
@@ -354,9 +357,10 @@ class MurmurationController:
                 significant_mask
             ].unsqueeze(dim=1)
         )
-        gradient_estimate = gradient_sum / th.clamp(
-            neighbor_counts, min=1
-        ).unsqueeze(dim=1)
+        gradient_estimate = (
+            gradient_sum / 
+            neighbor_counts.clamp_min(1).unsqueeze(dim=1)
+        )
 
         return th.where(
             condition = (neighbor_counts == 0).unsqueeze(dim=1),
@@ -371,12 +375,12 @@ class MurmurationController:
         Initializes edge connectivity and neighbor count tensors used for
         efficient gradient computation across timesteps.
         """
-        empty_tensor = lambda: th.tensor([], device=device, dtype=th.long)
+        empty_long = lambda: th.tensor([], device=device, dtype=th.long)
 
-        self._edge_source    = empty_tensor()
-        self._edge_target    = empty_tensor()
-        self._neighbor_count = empty_tensor()
-        self._safe_count     = empty_tensor()
+        self._edge_source    = empty_long()
+        self._edge_target    = empty_long()
+        self._neighbor_count = empty_long()
+        self._safe_count     = empty_long()
 
     def _update_graph_state(
         self,
@@ -394,10 +398,9 @@ class MurmurationController:
             flock      : TensorDict containing current positions
             num_agents : Total number of agents in flock
         """
-        positions  = flock["position"]
         edge_index = self._compute_topological_neighbors(
             k         = self.mmm.k_neighbors,
-            positions = positions
+            positions = flock["position"]
         )
         device = edge_index.device
         if edge_index.numel():
@@ -414,7 +417,7 @@ class MurmurationController:
                 dtype  = th.long
             )
 
-        self._safe_count = th.clamp(self._neighbor_count, min=1)
+        self._safe_count = self._neighbor_count.clamp_min(1)
 
     def _vertical_heat_gradient(
         self,
@@ -440,19 +443,15 @@ class MurmurationController:
         """
         num_agents, dimension = position.shape
 
-        vertical_direction = th.nn.functional.one_hot(
-            num_classes = dimension,
-            tensor      = th.full(
-                size       = (num_agents,),
-                fill_value = dimension - 1,
-                device     = position.device,
-                dtype      = th.long
-            )
-        ).float()
+        vertical_direction = th.zeros(
+            (num_agents, dimension), device=position.device
+        )
+        vertical_direction[:, -1] = 1.0
 
-        normalized_temperature = self._ensure_1d_temperature(
-            temperature
-        ) / self.safety.max_temperature
+        normalized_temperature = (
+            self._ensure_1d_temperature(temperature) / 
+            self.safety.max_temperature
+        )
 
         return vertical_direction * normalized_temperature.unsqueeze(1)
 
@@ -490,18 +489,18 @@ class MurmurationController:
         )
 
         threat_levels = self._compute_threat_level(flock["temperature"])
-        in_alert_mode = threat_levels.max() > self.mmm.alert_threshold
-
-        flock["in_alert_mode"] = in_alert_mode
+        
+        flock["in_alert_mode"] = in_alert_mode = (
+            (max_threat := threat_levels.max()) > self.mmm.alert_threshold
+        )
         
         if in_alert_mode:
-            control_forces = control_forces * (1 + self.mmm.correlation_strength)
+            control_forces *= (1 + self.mmm.correlation_strength)
 
-            center_of_mass = flock["position"].mean(dim=0)
             density_force  = (
-                center_of_mass - flock["position"]
+                flock["position"].mean(dim=0) - flock["position"]
             ) * self.mmm.density_strength
-            control_forces = control_forces + density_force
+            control_forces += density_force
 
         if self.cbf is not None:
             return self.cbf.filter(flock, control_forces)
