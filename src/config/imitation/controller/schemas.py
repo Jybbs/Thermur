@@ -2,9 +2,9 @@
 Controller domain schemas for Pydantic validation.
 
 This module consolidates all controller configuration models including
-flocking parameters, safety settings, and Reynolds rule weights.
+flocking parameters, safety settings, and murmuration dynamics.
 """
-from pydantic import BaseModel, Field, NonNegativeFloat, PositiveFloat, PositiveInt
+from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
@@ -15,18 +15,6 @@ class FlockModel(BaseModel, extra="forbid"):
     Combines agent physical properties, collective behavior parameters,
     and spatial settings into a single coherent configuration used across
     simulation, control, and safety components.
-
-    The thermal properties govern agent survivability and safety constraints.
-    The maximum temperature T_max defines the Control Barrier Function's safety
-    boundary:
-
-        h(𝐱) = T_max - T(𝐱)
-
-    The thermal time constant τ models heat dissipation dynamics using an RC
-    thermal circuit analogy, allowing estimation of core temperature from surface
-    measurements:
-
-        T_core ≈ T_skin - τ · dT_skin/dt
 
     The communication range R_comm determines the dynamic neighborhood graph
     G_t = (V, E_t) at each timestep t, where edges exist between agents i and j
@@ -53,23 +41,16 @@ class FlockModel(BaseModel, extra="forbid"):
             "G_t where (i,j) ∈ E_t iff ||𝐱_i - 𝐱_j|| ≤ R_comm."
         )
     )
-    thermal_time_constant: PositiveFloat = Field(
-        default     = 5.0,
-        description = (
-            "Thermal response time τ in seconds for RC circuit heat model, governing "
-            "temperature evolution dynamics via T_core ≈ T_skin - τ·dT_skin/dt."
-        )
-    )
 
 
 class MurmurationModel(BaseModel, extra="forbid"):
     """
     Unified configuration for murmuration dynamics and control weights.
     
-    Combines topological interaction parameters, critical state dynamics,
-    and Reynolds rule weights into a single model that fully specifies
-    the murmuration behavior. The controller uses these parameters to
-    implement biologically-inspired flocking with scale-free correlations
+    Combines topological interaction parameters and critical state dynamics
+    into a single model that fully specifies the murmuration behavior. The
+    controller uses these parameters to implement biologically-inspired
+    flocking with scale-free correlations
     and rapid information propagation.
     
     The murmuration exists at a critical state (phase transition) where
@@ -159,6 +140,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "force computation to prevent singularities in U_sep = Σ 1/||𝐱_i - 𝐱_j||."
         )
     )
+    separation_strength: PositiveFloat = Field(
+        default     = 1.5,
+        description = (
+            "Weight coefficient for short-range separation forces that prevent "
+            "collisions between agents when metric distance < 3·ε_dist, implementing "
+            "F_sep = -w_sep · Σ (𝐱_j - 𝐱_i) / ||𝐱_j - 𝐱_i||³."
+        )
+    )
     susceptibility_amplification: PositiveFloat = Field(
         default     = 2.0,
         description = (
@@ -179,7 +168,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         default     = 1.0,
         description = (
             "Multiplicative factor λ_thermal adjusting thermal avoidance strength "
-            "relative to Reynolds forces, balancing safety versus cohesive behavior."
+            "relative to murmuration forces, balancing safety versus cohesive behavior."
         )
     )
     threat_range_ratio: PositiveFloat = Field(
@@ -196,38 +185,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Fraction of T_max where threat detection begins, defining the temperature "
             "at which the flock starts transitioning toward alert readiness."
-        )
-    )
-    w_alignment: NonNegativeFloat = Field(
-        default     = 1.0,
-        description = (
-            "Base weight ω_align for velocity alignment potential "
-            "U_align = (1/2)Σ||𝐯_i - 𝐯_j||², "
-            "modulated by susceptibility to achieve critical state dynamics."
-        )
-    )
-    w_cohesion: NonNegativeFloat = Field(
-        default     = 0.8,
-        description = (
-            "Weight ω_coh for cohesion potential U_coh = (1/2)Σ||𝐱_i - 𝐱_j||², "
-            "slightly "
-            "reduced from baseline to account for topological neighborhood effects."
-        )
-    )
-    w_separation: NonNegativeFloat = Field(
-        default     = 1.2,
-        description = (
-            "Weight ω_sep for separation potential U_sep = Σ 1/||𝐱_i - 𝐱_j||, "
-            "maintained "
-            "at standard level to ensure collision avoidance regardless of formation."
-        )
-    )
-    w_thermal: NonNegativeFloat = Field(
-        default     = 2.0,
-        description = (
-            "Weight ω_thermal for thermal potential U_thermal = 1/(T_max - T_i), "
-            "creating "
-            "exponentially stronger avoidance forces as temperature approaches T_max."
         )
     )
 
@@ -253,14 +210,6 @@ class SafetyModel(BaseModel, extra="forbid"):
         description = (
             "Control deviation threshold in m/s for detecting CBF interventions, "
             "used by both safety filter and event logging systems."
-        )
-    )
-    log_violations: bool = Field(
-        default     = True,
-        description = (
-            "Enable logging of thermal safety violations and CBF activations for "
-            "debugging controller behavior and monitoring safety-critical events "
-            "during training."
         )
     )
     max_temperature: PositiveFloat = Field(

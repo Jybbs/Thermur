@@ -13,7 +13,7 @@ The murmuration controller implements an enhanced Hamiltonian formulation:
 where 𝐬_i are normalized velocities and J_ij decay with topological distance.
 
 The flock exhibits two distinct modes:
-- Cruise : Standard Reynolds rules with susceptibility-modulated alignment
+- Cruise : Standard murmuration dynamics with susceptibility-modulated alignment
 - Alert  : Enhanced correlation and density for rapid threat response
 
 The CBFSafetyFilter ensures all control actions respect physical constraints and

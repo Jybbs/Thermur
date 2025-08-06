@@ -160,7 +160,7 @@ class MurmurationController:
                 dim    = 0, 
                 index  = i_idx, 
                 source = (
-                    -self.mmm.w_separation * displacement / 
+                    -self.mmm.separation_strength * displacement / 
                     soft_distance ** 3
                 )
             )
@@ -491,7 +491,7 @@ class MurmurationController:
         threat_levels = self._compute_threat_level(flock["temperature"])
         
         flock["in_alert_mode"] = in_alert_mode = (
-            (max_threat := threat_levels.max()) > self.mmm.alert_threshold
+            threat_levels.max() > self.mmm.alert_threshold
         )
         
         if in_alert_mode:

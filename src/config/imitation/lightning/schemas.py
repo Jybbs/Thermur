@@ -196,7 +196,7 @@ class OptimizerModel(BaseModel, extra="forbid"):
 
         L_imitation = ||π_θ(s) - u_nom||²
 
-    where π_θ is the learned GNN policy and π* is the expert controller.
+    where π_θ is the learned GNN policy and π* is the murmuration controller.
     """
     early_stopping_patience: PositiveInt = Field(
         default     = 10,
