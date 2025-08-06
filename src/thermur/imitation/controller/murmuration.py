@@ -86,6 +86,51 @@ class MurmurationController:
         flock["action"] = action
         return flock
 
+    def _compute_density_wave(
+        self,
+        positions     : Tensor,
+        threat_levels : Tensor
+    ) -> Tensor:
+        """
+        Compute density wave forces from PDE dynamics.
+
+        Implements simplified density wave equation:
+            ∂ρ/∂t + ∇·(ρv) = D∇²ρ + S_threat
+        
+        where density perturbations propagate through the flock creating
+        the characteristic "ink-like" appearance during evasion.
+
+        Args:
+            positions     : Tensor [N, 3] of agent positions
+            threat_levels : Tensor [N] of normalized threat levels
+
+        Returns:
+            Tensor [N, 3] of density wave forces
+        """
+        n_agents = self.flock.agent_count
+        if n_agents < 2:
+            return th.zeros_like(positions)
+        
+        distances = th.cdist(positions, positions)
+        
+        weights = th.exp(
+            -distances**2 / (2 * self.mmm.density_bandwidth**2)
+        )
+        weights.fill_diagonal_(0)
+        
+        local_density    = weights.sum(dim=1, keepdim=True)
+        position_diffs   = positions.unsqueeze(0) - positions.unsqueeze(1)
+        weighted_diffs   = weights.unsqueeze(2) * position_diffs
+        density_gradient = (
+            weighted_diffs.sum(dim=1) / 
+            local_density.clamp_min(self.mmm.epsilon)
+        )
+        
+        diffusion_force   = -self.mmm.density_diffusion * density_gradient
+        threat_modulation = 1 + threat_levels.unsqueeze(1) * 2
+        
+        return diffusion_force * threat_modulation
+    
     def _compute_hamiltonian_forces(
         self,
         gradient   : Tensor,
@@ -117,11 +162,11 @@ class MurmurationController:
         Returns:
             Tensor [N, 3] of control forces
         """
-        n_agents = len(positions)
+        n_agents = self.flock.agent_count
 
         edge_source, edge_target = edge_index = self._compute_topological_neighbors(
-            k         = self.mmm.k_neighbors,
-            positions = positions
+            k_neighbors = self.mmm.k_neighbors,
+            positions   = positions
         )
         
         topo_distances = self._compute_topological_distances(
@@ -169,6 +214,29 @@ class MurmurationController:
 
         return forces
     
+    def _compute_information_speed(self, susceptibility: Tensor) -> Tensor:
+        """
+        Compute information propagation speed through the flock.
+
+        Following empirical observations, information speed scales with
+        susceptibility:
+
+            v_info = c_0 √(χ/m_eff)
+
+        where c_0 is a proportionality constant and m_eff is effective mass.
+        Real murmurations achieve v_info ∈ [15, 45] m/s.
+
+        Args:
+            susceptibility: Scalar susceptibility value χ
+
+        Returns:
+            Scalar information speed in m/s
+        """
+        v_info = self.mmm.info_speed_coefficient * th.sqrt(
+            susceptibility / self.mmm.effective_mass
+        )
+        return v_info.clamp(self.mmm.info_speed_min, self.mmm.info_speed_max)
+    
     def _compute_susceptibility(self, velocities: Tensor) -> Tensor:
         """
         Compute flock susceptibility χ = N · Var[Φ].
@@ -199,7 +267,7 @@ class MurmurationController:
         mean_spin  = spin_vectors.mean(dim=0)
         variance   = ((spin_vectors - mean_spin).norm(dim=1) ** 2).mean()
 
-        return len(velocities) * variance
+        return self.flock.agent_count * variance
     
     def _compute_threat_level(self, temperature: Tensor) -> Tensor:
         """
@@ -263,28 +331,28 @@ class MurmurationController:
     
     def _compute_topological_neighbors(
         self,
-        k         : int,
-        positions : Tensor
+        k_neighbors : int,
+        positions   : Tensor
     ) -> Tensor:
         """
         Compute k-nearest neighbors for each agent.
 
-        Following Ballerini et al. (2008), each agent tracks exactly k=6-7
+        Following Ballerini et al. (2008), each agent tracks exactly 6-7
         nearest neighbors regardless of metric distance. This topological
         interaction rule is key to achieving scale-free correlations.
 
         Args:
-            k         : Number of nearest neighbors (typically 6-7)
-            positions : Tensor [N, 3] containing agent positions
+            k_neighbors : Number of nearest neighbors (typically 6-7)
+            positions   : Tensor [N, 3] containing agent positions
 
         Returns:
             Tensor [2, E] edge index in COO format for PyG
         """
         distances  = th.cdist(positions, positions)
-        _, indices = distances.topk(k + 1, largest=False)
+        _, indices = distances.topk(k_neighbors + 1, largest=False)
 
-        n_agents    = len(positions)
-        edge_source = th.arange(n_agents).repeat_interleave(k)
+        n_agents    = self.flock.agent_count
+        edge_source = th.arange(n_agents).repeat_interleave(k_neighbors)
         edge_target = indices[:, 1:].flatten()
 
         return th.stack([edge_source, edge_target])
@@ -399,8 +467,8 @@ class MurmurationController:
             num_agents : Total number of agents in flock
         """
         edge_index = self._compute_topological_neighbors(
-            k         = self.mmm.k_neighbors,
-            positions = flock["position"]
+            k_neighbors = self.mmm.k_neighbors,
+            positions   = flock["position"]
         )
         device = edge_index.device
         if edge_index.numel():
@@ -463,13 +531,13 @@ class MurmurationController:
         Bialek et al. (2012), with mode-dependent modifications:
 
         Cruise mode:
-            𝐮 = F^{Hamiltonian}
+            𝐮 = (1 + α_χ tanh(χ/χ_target)) F^{Hamiltonian}
 
         Alert mode (θ > 0.3):
-            𝐮 = (1 + α_corr)F^{Hamiltonian} + β_dense(𝐱_cm - 𝐱_i)
+            𝐮 = (1 + α_corr)(1 + α_χ tanh(χ/χ_target))F^{Ham} + β_dense(𝐱_cm - 𝐱_i)
 
-        where α_corr enhances velocity correlation and β_dense increases
-        flock density during threat response.
+        where α_χ modulates alignment based on susceptibility, α_corr enhances 
+        velocity correlation and β_dense increases flock density during threat.
 
         Args:
             flock: TensorDict containing positions, velocities, temperatures
@@ -488,19 +556,35 @@ class MurmurationController:
             velocities = flock["velocity"]
         )
 
-        threat_levels = self._compute_threat_level(flock["temperature"])
+        susceptibility = self._compute_susceptibility(flock["velocity"])
+        threat_levels  = self._compute_threat_level(flock["temperature"])
+        info_speed     = self._compute_information_speed(susceptibility)
         
-        flock["in_alert_mode"] = in_alert_mode = (
-            threat_levels.max() > self.mmm.alert_threshold
+        control_forces *= (
+            1 + self.mmm.susceptibility_amplification * 
+            th.tanh(susceptibility / self.mmm.susceptibility_target)
         )
+        
+        density_wave_forces = self._compute_density_wave(
+            positions     = flock["position"],
+            threat_levels = threat_levels
+        )
+        control_forces += density_wave_forces
+        
+        # Store computed physics values for metrics and monitoring
+        flock["susceptibility"] = susceptibility
+        flock["info_speed"]     = info_speed
+        flock["threat_levels"]  = threat_levels
+        flock["density_wave"]   = density_wave_forces
+        
+        in_alert_mode = threat_levels.max() > self.mmm.alert_threshold
+        flock["in_alert_mode"] = in_alert_mode
         
         if in_alert_mode:
             control_forces *= (1 + self.mmm.correlation_strength)
-
-            density_force  = (
+            control_forces += (
                 flock["position"].mean(dim=0) - flock["position"]
             ) * self.mmm.density_strength
-            control_forces += density_force
 
         if self.cbf is not None:
             return self.cbf.filter(flock, control_forces)

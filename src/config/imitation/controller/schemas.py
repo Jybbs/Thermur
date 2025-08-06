@@ -89,6 +89,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "controlling how influence diminishes with topological distance."
         )
     )
+    density_bandwidth: PositiveFloat = Field(
+        default     = 5.0,
+        description = (
+            "Spatial scale σ for Gaussian kernel density estimation in meters, "
+            "determining the effective radius of local density calculations."
+        )
+    )
     density_diffusion: PositiveFloat = Field(
         default     = 0.1,
         description = (
@@ -102,6 +109,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Additional cohesion weight β_dense applied in alert mode to increase "
             "flock "
             "density, creating the characteristic 'ink-like' appearance during evasion."
+        )
+    )
+    effective_mass: PositiveFloat = Field(
+        default     = 1.0,
+        description = (
+            "Effective mass m_eff in information speed formula v_info = c_0√(χ/m_eff), "
+            "normalized to unity for standard agent dynamics."
         )
     )
     epsilon: PositiveFloat = Field(
@@ -131,6 +145,20 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Coefficient c_0 for information propagation speed "
             "v_info = c_0 * sqrt(χ/m_eff), "
             "calibrated to achieve empirical range of 15-45 m/s in starling flocks."
+        )
+    )
+    info_speed_max: PositiveFloat = Field(
+        default     = 45.0,
+        description = (
+            "Maximum information propagation speed in m/s, based on empirical "
+            "observations of starling murmurations (Cavagna et al., 2010)."
+        )
+    )
+    info_speed_min: PositiveFloat = Field(
+        default     = 15.0,
+        description = (
+            "Minimum information propagation speed in m/s, based on empirical "
+            "observations of starling murmurations (Cavagna et al., 2010)."
         )
     )
     min_distance: PositiveFloat = Field(
