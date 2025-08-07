@@ -7,18 +7,19 @@ metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
 from __future__         import annotations
+from collections        import deque
 from itertools          import pairwise
+from tensordict         import TensorDictBase
 from torchmetrics       import MeanAbsoluteError, MeanSquaredError
 from torchmetrics       import Metric, MetricCollection, R2Score
 from torchmetrics.image import StructuralSimilarityIndexMeasure
 from typing             import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config.imitation.controller import MurmurationModel
+    from config.imitation.controller import MurmurationModel, SafetyModel
     from config.imitation.monitoring import MetricsModel
     from config.types                import StepMetrics
     from pytorch_lightning           import LightningModule
-    from tensordict                  import TensorDictBase
     from torch                       import Tensor
 
 import torch as th
@@ -125,12 +126,11 @@ class CohesionMetric(AveragingMetric):
         laplacian = self._compute_graph_laplacian(edge_index, num_agents)
 
         try:
-            eigenvalues    = th.linalg.eigvalsh(laplacian)
-            lambda_squared = eigenvalues[1] if len(eigenvalues) > 1 else 0.0
+            eigenvalues = th.linalg.eigvalsh(laplacian)
+            self.sum   += eigenvalues[1] if len(eigenvalues) > 1 else 0.0
         except RuntimeError:
-            lambda_squared = 0.0
-
-        self.sum   += lambda_squared
+            self.sum   += 0.0
+        
         self.count += 1
 
 
@@ -208,50 +208,59 @@ class ColorAccuracyMetric(AveragingMetric):
         if displayed_rgb is None:
             displayed_rgb = self._temperature_to_rgb(sensed_temperature)
 
-        reconstructed_temp = th.lerp(
-            self.temp_min, self.temp_max, displayed_rgb[..., 0]
-        )
-
         if (n_temps := sensed_temperature.numel()) > 0:
+            reconstructed_temp = th.lerp(
+                self.temp_min, self.temp_max, displayed_rgb[..., 0]
+            )
             self.sum   += (sensed_temperature - reconstructed_temp).abs().sum()
             self.count += n_temps
 
 
 class DynamicBalanceMetric(AveragingMetric):
     """
-    Measures balance between expansion and contraction in alert mode.
+    Measures learned flock's density balance under thermal threat.
 
-    Tracks the ratio of density changes to ensure the flock maintains
-    appropriate compactness during threat response without collapse.
-
-    The balance ratio is:
+    Tracks the ratio of expansion to contraction when the learned policy
+    encounters high temperatures, revealing whether it maintains the "ink-like"
+    evasion pattern characteristic of murmurations. The balance ratio:
+    
         β = r_avg / d_avg
 
-    where r_avg is average distance to center and d_avg is average pairwise distance.
+    where r_avg is average distance to center and d_avg is average pairwise
+    distance. Ideal range is [0.5, 2.0] for balanced expansion/contraction.
     """
     
-    def update(
-        self,
-        in_alert_mode : bool,
-        positions     : Tensor
-    ):
+    def __init__(self, safety: SafetyModel):
         """
-        Update metric with current density ratio.
+        Initialize with thermal threat threshold.
+        
+        Args:
+            safety: Safety model with temperature thresholds
+        """
+        super().__init__()
+        self.threat_temperature = safety.max_temperature * safety.threat_ratio
+    
+    def update(self, batch: TensorDictBase):
+        """
+        Update metric with density ratio when under thermal threat.
 
         Args:
-            in_alert_mode : Whether flock is in alert mode
-            positions     : Tensor [N, 3] of agent positions
+            batch: TensorDict containing position and temperature
         """
-        if not in_alert_mode or len(positions) < 2:
+        if len(batch["position"]) < 2:
+            return
+            
+        if batch["temperature"].max() <= self.threat_temperature:
             return
 
-        center     = positions.mean(dim=0)
-        avg_radius = (positions - center).norm(dim=1).mean()
-        pairwise   = th.cdist(positions, positions).triu(1)
+        center   = batch["position"].mean(dim=0)
+        pairwise = th.cdist(batch["position"], batch["position"]).triu(1)
         
         if (n_pairs := pairwise.gt(0).sum()) > 0:
-            avg_dist = pairwise.sum() / n_pairs
-            self.sum   += avg_radius / avg_dist.clamp_min(1e-8)
+            self.sum   += (
+                (batch["position"] - center).norm(dim=1).mean() / 
+                (pairwise.sum() / n_pairs).clamp_min(1e-8)
+            )
             self.count += 1
 
 
@@ -294,8 +303,7 @@ class EnergyConsumptionMetric(AveragingMetric):
         """
         gravity_vector         = th.zeros_like(u_safe)
         gravity_vector[..., 2] = -self.gravity
-
-        thrust_magnitude = (u_safe - gravity_vector).norm(dim=-1)
+        thrust_magnitude       = (u_safe - gravity_vector).norm(dim=-1)
 
         self.sum   += thrust_magnitude.pow(self.power_exponent).sum()
         self.count += u_safe.shape[0]
@@ -303,13 +311,12 @@ class EnergyConsumptionMetric(AveragingMetric):
 
 class InformationPropagationMetric(AveragingMetric):
     """
-    Measures information propagation speed through the flock.
+    Measures empirical information propagation speed through the learned flock.
 
-    From Cavagna et al. (2010), information propagates at:
-        v_info = c_0 √(χ/m_eff) ∈ [15, 45] m/s
-
-    This metric estimates propagation speed by tracking velocity changes
-    from edge to center of the flock.
+    Tracks how velocity perturbations propagate from the flock's edge to center,
+    comparing against the theoretical range v_info ∈ [15, 45] m/s observed in
+    starling murmurations (Cavagna et al. 2010). This empirical measurement
+    reveals whether the learned policy maintains proper information transfer.
     """
     
     def __init__(self, metrics: MetricsModel):
@@ -325,44 +332,33 @@ class InformationPropagationMetric(AveragingMetric):
         self.target_max          = metrics.info_propagation_max_speed
         self.time_step           = metrics.info_propagation_time_step
     
-    def update(
-        self,
-        positions  : Tensor,
-        velocities : Tensor
-    ):
+    def update(self, batch: TensorDictBase):
         """
-        Update metric with velocity change propagation estimate.
+        Measure empirical propagation speed from velocity changes.
 
         Args:
-            positions  : Tensor [N, 3] of agent positions
-            velocities : Tensor [N, 3] of agent velocities
+            batch: TensorDict containing position and velocity
         """
         if self.previous_velocities is None:
-            self.previous_velocities = velocities.clone()
+            self.previous_velocities = batch["velocity"].clone()
             return
 
-        v_changes = (velocities - self.previous_velocities).norm(dim=1)
+        v_changes = (batch["velocity"] - self.previous_velocities).norm(dim=1)
         
         if (threshold := v_changes.mean() + v_changes.std()) > 0 and \
            (significant := v_changes > threshold).any():
-            center      = positions.mean(dim=0)
-            radii       = (positions - center).norm(dim=1)
-            mean_radius = radii.mean()
+            center = batch["position"].mean(dim=0)
+            radii  = (batch["position"] - center).norm(dim=1)
             
-            if (significant & (radii > mean_radius)).any():
+            if (significant & (radii > radii.mean())).any():
                 propagation_speed = (
                     (radii.max() - radii.min()) / self.time_step
                 )
                 
-                normalized = (
-                    (propagation_speed - self.target_min) / 
-                    (self.target_max   - self.target_min)
-                ).clamp(0, 1)
-                
-                self.sum   += normalized
+                self.sum   += propagation_speed
                 self.count += 1
         
-        self.previous_velocities = velocities.clone()
+        self.previous_velocities = batch["velocity"].clone()
 
 
 class LegibilitySSIMMetric(AveragingMetric):
@@ -557,11 +553,10 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         Returns:
             Tuple of (correlation_matrix, distance_matrix)
         """
+        distances  = th.cdist(positions, positions)
         spins      = th.nn.functional.normalize(velocities, dim=1)
         delta_spin = spins - spins.mean(dim=0, keepdim=True)
-        
-        distances = th.cdist(positions, positions)
-        corr_mat  = delta_spin @ delta_spin.T
+        corr_mat   = delta_spin @ delta_spin.T
         
         return corr_mat, distances
 
@@ -591,11 +586,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         
         return float(-(X @ Y) / (X @ X)) if (X @ X) > 0 else 0.0
 
-    def update(
-        self,
-        positions  : Tensor,
-        velocities : Tensor
-    ):
+    def update(self, batch: TensorDictBase):
         """
         Update metric with scale-free correlation measurement.
         
@@ -603,11 +594,10 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         a power law to measure deviation from expected exponent.
         
         Args:
-            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
-            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
+            batch: TensorDict containing position and velocity
         """
         corr_mat, distances = self._compute_velocity_correlations(
-            positions, velocities
+            batch["position"], batch["velocity"]
         )
         
         triu_mask = th.triu(th.ones_like(distances), diagonal=1).bool()
@@ -639,46 +629,60 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
 
 class SusceptibilityMetric(AveragingMetric):
     """
-    Tracks flock susceptibility χ = N · Var[Φ].
+    Computes learned flock susceptibility χ = N · Var[Φ] to assess critical dynamics.
     
-    Monitors the system's responsiveness to perturbations, which should
-    remain high (5-20) to maintain critical state dynamics.
+    Measures how well the learned policy maintains critical state susceptibility
+    compared to the expert controller. From Cavagna et al. (2010), susceptibility
+    quantifies the flock's responsiveness to perturbations:
+    
+        χ = N · ⟨(Φ - ⟨Φ⟩)²⟩
+    
+    where Φ = |Σ_i 𝐬_i|/N is the polarization order parameter. At critical
+    state (χ ∈ [5, 20]), information propagates near-instantaneously.
     """
     
-    def __init__(self, metrics: MetricsModel):
+    def __init__(self, metrics: MetricsModel, mmm: MurmurationModel):
         """
-        Initialize with target susceptibility range.
+        Initialize with target susceptibility range and polarization tracking.
         
         Args:
-            metrics : Metrics configuration containing susceptibility range
+            metrics: Metrics configuration containing susceptibility range
+            mmm: Murmuration model with polarization window parameter
         """
         super().__init__()
-        self.target_min = metrics.susceptibility_min
-        self.target_max = metrics.susceptibility_max
+        self.polarization_queue = deque(maxlen=mmm.polarization_window)
+        self.target_min         = metrics.susceptibility_min
+        self.target_max         = metrics.susceptibility_max
     
-    def update(
-        self,
-        velocities : Tensor
-    ):
+    def update(self, batch: TensorDictBase):
         """
-        Update metric with current susceptibility measurement.
+        Compute susceptibility from learned policy's velocities.
         
         Args:
-            velocities : Tensor [N, 3] of agent velocities
+            batch: TensorDict containing velocity
         """
-        normalized_vels = (
-            velocities / 
-            velocities.norm(dim=1, keepdim=True).clamp(min=1e-8)
+        spin_vectors = (
+            batch["velocity"] / 
+            batch["velocity"].norm(dim=1, keepdim=True).clamp_min(1e-8)
         )
         
-        if (n := len(velocities)) > 0:
-            susceptibility = n * normalized_vels.var(dim=0).sum()
-            in_range = (
-                (self.target_min <= susceptibility) & 
-                (susceptibility  <= self.target_max)
-            )
-            self.sum   += in_range.float()
-            self.count += 1
+        polarization = spin_vectors.mean(dim=0).norm()
+        self.polarization_queue.append(polarization.item())
+        
+        variance = (
+            th.tensor(
+                data   = list(self.polarization_queue), 
+                device = batch["velocity"].device,
+                dtype  = batch["velocity"].dtype
+            ).var()
+            if len(self.polarization_queue) > 1
+            else polarization * (1 - polarization)
+        )
+        
+        susceptibility = batch["velocity"].shape[0] * variance
+        
+        self.sum   += susceptibility
+        self.count += 1
 
 
 class TopologicalFidelityMetric(AveragingMetric):
@@ -700,20 +704,17 @@ class TopologicalFidelityMetric(AveragingMetric):
         self.k_neighbors        = mmm.k_neighbors
         self.previous_neighbors = None
     
-    def update(
-        self,
-        positions : Tensor
-    ):
+    def update(self, batch: TensorDictBase):
         """
         Update metric with neighbor consistency measurement.
         
         Args:
-            positions : Tensor [N, 3] of agent positions
+            batch: TensorDict containing position
         """
-        if len(positions) < self.k_neighbors + 1:
+        if len(batch["position"]) < self.k_neighbors + 1:
             return
             
-        _, indices = th.cdist(positions, positions).topk(
+        _, indices = th.cdist(batch["position"], batch["position"]).topk(
             k       = self.k_neighbors + 1, 
             largest = False
         )
@@ -750,7 +751,8 @@ class MetricsCollector:
         bounds_max : list[float],
         gravity    : float,
         metrics    : MetricsModel,
-        mmm        : MurmurationModel
+        mmm        : MurmurationModel,
+        safety     : SafetyModel
     ):
         """
         Initialize metrics collector with configuration parameters.
@@ -763,11 +765,13 @@ class MetricsCollector:
             gravity    : Gravitational acceleration [m/s²]
             metrics    : Metrics configuration model
             mmm        : Murmuration dynamics configuration
+            safety     : Safety configuration with temperature thresholds
         """
         self.bounds_max = bounds_max
         self.gravity    = gravity
         self.metrics    = metrics
         self.mmm        = mmm
+        self.safety     = safety
 
         self._init_evaluation_metrics()
         self._init_imitation_metrics()
@@ -853,9 +857,9 @@ class MetricsCollector:
         """
         self.train_murmuration = MetricCollection({
             "correlation_mse"      : ScaleFreeCorrelationMetric(self.mmm),
-            "dynamic_balance"      : DynamicBalanceMetric(), 
+            "dynamic_balance"      : DynamicBalanceMetric(self.safety), 
             "info_speed"           : InformationPropagationMetric(self.metrics),
-            "susceptibility"       : SusceptibilityMetric(self.metrics),
+            "susceptibility"       : SusceptibilityMetric(self.metrics, self.mmm),
             "topological_fidelity" : TopologicalFidelityMetric(self.mmm)
         })
         self.val_murmuration = self.train_murmuration.clone(prefix="val_")
@@ -1010,25 +1014,5 @@ class MetricsCollector:
         """
         metrics = self._get_metrics(is_training, "murmuration")
         
-        if all(k in batch for k in ["position", "velocity"]):
-            metrics["correlation_mse"].update(
-                positions  = batch["position"],
-                velocities = batch["velocity"]
-            )
-            
-            metrics["info_speed"].update(
-                positions  = batch["position"],
-                velocities = batch["velocity"]
-            )
-        
-        if "position" in batch and "in_alert_mode" in batch:
-            metrics["dynamic_balance"].update(
-                in_alert_mode = batch["in_alert_mode"],
-                positions     = batch["position"]
-            )
-        
-        if "velocity" in batch:
-            metrics["susceptibility"].update(velocities = batch["velocity"])
-        
-        if "position" in batch:
-            metrics["topological_fidelity"].update(positions = batch["position"])
+        for metric in metrics.values():
+            metric.update(batch)

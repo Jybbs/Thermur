@@ -207,22 +207,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "relative to murmuration forces, balancing safety versus cohesive behavior."
         )
     )
-    threat_range_ratio: PositiveFloat = Field(
-        default     = 0.3,
-        le          = 1.0,
-        description = (
-            "Fraction of T_max over which threat level scales from 0 to 1, controlling "
-            "the temperature range for gradual alert mode transition."
-        )
-    )
-    threat_threshold_ratio: PositiveFloat = Field(
-        default     = 0.7,
-        le          = 1.0,
-        description = (
-            "Fraction of T_max where threat detection begins, defining the temperature "
-            "at which the flock starts transitioning toward alert readiness."
-        )
-    )
 
 
 class SafetyModel(BaseModel, extra="forbid"):
@@ -275,6 +259,22 @@ class SafetyModel(BaseModel, extra="forbid"):
             "Fallback strategy when QP fails: 'zero' applies zero control for safety, "
             "'nominal' uses unfiltered input, 'raise' propagates exception for "
             "debugging."
+        )
+    )
+    threat_range_ratio: PositiveFloat = Field(
+        default     = 0.3,
+        le          = 1.0,
+        description = (
+            "Fraction of T_max over which threat level scales from 0 to 1, controlling "
+            "the temperature range for gradual alert mode transition."
+        )
+    )
+    threat_ratio: PositiveFloat = Field(
+        default     = 0.7,
+        le          = 1.0,
+        description = (
+            "Fraction of T_max where threat detection begins, defining the temperature "
+            "at which the flock starts transitioning toward alert readiness."
         )
     )
 
