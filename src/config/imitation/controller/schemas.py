@@ -176,6 +176,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "F_sep = -w_sep · Σ (𝐱_j - 𝐱_i) / ||𝐱_j - 𝐱_i||³."
         )
     )
+    polarization_window: PositiveInt = Field(
+        default     = 100,
+        description = (
+            "Number of timesteps to retain for computing temporal variance of "
+            "polarization Φ. Based on Cavagna et al. (2010), who sampled at 170Hz "
+            "over 30s windows, we use 100 steps to capture similar dynamics."
+        )
+    )
     susceptibility_amplification: PositiveFloat = Field(
         default     = 2.0,
         description = (
