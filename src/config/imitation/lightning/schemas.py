@@ -321,3 +321,49 @@ class WandbModel(BaseModel, extra="forbid"):
             "runs for easier comparison and analysis."
         )
     )
+
+
+class WatchModel(BaseModel, extra="forbid"):
+    """
+    Watch configuration for real-time training visualization.
+
+    Controls the integration of PyVista 3D visualization into the training loop,
+    allowing researchers to observe emergent flock behaviors and thermal dynamics
+    as the policy learns. Visualization frames can be automatically logged to
+    WandB for later review without re-running simulations.
+    """
+    auto_close: bool = Field(
+        default     = True,
+        description = (
+            "Automatically close visualization window when training completes. "
+            "Disable to keep window open for final state inspection."
+        )
+    )
+    log_to_wandb: bool = Field(
+        default     = True,
+        description = (
+            "Log visualization frames as videos to WandB dashboard. Videos are "
+            "viewable in the WandB UI and can be downloaded for presentations."
+        )
+    )
+    start_epoch: NonNegativeInt = Field(
+        default     = 0,
+        description = (
+            "Epoch at which to start visualization. Delaying start can skip early "
+            "random policy behavior and focus on emergent learned behaviors."
+        )
+    )
+    update_frequency: PositiveInt = Field(
+        default     = 10,
+        description = (
+            "Batch interval between visualization updates. Higher values reduce "
+            "computational overhead but provide less frequent visual feedback."
+        )
+    )
+    watch_run: bool = Field(
+        default     = False,
+        description = (
+            "Display a live visualization window during training. Typically controlled "
+            "via the --watch CLI flag rather than config files."
+        )
+    )

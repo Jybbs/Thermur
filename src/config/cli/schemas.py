@@ -35,7 +35,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             },
             {
                 "desc" : "Monitor training progress and resources",
-                "icon" : "🎨",
+                "icon" : "✨",
                 "name" : "monitor",
             },
             {

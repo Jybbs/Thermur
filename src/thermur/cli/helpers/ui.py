@@ -631,7 +631,7 @@ class ThermurUI:
             case "info":
                 msg = (
                     f" You are logged into wandb as [thermal]{user}[/thermal]" if user
-                    else "🎨 wandb: Not authenticated • Run 'wandb login'"
+                    else "wandb: Not authenticated • Run 'wandb login'"
                 )
                 self.print_message(
                     message  = msg,
