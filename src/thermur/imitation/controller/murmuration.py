@@ -315,9 +315,9 @@ class MurmurationController:
         flock["threats"] = (
             (
                 flock["temperature"] 
-                - self.safety.max_temperature * self.mmm.threat_threshold_ratio
+                - self.safety.max_temperature * self.safety.threat_ratio
             ) /
-            (self.safety.max_temperature * self.mmm.threat_range_ratio)
+            (self.safety.max_temperature * self.safety.threat_range_ratio)
         ).clamp(0, 1)
     
     def _compute_topological_distances(self, flock: TensorDictBase):
@@ -527,7 +527,7 @@ class MurmurationController:
             self._estimate_gradient,
             self._compute_hamiltonian_forces,
             self._compute_susceptibility,
-            self._compute_threat_level,
+            self._compute_threats,
             self._compute_information_speed,
             self._compute_density_wave,
             self._apply_susceptibility_modulation,
