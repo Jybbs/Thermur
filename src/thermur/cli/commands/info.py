@@ -26,12 +26,6 @@ def info():
     app.ui.display_wandb("info")
     app.ui.console.print()
 
-    app.ui.print_section("Configuration System")
-    app.ui.print_config_value(
-        align_width = 11,
-        key         = "Config Path",
-        value       = "configs/"
-    )
 
     app.ui.print_section("Common Commands")
     app.ui.print_command_examples(app.cfg.display.commands_examples)

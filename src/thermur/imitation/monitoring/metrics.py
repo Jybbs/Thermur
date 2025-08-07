@@ -837,7 +837,7 @@ class MetricsCollector:
         self.train_imitation = MetricCollection({
             "mae"  : MeanAbsoluteError(),
             "mse"  : MeanSquaredError(),
-            "r2"   : R2Score(num_outputs=3),
+            "r2"   : R2Score(),
             "rmse" : MeanSquaredError(False),
         })
         self.val_imitation = self.train_imitation.clone(prefix="val_")
@@ -954,7 +954,7 @@ class MetricsCollector:
             metrics["ssim"].update(
                 positions  = batch["position"],
                 velocities = batch["velocity"],
-                wind_field = batch["wind"]
+                wind       = batch["wind"]
             )
 
         if "edge_index" in batch:
@@ -964,7 +964,8 @@ class MetricsCollector:
                 num_agents = num_agents
             )
 
-        if u_control := (batch.get("u_safe") or batch.get("action")):
+        u_control = batch.get("u_safe") if "u_safe" in batch else batch.get("action")
+        if u_control is not None:
             metrics["avg_power"].update(u_safe=u_control)
 
     def update_imitation_metrics(

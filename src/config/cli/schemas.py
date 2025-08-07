@@ -128,6 +128,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             'error'   : {'icon': '❌',  'style': 'error'},
             'flock'   : {'icon': '🪿',  'style': 'flock'},
             'info'    : {'icon': 'ℹ️ ', 'style': 'info'},
+            'magic'   : {'icon': '🪄',  'style': 'accent'},
             'success' : {'icon': '✅',  'style': 'success'},
             'thermal' : {'icon': '🔥',  'style': 'thermal'},
             'warning' : {'icon': '⚠️ ', 'style': 'warning'},
