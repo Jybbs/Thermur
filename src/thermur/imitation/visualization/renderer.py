@@ -62,7 +62,6 @@ class Renderer:
 
     def _create_agent_trails(
         self,
-        colormap    : str,
         plotter     : Plotter,
         point_cloud : PolyData
     ) -> list[Actor]:
@@ -73,7 +72,6 @@ class Renderer:
         Trails fade out with distance/time for visual clarity.
 
         Args:
-            colormap    : Temperature colormap
             plotter     : PyVista Plotter instance
             point_cloud : PolyData containing agent positions, velocities, and temperatures
 
@@ -106,11 +104,11 @@ class Renderer:
                     float(temperatures.min()),
                     float(temperatures.max())
                 ),
-                cmap                  = colormap,
+                cmap                  = "plasma",
                 line_width            = self.trail_params["line_width"],
                 mesh                  = trail_mesh,
                 opacity               = self.trail_params["opacity"],
-                render_lines_as_tubes = self.trail_params["render_lines_as_tubes"],
+                render_lines_as_tubes = True,
                 scalars               = "temperature",
             )
         ]
@@ -169,7 +167,7 @@ class Renderer:
                         float(point_cloud["temperature"].min()),
                         float(point_cloud["temperature"].max())
                     ),
-                    cmap    = colormap,
+                    cmap    = "plasma",
                     mesh    = agent_glyphs,
                     opacity = self.vista.agent_opacity,
                     scalars = "temperature"
@@ -185,7 +183,7 @@ class Renderer:
             ]
 
         if show_trails and colormap:
-            actors.extend(self._create_agent_trails(colormap, plotter, point_cloud))
+            actors.extend(self._create_agent_trails(plotter, point_cloud))
 
         return actors
 
@@ -315,7 +313,7 @@ class Renderer:
         """
         result = plotter.add_volume(
             clim                  = temp_grid.get_data_range("temperature"),
-            cmap                  = self.vista.colormap,
+            cmap                  = "plasma",
             opacity               = "sigmoid",
             opacity_unit_distance = 0.1,
             volume                = temp_grid
@@ -388,9 +386,8 @@ class Renderer:
         self.trail_decay = np.linspace(1, 0, n_points)[:, None]
 
         self.trail_params = {
-            "line_width"            : 2,
-            "opacity"               : 0.5,
-            "render_lines_as_tubes" : True,
+            "line_width" : 2,
+            "opacity"    : 0.5,
         }
 
         self.color_graph  = Color((0.7, 0.7, 0.9))
