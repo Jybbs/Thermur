@@ -366,13 +366,10 @@ class TrainCommand:
             msg_type = "info"
         )
 
-        should_view = (
-            not self.interactive or
-            self.prompts.confirm("Would you like to view the configuration now?")
-        )
-
-        if should_view:
-            subrun(['thermur', 'runs', 'show', str(relative_path)])
+        if self.interactive:
+            view_msg = "Would you like to view the configuration now?"
+            if self.prompts.confirm(view_msg):
+                subrun(['thermur', 'runs', 'show', str(relative_path)])
 
     def _request_confirmation(self):
         """
@@ -492,8 +489,8 @@ class TrainCommand:
             msg_type = "thermal"
         )
         self.ui.print_message(
-            message  = "Track progress in your wandb dashboard",
-            msg_type = "flock"
+            message  = " Track progress in your wandb dashboard",
+            msg_type = "magic"
         )
         self.ui.console.print()
 

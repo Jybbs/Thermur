@@ -87,20 +87,6 @@ class MetricsModel(BaseModel, extra="forbid"):
             "controls smoothness of the rendered velocity field representation."
         )
     )
-    log_every_n_steps: PositiveInt = Field(
-        default     = 50,
-        description = (
-            "Frequency of metric logging to track training progress, lower values "
-            "provide more granular tracking but increase logging overhead."
-        )
-    )
-    logging_interval: Literal["step", "epoch"] = Field(
-        default     = "step",
-        description = (
-            "Interval for learning rate logging to monitor optimization schedule, "
-            "choose 'step' for fine-grained tracking or 'epoch' for overview."
-        )
-    )
     power_exponent: PositiveFloat = Field(
         default     = 1.5,
         description = (

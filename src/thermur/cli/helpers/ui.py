@@ -624,21 +624,21 @@ class ThermurUI:
         """
         from wandb import Api, api
 
-        user = Api().viewer.get("username") if api.api_key  else None
+        user = Api().viewer.username if api.api_key else None
         url  = f"https://wandb.ai/{user}/{project}" if user else None
 
         match context:
             case "info":
                 msg = (
-                    f"You are logged in as '{user}'" if user
+                    f" You are logged into wandb as [thermal]{user}[/thermal]" if user
                     else "🎨 wandb: Not authenticated • Run 'wandb login'"
                 )
                 self.print_message(
                     message  = msg,
-                    msg_type = "flock" if user else "warning"
+                    msg_type = "magic" if user else "warning"
                 )
             case "train" if url:
-                self.print_message(f"Live tracking dashboard → {url}", "flock")
+                self.print_message(f" Live tracking dashboard → {url}", "magic")
             case "monitor":
                 if not url:
                     self.print_message(
@@ -648,7 +648,7 @@ class ThermurUI:
                     self.print_message("Run 'wandb login' to authenticate", "info")
                     return False
                 self.console.print()
-                self.print_message(f"Opening {project} project dashboard...", "flock")
+                self.print_message(f" Opening {project} project dashboard...", "magic")
                 self.console.print(f"\n  [link={url}]{url}[/link]\n")
                 return url
             case _:
