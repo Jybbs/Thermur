@@ -260,6 +260,13 @@ class RunsCommand:
                 f"Configuration: {self.run_path.relative_to(self.outputs_dir)}",
                 True
             )
+            
+            if wandb_url := self._get_wandb_url(self.run_path):
+                self.ui.print_message(
+                    message  = f" WandB dashboard: {wandb_url}",
+                    msg_type = "magic"
+                )
+                self.ui.console.print()
 
         if using_last:
             self.ui.print_message(
@@ -328,20 +335,17 @@ class RunsCommand:
 
     def _display_runs_table(
         self,
-        columns        : list[TableColumn],
-        runs           : list[Path],
-        border_style   : str  = "bright_blue",
-        show_overrides : bool = True
+        columns      : list[TableColumn],
+        runs         : list[Path],
+        border_style : str = "bright_blue"
     ):
         """
-        Display runs in a formatted table with status indicators.
+        Display runs in a formatted table with run ID, overrides, and status.
 
         Args:
-            columns        : Column definitions for the table
-            runs           : List of run paths to display
-            border_style   : Border style for the table
-            show_overrides : Whether to include overrides column
-            title          : Optional title for the table
+            columns      : Column definitions for the table
+            runs         : List of run paths to display
+            border_style : Border style for the table
         """
         table = self.ui.create_aligned_table(
             border_style = border_style,
@@ -354,11 +358,9 @@ class RunsCommand:
 
             table.add_row(
                 run_id,
-                *((
-                    self.ui.format_summary_list(overrides)
-                    if (overrides := self._load_overrides(run_path)) else "-",
-                    status
-                ) if show_overrides else (status,))
+                self.ui.format_summary_list(overrides)
+                if (overrides := self._load_overrides(run_path)) else "-",
+                status
             )
 
         self.ui.display_panel(table)
@@ -462,6 +464,35 @@ class RunsCommand:
                 return []
             return [self.domain]
         return sorted(cfg.keys())
+    
+    def _get_wandb_url(self, run_path: Path) -> str | None:
+        """
+        Get WandB dashboard URL for a run if available.
+
+        Args:
+            run_path: Path to the run directory
+
+        Returns:
+            WandB URL string or None if not available
+        """
+        if not (run_file := run_path / "wandb" / "latest-run" / "run.txt").exists():
+            return None
+
+        try:
+            wandb_run_id = run_file.read_text().strip()
+            
+            cfg       = self._load_run_config(run_path)
+            wandb_cfg = cfg.get("wandb", {})
+            project   = wandb_cfg.get("project", "thermur-imitation")
+            base_url  = f"https://wandb.ai"
+            return (
+                f"{base_url}/{entity}/{project}/runs/{wandb_run_id}"
+                if (entity := wandb_cfg.get("entity"))
+                else f"{base_url}/{project}/runs/{wandb_run_id}"
+            )
+                
+        except Exception:
+            return None
 
     def _load_overrides(self, run_path: Path) -> list[str]:
         """
@@ -592,10 +623,8 @@ class RunsCommand:
         )
 
         self._display_runs_table(
-            runs           = to_delete,
-            columns        = columns,
-            border_style   = "red",
-            show_overrides = False
+            columns      = columns,
+            runs         = to_delete
         )
 
         if self.dry_run:
@@ -760,16 +789,14 @@ class RunsCommand:
         self.ui.display_status_legend()
 
         columns = [
-            TableColumn("left",   "bright_cyan",  "Run ID",    35),
-            TableColumn("left",   "bright_green", "Overrides", 55),
+            TableColumn("left",   "bright_cyan",  "Run ID",    30),
+            TableColumn("left",   "bright_green", "Overrides", 50),
             TableColumn("center", "bright_white", "Status",    10)
         ]
 
         self._display_runs_table(
-            runs           = display_runs,
-            columns        = columns,
-            border_style   = "bright_blue",
-            show_overrides = True
+            columns = columns,
+            runs    = display_runs
         )
 
     def show_config(self):

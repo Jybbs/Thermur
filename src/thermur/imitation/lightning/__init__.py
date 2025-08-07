@@ -26,6 +26,6 @@ Lightning handles many concerns automatically:
 This design allows researchers to focus on the algorithmic aspects of
 imitation learning while Lightning manages the engineering complexity.
 """
-from .callback   import *
+from .callbacks  import *
 from .experience import *
 from .policy     import *

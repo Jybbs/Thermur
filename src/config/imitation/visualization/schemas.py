@@ -83,6 +83,13 @@ class VistaModel(BaseModel, extra="forbid"):
             "generation, preventing edge artifacts in volume rendering."
         )
     )
+    log_video: bool = Field(
+        default     = True,
+        description = (
+            "Capture visualization frames to a buffer for logging videos to WandB. "
+            "Independent of --watch flag which controls live window display."
+        )
+    )
     show_agents: bool = Field(
         default     = True,
         description = (

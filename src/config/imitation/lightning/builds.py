@@ -39,7 +39,7 @@ from hydra_zen                   import builds, make_config
 from pytorch_lightning           import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers   import WandbLogger
-from thermur.imitation.lightning import DataModule, GNNPolicy, MonitoringCallback
+from thermur.imitation.lightning import DataModule, GNNPolicy, MonitoringCallback, VisualizationCallback
 from torch.optim                 import AdamW
 from torch.optim.lr_scheduler    import ReduceLROnPlateau
 from typing                      import Any, TYPE_CHECKING
@@ -54,7 +54,8 @@ LIGHTNING_USER_CONFIG = make_config(
     experience   = ExperienceModel(),
     hardware     = HardwareModel(),
     optimizer    = OptimizerModel(),
-    wandb        = WandbModel()
+    wandb        = WandbModel(),
+    watch        = WatchModel()
 )
 
 LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
@@ -145,7 +146,8 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
             "${_system.checkpoint_callback}",
             "${_system.early_stopping_callback}",
             "${_system.lr_monitor_callback}",
-            "${_system.monitoring_callback}"
+            "${_system.monitoring_callback}",
+            "${_system.watch_callback}"
         ],
         detect_anomaly          = "${lightning.hardware.detect_anomaly}",
         deterministic           = "${lightning.hardware.deterministic}",
@@ -157,6 +159,18 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         profiler                = "${monitoring.metrics.profiler}",
         strategy                = "${lightning.hardware.strategy}",
         val_check_interval      = "${lightning.optimizer.val_check_interval}",
+        zen_partial             = True,
+        populate_full_signature = True
+    ),
+
+    "watch_callback": builds(
+        VisualizationCallback,
+        auto_close              = "${lightning.watch.auto_close}",
+        log_to_wandb            = "${lightning.watch.log_to_wandb}",
+        start_epoch             = "${lightning.watch.start_epoch}",
+        update_frequency        = "${lightning.watch.update_frequency}",
+        visualizer              = "${_system.visualizer}",
+        watch_run               = "${lightning.watch.watch_run}",
         zen_partial             = True,
         populate_full_signature = True
     )
