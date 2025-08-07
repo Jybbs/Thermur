@@ -239,28 +239,6 @@ class RunsCommand:
         self.overrides      : list[str] | None = None
         self.run_path       : Path | None      = None
 
-    def _add_config_rows(
-        self,
-        items : list[ConfigItem],
-        table : Table
-    ):
-        """
-        Add configuration parameter rows to a Rich table.
-
-        Populates a table with configuration parameters, their values, and visual
-        indicators for overridden parameters.
-
-        Args:
-            items : List of (parameter_path, (value, is_override)) tuples
-            table : Rich Table instance to populate
-        """
-        for i in items:
-            table.add_row(
-                "●" if i.is_override else " ",
-                i.path,
-                self.ui.format_truncated(value=i.value)
-            )
-
     def _display_config(
         self,
         items      : list[ConfigItem],
@@ -321,7 +299,12 @@ class RunsCommand:
                 ]
             )
 
-            self._add_config_rows(page_items, table)
+            for i in page_items:
+                table.add_row(
+                    "●" if i.is_override else " ",
+                    i.path,
+                    self.ui.format_truncated(value=i.value)
+                )
             self.ui.display_panel(table)
 
         self.prompts.paginate(
