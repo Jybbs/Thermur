@@ -23,6 +23,16 @@ from .monitoring.builds    import MONITORING_USER_CONFIG,    MONITORING_SYSTEM_B
 from .simulation.builds    import SIMULATION_USER_CONFIG,    SIMULATION_SYSTEM_BUILDS
 from .visualization.builds import VISUALIZATION_USER_CONFIG, VISUALIZATION_SYSTEM_BUILDS
 from hydra_zen             import make_config
+from omegaconf             import OmegaConf
+
+OmegaConf.register_new_resolver(
+    "output_dir",
+    lambda run_name: (
+        f"outputs/{run_name}" if run_name 
+        else "outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+    ),
+    replace = True
+)
 
 ImitationConfig = make_config(
     controller    = CONTROLLER_USER_CONFIG,
@@ -37,14 +47,9 @@ ImitationConfig = make_config(
         **SIMULATION_SYSTEM_BUILDS,
         **VISUALIZATION_SYSTEM_BUILDS
     },
-    hydra_defaults = ["_self_", {"override hydra/hydra_logging": "none"}],
     hydra = {
         "run": {
-            "dir": (
-                "outputs/"
-                "${oc.select:lightning.wandb.run_name,"
-                "'${now:%Y-%m-%d}/${now:%H-%M-%S}'}"
-            )
+            "dir": "${output_dir:${lightning.wandb.run_name}}"
         }
     }
 )
