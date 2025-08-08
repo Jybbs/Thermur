@@ -7,14 +7,11 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
 from __future__ import annotations
+from qpth.qp    import QPFunction
 from typing     import TYPE_CHECKING
-from warnings   import catch_warnings, filterwarnings
 
 import torch as th
 
-with catch_warnings():
-    filterwarnings("ignore", category=SyntaxWarning, module="qpth")
-    from qpth.qp import QPFunction
 
 if TYPE_CHECKING:
     from config.imitation.controller import FlockModel, SafetyModel
