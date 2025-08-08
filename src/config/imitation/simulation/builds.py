@@ -4,10 +4,10 @@ Simulation domain builds for hydra-zen configuration.
 This module provides pre-built components for the simulation environment and
 data processing pipeline:
 
-- SimulationEnv  : MuJoCo-based physics simulation environment that models drone
-                   swarm dynamics in wildfire scenarios. Handles agent physics,
-                   collision detection, wind field interactions, and fire spread
-                   dynamics.
+- SimulationEnv  : Physics simulation environment that models drone flock
+                   dynamics in wildfire scenarios using Euler integration.
+                   Handles agent dynamics, thermal field interactions, and
+                   environmental data queries.
 
 - WRFDataSource  : Weather Research and Forecasting (WRF) model data loader that
                    ingests high-resolution atmospheric data including wind fields,
@@ -31,6 +31,7 @@ SIMULATION_USER_CONFIG = make_config(
 SIMULATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "env": builds(
         SimulationEnv,
+        k_neighbors             = "${controller.mmm.k_neighbors}",
         physics                 = "${simulation.physics}",
         zen_partial             = True,
         populate_full_signature = True

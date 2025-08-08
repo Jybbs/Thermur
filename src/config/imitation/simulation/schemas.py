@@ -52,13 +52,12 @@ class PhysicsModel(BaseModel, extra="forbid"):
     """
     Unified physics and environmental simulation configuration.
 
-    Controls the MuJoCo physics engine settings, simulation timestep,
-    spatial bounds, and thermal field interpolation parameters used
-    throughout the system.
+    Controls the physics simulation settings, timestep, spatial bounds,
+    and thermal field interpolation parameters used throughout the system.
 
     The simulation operates on a discrete timestep Δt, advancing the
-    physics state according to the equations of motion. The thermal
-    field provides spatially-varying temperature data T(𝐱) through
+    physics state using Euler integration. The thermal field
+    provides spatially-varying temperature data T(𝐱) through
     interpolation of gridded measurements.
 
     Gradient computation uses finite differences with step size ε:
@@ -67,13 +66,6 @@ class PhysicsModel(BaseModel, extra="forbid"):
 
     where ê_i are the standard basis vectors in ℝ^d.
     """
-    assets_dir: str = Field(
-        default     = "src/thermur/simulation/assets",
-        description = (
-            "Root directory containing MuJoCo XML model definitions for drone "
-            "dynamics, including mesh files and physical parameters."
-        )
-    )
     bounds_max: list[float] = Field(
         default     = [50.0, 50.0, 20.0],
         description = (
@@ -102,6 +94,13 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "fails outside data bounds or during initialization."
         )
     )
+    drag_coefficient: NonNegativeFloat = Field(
+        default     = 0.1,
+        description = (
+            "Quadratic drag coefficient Cd for aerodynamic resistance modeling, "
+            "where F_drag = -Cd * v * |v| simulates air resistance effects."
+        )
+    )
     gravity: PositiveFloat = Field(
         default     = 9.81,
         description = (
@@ -109,10 +108,24 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "and energy consumption estimation."
         )
     )
+    initial_spacing_factor: PositiveFloat = Field(
+        default     = 0.5,
+        description = (
+            "Multiplicative factor for initial Fibonacci lattice spacing relative to "
+            "communication range, ensuring strong initial k-NN connectivity."
+        )
+    )
+    max_speed: PositiveFloat = Field(
+        default     = 20.0,
+        description = (
+            "Maximum agent velocity v_max in m/s enforced as a hard constraint, "
+            "representing physical limitations of drone propulsion systems."
+        )
+    )
     simulation_step: PositiveFloat = Field(
         default     = 0.05,
         description = (
-            "Integration timestep Δt in seconds for MuJoCo physics solver, "
+            "Integration timestep Δt in seconds for Euler physics integration, "
             "balancing accuracy with real-time computational constraints."
         )
     )

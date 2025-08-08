@@ -6,16 +6,12 @@ interface for training and evaluating flock policies. It implements the
 `torchrl.EnvBase` API, making it compatible with the broader `torchrl`
 ecosystem of collectors, replay buffers, and trainers.
 
-The environment's main responsibility is to manage the state of the multi-agent
-system, step the simulation forward in time, and provide observations and
-rewards to the learning algorithm. It couples a rigid-body physics engine
-(MuJoCo) with a dynamic environmental data source (e.g., WRF-Fire data).
+The environment manages the state of the multi-agent system and steps the
+simulation forward using Euler integration of agent dynamics. It
+interfaces with a dynamic environmental data source (e.g., WRF-Fire data)
+to provide thermal and wind field information.
 """
 from __future__   import annotations
-from .generator   import XMLGenerator
-from math         import ceil
-from operator     import itemgetter
-from pathlib      import Path
 from torch        import Size
 from torchrl.data import Bounded, Composite, Unbounded
 from torchrl.envs import EnvBase
@@ -23,15 +19,13 @@ from typing       import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .loader                     import WRFDataSource
-    from config.imitation.controller import FlockModel
+    from config.imitation.controller import FlockModel, SafetyModel
     from config.imitation.simulation import PhysicsModel
-    from config.types                import MujocoModel
     from tensordict                  import TensorDictBase
     from torch                       import Tensor
     from torchrl.data                import TensorSpec
 
-import mujoco as mj
-import torch  as th
+import torch as th
 
 
 class SimulationEnv(EnvBase):
@@ -48,52 +42,95 @@ class SimulationEnv(EnvBase):
     data, and the communication graph topology.
     """
 
-    physics_model: MujocoModel
-
     def __init__(
         self,
-        flock   : FlockModel,
-        physics : PhysicsModel,
-        wrf     : WRFDataSource,
+        flock       : FlockModel,
+        k_neighbors : int,
+        physics     : PhysicsModel,
+        safety      : SafetyModel,
+        wrf         : WRFDataSource,
     ):
         """
         Initializes the Thermur environment with dependency injection.
 
         Args:
-            flock   : Flock parameters configuration.
-            physics : Physics simulation configuration.
-            wrf     : WRF data source providing environmental data queries.
+            flock       : Flock parameters configuration.
+            k_neighbors : Number of topological neighbors for murmuration.
+            physics     : Physics simulation configuration.
+            safety      : Safety configuration with temperature thresholds.
+            wrf         : WRF data source providing environmental data queries.
         """
-        self.flock         = flock
-        self.physics       = physics
-        self.wrf           = wrf
-        self.xml_generator = XMLGenerator(Path(self.physics.assets_dir))
-        self.physics_model = self._initialize_physics()
+        self.flock       = flock
+        self.k_neighbors = k_neighbors
+        self.physics     = physics
+        self.safety      = safety
+        self.wrf         = wrf
+        
+        self.positions  = None
+        self.velocities = None
+        
         super().__init__(device="cpu")
 
-    def _compute_edge_index(
-        self,
-        position : Tensor,
-        radius   : float
-    ) -> Tensor:
+    def _compute_edge_index(self, position: Tensor) -> Tensor:
         """
-        Computes the graph connectivity based on metric distance.
+        Computes topological k-nearest neighbor connectivity.
 
-        This function builds an `edge_index` for `torch-geometric` by finding all
-        pairs of nodes (i, j) where the Euclidean distance is less than `r`.
-        It avoids self-loops.
+        Following Ballerini et al. (2008), builds graph connectivity based on
+        k-nearest neighbors rather than metric distance. Each agent connects
+        to exactly k nearest neighbors regardless of distance, matching
+        the topological interaction rule observed in real murmurations.
 
         Args:
-            position : A tensor of node positions, shape (num_nodes, num_dims).
-            radius   : The communication radius.
+            position: A tensor of node positions, shape (num_nodes, num_dims).
 
         Returns:
             An `edge_index` tensor of shape (2, num_edges), suitable for a
             `torch_geometric.data.Data` object.
         """
-        distances = th.cdist(position, position)
-        mask      = (distances < radius) & (distances > 0)
-        return th.nonzero(mask, as_tuple=False).t().contiguous()
+        distances   = th.cdist(position, position)
+        _, indices  = distances.topk(self.k_neighbors + 1, largest=False)
+        n_agents    = len(position)
+        edge_source = th.arange(n_agents).repeat_interleave(self.k_neighbors)
+        edge_target = indices[:, 1:].flatten()
+        
+        return th.stack([edge_source, edge_target])
+
+    def _compute_forces(
+        self,
+        actions    : Tensor,
+        velocities : Tensor,
+        wind       : Tensor,
+    ) -> Tensor:
+        """
+        Compute total acceleration from control and environmental forces.
+
+        Aggregates forces following Newton's second law to determine the
+        net acceleration on each agent:
+
+            𝐚_total = 𝐚_control + 𝐚_gravity + 𝐚_drag + 𝐚_wind
+
+        The drag model assumes quadratic resistance proportional to speed,
+        while wind coupling uses a reduced coefficient to model partial
+        sheltering effects in the flock.
+
+        Args:
+            actions    : Control accelerations 𝐚_nom ∈ ℝ^(n×3) [m/s²]
+            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3) [m/s]
+            wind       : Environmental wind field 𝐰 ∈ ℝ^(n×3) [m/s]
+
+        Returns:
+            Tensor [n, 3] of total accelerations [m/s²]
+        """
+        gravity = th.zeros_like(velocities)
+        gravity[:, 2] = -self.physics.gravity
+        
+        drag_force = (
+            -self.physics.drag_coefficient * velocities *
+            velocities.norm(dim=1, keepdim=True)
+        )
+        wind_force = wind * self.physics.drag_coefficient * 0.5
+        
+        return actions + gravity + drag_force + wind_force
 
     def _create_action_space(self) -> TensorSpec:
         """
@@ -150,61 +187,14 @@ class SimulationEnv(EnvBase):
             wind        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
         )
 
-    def _extract_agent_states(self, data: Any) -> tuple[Tensor, Tensor]:  # MjData
+    def _generate_initial_positions(self, n: int) -> Tensor:
         """
-        Extracts the position and velocity states for all agents from MuJoCo data.
+        Generates initial positions for murmuration dynamics.
 
-        This method reads the actual physical state of each agent from the MuJoCo
-        simulation data, enabling true multi-agent physics with individual states.
-
-        Args:
-            data: MjData object with current simulation state
-
-        Returns:
-            positions  : Tensor of shape [agent_count, 3]
-            velocities : Tensor of shape [agent_count, 3]
-        """
-        positions = th.from_numpy(
-            data.qpos[:self.flock.agent_count * 3].copy().reshape(self.flock.agent_count, 3)
-        )
-        velocities = th.from_numpy(
-            data.qvel[:self.flock.agent_count * 3].copy().reshape(self.flock.agent_count, 3)
-        )
-
-        return positions, velocities
-
-    def _generate_cube_formation(self, n: int) -> Tensor:
-        """
-        Generates points distributed in a hypercube grid formation.
-
-        Creates a regular grid in N-dimensional space with points arranged
-        in a hypercube. The algorithm:
-            - Calculates the side length needed to accommodate N agents in a
-              d-dimensional space: ceil(N^(1/d))
-            - Creates a coordinate grid spanning [-1, 1] in each dimension
-            - Returns the first N points from the flattened grid
-
-        Args:
-            n: Number of agents in the flock
-
-        Returns:
-            A tensor of shape [n, 3] containing agent positions
-        """
-        side_length = ceil(n ** (1./3))
-        coords      = th.linspace(-1, 1, side_length)
-        grid        = th.stack(
-            dim     = -1,
-            tensors = th.meshgrid(coords, coords, coords, indexing='ij')
-        )
-
-        return grid.reshape(-1, 3)[:n]
-
-    def _generate_sphere_formation(self, n: int) -> Tensor:
-        """
-        Generates points distributed evenly on a sphere (3D) or circle (2D).
-
-        For 2D, places points evenly on a circle. For 3D, uses the Fibonacci
-        lattice method, which provides excellent uniformity for arbitrary N.
+        Uses the Fibonacci lattice method to create a compact spherical
+        distribution suitable for topological interactions. This provides
+        excellent uniformity while maintaining close proximity between
+        agents, essential for k-nearest neighbor connectivity.
 
         The Fibonacci lattice method creates a nearly-uniform distribution by:
             - Using the golden ratio φ = (1 + √5)/2 to create optimal angular spacing
@@ -214,6 +204,9 @@ class SimulationEnv(EnvBase):
         Points are then placed at:
 
             (r·cos(θ), r·sin(θ), z) where θ = 2π·k/φ
+
+        This initial configuration promotes rapid emergence of collective
+        murmuration behavior through strong topological connectivity.
 
         Args:
             n: Number of agents in the flock
@@ -236,25 +229,85 @@ class SimulationEnv(EnvBase):
             ),
         )
 
-    def _initialize_physics(self):
+    def _integrate_positions(
+        self,
+        positions  : Tensor,
+        timestep   : float,
+        velocities : Tensor,
+    ) -> tuple[Tensor, Tensor]:
         """
-        Dynamically generates and loads the MuJoCo physics model.
+        Update positions with hard boundary constraints.
 
-        This method creates a MuJoCo model with N distinct drone bodies based on
-        the `agent_count` configuration parameter. Each drone has its own set of
-        joints and actuators, enabling true multi-agent physics simulation.
+        Performs forward Euler integration of positions with collision
+        detection at simulation boundaries:
+
+            𝐱(t+Δt) = 𝐱(t) + 𝐯(t)·Δt
+
+        When agents reach boundaries, positions are clamped and velocities
+        are zeroed in the constrained dimensions to prevent penetration.
+        This implements a perfectly inelastic collision model.
 
         Args:
-            physics: Physics configuration containing assets_dir and simulation_step
+            positions  : Current positions 𝐱 ∈ ℝ^(n×3) [m]
+            timestep   : Integration timestep Δt [s]
+            velocities : Current velocities 𝐯 ∈ ℝ^(n×3) [m/s]
 
         Returns:
-            A dictionary containing the MuJoCo model and data instances.
+            Tuple of (new_positions, at_bounds) where:
+                new_positions : Tensor [n, 3] of updated positions [m]
+                at_bounds     : Tensor [n, 1] boundary collision indicators
         """
-        xml_string = self.xml_generator.generate_xml(
-            agent_count     = self.flock.agent_count,
-            simulation_step = self.physics.simulation_step
-        )
-        return self.xml_generator.load_model(xml_string)
+        new_positions = positions + velocities * timestep
+        
+        bounds_min    = th.as_tensor(self.physics.bounds_min, device=positions.device)
+        bounds_max    = th.as_tensor(self.physics.bounds_max, device=positions.device)
+        new_positions = new_positions.clamp(bounds_min, bounds_max)
+        at_bounds     = (
+            (new_positions == bounds_min) | 
+            (new_positions == bounds_max)
+        ).any(dim=-1, keepdim=True)
+        
+        velocities.masked_fill_(at_bounds.expand_as(velocities), 0.0)
+        
+        return new_positions, at_bounds
+
+    def _integrate_velocities(
+        self,
+        acceleration : Tensor,
+        timestep     : float,
+        velocities   : Tensor,
+    ) -> Tensor:
+        """
+        Update velocities with maximum speed constraint.
+
+        Performs forward Euler integration with speed limiting:
+
+            𝐯(t+Δt) = 𝐯(t) + 𝐚(t)·Δt
+            
+        If |𝐯| > v_max, the velocity is rescaled to preserve direction:
+
+            𝐯_limited = 𝐯 · (v_max / |𝐯|)
+
+        This maintains smooth trajectories at the speed boundary rather
+        than component-wise clamping which would cause discontinuities.
+
+        Args:
+            acceleration : Total acceleration 𝐚 ∈ ℝ^(n×3) [m/s²]
+            timestep     : Integration timestep Δt [s]
+            velocities   : Current velocities 𝐯 ∈ ℝ^(n×3) [m/s]
+
+        Returns:
+            Tensor [n, 3] of updated velocities [m/s]
+        """
+        new_velocities = velocities + acceleration * timestep
+        
+        if (speed := new_velocities.norm(dim=1, keepdim=True)) > self.physics.max_speed:
+            new_velocities *= (
+                self.physics.max_speed / 
+                speed.clamp_min(self.physics.epsilon)
+            )
+        
+        return new_velocities
 
     def _make_spec(self, td_params: Any | None = None):
         """
@@ -275,131 +328,99 @@ class SimulationEnv(EnvBase):
         Resets the environment to an initial state for a new episode.
 
         This method creates an initial `TensorDict` observation by placing agents
-        according to the `initial_formation` specified in the flock config and
-        querying the environmental data at these starting positions.
+        in a compact spherical formation suitable for murmuration dynamics. The
+        initial positions use the Fibonacci lattice method to ensure uniform
+        distribution while maintaining close proximity for topological interactions.
 
-        The supported formation types include:
-        - 'sphere'      : Agents are distributed evenly on a sphere surface using
-                          the Fibonacci lattice method for uniform distribution
-        - 'cube'        : Agents are arranged in a uniform N-dimensional grid
-        - 'murmuration' : (TBD) Agents mimic the controlled chaos of starlings
-
-        The formation is scaled by the communication range and formation scale
-        factor to ensure appropriate initial connectivity between agents.
+        The formation is scaled to approximately 0.3 times the communication range
+        to ensure strong initial connectivity between agents, promoting the emergence
+        of collective murmuration behavior.
 
         Returns:
             A `TensorDict` containing the initial observation of the flock.
         """
-        match self.flock.initial_formation:
-            case "cube":
-                positions = self._generate_cube_formation(self.flock.agent_count)
-            case "sphere" | _:
-                positions = self._generate_sphere_formation(self.flock.agent_count)
-
-        scaled_positions = (
-            positions *
-            self.flock.communication_range *
-            self.flock.formation_scale_factor
+        positions = (
+            self._generate_initial_positions(self.flock.agent_count) *
+            self.flock.communication_range * 
+            self.physics.initial_spacing_factor
         )
 
-        initial_observation = self.observation_spec.zero()
-        initial_observation.update({
-            "battery"  : th.ones(self.flock.agent_count, 1),
-            "position" : scaled_positions,
-        })
-
-        positions             = initial_observation["position"]
         temperature, gradient = self.wrf.query_thermal(positions)
         wind                  = self.wrf.query_wind(positions)
-
-        initial_observation.update(
-            {
-                "edge_index"  : self._compute_edge_index(
-                    position = positions,
-                    radius   = self.flock.communication_range
-                ),
-                "gradient"    : gradient,
-                "temperature" : temperature,
-                "wind"        : wind
-            }
-        )
-
-        self._set_physics_state(positions, th.zeros_like(positions))
-
-        return initial_observation
-
-    def _set_physics_state(
-        self,
-        positions  : Tensor,
-        velocities : Tensor
-    ):
-        """
-        Sets the physics state for all agents in the MuJoCo simulation.
-
-        This method updates the MuJoCo simulation state to match the provided
-        positions and velocities for all agents. This is used both during reset
-        to set the initial state and can be used to manually update agent positions.
-
-        Args:
-            positions  : Tensor [N, 3] containing agent positions
-            velocities : Tensor [N, 3] containing agent velocities
-        """
-        data = self.physics_model["data"]
-        getattr(mj, 'mj_resetData')(self.physics_model["model"], data)
-
-        data.qpos[:self.flock.agent_count * 3] = positions.reshape(-1).cpu().numpy()
-        data.qvel[:self.flock.agent_count * 3] = velocities.reshape(-1).cpu().numpy()
-
-        # Forward kinematics to update all derived quantities
-        getattr(mj, 'mj_forward')(self.physics_model["model"], data)
-
-    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
-        """
-        Performs one discrete time step in the environment with true multi-agent physics.
-
-        The process follows these steps:
-            1. Extract individual agent control actions from the input `td`
-            2. Apply each action to its corresponding agent's actuators
-            3. Step the physics engine forward by `simulation_step` seconds
-            4. Extract the updated agent states (positions, velocities)
-            5. Create a new observation with environmental data at these positions
-            6. Compute "reward" and "done" flags for each agent
-            7. Return a `td` with the complete next state
-
-        Args:
-            td: A `TensorDict` containing the control `action` to apply,
-                with shape [n_agents, action_dims]
-
-        Returns:
-            A `TensorDict` for the `next` state, including the new
-            observation, reward, and done flag.
-        """
-        actions     = tensordict.get("action")
-        model, data = itemgetter("model", "data")(self.physics_model)
-        reshaped    = actions[:, :3].flatten().cpu().numpy()
-
-        if ctrl_count := min(len(reshaped), len(data.ctrl)):
-            data.ctrl[:ctrl_count] = reshaped[:ctrl_count]
-
-        getattr(mj, 'mj_step')(model, data)
-
-        position, velocity    = self._extract_agent_states(data)
-        temperature, gradient = self.wrf.query_thermal(position)
-        wind                  = self.wrf.query_wind(position)
-        edge_index            = self._compute_edge_index(
-            position = position,
-            radius   = self.flock.communication_range
-        )
-
-        next_observation = self.observation_spec.zero()
-        next_observation.update({
+        
+        initial_observation = self.observation_spec.zero()
+        initial_observation.update({
             "battery"     : th.ones(self.flock.agent_count, 1),
-            "edge_index"  : edge_index,
-            "gradient"    : gradient,
-            "position"    : position,
+            "position"    : positions,
             "temperature" : temperature,
-            "velocity"    : velocity,
+            "gradient"    : gradient,
             "wind"        : wind,
         })
 
-        return next_observation
+        initial_observation["edge_index"] = self._compute_edge_index(positions)
+
+        self.positions  = positions.clone()
+        self.velocities = th.zeros_like(positions)
+
+        return initial_observation
+
+    def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
+        """
+        Performs one discrete time step using Euler integration.
+
+        The process follows these steps:
+            1. Extract control actions (accelerations) from the input
+            2. Update velocities: v(t+dt) = v(t) + a(t) * dt
+            3. Update positions: x(t+dt) = x(t) + v(t+dt) * dt
+            4. Query environmental data at new positions
+            5. Create observation with updated state
+
+        Args:
+            tensordict: A `TensorDict` containing the control `action` to apply,
+                        with shape [n_agents, 3] representing accelerations
+
+        Returns:
+            A `TensorDict` for the next state, including the new observation
+        """
+        actions = tensordict.get("action")
+        
+        if self.velocities is None:
+            self.velocities = th.zeros_like(actions)
+        if self.positions is None:
+            self.positions = th.zeros_like(actions)
+        
+        wind = self.wrf.query_wind(self.positions)
+        total_acceleration = self._compute_forces(
+            actions    = actions,
+            velocities = self.velocities,
+            wind       = wind
+        )
+        
+        self.velocities = self._integrate_velocities(
+            acceleration = total_acceleration,
+            timestep     = self.physics.simulation_step,
+            velocities   = self.velocities
+        )
+        
+        self.positions, at_bounds = self._integrate_positions(
+            positions  = self.positions,
+            timestep   = self.physics.simulation_step,
+            velocities = self.velocities
+        )
+        
+        temperature, gradient = self.wrf.query_thermal(self.positions)
+        next_observation      = self.observation_spec.zero()
+        next_observation.update({
+            "battery"     : th.ones(self.flock.agent_count, 1),
+            "done"        : at_bounds.any().unsqueeze(0),
+            "edge_index"  : self._compute_edge_index(self.positions),
+            "gradient"    : gradient,
+            "position"    : self.positions.clone(),
+            "reward"      : th.zeros(self.flock.agent_count, dtype=th.float32),
+            "temperature" : temperature,
+            "velocity"    : self.velocities.clone(),
+            "wind"        : wind,
+        })
+        
+        tensordict["next"] = next_observation
+        return tensordict

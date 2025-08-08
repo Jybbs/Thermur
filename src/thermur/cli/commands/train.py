@@ -48,6 +48,11 @@ def train(
         False,
         "--sample", "-s",
         help = "Use bundled sample data instead of downloaded files"
+    ),
+    watch: bool = Option(
+        False,
+        "--watch", "-w",
+        help = "Enable real-time 3D visualization during training"
     )
 ):
     """
@@ -58,6 +63,7 @@ def train(
 
     Examples:
         thermur train                                   # Interactive training
+        thermur train --watch                           # Train with real-time visualization
         thermur train optimizer.learning_rate=0.001     # Override config value
         thermur train +model.new_param=42               # Append new config value
         thermur train ++model.force_param=true          # Force add/override
@@ -70,9 +76,10 @@ def train(
         dry_run     = dry_run,
         force       = force,
         interactive = interactive,
-        sample      = sample,
         overrides   = overrides or [],
-        resume      = resume
+        resume      = resume,
+        sample      = sample,
+        watch       = watch
     )
 
 
@@ -101,6 +108,7 @@ class TrainCommand:
         self.overrides   = []
         self.resume      = None
         self.sample      = False
+        self.watch       = False
 
     def _display_override_details(self):
         """
@@ -254,11 +262,14 @@ class TrainCommand:
                 task_id   = task
             )
 
-            components['visualizer'] = (
-                instantiate(c, pydantic_parser)
-                if (c := OmegaConf.select(cfg, "_system.visualizer"))
-                else None
-            )
+            if c := OmegaConf.select(cfg, "_system.visualizer"):
+                # If not interactive, disable watch
+                if not self.interactive:
+                    self.watch = False
+                
+                components['visualizer'] = instantiate(c, pydantic_parser)
+            else:
+                components['visualizer'] = None
 
         return components
 
@@ -366,13 +377,10 @@ class TrainCommand:
             msg_type = "info"
         )
 
-        should_view = (
-            not self.interactive or
-            self.prompts.confirm("Would you like to view the configuration now?")
-        )
-
-        if should_view:
-            subrun(['thermur', 'runs', 'show', str(relative_path)])
+        if self.interactive:
+            view_msg = "Would you like to view the configuration now?"
+            if self.prompts.confirm(view_msg):
+                subrun(['thermur', 'runs', 'show', str(relative_path)])
 
     def _request_confirmation(self):
         """
@@ -487,13 +495,20 @@ class TrainCommand:
                 message  = f"Resuming from checkpoint: {self.resume}",
                 msg_type = "info"
             )
+        
+        if self.watch and components.get("visualizer"):
+            self.ui.print_message(
+                message  = "Real-time visualization enabled",
+                msg_type = "flock"
+            )
+        
         self.ui.print_message(
             message  = "Monitoring thermal constraints and flock dynamics",
             msg_type = "thermal"
         )
         self.ui.print_message(
-            message  = "Track progress in your wandb dashboard",
-            msg_type = "flock"
+            message  = " Track progress in your wandb dashboard",
+            msg_type = "magic"
         )
         self.ui.console.print()
 
@@ -519,9 +534,10 @@ class TrainCommand:
         dry_run     : bool,
         force       : bool,
         interactive : bool,
-        sample      : bool,
         overrides   : list[str] | None,
         resume      : Path      | None,
+        sample      : bool,
+        watch       : bool
     ):
         """
         Executes the main training workflow from start to finish.
@@ -534,15 +550,16 @@ class TrainCommand:
             dry_run     : If True, shows configuration without training.
             force       : If True, skips system validation checks.
             interactive : If True, enables interactive prompts.
-            sample      : If True, use sample data.
             overrides   : A list of Hydra configuration overrides.
             resume      : Optional checkpoint path to resume training from.
+            sample      : If True, use sample data.
+            watch       : If True, enable real-time visualization.
         """
-        # Set command flags as instance attributes
         self.dry_run     = dry_run
         self.force       = force
         self.interactive = interactive
         self.sample      = sample
+        self.watch       = watch
 
         if resume:
             if str(resume) == "last":
@@ -578,6 +595,10 @@ class TrainCommand:
         # Gather additional overrides in interactive mode
         if self.interactive:
             self.overrides = self.overrides + self.prompts.ask_for_overrides()
+        
+        # Add the --watch flag as a config override
+        if self.watch:
+            self.overrides.append("lightning.watch.watch_run=true")
 
         self.data_path = self._ensure_data_available()
 

@@ -37,7 +37,7 @@ MONITORING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "events": builds(
         EventLogger,
         events                  = "${monitoring.events}",
-        thresholds              = "${controller.thresholds}",
+        safety                  = "${controller.safety}",
         zen_partial             = True,
         populate_full_signature = True
     )

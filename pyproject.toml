@@ -15,7 +15,6 @@ dependencies    = [
     "gymnasium",
     "hydra-zen",
     "lightning",
-    "mujoco",
     "netcdf4",
     "pydantic",
     "pydantic-settings",

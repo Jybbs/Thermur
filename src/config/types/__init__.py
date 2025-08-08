@@ -4,8 +4,12 @@ Type definitions for the Thermur CLI.
 This module consolidates all type protocols, TypedDicts, and type aliases used
 throughout the CLI, providing a single source of truth for type definitions.
 """
+from __future__         import annotations
 from config.cli.schemas import *
-from typing             import Any, Literal, NamedTuple, TypedDict
+from typing             import Any, Literal, NamedTuple, TYPE_CHECKING, TypedDict
+
+if TYPE_CHECKING:
+    from torch import Tensor
 
 
 class ConfigItem(NamedTuple):
@@ -55,15 +59,17 @@ class EventConfig(TypedDict):
     rate    : str        # Metric name for event rate tracking
 
 
-class MujocoModel(TypedDict):
+class StepMetrics(TypedDict):
     """
-    MuJoCo physics model and data pair.
+    Step-level metrics data for logging during training/validation.
 
-    Contains the MuJoCo model definition and associated data state
-    used throughout the simulation environment.
+    Contains the loss value and model predictions/targets needed for
+    computing step-level metrics like per-dimension MSE. When None,
+    indicates epoch-level aggregated logging only.
     """
-    data  : Any  # MjData instance
-    model : Any  # MjModel instance
+    loss        : Tensor  # Scalar loss value
+    predictions : Tensor  # Model velocity predictions [batch, 3]
+    targets     : Tensor  # Expert velocity targets [batch, 3]
 
 
 class SystemInfo(TypedDict, total=False):
@@ -93,7 +99,6 @@ class SystemInfo(TypedDict, total=False):
     memory_total        : float
 
     # Core versions
-    mujoco              : str | None
     platform            : str
     python              : str
     python_version_info : Any

@@ -1,20 +1,23 @@
 """
 Control algorithms for thermally-aware drone flocks.
 
-This package implements the expert controller that generates demonstrations for
-imitation learning. The core algorithm combines Reynolds flocking rules with
-thermal constraints through a potential-based approach:
+This package implements murmuration dynamics based on starling flocks that
+generates demonstrations for imitation learning. The core algorithm uses
+topological interactions (k-nearest neighbors) rather than metric distances,
+maintaining critical state dynamics for rapid information propagation.
 
-    𝐮_nom = -∇_x U(S_t)
+The murmuration controller implements an enhanced Hamiltonian formulation:
 
-where the potential U incorporates:
-- Cohesion: Attraction to local center of mass
-- Separation: Repulsion from nearby agents
-- Alignment: Velocity matching with neighbors
-- Thermal avoidance: Repulsion from high-temperature regions
+    E = -Σ J_ij 𝐬_i · 𝐬_j - Σ 𝐡_i · 𝐬_i
 
-The SafetyFilter ensures all control actions respect physical constraints and
+where 𝐬_i are normalized velocities and J_ij decay with topological distance.
+
+The flock exhibits two distinct modes:
+- Cruise : Standard murmuration dynamics with susceptibility-modulated alignment
+- Alert  : Enhanced correlation and density for rapid threat response
+
+The CBFSafetyFilter ensures all control actions respect physical constraints and
 maintain safe distances from thermal hazards using Control Barrier Functions.
 """
-from .expert import *
-from .safety import *
+from .murmuration import *
+from .safety      import *

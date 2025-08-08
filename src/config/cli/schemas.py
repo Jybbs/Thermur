@@ -35,7 +35,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             },
             {
                 "desc" : "Monitor training progress and resources",
-                "icon" : "🎨",
+                "icon" : "✨",
                 "name" : "monitor",
             },
             {
@@ -128,6 +128,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             'error'   : {'icon': '❌',  'style': 'error'},
             'flock'   : {'icon': '🪿',  'style': 'flock'},
             'info'    : {'icon': 'ℹ️ ', 'style': 'info'},
+            'magic'   : {'icon': '🪄',  'style': 'accent'},
             'success' : {'icon': '✅',  'style': 'success'},
             'thermal' : {'icon': '🔥',  'style': 'thermal'},
             'warning' : {'icon': '⚠️ ', 'style': 'warning'},
@@ -189,7 +190,6 @@ class DisplayModel(BaseModel, extra="forbid"):
             'disk'     : '💿 Disk',
             'gpu'      : '💎 GPU',
             'memory'   : '💾 Memory',
-            'mujoco'   : '🥽 MuJoCo',
             'platform' : '🖥️  Platform',
             'python'   : '🐍 Python',
             'thermur'  : '🔥 Thermur',
