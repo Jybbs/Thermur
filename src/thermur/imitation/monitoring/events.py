@@ -1,7 +1,7 @@
 """
 Event logging system for tracking agent-level decisions and state transitions.
 
-This module provides detailed logging capabilities for debugging swarm behavior,
+This module provides detailed logging capabilities for debugging flock behavior,
 tracking individual agent decisions, CBF activations, and critical events during
 training and simulation. It integrates with PyTorch Lightning's logging system
 and provides structured outputs for post-hoc analysis.
@@ -14,7 +14,7 @@ from typing       import Any, TYPE_CHECKING
 from wandb        import Table
 
 if TYPE_CHECKING:
-    from config.imitation.controller import ThresholdsModel
+    from config.imitation.controller import SafetyModel
     from config.imitation.monitoring import EventsModel
     from pytorch_lightning           import LightningModule
     from tensordict                  import TensorDictBase
@@ -32,19 +32,19 @@ class EventLogger:
 
     def __init__(
         self,
-        events     : EventsModel,
-        thresholds : ThresholdsModel
+        events : EventsModel,
+        safety : SafetyModel
     ):
         """
         Initialize the event logger.
 
         Args:
-            events     : Event logging configuration model
-            thresholds : Safety threshold configuration from controller domain
+            events : Event logging configuration model
+            safety : Safety configuration with thresholds and CBF parameters
         """
-        self.cbf_tolerance   = thresholds.activation_tolerance
-        self.cbf_threshold   = thresholds.max_temperature - thresholds.activation_tolerance
-        self.max_temperature = thresholds.max_temperature
+        self.cbf_tolerance   = safety.cbf_tolerance
+        self.cbf_threshold   = safety.max_temperature - safety.cbf_tolerance
+        self.max_temperature = safety.max_temperature
         self.sample_every    = events.event_sample_every
         self.start_time      = perf_counter()
         self.total_steps     = 0

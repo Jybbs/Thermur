@@ -196,7 +196,7 @@ class OptimizerModel(BaseModel, extra="forbid"):
 
         L_imitation = ||π_θ(s) - u_nom||²
 
-    where π_θ is the learned GNN policy and π* is the expert controller.
+    where π_θ is the learned GNN policy and π* is the murmuration controller.
     """
     early_stopping_patience: PositiveInt = Field(
         default     = 10,
@@ -319,5 +319,60 @@ class WandbModel(BaseModel, extra="forbid"):
         description = (
             "W&B project name for organizing experiments - groups related training "
             "runs for easier comparison and analysis."
+        )
+    )
+
+
+class WatchModel(BaseModel, extra="forbid"):
+    """
+    Watch configuration for real-time training visualization.
+
+    Controls the integration of PyVista 3D visualization into the training loop,
+    allowing researchers to observe emergent flock behaviors and thermal dynamics
+    as the policy learns. Visualization frames can be automatically logged to
+    WandB for later review without re-running simulations.
+    """
+    auto_close: bool = Field(
+        default     = True,
+        description = (
+            "Automatically close visualization window when training completes. "
+            "Disable to keep window open for final state inspection."
+        )
+    )
+    fps: PositiveInt = Field(
+        default     = 30,
+        description = (
+            "Frames per second for video encoding when logging to WandB. "
+            "Standard video framerates are 24, 30, or 60 fps."
+        )
+    )
+    start_epoch: NonNegativeInt = Field(
+        default     = 0,
+        description = (
+            "Epoch at which to start visualization. Delaying start can skip early "
+            "random policy behavior and focus on emergent learned behaviors."
+        )
+    )
+    update_frequency: PositiveInt = Field(
+        default     = 10,
+        description = (
+            "Batch interval between visualization updates. Higher values reduce "
+            "computational overhead but provide less frequent visual feedback."
+        )
+    )
+    video_duration: float = Field(
+        default     = 30.0,
+        gt          = 0,
+        description = (
+            "Duration in seconds of each video clip logged to WandB. "
+            "Training progress is captured as a series of video clips, each "
+            "showing this many seconds of simulation at different training steps."
+        )
+    )
+    watch_run: bool = Field(
+        default     = False,
+        description = (
+            "Display a live visualization window during training. Typically controlled "
+            "via the --watch CLI flag rather than config files."
         )
     )

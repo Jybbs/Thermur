@@ -3,18 +3,19 @@ Controller domain builds for hydra-zen configuration.
 
 This module provides pre-built components for the controller domain:
 
-- ExpertController : Coordinates multi-agent behavior using Reynolds flocking rules
-                     (separation, alignment, cohesion) with safety filtering to
-                     maintain minimum separation distances between agents.
+- CBFSafetyFilter       : Enforces thermal safety constraints using Control Barrier
+                          Functions (CBF), solving a QP at each timestep to ensure
+                          agents never exceed maximum safe temperature.
 
-- SafetyFilter     : Monitors agent positions and prevents collisions by overriding
-                     control commands when agents get too close. Uses configurable
-                     thresholds for minimum separation distances.
+- MurmurationController : Implements murmuration dynamics with topological interactions
+                          based on starling flocks, using k-nearest neighbors rather
+                          than metric distances for biologically-inspired collective
+                          motion.
 """
 from __future__                   import annotations
 from .schemas                     import *
 from hydra_zen                    import builds, make_config
-from thermur.imitation.controller import ExpertController, SafetyFilter
+from thermur.imitation.controller import CBFSafetyFilter, MurmurationController
 from typing                       import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -22,28 +23,26 @@ if TYPE_CHECKING:
 
 
 CONTROLLER_USER_CONFIG = make_config(
-    expert     = ExpertModel(),
-    flock      = FlockModel(),
-    safety     = SafetyModel(),
-    thresholds = ThresholdsModel()
+    flock  = FlockModel(),
+    mmm    = MurmurationModel(),
+    safety = SafetyModel()
 )
 
 CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
-    "expert_controller": builds(
-        ExpertController,
-        expert                  = "${controller.expert}",
+    "cbf": builds(
+        CBFSafetyFilter,
         flock                   = "${controller.flock}",
-        safety_filter           = "${_system.safety_filter}",
-        thresholds              = "${controller.thresholds}",
+        safety                  = "${controller.safety}",
         zen_partial             = True,
         populate_full_signature = True
     ),
-
-    "safety_filter": builds(
-        SafetyFilter,
+    
+    "murmuration_controller": builds(
+        MurmurationController,
+        cbf                     = "${_system.cbf}",
         flock                   = "${controller.flock}",
+        mmm                     = "${controller.mmm}",
         safety                  = "${controller.safety}",
-        thresholds              = "${controller.thresholds}",
         zen_partial             = True,
         populate_full_signature = True
     )

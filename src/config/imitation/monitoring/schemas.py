@@ -45,11 +45,32 @@ class MetricsModel(BaseModel, extra="forbid"):
             "below are clamped to minimum intensity in heat colormap."
         )
     )
+    info_propagation_max_speed: PositiveFloat = Field(
+        default     = 45.0,
+        description = (
+            "Maximum expected information propagation speed in m/s for murmuration "
+            "dynamics, based on empirical observations from Cavagna et al. (2010)."
+        )
+    )
+    info_propagation_min_speed: PositiveFloat = Field(
+        default     = 15.0,
+        description = (
+            "Minimum expected information propagation speed in m/s for murmuration "
+            "dynamics, based on empirical observations from Cavagna et al. (2010)."
+        )
+    )
+    info_propagation_time_step: PositiveFloat = Field(
+        default     = 0.05,
+        description = (
+            "Time step in seconds for estimating information propagation velocity "
+            "through the flock by tracking velocity change patterns over time."
+        )
+    )
     legibility_grid_size: PositiveInt = Field(
         default     = 64,
         description = (
-            "Resolution of 2D grid for rendering velocity fields in legibility metrics, "
-            "higher values provide more detail but increase computation cost."
+            "Resolution of 2D grid for rendering velocity fields in legibility "
+            "metrics, higher values provide more detail but increase computation cost."
         )
     )
     legibility_kernel_size: PositiveInt = Field(
@@ -66,20 +87,6 @@ class MetricsModel(BaseModel, extra="forbid"):
             "controls smoothness of the rendered velocity field representation."
         )
     )
-    log_every_n_steps: PositiveInt = Field(
-        default     = 50,
-        description = (
-            "Frequency of metric logging to track training progress, lower values "
-            "provide more granular tracking but increase logging overhead."
-        )
-    )
-    logging_interval: Literal["step", "epoch"] = Field(
-        default     = "step",
-        description = (
-            "Interval for learning rate logging to monitor optimization schedule, "
-            "choose 'step' for fine-grained tracking or 'epoch' for overview."
-        )
-    )
     power_exponent: PositiveFloat = Field(
         default     = 1.5,
         description = (
@@ -90,7 +97,22 @@ class MetricsModel(BaseModel, extra="forbid"):
     profiler: bool | Literal["simple", "advanced", "pytorch"] = Field(
         default     = False,
         description = (
-            "PyTorch Lightning profiler for performance analysis. False disables profiling, "
-            "True uses 'simple' profiler, or specify 'advanced'/'pytorch' for detailed profiling."
+            "PyTorch Lightning profiler for performance analysis. False disables "
+            "profiling, True uses 'simple' profiler, or specify 'advanced'/'pytorch' "
+            "for detailed profiling."
+        )
+    )
+    susceptibility_max: PositiveFloat = Field(
+        default     = 20.0,
+        description = (
+            "Maximum expected susceptibility χ = N·Var[Φ] for maintaining critical "
+            "state dynamics, higher values indicate excessive system responsiveness."
+        )
+    )
+    susceptibility_min: PositiveFloat = Field(
+        default     = 5.0,
+        description = (
+            "Minimum expected susceptibility χ = N·Var[Φ] for maintaining critical "
+            "state dynamics, lower values indicate insufficient system responsiveness."
         )
     )
