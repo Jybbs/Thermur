@@ -6,6 +6,7 @@ into the training loop:
 - MonitoringCallback: Integrates metrics collection and event logging
 - VisualizationCallback: Provides real-time 3D visualization during training
 """
+
 from __future__        import annotations
 from pytorch_lightning import Callback
 from typing            import TYPE_CHECKING
@@ -54,6 +55,10 @@ class MonitoringCallback(Callback):
 
         Ensures all buffered event data is written to logging backends
         and provides aggregate statistics for the entire training run.
+
+        Args:
+            trainer   : PyTorch Lightning trainer coordinating the training process
+            pl_module : Lightning module instance for logging
         """
         if not self.events:
             return
@@ -77,6 +82,13 @@ class MonitoringCallback(Callback):
 
         Updates evaluation metrics, tracks CBF activations, and analyzes
         batch data for critical events like thermal violations.
+
+        Args:
+            trainer   : PyTorch Lightning trainer managing the training loop
+            pl_module : Lightning module containing the policy network
+            outputs   : Model outputs from the training step
+            batch     : TensorDict containing agent states and environment data
+            batch_idx : Index of the current batch within the epoch
         """
         if self.collector:
             self.collector.update_evaluation_metrics(batch, True)
@@ -94,6 +106,10 @@ class MonitoringCallback(Callback):
 
         Clears CBF activation counts and event statistics that are
         tracked on a per-epoch basis for trend analysis.
+
+        Args:
+            trainer   : PyTorch Lightning trainer instance
+            pl_module : Lightning module for state management
         """
         if self.events:
             self.events.reset_epoch_metrics()
@@ -112,6 +128,14 @@ class MonitoringCallback(Callback):
 
         Tracks the same metrics as training but without updating
         model parameters, providing unbiased performance estimates.
+
+        Args:
+            trainer        : PyTorch Lightning trainer instance
+            pl_module      : Lightning module being validated
+            outputs        : Model outputs from the validation step
+            batch          : TensorDict containing validation batch data
+            batch_idx      : Index of the current validation batch
+            dataloader_idx : Index of the dataloader for multi-dataloader setups
         """
         if self.collector:
             self.collector.update_evaluation_metrics(batch, False)
@@ -129,6 +153,10 @@ class MonitoringCallback(Callback):
 
         Computes final metric values across all validation batches
         for monitoring training progress and early stopping decisions.
+
+        Args:
+            trainer   : PyTorch Lightning trainer managing validation
+            pl_module : Lightning module containing metrics to log
         """
         if self.collector:
             self.collector.log_all_metrics(
@@ -144,8 +172,8 @@ class VisualizationCallback(Callback):
 
     Provides interactive visualization of the flock simulation during training,
     allowing researchers to observe emergent behaviors, thermal dynamics, and
-    control policy evolution in real-time. Can also log visualization frames
-    to WandB for later review.
+    control policy evolution in real-time. Automatically logs visualization
+    frames to WandB when a logger is present.
 
     The callback manages the PyVista rendering window lifecycle and ensures
     proper resource cleanup. It only activates in interactive mode to avoid
@@ -155,9 +183,10 @@ class VisualizationCallback(Callback):
     def __init__(
         self,
         auto_close       : bool              = True,
-        log_to_wandb     : bool              = True,
+        fps              : int               = 30,
         start_epoch      : int               = 0,
         update_frequency : int               = 10,
+        video_duration   : float             = 30.0,
         visualizer       : Visualizer | None = None,
         watch_run        : bool              = False
     ):
@@ -166,25 +195,121 @@ class VisualizationCallback(Callback):
 
         Args:
             auto_close       : Automatically close window when training ends
-            log_to_wandb     : Log visualization frames to WandB (controlled by vista.log_video)
+            fps              : Frames per second for video encoding
             start_epoch      : Epoch to start visualization (0 = immediate)
             update_frequency : Update visualization every N batches
+            video_duration   : Duration in seconds of each video segment
             visualizer       : Pre-configured Visualizer instance for rendering
             watch_run        : Show live visualization window (from --watch flag)
         """
         super().__init__()
         self.auto_close       = auto_close
-        self.log_to_wandb     = log_to_wandb
+        self.fps              = fps
         self.start_epoch      = start_epoch
         self.update_frequency = update_frequency
+        self.video_duration   = video_duration
         self.visualizer       = visualizer
         self.watch_run        = watch_run
 
+        # Calculate buffer size from fps and duration
+        self.video_buffer_size    = int(fps * video_duration)
         self.batch_counter        = 0
         self.frames_buffer        = []
         self.visualization_active = False
-        self.video_plotter        = None  # Separate plotter for video capture
-        self.live_plotter         = None  # Separate plotter for live window
+
+    def _log_video_to_wandb(
+        self,
+        trainer   : Trainer,
+        pl_module : LightningModule
+    ):
+        """
+        Log accumulated frames as video to WandB.
+
+        Encodes buffered frames as MP4 video and uploads to WandB dashboard.
+        Clears the frame buffer after successful upload to prevent memory growth.
+
+        Args:
+            trainer   : PyTorch Lightning trainer with logger attached
+            pl_module : Lightning module for accessing global step
+        """
+        if not self.frames_buffer or not trainer.logger:
+            return
+            
+        try:
+            import wandb
+            import numpy as np
+            
+            video_array = np.array(self.frames_buffer)
+            video_data  = {
+                "visualization/policy_behavior": wandb.Video(
+                    video_array, fps=self.fps, format="mp4"
+                ),
+                "global_step": trainer.global_step
+            }
+            
+            if experiment := getattr(trainer.logger, 'experiment', None):
+                experiment.log(video_data)
+            else:
+                wandb.log(video_data)
+            
+            self.frames_buffer.clear()
+            
+        except Exception:
+            pass
+
+    def on_exception(
+        self,
+        trainer   : Trainer,
+        pl_module : LightningModule,
+        exception : BaseException
+    ):
+        """
+        Ensure proper cleanup when training fails.
+
+        Closes visualization resources even when training is interrupted
+        by an exception, preventing resource leaks and hanging processes.
+
+        Args:
+            trainer   : PyTorch Lightning trainer instance
+            pl_module : Lightning module being trained
+            exception : The exception that interrupted training
+        """
+        if self.visualizer and self.visualization_active:
+            try:
+                self.visualizer.close()
+            except:
+                pass
+            finally:
+                self.visualization_active = False
+
+    def on_fit_end(
+        self,
+        trainer   : Trainer,
+        pl_module : LightningModule
+    ):
+        """
+        Clean up visualization resources when training completes.
+
+        Logs any remaining frames to WandB and closes any open windows.
+        Ensures proper cleanup even if training ends early.
+
+        Args:
+            trainer   : PyTorch Lightning trainer that finished
+            pl_module : Completed Lightning module
+        """
+        if not self.visualizer:
+            return
+
+        if trainer.logger and self.frames_buffer:
+            self._log_video_to_wandb(trainer, pl_module)
+
+        if self.visualization_active and self.auto_close and self.watch_run:
+            try:
+                self.visualizer.close()
+            except Exception:
+                pass
+            finally:
+                self.visualization_active = False
 
     def on_fit_start(
         self,
@@ -195,33 +320,18 @@ class VisualizationCallback(Callback):
         Initialize visualization when training begins.
 
         Sets up the rendering context and prepares the visualizer for
-        receiving batch data. Can set up video logging (vista.log_video)
-        and/or live window display (--watch flag) independently.
+        receiving batch data. Automatically prepares for video logging
+        when a WandB logger is present.
+
+        Args:
+            trainer   : PyTorch Lightning trainer beginning the fit process
+            pl_module : Lightning module starting training
         """
         if not self.visualizer:
             return
 
         if trainer.current_epoch >= self.start_epoch:
             self.visualization_active = True
-            
-            # Check if we should log videos to WandB
-            should_log_video = (
-                self.log_to_wandb and 
-                trainer.logger and 
-                hasattr(self.visualizer, 'vista') and 
-                self.visualizer.vista.log_video
-            )
-            
-            if should_log_video:
-                print("📹 Visualization frames will be logged to WandB")
-                # Setup video capture plotter if needed
-                from pyvista import Plotter
-                self.video_plotter = Plotter(off_screen=True, window_size=self.visualizer.vista.window_size)
-            
-            if self.watch_run:
-                print("🎨 Live visualization window opening...")
-                # The main visualizer plotter is used for live display
-                self.live_plotter = self.visualizer.plotter
 
     def on_train_batch_end(
         self,
@@ -235,8 +345,15 @@ class VisualizationCallback(Callback):
         Update visualization with training batch data.
 
         Renders the current simulation state if the update frequency
-        threshold is met. Handles both video capture (if log_video=True)
-        and live window updates (if --watch=True) independently.
+        threshold is met. Captures frames for WandB logging when a logger
+        is present and displays live if --watch is enabled.
+
+        Args:
+            trainer   : PyTorch Lightning trainer coordinating training
+            pl_module : Lightning module processing the batch
+            outputs   : Model outputs from the forward pass
+            batch     : TensorDict containing current agent states
+            batch_idx : Index of the current training batch
         """
         if not self.visualization_active or not self.visualizer:
             return
@@ -246,82 +363,59 @@ class VisualizationCallback(Callback):
             return
 
         try:
-            # Update the visualizer state with new batch data
             self.visualizer.update(batch)
             
-            # Handle live window display if --watch is enabled
-            if self.watch_run and self.live_plotter:
+            if self.watch_run:
                 self.visualizer.render()
             
-            # Handle video capture for WandB if log_video is enabled
-            if self.video_plotter and self.log_to_wandb and trainer.logger:
-                # Render to the off-screen plotter for video capture
-                # Note: This requires duplicating the rendering logic
-                # In a production system, we'd refactor Visualizer to support multiple plotters
-                self.video_plotter.clear()
-                # Copy visualization state to video plotter
-                # For now, just capture from the main plotter if available
-                if self.visualizer.plotter:
-                    frame = self.visualizer.plotter.screenshot(return_img=True)
-                    self.frames_buffer.append(frame)
-                    
-                    # Log video to WandB every N batches
-                    if len(self.frames_buffer) >= 30:  # About 1 second at 30fps
-                        self._log_video_to_wandb(trainer, pl_module)
+            if trainer.logger and self.visualizer.plotter:
+                frame = self.visualizer.plotter.screenshot(return_img=True)
+                self.frames_buffer.append(frame)
                 
-        except Exception as e:
-            print(f"⚠️ Visualization update failed: {e}")
+                if len(self.frames_buffer) >= self.video_buffer_size:
+                    self._log_video_to_wandb(trainer, pl_module)
+                
+        except Exception:
             self.visualization_active = False
 
-    def _log_video_to_wandb(
+    def on_train_epoch_end(
         self,
         trainer   : Trainer,
         pl_module : LightningModule
     ):
-        """Log accumulated frames as video to WandB."""
-        if not self.frames_buffer or not trainer.logger:
+        """
+        Flush visualization buffers at epoch boundaries.
+
+        Ensures any accumulated video frames are logged to WandB before
+        moving to the next epoch, preventing data loss.
+
+        Args:
+            trainer   : PyTorch Lightning trainer managing epochs
+            pl_module : Lightning module completing the epoch
+        """
+        if trainer.logger and self.frames_buffer:
+            self._log_video_to_wandb(trainer, pl_module)
+
+    def on_train_epoch_start(
+        self,
+        trainer   : Trainer,
+        pl_module : LightningModule
+    ):
+        """
+        Activate visualization when the start epoch is reached.
+
+        Allows delayed visualization start to skip early training
+        iterations where the policy is still random.
+
+        Args:
+            trainer   : PyTorch Lightning trainer tracking epochs
+            pl_module : Lightning module beginning new epoch
+        """
+        if not self.visualizer or self.visualization_active:
             return
-            
-        try:
-            import wandb
-            import numpy as np
-            
-            # Convert frames to numpy array
-            video_array = np.array(self.frames_buffer)
-            
-            # Log to WandB
-            if hasattr(trainer.logger, 'experiment'):
-                trainer.logger.experiment.log({
-                    "visualization/policy_behavior": wandb.Video(
-                        video_array, 
-                        fps=30,
-                        format="mp4"
-                    ),
-                    "global_step": trainer.global_step
-                })
-            elif hasattr(trainer.logger, 'log_video'):
-                # Alternative method if available
-                trainer.logger.log_video(
-                    "visualization/policy_behavior",
-                    [video_array],
-                    fps=30
-                )
-            else:
-                # Fallback: Use wandb directly if available
-                wandb.log({
-                    "visualization/policy_behavior": wandb.Video(
-                        video_array, 
-                        fps=30,
-                        format="mp4"
-                    ),
-                    "global_step": trainer.global_step
-                })
-            
-            # Clear buffer
-            self.frames_buffer.clear()
-            
-        except Exception as e:
-            print(f"⚠️ Failed to log video to WandB: {e}")
+
+        if trainer.current_epoch >= self.start_epoch:
+            self.visualization_active = True
 
     def on_validation_batch_end(
         self,
@@ -338,6 +432,14 @@ class VisualizationCallback(Callback):
         Shows validation rollouts in the visualization window,
         providing visual confirmation of policy performance on
         held-out data.
+
+        Args:
+            trainer        : PyTorch Lightning trainer running validation
+            pl_module      : Lightning module being validated
+            outputs        : Model outputs from validation forward pass
+            batch          : TensorDict containing validation data
+            batch_idx      : Index of the current validation batch
+            dataloader_idx : Index of the dataloader for multi-dataloader setups
         """
         if not self.visualization_active or not self.visualizer:
             return
@@ -346,94 +448,5 @@ class VisualizationCallback(Callback):
             try:
                 self.visualizer.update(batch)
                 self.visualizer.render()
-            except Exception as e:
-                print(f"⚠️ Validation visualization failed: {e}")
-
-    def on_train_epoch_end(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule
-    ):
-        """
-        Log any remaining frames at epoch end.
-
-        Ensures all captured frames are sent to WandB before moving
-        to the next epoch.
-        """
-        if self.log_to_wandb and self.frames_buffer:
-            self._log_video_to_wandb(trainer, pl_module)
-
-    def on_train_epoch_start(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule
-    ):
-        """
-        Activate visualization when the start epoch is reached.
-
-        Allows delayed visualization start to skip early training
-        iterations where the policy is still random.
-        """
-        if not self.visualizer or self.visualization_active:
-            return
-
-        if trainer.current_epoch >= self.start_epoch:
-            self.visualization_active = True
-            print(f"🎨 Starting visualization at epoch {trainer.current_epoch}")
-
-    def on_fit_end(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule
-    ):
-        """
-        Clean up visualization resources when training completes.
-
-        Logs any remaining frames to WandB and closes any open windows.
-        Ensures proper cleanup even if training ends early.
-        """
-        if not self.visualizer:
-            return
-
-        # Log any remaining frames
-        if self.log_to_wandb and self.frames_buffer:
-            self._log_video_to_wandb(trainer, pl_module)
-
-        # Close video plotter if it exists
-        if self.video_plotter:
-            try:
-                self.video_plotter.close()
             except Exception:
                 pass
-            finally:
-                self.video_plotter = None
-
-        # Close live visualization window if requested
-        if self.visualization_active and self.auto_close and self.watch_run:
-            try:
-                self.visualizer.close()
-                print("🎨 Live visualization window closed")
-            except Exception as e:
-                print(f"⚠️ Failed to close visualization: {e}")
-            finally:
-                self.visualization_active = False
-
-    def on_exception(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule,
-        exception : BaseException
-    ):
-        """
-        Ensure proper cleanup when training fails.
-
-        Closes visualization resources even when training is
-        interrupted by an exception, preventing resource leaks.
-        """
-        if self.visualizer and self.visualization_active:
-            try:
-                self.visualizer.close()
-            except:
-                pass
-            finally:
-                self.visualization_active = False

@@ -166,9 +166,10 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "watch_callback": builds(
         VisualizationCallback,
         auto_close              = "${lightning.watch.auto_close}",
-        log_to_wandb            = "${lightning.watch.log_to_wandb}",
+        fps                     = "${lightning.watch.fps}",
         start_epoch             = "${lightning.watch.start_epoch}",
         update_frequency        = "${lightning.watch.update_frequency}",
+        video_duration          = "${lightning.watch.video_duration}",
         visualizer              = "${_system.visualizer}",
         watch_run               = "${lightning.watch.watch_run}",
         zen_partial             = True,

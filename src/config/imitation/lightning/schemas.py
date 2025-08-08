@@ -339,11 +339,11 @@ class WatchModel(BaseModel, extra="forbid"):
             "Disable to keep window open for final state inspection."
         )
     )
-    log_to_wandb: bool = Field(
-        default     = True,
+    fps: PositiveInt = Field(
+        default     = 30,
         description = (
-            "Log visualization frames as videos to WandB dashboard. Videos are "
-            "viewable in the WandB UI and can be downloaded for presentations."
+            "Frames per second for video encoding when logging to WandB. "
+            "Standard video framerates are 24, 30, or 60 fps."
         )
     )
     start_epoch: NonNegativeInt = Field(
@@ -358,6 +358,15 @@ class WatchModel(BaseModel, extra="forbid"):
         description = (
             "Batch interval between visualization updates. Higher values reduce "
             "computational overhead but provide less frequent visual feedback."
+        )
+    )
+    video_duration: float = Field(
+        default     = 30.0,
+        gt          = 0,
+        description = (
+            "Duration in seconds of each video clip logged to WandB. "
+            "Training progress is captured as a series of video clips, each "
+            "showing this many seconds of simulation at different training steps."
         )
     )
     watch_run: bool = Field(
