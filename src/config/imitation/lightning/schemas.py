@@ -321,6 +321,14 @@ class WandbModel(BaseModel, extra="forbid"):
             "runs for easier comparison and analysis."
         )
     )
+    run_name: str | None = Field(
+        default     = None,
+        description = (
+            "Explicit run name (e.g., 'IM001', 'murmuration-test-v2'). Propagates to "
+            "WandB, Hydra output directories, and checkpoint paths. If not set, "
+            "WandB auto-generates a random name like 'cosmic-sunset-42'."
+        )
+    )
 
 
 class WatchModel(BaseModel, extra="forbid"):

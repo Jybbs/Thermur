@@ -39,6 +39,11 @@ def train(
         "--interactive/--no-interactive", "-i/-n",
         help = "Enable interactive configuration prompts"
     ),
+    name: str | None = Option(
+        None,
+        "--name", "-n",
+        help = "Name for this training run (e.g., 'IM001', 'murmuration-test')"
+    ),
     resume: Path | None = Option(
         None,
         "--resume", "-r",
@@ -63,6 +68,7 @@ def train(
 
     Examples:
         thermur train                                   # Interactive training
+        thermur train --name my-experiment              # Named training run
         thermur train --watch                           # Train with real-time visualization
         thermur train optimizer.learning_rate=0.001     # Override config value
         thermur train +model.new_param=42               # Append new config value
@@ -76,6 +82,7 @@ def train(
         dry_run     = dry_run,
         force       = force,
         interactive = interactive,
+        name        = name,
         overrides   = overrides or [],
         resume      = resume,
         sample      = sample,
@@ -104,6 +111,7 @@ class TrainCommand:
         self.dry_run     = False
         self.force       = False
         self.interactive = True
+        self.name        = None
         self.output_dir  = None
         self.overrides   = []
         self.resume      = None
@@ -407,6 +415,34 @@ class TrainCommand:
                 msg_type = "warning"
             )
             raise Exit()
+    
+    def _resolve_resume_path(self, resume: Path | None) -> Path | None:
+        """
+        Resolve the resume checkpoint path.
+        
+        Args:
+            resume: User-provided resume path or 'last' for most recent
+            
+        Returns:
+            Resolved checkpoint path or None
+            
+        Raises:
+            Exit: If checkpoint is not found
+        """
+        if not resume:
+            return None
+            
+        if str(resume) == "last":
+            if checkpoint := self._find_last_checkpoint():
+                return checkpoint
+            self.ui.print_message("No checkpoint found to resume from", "error")
+            raise Exit(1)
+            
+        if not resume.exists():
+            self.ui.print_message(f"Checkpoint not found: {resume}", "error" )
+            raise Exit(1)
+            
+        return resume
 
     def _task(
         self,
@@ -534,6 +570,7 @@ class TrainCommand:
         dry_run     : bool,
         force       : bool,
         interactive : bool,
+        name        : str       | None,
         overrides   : list[str] | None,
         resume      : Path      | None,
         sample      : bool,
@@ -550,6 +587,7 @@ class TrainCommand:
             dry_run     : If True, shows configuration without training.
             force       : If True, skips system validation checks.
             interactive : If True, enables interactive prompts.
+            name        : Optional name for the training run.
             overrides   : A list of Hydra configuration overrides.
             resume      : Optional checkpoint path to resume training from.
             sample      : If True, use sample data.
@@ -558,29 +596,17 @@ class TrainCommand:
         self.dry_run     = dry_run
         self.force       = force
         self.interactive = interactive
+        self.name        = name
         self.sample      = sample
         self.watch       = watch
 
-        if resume:
-            if str(resume) == "last":
-                self.resume = self._find_last_checkpoint()
-                if not self.resume:
-                    self.ui.print_message(
-                        "No checkpoint found to resume from", "error"
-                    )
-                    raise Exit(1)
-            elif not resume.exists():
-                self.ui.print_message(
-                    f"Checkpoint not found: {resume}", "error"
-                )
-                raise Exit(1)
-            else:
-                self.resume = resume
-        else:
-            self.resume = None
+        self.resume = self._resolve_resume_path(resume)
 
-        if overrides:
-            self.overrides = overrides
+        self.overrides = list(filter(None, [
+            *(overrides or []),
+            f"lightning.wandb.run_name={self.name}" if self.name  else None,
+            "lightning.watch.watch_run=true"        if self.watch else None,
+        ]))
 
         self.ui.print_header("Thermur Training System")
 
@@ -592,13 +618,8 @@ class TrainCommand:
                 msg_type = "warning"
             )
 
-        # Gather additional overrides in interactive mode
         if self.interactive:
-            self.overrides = self.overrides + self.prompts.ask_for_overrides()
-        
-        # Add the --watch flag as a config override
-        if self.watch:
-            self.overrides.append("lightning.watch.watch_run=true")
+            self.overrides.extend(self.prompts.ask_for_overrides())
 
         self.data_path = self._ensure_data_available()
 
