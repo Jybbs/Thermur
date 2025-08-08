@@ -22,6 +22,7 @@ from .lightning.builds     import LIGHTNING_USER_CONFIG,     LIGHTNING_SYSTEM_BU
 from .monitoring.builds    import MONITORING_USER_CONFIG,    MONITORING_SYSTEM_BUILDS
 from .simulation.builds    import SIMULATION_USER_CONFIG,    SIMULATION_SYSTEM_BUILDS
 from .visualization.builds import VISUALIZATION_USER_CONFIG, VISUALIZATION_SYSTEM_BUILDS
+from datetime              import datetime
 from hydra_zen             import make_config
 from omegaconf             import OmegaConf
 
@@ -29,7 +30,10 @@ OmegaConf.register_new_resolver(
     "output_dir",
     lambda run_name: (
         f"outputs/{run_name}" if run_name 
-        else "outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
+        else (
+            f"outputs/{datetime.now().strftime('%Y-%m-%d')}/"
+            f"{datetime.now().strftime('%H-%M-%S')}"
+        )
     ),
     replace = True
 )
