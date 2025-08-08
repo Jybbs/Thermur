@@ -8,6 +8,7 @@ settings with pagination support for large configurations.
 """
 from config.types import ConfigItem, TableColumn
 from contextlib   import contextmanager, suppress
+from datetime     import datetime
 from itertools    import chain
 from pathlib      import Path
 from yaml         import safe_load
@@ -353,14 +354,13 @@ class RunsCommand:
         )
 
         for run_path in runs:
-            run_id = str(run_path.relative_to(self.outputs_dir))
-            status = self.ui.format_run_status(run_path)
-
+            runtime = run_path.stat().st_ctime
             table.add_row(
-                run_id,
+                str(run_path.relative_to(self.outputs_dir)),
+                datetime.fromtimestamp(runtime).strftime("%Y-%m-%d %H:%M"),
                 self.ui.format_summary_list(overrides)
                 if (overrides := self._load_overrides(run_path)) else "-",
-                status
+                self.ui.format_run_status(run_path)
             )
 
         self.ui.display_panel(table)
@@ -610,8 +610,9 @@ class RunsCommand:
         self.ui.print_section("Runs to Delete", minor=True)
 
         columns = [
-            TableColumn("left",   "bright_red",   "Run ID", 50),
-            TableColumn("center", "bright_white", "Status", 10)
+            TableColumn("left",   "bright_red",   "Run ID",  35),
+            TableColumn("left",   "bright_white", "Started", 20),
+            TableColumn("center", "bright_white", "Status",  10)
         ]
 
         self.ui.print_message(
@@ -789,8 +790,9 @@ class RunsCommand:
         self.ui.display_status_legend()
 
         columns = [
-            TableColumn("left",   "bright_cyan",  "Run ID",    30),
-            TableColumn("left",   "bright_green", "Overrides", 50),
+            TableColumn("left",   "bright_cyan",  "Run ID",    25),
+            TableColumn("left",   "bright_white", "Started",   20),
+            TableColumn("left",   "bright_green", "Overrides", 45),
             TableColumn("center", "bright_white", "Status",    10)
         ]
 

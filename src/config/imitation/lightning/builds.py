@@ -92,6 +92,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         WandbLogger,
         log_model               = "${lightning.wandb.log_model}",
         mode                    = "${lightning.wandb.mode}",
+        name                    = "${lightning.wandb.run_name}",
         project                 = "${lightning.wandb.project}",
         zen_partial             = True,
         populate_full_signature = True
