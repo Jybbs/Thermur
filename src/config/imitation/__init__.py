@@ -40,7 +40,11 @@ ImitationConfig = make_config(
     hydra_defaults = ["_self_", {"override hydra/hydra_logging": "none"}],
     hydra = {
         "run": {
-            "dir": "outputs/${lightning.wandb.run_name:${now:%Y-%m-%d}/${now:%H-%M-%S}}"
+            "dir": (
+                "outputs/"
+                "${oc.select:lightning.wandb.run_name,"
+                "'${now:%Y-%m-%d}/${now:%H-%M-%S}'}"
+            )
         }
     }
 )
