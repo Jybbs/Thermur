@@ -410,20 +410,28 @@ class WRFDataSource:
         Returns:
             Tensor [N, 3] of wind velocity vectors 𝐮 = [u, v, w] in m/s
         """
-        coords_dict = self._transform_coordinates(positions)
-        n_agents    = positions.shape[0]
+        base_coords = self._transform_coordinates(positions)
+        device      = positions.device
+        n           = positions.shape[0]
+        
+        # Map each wind component to its staggered grid (U→x, V→y, W→z)
+        dims      = ["west_east", "south_north", "bottom_top"]
+        staggered = {
+            var: {
+                (dims[i] + "_stag" if i == idx else dims[i]): base_coords[dims[i]] 
+                for i in range(3)
+            }
+            for idx, var in enumerate(["U", "V", "W"])
+        }
+        
         wind_values = th.stack([
             th.nan_to_num(
                 Tensor(
-                    (
-                        self._interpolate_field(coords_dict, var).flatten()[:n_agents]
-                        if var in self.dataset.data_vars
-                        else th.zeros(n_agents)
-                    ),
-                    device = positions.device
+                    self._interpolate_field(staggered[var], var),
+                    device = device
                 ),
                 nan = 0.0
-            )
+            ) if var in self.dataset.data_vars else th.zeros(n, device=device)
             for var in ["U", "V", "W"]
         ], dim=1)
         
