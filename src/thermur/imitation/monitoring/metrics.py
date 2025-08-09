@@ -905,15 +905,12 @@ class MetricsCollector:
                                step_data["targets"][..., i]).pow(2).mean()
                 )
 
-        for metric_type, on_step in [
-            ("imitation",   is_training),
-            ("evaluation",  False),
-            ("murmuration", False)
-        ]:
+        if step_data is not None:
+            metrics = self._get_metrics(is_training, "imitation")
             module.log_dict(
-                dictionary = self._get_metrics(is_training, metric_type),
+                dictionary = metrics.compute(),
                 on_epoch   = True,
-                on_step    = on_step
+                on_step    = is_training
             )
 
     def update_evaluation_metrics(
