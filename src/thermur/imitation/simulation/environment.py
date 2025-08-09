@@ -300,14 +300,14 @@ class SimulationEnv(EnvBase):
             Tensor [n, 3] of updated velocities [m/s]
         """
         new_velocities = velocities + acceleration * timestep
+        speed          = new_velocities.norm(dim=1, keepdim=True)
         
-        if (speed := new_velocities.norm(dim=1, keepdim=True)) > self.physics.max_speed:
-            new_velocities *= (
-                self.physics.max_speed / 
-                speed.clamp_min(self.physics.epsilon)
-            )
+        scale = th.minimum(
+            th.ones_like(speed),
+            self.physics.max_speed / speed.clamp_min(self.physics.epsilon)
+        )
         
-        return new_velocities
+        return new_velocities * scale
 
     def _make_spec(self, td_params: Any | None = None):
         """
@@ -405,11 +405,14 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` for the next state, including the new observation
         """
-        actions               = tensordict.get("action")
-        self.positions        = self.positions  or th.zeros_like(actions)
-        self.velocities       = self.velocities or th.zeros_like(actions)
-        wind                  = self.wrf.query_wind(self.positions)
+        actions = tensordict.get("action")
+        
+        # Initialize state tensors on first step
+        if self.positions is None:
+            self.positions = self.velocities = th.zeros_like(actions)
+        
         self.wrf.current_time = self.episode_time
+        wind                  = self.wrf.query_wind(self.positions)
         
         self.velocities = self._integrate_velocities(
             acceleration = self._compute_forces(
