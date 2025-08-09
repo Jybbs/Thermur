@@ -14,9 +14,9 @@ from __future__            import annotations
 from pytorch_lightning     import LightningModule
 from torch.nn              import GRUCell, Linear, ModuleList
 from torch.nn.functional   import mse_loss
-from torch_geometric.data  import Data
+from torch_geometric.data  import Batch, Data
 from torch_geometric.nn    import GCNConv
-from typing                import Any, Type, TYPE_CHECKING
+from typing                import Callable, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.imitation.lightning        import ArchitectureModel
@@ -55,8 +55,8 @@ class GNNPolicy(LightningModule):
         self,
         architecture     : ArchitectureModel,
         collector        : MetricsCollector,
-        optimizer        : Any,  # Will be a functools.partial from hydra-zen
-        scheduler        : Any,  # Will be a functools.partial from hydra-zen
+        optimizer        : Callable[..., Optimizer],
+        scheduler        : Callable[..., LRScheduler],
         scheduler_metric : str,
         training_metric  : str
     ):
@@ -86,36 +86,42 @@ class GNNPolicy(LightningModule):
         self.convs      = self._build_module_list(architecture, GCNConv)
         self.grus       = self._build_module_list(architecture, GRUCell)
         self.decoder    = Linear(architecture.hidden_dim, 3)
-        self.encoder    = Linear(11, architecture.hidden_dim)
+        self.encoder    = Linear(13, architecture.hidden_dim)
 
-    def _batch_to_data(self, batch: TensorDictBase) -> Data:
+    def _batch_to_data(self, batch: TensorDictBase) -> Batch:
         """
-        Convert TensorDict batch to PyTorch Geometric Data object.
+        Convert TensorDict batch to PyTorch Geometric graph format.
 
-        Extracts graph structure and node features from the TensorDict
-        and constructs a PyG Data object suitable for GNN processing.
+        Transforms agent-based observations into graph representations suitable for
+        GNN processing. Creates a disjoint union of graphs with proper node indexing
+        for batch processing.
+
+        The node feature vector 𝐱ᵢ ∈ ℝ¹³ for agent i consists of:
+            𝐱ᵢ = [𝐩ᵢ; 𝐯ᵢ; θᵢ; ∇θᵢ; 𝐰ᵢ]
+        
+        where:
+            - 𝐩ᵢ ∈ ℝ³  : Position vector
+            - 𝐯ᵢ ∈ ℝ³  : Velocity vector  
+            - θᵢ ∈ ℝ   : Temperature scalar
+            - ∇θᵢ ∈ ℝ³ : Temperature gradient
+            - 𝐰ᵢ ∈ ℝ³  : Wind velocity
 
         Args:
-            batch: TensorDict containing flock state with keys:
-                   - position, velocity, temperature, gradient, wind
-                   - edge_index for graph connectivity
+            batch: TensorDict containing flock observations with shapes [B, N, d]
+                   where B is batch size, N is number of agents, d is feature dimension
 
         Returns:
-            PyG Data object with node features and edge connectivity
+            PyG Batch containing all graphs with concatenated node features and edges
         """
-        return Data(
-            x = th.cat(
-                [
-                    batch["position"],
-                    batch["velocity"],
-                    batch["temperature"],
-                    batch["gradient"],
-                    batch["wind"]
-                ],
-                dim = -1
-            ),
-            edge_index = batch["edge_index"]
-        )
+        features = ["position", "velocity", "temperature", "gradient", "wind"]
+        
+        return Batch.from_data_list([
+            Data(
+                edge_index = batch["edge_index"][i],
+                x          = th.cat([batch[f][i] for f in features], dim=-1),
+            )
+            for i in range(batch["position"].shape[0])
+        ])
 
     def _build_module_list(
         self,
@@ -150,20 +156,26 @@ class GNNPolicy(LightningModule):
         """
         Computes behavioral cloning loss and logs metrics.
 
-        This method implements the standard behavioral cloning objective:
-        L = MSE(π_θ(s), a*), where π_θ(s) is the policy's predicted action
-        and a* is the expert's demonstrated action.
+        Implements the imitation learning objective:
+            ℒ(θ) = 𝔼[(π_θ(s) - a*)²]
+        
+        where π_θ is the learned policy and a* are expert demonstrations.
+        The loss is computed over all nodes in the graph batch.
+        
+        Target actions are flattened from [B, N, 3] to [B*N, 3] to match
+        PyTorch Geometric's concatenated node format, where B is batch size
+        and N is the number of agents per graph.
 
         Args:
             batch       : TensorDict containing graph observations and expert actions
             is_training : Whether this is training (True) or validation (False)
 
         Returns:
-            Scalar loss tensor for backpropagation or metric aggregation
+            Scalar MSE loss for gradient computation
         """
         data        = self._batch_to_data(batch)
         predictions = self(data)
-        targets     = batch["action"]
+        targets     = batch["action"].view(-1, 3)
         loss        = mse_loss(predictions, targets)
 
         self.collector.update_imitation_metrics(
@@ -236,6 +248,23 @@ class GNNPolicy(LightningModule):
             h = gru(self.activation(conv(h, edge_index)), h)
 
         return self.decoder(h)
+    
+    def on_fit_start(self) -> None:
+        """
+        Lightning lifecycle hook called at the beginning of training.
+        
+        Ensures all metric collections are on the same device as the model
+        to prevent device mismatch errors during metric computation. This is
+        necessary because TorchMetrics creates metrics on CPU by default,
+        but Lightning may move the model to GPU/MPS.
+        """
+        for metric_name in ['train_imitation', 'val_imitation']:
+            metrics = getattr(self.collector, metric_name, None)
+            if metrics is None:
+                raise AttributeError(
+                    f"MetricsCollector missing required '{metric_name}' metrics"
+                )
+            metrics.to(self.device)
 
     def training_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
         """
