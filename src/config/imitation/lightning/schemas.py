@@ -90,9 +90,11 @@ class ExperienceModel(BaseModel, extra="forbid"):
     """
     batch_size: PositiveInt = Field(
         default     = 256,
+        ge          = 16,
         description = (
             "Number of state-action transitions B sampled per gradient update, "
-            "balancing computational efficiency with gradient variance."
+            "balancing computational efficiency with gradient variance. "
+            "Minimum of 16 ensures stable gradients and efficient GPU utilization."
         )
     )
     buffer_size: PositiveInt = Field(

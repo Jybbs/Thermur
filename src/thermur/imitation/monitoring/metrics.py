@@ -118,7 +118,7 @@ class CohesionMetric(AveragingMetric):
             edge_index : Graph connectivity tensor [2, E] in COO format
             num_agents : Total number of agents in the graph
         """
-        if edge_index.numel() == 0 or num_agents < 2:
+        if edge_index.numel() == 0:
             self.sum   += 0.0
             self.count += 1
             return
@@ -247,8 +247,6 @@ class DynamicBalanceMetric(AveragingMetric):
         Args:
             batch: TensorDict containing position and temperature
         """
-        if len(batch["position"]) < 2:
-            return
             
         if batch["temperature"].max() <= self.threat_temperature:
             return
@@ -711,8 +709,6 @@ class TopologicalFidelityMetric(AveragingMetric):
         Args:
             batch: TensorDict containing position
         """
-        if len(batch["position"]) < self.k_neighbors + 1:
-            return
             
         _, indices = th.cdist(batch["position"], batch["position"]).topk(
             k       = self.k_neighbors + 1, 

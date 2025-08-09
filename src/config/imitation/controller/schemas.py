@@ -28,10 +28,11 @@ class FlockModel(BaseModel, extra="forbid"):
     """
     agent_count: PositiveInt = Field(
         default     = 30,
-        gt          = 1,
+        ge          = 8,
         description = (
             "Total number of agents N in the multi-agent system, determining "
-            "computational complexity and emergent flock dynamics scale."
+            "computational complexity and emergent flock dynamics scale. "
+            "Minimum of 8 ensures k-nearest neighbor connectivity with k=7."
         )
     )
     communication_range: PositiveFloat = Field(
