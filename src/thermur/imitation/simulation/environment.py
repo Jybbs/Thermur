@@ -440,6 +440,4 @@ class SimulationEnv(EnvBase):
         })
         
         self.episode_time += self.physics.simulation_step
-        tensordict["next"] = next_obs
-
-        return tensordict
+        return next_obs
