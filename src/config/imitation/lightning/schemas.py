@@ -132,6 +132,13 @@ class ExperienceModel(BaseModel, extra="forbid"):
             "sample efficiency and final policy performance convergence."
         )
     )
+    validation_batches: PositiveInt = Field(
+        default     = 2,
+        description = (
+            "Number of batches to sample for validation. Kept small since we're "
+            "sampling from the same replay buffer as training."
+        )
+    )
 
 
 class HardwareModel(BaseModel, extra="forbid"):
@@ -219,6 +226,13 @@ class OptimizerModel(BaseModel, extra="forbid"):
         description = (
             "Initial learning rate α for AdamW optimizer, controlling step size "
             "in parameter space during gradient descent optimization."
+        )
+    )
+    log_every_n_steps: PositiveInt = Field(
+        default     = 1,
+        description = (
+            "How often to log metrics during training (every N batches). "
+            "Set to 1 for logging every step, useful when training with few batches."
         )
     )
     lr_factor: PositiveFloat = Field(

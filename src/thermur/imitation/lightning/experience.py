@@ -58,7 +58,7 @@ class DataModule(LightningDataModule):
         self.buffer    : TensorDictReplayBuffer | None = None
         self.collector : SyncDataCollector      | None = None
 
-    def setup(self, stage: str | None = None):
+    def setup(self, stage: str | None = None) -> None:
         """
         Set up data collection components for the given stage.
 
@@ -66,13 +66,12 @@ class DataModule(LightningDataModule):
         this creates the trajectory collector and experience buffer.
 
         Args:
-            stage: The current stage ('fit', 'validate', 'test', or 'predict')
+            stage: The current stage ('fit', 'validate', 'test', or 'predict').
                    Can also be a TrainerFn enum value.
         """
         if not stage or "fit" not in str(stage).lower():
             return
         
-
         if self.buffer is None:
             self.buffer = TensorDictReplayBuffer(
                 batch_size = self.experience.batch_size,
@@ -91,14 +90,14 @@ class DataModule(LightningDataModule):
                 trust_policy        = True
             )
 
-    def teardown(self, stage: str):
+    def teardown(self, stage: str) -> None:
         """
         Clean up data collection resources.
 
         Properly shuts down the data collector when training ends.
 
         Args:
-            stage: The current stage being torn down
+            stage: The current stage being torn down.
         """
         if stage == "fit" and self.collector is not None:
             self.collector.shutdown()
@@ -111,7 +110,7 @@ class DataModule(LightningDataModule):
         and replay buffer, providing batches of experiences for training.
 
         Returns:
-            DataLoader that yields experience batches
+            DataLoader that yields experience batches.
         """
         assert self.buffer    is not None
         assert self.collector is not None
@@ -120,6 +119,27 @@ class DataModule(LightningDataModule):
             buffer     = self.buffer,
             collector  = self.collector,
             experience = self.experience
+        )
+    
+    def val_dataloader(self):
+        """
+        Create the validation dataloader.
+        
+        Since we're doing behavioral cloning from a fixed expert, we sample
+        validation batches from the same replay buffer as training. This helps
+        monitor training progress without needing a separate validation set.
+        
+        Returns:
+            ValidationDataLoader that yields batches from the replay buffer, or
+            empty list if buffer is not yet initialized.
+        """
+        if self.buffer is None or len(self.buffer) == 0:
+            return []
+        
+        return ValidationDataLoader(
+            buffer      = self.buffer,
+            batch_size  = self.experience.batch_size,
+            num_batches = self.experience.validation_batches
         )
 
 
@@ -142,9 +162,9 @@ class ExperienceDataLoader:
         Initialize the experience dataloader.
 
         Args:
-            buffer     : The replay buffer for experience storage
-            collector  : The trajectory collector
-            experience : Experience data configuration
+            buffer     : The replay buffer for experience storage.
+            collector  : The trajectory collector.
+            experience : Experience data configuration.
         """
         self.buffer     = buffer
         self.collector  = collector
@@ -170,3 +190,45 @@ class ExperienceDataLoader:
         Calculates based on total frames and frames per batch.
         """
         return self.experience.total_frames // self.experience.frames_per_batch
+
+
+class ValidationDataLoader:
+    """
+    Validation dataloader that samples from the replay buffer.
+    
+    Since we're doing behavioral cloning from a fixed expert, we sample
+    validation batches from the same replay buffer as training. This helps
+    monitor training progress without needing a separate validation set.
+    """
+    
+    def __init__(
+        self,
+        batch_size  : int,
+        buffer      : TensorDictReplayBuffer,
+        num_batches : int
+    ):
+        """
+        Initialize the validation dataloader.
+        
+        Args:
+            batch_size  : Number of samples per batch.
+            buffer      : The replay buffer to sample from.
+            num_batches : Number of validation batches to yield.
+        """
+        self.batch_size  = batch_size
+        self.buffer      = buffer
+        self.num_batches = num_batches
+    
+    def __iter__(self):
+        """
+        Yield validation batches from the replay buffer.
+        """
+        for _ in range(self.num_batches):
+            if len(self.buffer) >= self.batch_size:
+                yield self.buffer.sample()
+    
+    def __len__(self) -> int:
+        """
+        Return the number of validation batches.
+        """
+        return self.num_batches if len(self.buffer) >= self.batch_size else 0
