@@ -59,15 +59,14 @@ class SimulationEnv(EnvBase):
             safety      : Safety configuration with temperature thresholds.
             wrf         : WRF data source providing environmental data queries.
         """
-        self.flock       = flock
-        self.k_neighbors = k_neighbors
-        self.physics     = physics
-        self.safety      = safety
-        self.wrf         = wrf
-        
-        self.positions  = None
-        self.velocities = None
         self.episode_time = 0.0
+        self.flock        = flock
+        self.k_neighbors  = k_neighbors
+        self.physics      = physics
+        self.positions    = th.zeros(flock.agent_count, 3)
+        self.safety       = safety
+        self.velocities   = th.zeros(flock.agent_count, 3)
+        self.wrf          = wrf
         
         super().__init__(device="cpu")
 
@@ -406,10 +405,6 @@ class SimulationEnv(EnvBase):
             A `TensorDict` for the next state, including the new observation
         """
         actions = tensordict.get("action")
-        
-        # Initialize state tensors on first step
-        if self.positions is None:
-            self.positions = self.velocities = th.zeros_like(actions)
         
         self.wrf.current_time = self.episode_time
         wind                  = self.wrf.query_wind(self.positions)
