@@ -354,9 +354,9 @@ class SimulationEnv(EnvBase):
         initial_obs.update({
             "battery"     : th.ones(self.flock.agent_count, 1),
             "edge_index"  : self._compute_edge_index(positions),
-            "gradient"    : thermal[1],
+            "gradient"    : thermal[0],
             "position"    : self.positions,
-            "temperature" : thermal[0],
+            "temperature" : thermal[1],
             "velocity"    : self.velocities,
             "wind"        : self.wrf.query_wind(positions),
         })
