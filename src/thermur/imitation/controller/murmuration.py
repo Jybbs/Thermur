@@ -137,41 +137,66 @@ class MurmurationController:
 
     def _compute_density_wave(self, flock: TensorDictBase):
         """
-        Compute density wave forces from PDE dynamics.
+        Compute density wave forces from continuum density field dynamics.
 
-        Implements simplified density wave equation:
-            ∂ρ/∂t + ∇·(ρv) = D∇²ρ + S_threat
+        Implements a simplified reaction-diffusion model for density perturbations
+        that propagate through the flock, creating the characteristic "ink-like" 
+        evasion patterns observed in starling murmurations under predator attack.
+
+        The density field ρ(𝐱,t) evolves according to:
+
+            ∂ρ/∂t + ∇·(ρ𝐯) = D∇²ρ + S(θ)
         
-        where density perturbations propagate through the flock creating
-        the characteristic "ink-like" appearance during evasion.
+        where:
+            - ρ(𝐱,t) : Local agent density at position 𝐱 and time t
+            - 𝐯(𝐱,t) : Velocity field of the flock  
+            - D      : Diffusion coefficient controlling wave propagation speed
+            - S(θ)   : Source term modulated by threat level θ ∈ [0,1]
+
+        For computational efficiency, we approximate the density field using
+        kernel density estimation with Gaussian kernels:
+
+            ρ(𝐱ᵢ) = Σⱼ K(|𝐱ᵢ - 𝐱ⱼ|; σ)
+        
+        where K(r; σ) = exp(-r²/2σ²) is the Gaussian kernel with bandwidth σ.
+
+        The resulting force on agent i opposes density gradients:
+
+            𝐅ᵢ = -D·∇ρ(𝐱ᵢ)·(1 + 2θᵢ)
+
+        This creates an effective pressure that disperses high-density regions,
+        with the effect amplified under threat conditions (high θ).
 
         Args:
-            flock: TensorDict containing positions and threats,
-                   updated with density_wave forces
+            flock: TensorDict containing:
+                - position     : Agent positions 𝐱 ∈ ℝ^(N×3) [m]
+                - threats      : Normalized threat levels θ ∈ [0,1]^(N×1)
+                - density_wave : Dispersive forces 𝐅 ∈ ℝ^(N×3) [m/s²]
         """
         if self.flock.agent_count < 2:
             flock["density_wave"] = th.zeros_like(flock["position"])
             return
         
-        distances = th.cdist(flock["position"], flock["position"])
-        
-        weights = th.exp(
-            -distances**2 / (2 * self.mmm.density_bandwidth**2)
-        )
+        dists   = th.cdist(flock["position"], flock["position"], p=2)
+        weights = th.exp(-dists**2 / (2 * self.mmm.density_bandwidth**2))
         weights.fill_diagonal_(0)
         
-        local_density  = weights.sum(dim=1, keepdim=True)
-        position_diffs = flock["position"].unsqueeze(0) - flock["position"].unsqueeze(1)
-        weighted_diffs = weights.unsqueeze(2) * position_diffs
+        local_density = weights.sum(dim=1, keepdim=True)
+        displacements = (
+            flock["position"].unsqueeze(0) -  # [1, N, 3]
+            flock["position"].unsqueeze(1)    # [N, 1, 3]
+        )
         
         density_gradient = (
-            weighted_diffs.sum(dim=1) / 
+            (weights.unsqueeze(2) *  displacements).sum(dim=1) /
             local_density.clamp_min(self.mmm.epsilon)
         )
         
+        threat_amplification  = 1 + flock["threats"] * 2
         flock["density_wave"] = (
-            -self.mmm.density_diffusion * density_gradient * 
-            (1 + flock["threats"].unsqueeze(1) * 2)
+            -self.mmm.density_diffusion *
+            density_gradient            *
+            threat_amplification
         )
     
     def _compute_hamiltonian_forces(self, flock: TensorDictBase):
