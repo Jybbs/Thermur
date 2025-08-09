@@ -32,6 +32,22 @@ class LoaderModel(BaseModel, extra="forbid"):
             "and temperature noise to improve policy generalization."
         )
     )
+    episode_time_offset: NonNegativeFloat = Field(
+        default     = 0.0,
+        description = (
+            "Starting time offset (in seconds) into the WRF data for this episode. "
+            "Allows different episodes to experience different parts of the fire evolution. "
+            "Set to 'random' to randomly sample starting points during training."
+        )
+    )
+    interpolate_time: bool = Field(
+        default     = True,
+        description = (
+            "Enable smooth temporal interpolation between WRF time steps. When False, "
+            "uses nearest time step (discrete jumps). When True, linearly interpolates "
+            "between adjacent time steps for continuous evolution."
+        )
+    )
     temperature_noise_std: NonNegativeFloat = Field(
         default     = 0.5,
         description = (

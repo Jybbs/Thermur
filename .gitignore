@@ -30,6 +30,7 @@ data/
 *.old
 outputs/
 logs/
+wandb/
 
 # macOS
 .DS_Store

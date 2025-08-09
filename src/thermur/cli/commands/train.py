@@ -263,7 +263,7 @@ class TrainCommand:
                         f"Configuration path '{path}' not found"
                     )
 
-                components[key] = instantiate(obj, pydantic_parser)
+                components[key] = instantiate(obj)
 
             progress.update(
                 completed = len(component_cfgs),
@@ -275,7 +275,7 @@ class TrainCommand:
                 if not self.interactive:
                     self.watch = False
                 
-                components['visualizer'] = instantiate(c, pydantic_parser)
+                components['visualizer'] = instantiate(c)
             else:
                 components['visualizer'] = None
 
@@ -508,8 +508,8 @@ class TrainCommand:
         with open_dict(cfg):
             cfg.simulation.loader.data_path = self.data_path
 
-        if cfg.optimizer.seed is not None:
-            imports["seed_everything"](cfg.optimizer.seed)
+        if cfg.lightning.optimizer.seed is not None:
+            imports["seed_everything"](cfg.lightning.optimizer.seed)
 
         self.ui.console.print()
 

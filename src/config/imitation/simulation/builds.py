@@ -31,16 +31,18 @@ SIMULATION_USER_CONFIG = make_config(
 SIMULATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "env": builds(
         SimulationEnv,
+        flock                   = "${controller.flock}",
         k_neighbors             = "${controller.mmm.k_neighbors}",
         physics                 = "${simulation.physics}",
-        zen_partial             = True,
+        safety                  = "${controller.safety}",
+        wrf                     = "${_system.wrf}",
         populate_full_signature = True
     ),
 
     "wrf": builds(
         WRFDataSource,
         loader                  = "${simulation.loader}",
-        zen_partial             = True,
+        physics                 = "${simulation.physics}",
         populate_full_signature = True
     )
 }

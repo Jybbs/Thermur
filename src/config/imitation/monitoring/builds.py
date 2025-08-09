@@ -29,8 +29,11 @@ MONITORING_USER_CONFIG = make_config(
 MONITORING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "collector": builds(
         MetricsCollector,
+        bounds_max              = "${simulation.physics.bounds_max}",
+        gravity                 = "${simulation.physics.gravity}",
         metrics                 = "${monitoring.metrics}",
-        zen_partial             = True,
+        mmm                     = "${controller.mmm}",
+        safety                  = "${controller.safety}",
         populate_full_signature = True
     ),
 
@@ -38,7 +41,6 @@ MONITORING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         EventLogger,
         events                  = "${monitoring.events}",
         safety                  = "${controller.safety}",
-        zen_partial             = True,
         populate_full_signature = True
     )
 }
