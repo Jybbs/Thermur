@@ -11,18 +11,16 @@ The architecture is explicitly designed to be configurable and to consume
 `TensorDict` observations.
 """
 from __future__            import annotations
-from hydra_zen             import instantiate
 from pytorch_lightning     import LightningModule
 from torch.nn              import GRUCell, Linear, ModuleList
 from torch.nn.functional   import mse_loss
 from torch_geometric.data  import Data
 from torch_geometric.nn    import GCNConv
-from typing                import Type, TYPE_CHECKING
+from typing                import Any, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.imitation.lightning        import ArchitectureModel
-    from hydra_zen.typing                  import Builds, Partial
-    from pytorch_lightning.utilities.types import LRSchedulerConfigType, OptimizerLRSchedulerConfig, STEP_OUTPUT
+    from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig, STEP_OUTPUT
     from tensordict                        import TensorDictBase
     from thermur.imitation.monitoring      import MetricsCollector
     from torch                             import Tensor
@@ -57,8 +55,8 @@ class GNNPolicy(LightningModule):
         self,
         architecture     : ArchitectureModel,
         collector        : MetricsCollector,
-        optimizer        : Builds[Partial[Optimizer]],
-        scheduler        : Builds[Partial[LRScheduler]],
+        optimizer        : Any,  # Will be a functools.partial from hydra-zen
+        scheduler        : Any,  # Will be a functools.partial from hydra-zen
         scheduler_metric : str,
         training_metric  : str
     ):
@@ -70,10 +68,8 @@ class GNNPolicy(LightningModule):
                                dimensions, number of layers, activation function, and
                                I/O dimensions.
             collector        : Centralized metrics collection and management system.
-            optimizer        : Partial optimizer build from hydra-zen that will be
-                               instantiated with model parameters at runtime.
-            scheduler        : Partial scheduler build from hydra-zen that will be
-                               instantiated with the optimizer at runtime.
+            optimizer        : Pre-configured optimizer partial from hydra-zen.
+            scheduler        : Pre-configured scheduler partial from hydra-zen.
             scheduler_metric : Metric name for learning rate scheduler to monitor.
             training_metric  : Metric name to monitor for training loss.
         """
@@ -193,24 +189,23 @@ class GNNPolicy(LightningModule):
         Configures the optimizer and learning rate scheduler for training.
 
         Lightning calls this method to set up optimizers and learning rate
-        schedulers. Uses the partial configurations from hydra-zen builds
-        to create the actual optimizer and scheduler instances.
+        schedulers. The optimizer and scheduler are pre-configured partials
+        from hydra-zen that just need their final parameters.
 
         Returns:
-            Dictionary with optimizer and scheduler configuration
+            Configuration for optimizer and learning rate scheduler
         """
-        optimizer = instantiate(self.optimizer, params=self.parameters())
-        scheduler = instantiate(self.scheduler, optimizer=optimizer)
+        optimizer: Optimizer   = self.optimizer(params=self.parameters())
+        scheduler: LRScheduler = self.scheduler(optimizer=optimizer)
 
-        lr_scheduler_config: LRSchedulerConfigType = {
-            "scheduler" : scheduler,
-            "monitor"   : self.scheduler_metric
+        config: OptimizerLRSchedulerConfig = {
+            "optimizer"    : optimizer,
+            "lr_scheduler" : {
+                "scheduler" : scheduler,
+                "monitor"   : self.scheduler_metric
+            }
         }
-
-        return OptimizerLRSchedulerConfig(
-            optimizer    = optimizer,
-            lr_scheduler = lr_scheduler_config
-        )
+        return config
 
     def forward(self, data: Data) -> Tensor:
         """
