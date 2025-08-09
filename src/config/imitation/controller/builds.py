@@ -33,7 +33,6 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         CBFSafetyFilter,
         flock                   = "${controller.flock}",
         safety                  = "${controller.safety}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
     
@@ -43,7 +42,6 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         flock                   = "${controller.flock}",
         mmm                     = "${controller.mmm}",
         safety                  = "${controller.safety}",
-        zen_partial             = True,
         populate_full_signature = True
     )
 }

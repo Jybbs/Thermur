@@ -76,7 +76,8 @@ class DataModule(LightningDataModule):
             frames_per_batch    = self.experience.frames_per_batch,
             max_frames_per_traj = self.experience.max_frames_per_traj,
             policy              = self.expert,
-            total_frames        = self.experience.total_frames
+            total_frames        = self.experience.total_frames,
+            trust_policy        = True
         )
 
         self.buffer = TensorDictReplayBuffer(

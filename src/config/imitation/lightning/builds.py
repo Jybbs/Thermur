@@ -64,9 +64,10 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         dirpath                 = "${lightning.checkpoint.dirpath}",
         every_n_train_steps     = "${lightning.checkpoint.every_n_train_steps}",
         filename                = "checkpoint-{step}",
+        monitor                 = "${lightning.optimizer.training_metric}",
+        mode                    = "${lightning.optimizer.mode}",
         save_last               = "${lightning.checkpoint.save_last}",
         save_top_k              = "${lightning.checkpoint.save_top_k}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -74,8 +75,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         DataModule,
         env                     = "${_system.env}",
         experience              = "${lightning.experience}",
-        expert                  = "${_system.expert_controller}",
-        zen_partial             = True,
+        expert                  = "${_system.murmuration_controller}",
         populate_full_signature = True
     ),
 
@@ -84,7 +84,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         monitor                 = "${lightning.optimizer.training_metric}",
         mode                    = "${lightning.optimizer.mode}",
         patience                = "${lightning.optimizer.early_stopping_patience}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -94,13 +93,11 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         mode                    = "${lightning.wandb.mode}",
         name                    = "${lightning.wandb.run_name}",
         project                 = "${lightning.wandb.project}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
     "lr_monitor_callback": builds(
         LearningRateMonitor,
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -108,7 +105,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         MonitoringCallback,
         collector               = "${_system.collector}",
         events                  = "${_system.events}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -123,15 +119,16 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "policy": builds(
         GNNPolicy,
         architecture            = "${lightning.architecture}",
+        collector               = "${_system.collector}",
         optimizer               = "${_system.optimizer}",
         scheduler               = "${_system.scheduler}",
-        zen_partial             = True,
+        scheduler_metric        = "${lightning.optimizer.scheduler_metric}",
+        training_metric         = "${lightning.optimizer.training_metric}",
         populate_full_signature = True
     ),
 
     "scheduler": builds(
         ReduceLROnPlateau,
-        optimizer               = "${_system.optimizer}",
         factor                  = "${lightning.optimizer.lr_factor}",
         patience                = "${lightning.optimizer.lr_patience}",
         mode                    = "${lightning.optimizer.mode}",
@@ -160,7 +157,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         profiler                = "${monitoring.metrics.profiler}",
         strategy                = "${lightning.hardware.strategy}",
         val_check_interval      = "${lightning.optimizer.val_check_interval}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -173,7 +169,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         video_duration          = "${lightning.watch.video_duration}",
         visualizer              = "${_system.visualizer}",
         watch_run               = "${lightning.watch.watch_run}",
-        zen_partial             = True,
         populate_full_signature = True
     )
 }

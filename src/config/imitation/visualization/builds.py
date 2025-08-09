@@ -39,14 +39,12 @@ VISUALIZATION_USER_CONFIG = make_config(
 VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "agent_glyph": builds(
         Arrow,
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
     "plotter": builds(
         Plotter,
         window_size             = "${visualization.vista.window_size}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -55,7 +53,6 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         agent_glyph             = "${_system.agent_glyph}",
         vista                   = "${visualization.vista}",
         wind_glyph              = "${_system.wind_glyph}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -64,19 +61,16 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         grid_padding            = "${visualization.vista.grid_padding}",
         temperature_resolution  = "${visualization.vista.temperature_resolution}",
         wind_resolution         = "${visualization.vista.wind_resolution}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
     "theme_dark": builds(
         themes.DarkTheme,
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
     "theme_light": builds(
         themes.DocumentTheme,
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
@@ -88,13 +82,11 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         sampler                 = "${_system.sampler}",
         simulation              = "${_system.env}",
         vista                   = "${visualization.vista}",
-        zen_partial             = True,
         populate_full_signature = True
     ),
 
     "wind_glyph": builds(
         Arrow,
-        zen_partial             = True,
         populate_full_signature = True
     )
 }

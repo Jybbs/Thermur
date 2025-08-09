@@ -12,7 +12,7 @@ interfaces with a dynamic environmental data source (e.g., WRF-Fire data)
 to provide thermal and wind field information.
 """
 from __future__   import annotations
-from torch        import Size
+from torch        import Size, Tensor
 from torchrl.data import Bounded, Composite, Unbounded
 from torchrl.envs import EnvBase
 from typing       import Any, TYPE_CHECKING
@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from config.imitation.controller import FlockModel, SafetyModel
     from config.imitation.simulation import PhysicsModel
     from tensordict                  import TensorDictBase
-    from torch                       import Tensor
     from torchrl.data                import TensorSpec
 
 import torch as th
@@ -68,6 +67,7 @@ class SimulationEnv(EnvBase):
         
         self.positions  = None
         self.velocities = None
+        self.episode_time = 0.0
         
         super().__init__(device="cpu")
 
@@ -345,24 +345,47 @@ class SimulationEnv(EnvBase):
             self.physics.initial_spacing_factor
         )
 
-        temperature, gradient = self.wrf.query_thermal(positions)
-        wind                  = self.wrf.query_wind(positions)
+        self.episode_time     = 0.0
+        self.velocities       = th.zeros_like(positions)
+        self.positions        = positions.clone()
+        self.wrf.current_time = self.episode_time
+        thermal               = self.wrf.query_thermal(positions)
+        initial_obs           = self.observation_spec.zero()
         
-        initial_observation = self.observation_spec.zero()
-        initial_observation.update({
+        initial_obs.update({
             "battery"     : th.ones(self.flock.agent_count, 1),
-            "position"    : positions,
-            "temperature" : temperature,
-            "gradient"    : gradient,
-            "wind"        : wind,
+            "edge_index"  : self._compute_edge_index(positions),
+            "gradient"    : thermal[1],
+            "position"    : self.positions,
+            "temperature" : thermal[0],
+            "velocity"    : self.velocities,
+            "wind"        : self.wrf.query_wind(positions),
         })
 
-        initial_observation["edge_index"] = self._compute_edge_index(positions)
+        return initial_obs
 
-        self.positions  = positions.clone()
-        self.velocities = th.zeros_like(positions)
-
-        return initial_observation
+    def _set_seed(self, seed: int | None):
+        """
+        Sets the random seed for reproducible environment dynamics.
+        
+        This method ensures deterministic behavior across the environment
+        and its components. It coordinates with PyTorch's global random
+        state to maintain consistency with the broader training pipeline.
+        
+        Args:
+            seed: The random seed to set. If None, generates a random seed
+                  from PyTorch's current random state.
+        """
+        if seed is None:
+            seed = int(th.empty((), dtype=th.int64).random_().item())
+        
+        th.manual_seed(seed)
+        
+        if th.cuda.is_available():
+            th.cuda.manual_seed(seed)
+            th.cuda.manual_seed_all(seed)
+        
+        self._seed = seed
 
     def _step(self, tensordict: TensorDictBase) -> TensorDictBase:
         """
@@ -370,8 +393,8 @@ class SimulationEnv(EnvBase):
 
         The process follows these steps:
             1. Extract control actions (accelerations) from the input
-            2. Update velocities: v(t+dt) = v(t) + a(t) * dt
-            3. Update positions: x(t+dt) = x(t) + v(t+dt) * dt
+            2. Update velocities : v(t+dt) = v(t) + a(t)    * dt
+            3. Update positions  : x(t+dt) = x(t) + v(t+dt) * dt
             4. Query environmental data at new positions
             5. Create observation with updated state
 
@@ -382,22 +405,18 @@ class SimulationEnv(EnvBase):
         Returns:
             A `TensorDict` for the next state, including the new observation
         """
-        actions = tensordict.get("action")
-        
-        if self.velocities is None:
-            self.velocities = th.zeros_like(actions)
-        if self.positions is None:
-            self.positions = th.zeros_like(actions)
-        
-        wind = self.wrf.query_wind(self.positions)
-        total_acceleration = self._compute_forces(
-            actions    = actions,
-            velocities = self.velocities,
-            wind       = wind
-        )
+        actions               = tensordict.get("action")
+        self.positions        = self.positions  or th.zeros_like(actions)
+        self.velocities       = self.velocities or th.zeros_like(actions)
+        wind                  = self.wrf.query_wind(self.positions)
+        self.wrf.current_time = self.episode_time
         
         self.velocities = self._integrate_velocities(
-            acceleration = total_acceleration,
+            acceleration = self._compute_forces(
+                actions    = actions,
+                velocities = self.velocities,
+                wind       = wind
+            ),
             timestep     = self.physics.simulation_step,
             velocities   = self.velocities
         )
@@ -408,19 +427,21 @@ class SimulationEnv(EnvBase):
             velocities = self.velocities
         )
         
-        temperature, gradient = self.wrf.query_thermal(self.positions)
-        next_observation      = self.observation_spec.zero()
-        next_observation.update({
+        thermal  = self.wrf.query_thermal(self.positions)
+        next_obs = self.observation_spec.zero()
+        next_obs.update({
             "battery"     : th.ones(self.flock.agent_count, 1),
             "done"        : at_bounds.any().unsqueeze(0),
             "edge_index"  : self._compute_edge_index(self.positions),
-            "gradient"    : gradient,
+            "gradient"    : thermal[0],
             "position"    : self.positions.clone(),
             "reward"      : th.zeros(self.flock.agent_count, dtype=th.float32),
-            "temperature" : temperature,
+            "temperature" : thermal[1],
             "velocity"    : self.velocities.clone(),
             "wind"        : wind,
         })
         
-        tensordict["next"] = next_observation
+        self.episode_time += self.physics.simulation_step
+        tensordict["next"] = next_obs
+
         return tensordict
