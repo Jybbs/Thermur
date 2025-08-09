@@ -58,7 +58,7 @@ class DataModule(LightningDataModule):
         self.buffer    : TensorDictReplayBuffer | None = None
         self.collector : SyncDataCollector      | None = None
 
-    def setup(self, stage: str):
+    def setup(self, stage: str | None = None):
         """
         Set up data collection components for the given stage.
 
@@ -67,25 +67,29 @@ class DataModule(LightningDataModule):
 
         Args:
             stage: The current stage ('fit', 'validate', 'test', or 'predict')
+                   Can also be a TrainerFn enum value.
         """
-        if stage != "fit":
+        if not stage or "fit" not in str(stage).lower():
             return
+        
 
-        self.collector = SyncDataCollector(
-            create_env_fn       = self.env,
-            frames_per_batch    = self.experience.frames_per_batch,
-            max_frames_per_traj = self.experience.max_frames_per_traj,
-            policy              = self.expert,
-            total_frames        = self.experience.total_frames,
-            trust_policy        = True
-        )
-
-        self.buffer = TensorDictReplayBuffer(
-            batch_size = self.experience.batch_size,
-            prefetch   = self.experience.prefetch,
-            sampler    = SamplerWithoutReplacement(),
-            storage    = LazyTensorStorage(self.experience.buffer_size)
-        )
+        if self.buffer is None:
+            self.buffer = TensorDictReplayBuffer(
+                batch_size = self.experience.batch_size,
+                prefetch   = self.experience.prefetch,
+                sampler    = SamplerWithoutReplacement(),
+                storage    = LazyTensorStorage(self.experience.buffer_size)
+            )
+            
+        if self.collector is None:
+            self.collector = SyncDataCollector(
+                create_env_fn       = self.env,
+                frames_per_batch    = self.experience.frames_per_batch,
+                max_frames_per_traj = self.experience.max_frames_per_traj,
+                policy              = self.expert,
+                total_frames        = self.experience.total_frames,
+                trust_policy        = True
+            )
 
     def teardown(self, stage: str):
         """
@@ -96,7 +100,7 @@ class DataModule(LightningDataModule):
         Args:
             stage: The current stage being torn down
         """
-        if stage == "fit" and self.collector:
+        if stage == "fit" and self.collector is not None:
             self.collector.shutdown()
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
@@ -109,9 +113,9 @@ class DataModule(LightningDataModule):
         Returns:
             DataLoader that yields experience batches
         """
-        if not (self.buffer and self.collector):
-            raise RuntimeError("DataModule not properly set up. Call setup('fit')")
-
+        assert self.buffer    is not None
+        assert self.collector is not None
+        
         return ExperienceDataLoader(
             buffer     = self.buffer,
             collector  = self.collector,
