@@ -143,7 +143,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         callbacks               = [
             "${_system.checkpoint_callback}",
             "${_system.early_stopping_callback}",
-            "${_system.lr_monitor_callback}",
             "${_system.monitoring_callback}",
             "${_system.watch_callback}"
         ],
@@ -169,7 +168,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         update_frequency        = "${lightning.watch.update_frequency}",
         video_duration          = "${lightning.watch.video_duration}",
         visualizer              = "${_system.visualizer}",
-        watch_run               = "${lightning.watch.watch_run}",
         populate_full_signature = True
     )
 }

@@ -280,7 +280,8 @@ class EventLogger:
             "total_steps"  : self.total_steps
         }
 
-        for event_type, count in self.event_counts.items():
+        for event_type in self._get_event_types():
+            count = self.event_counts.get(event_type, 0)
             summary[f"events/{event_type}"] = count
 
         return summary

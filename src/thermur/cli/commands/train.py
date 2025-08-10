@@ -53,11 +53,6 @@ def train(
         False,
         "--sample", "-s",
         help = "Use bundled sample data instead of downloaded files"
-    ),
-    watch: bool = Option(
-        False,
-        "--watch", "-w",
-        help = "Enable real-time 3D visualization during training"
     )
 ):
     """
@@ -69,7 +64,6 @@ def train(
     Examples:
         thermur train                                   # Interactive training
         thermur train --name my-experiment              # Named training run
-        thermur train --watch                           # Train with real-time visualization
         thermur train optimizer.learning_rate=0.001     # Override config value
         thermur train +model.new_param=42               # Append new config value
         thermur train ++model.force_param=true          # Force add/override
@@ -85,8 +79,7 @@ def train(
         name        = name,
         overrides   = overrides or [],
         resume      = resume,
-        sample      = sample,
-        watch       = watch
+        sample      = sample
     )
 
 
@@ -116,7 +109,6 @@ class TrainCommand:
         self.overrides   = []
         self.resume      = None
         self.sample      = False
-        self.watch       = False
 
     def _display_override_details(self):
         """
@@ -271,10 +263,6 @@ class TrainCommand:
             )
 
             if c := OmegaConf.select(cfg, "_system.visualizer"):
-                # If not interactive, disable watch
-                if not self.interactive:
-                    self.watch = False
-                
                 components['visualizer'] = instantiate(c)
             else:
                 components['visualizer'] = None
@@ -532,12 +520,6 @@ class TrainCommand:
                 msg_type = "info"
             )
         
-        if self.watch and components.get("visualizer"):
-            self.ui.print_message(
-                message  = "Real-time visualization enabled",
-                msg_type = "flock"
-            )
-        
         self.ui.print_message(
             message  = "Monitoring thermal constraints and flock dynamics",
             msg_type = "thermal"
@@ -573,8 +555,7 @@ class TrainCommand:
         name        : str       | None,
         overrides   : list[str] | None,
         resume      : Path      | None,
-        sample      : bool,
-        watch       : bool
+        sample      : bool
     ):
         """
         Executes the main training workflow from start to finish.
@@ -591,21 +572,18 @@ class TrainCommand:
             overrides   : A list of Hydra configuration overrides.
             resume      : Optional checkpoint path to resume training from.
             sample      : If True, use sample data.
-            watch       : If True, enable real-time visualization.
         """
         self.dry_run     = dry_run
         self.force       = force
         self.interactive = interactive
         self.name        = name
         self.sample      = sample
-        self.watch       = watch
 
         self.resume = self._resolve_resume_path(resume)
 
         self.overrides = list(filter(None, [
             *(overrides or []),
-            f"lightning.wandb.run_name={self.name}" if self.name  else None,
-            "lightning.watch.watch_run=true"        if self.watch else None,
+            f"lightning.wandb.run_name={self.name}" if self.name else None
         ]))
 
         self.ui.print_header("Thermur Training System")

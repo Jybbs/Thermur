@@ -84,7 +84,8 @@ class MonitoringCallback(Callback):
             batch_idx : Index of the current batch within the epoch
         """
         if self.collector:
-            self.collector.update_evaluation_metrics(batch, True)
+            self.collector.update_evaluation_metrics(batch,  True)
+            self.collector.update_murmuration_metrics(batch, True)
 
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -105,12 +106,20 @@ class MonitoringCallback(Callback):
             trainer   : PyTorch Lightning trainer instance
             pl_module : Lightning module for state management
         """
+        if self.collector:
+            self.collector.log_all_metrics(
+                is_training = True,
+                module      = pl_module,
+                step_data   = None
+            )
+        
         if self.events:
             pl_module.log_dict({
                 f"summary/{k}" : v
                 for k, v in self.events.get_event_summary().items()
             })
             self.events.reset_epoch_metrics()
+
     def on_validation_batch_end(
         self,
         trainer        : Trainer,
@@ -136,6 +145,7 @@ class MonitoringCallback(Callback):
         """
         if self.collector:
             self.collector.update_evaluation_metrics(batch, False)
+            self.collector.update_murmuration_metrics(batch, False)
 
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -179,13 +189,12 @@ class VisualizationCallback(Callback):
 
     def __init__(
         self,
-        auto_close       : bool              = True,
-        fps              : int               = 30,
-        start_epoch      : int               = 0,
-        update_frequency : int               = 10,
-        video_duration   : float             = 30.0,
-        visualizer       : Visualizer | None = None,
-        watch_run        : bool              = False
+        auto_close       : bool,
+        fps              : int,
+        start_epoch      : int,
+        update_frequency : int,
+        video_duration   : float,
+        visualizer       : Visualizer | None
     ):
         """
         Configure visualization parameters for training integration.
@@ -197,7 +206,6 @@ class VisualizationCallback(Callback):
             update_frequency : Update visualization every N batches
             video_duration   : Duration in seconds of each video segment
             visualizer       : Pre-configured Visualizer instance for rendering
-            watch_run        : Show live visualization window (from --watch flag)
         """
         super().__init__()
         self.auto_close       = auto_close
@@ -206,7 +214,6 @@ class VisualizationCallback(Callback):
         self.update_frequency = update_frequency
         self.video_duration   = video_duration
         self.visualizer       = visualizer
-        self.watch_run        = watch_run
 
         # Calculate buffer size from fps and duration
         self.video_buffer_size    = int(fps * video_duration)
@@ -300,7 +307,7 @@ class VisualizationCallback(Callback):
         if trainer.logger and self.frames_buffer:
             self._log_video_to_wandb(trainer, pl_module)
 
-        if self.visualization_active and self.auto_close and self.watch_run:
+        if self.visualization_active and self.auto_close:
             try:
                 self.visualizer.close()
             except Exception:
@@ -361,9 +368,7 @@ class VisualizationCallback(Callback):
 
         try:
             self.visualizer.update(batch)
-            
-            if self.watch_run:
-                self.visualizer.render()
+            self.visualizer.render()
             
             if trainer.logger and self.visualizer.plotter:
                 frame = self.visualizer.plotter.screenshot(return_img=True)
@@ -372,7 +377,9 @@ class VisualizationCallback(Callback):
                 if len(self.frames_buffer) >= self.video_buffer_size:
                     self._log_video_to_wandb(trainer, pl_module)
                 
-        except Exception:
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Visualization failed: {e}")
             self.visualization_active = False
 
     def on_train_epoch_end(
