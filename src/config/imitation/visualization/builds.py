@@ -44,6 +44,7 @@ VISUALIZATION_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "plotter": builds(
         Plotter,
+        off_screen              = True,
         window_size             = "${visualization.vista.window_size}",
         populate_full_signature = True
     ),

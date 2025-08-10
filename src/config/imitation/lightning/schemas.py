@@ -404,10 +404,3 @@ class WatchModel(BaseModel, extra="forbid"):
             "showing this many seconds of simulation at different training steps."
         )
     )
-    watch_run: bool = Field(
-        default     = False,
-        description = (
-            "Display a live visualization window during training. Typically controlled "
-            "via the --watch CLI flag rather than config files."
-        )
-    )

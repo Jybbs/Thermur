@@ -173,10 +173,11 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar MSE loss for gradient computation
         """
-        data        = self._batch_to_data(batch)
-        predictions = self(data)
-        targets     = batch["action"].view(-1, 3)
-        loss        = mse_loss(predictions, targets)
+        data              = self._batch_to_data(batch)
+        predictions       = self(data)
+        actual_batch_size = batch["position"].shape[0]
+        targets           = batch["action"][:actual_batch_size].view(-1, 3)
+        loss              = mse_loss(predictions, targets)
 
         self.collector.update_imitation_metrics(
             is_training = is_training,

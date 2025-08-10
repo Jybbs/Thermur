@@ -562,7 +562,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         distances  = th.cdist(positions, positions)
         spins      = th.nn.functional.normalize(velocities, dim=1)
         delta_spin = spins - spins.mean(dim=0, keepdim=True)
-        corr_mat   = delta_spin @ delta_spin.T
+        corr_mat   = delta_spin @ delta_spin.mT
         
         return corr_mat, distances
 
@@ -781,6 +781,30 @@ class MetricsCollector:
         self._init_imitation_metrics()
         self._init_murmuration_metrics()
 
+    def _compute_ready_metrics(
+        self, 
+        metrics: MetricCollection
+    ) -> dict[str, Tensor] | None:
+        """
+        Compute metrics that have received data.
+        
+        Returns computed metrics if any have been updated, otherwise None.
+        This prevents warnings during sanity check when compute() is called
+        before any update() calls.
+        
+        Args:
+            metrics: Collection of metrics to potentially compute
+            
+        Returns:
+            Dictionary of computed values or None if no metrics have data
+        """
+        for metric in metrics.values():
+            if isinstance(metric, AveragingMetric) and metric.count > 0:
+                return metrics.compute()
+            elif not isinstance(metric, AveragingMetric):
+                return metrics.compute()
+        return None
+
     def _get_metrics(
         self, 
         is_training : bool, 
@@ -838,13 +862,15 @@ class MetricsCollector:
 
         All metrics track 3D velocity predictions (x, y, z).
         """
-        self.train_imitation = MetricCollection({
-            "mae"  : MeanAbsoluteError(),
-            "mse"  : MeanSquaredError(),
-            "r2"   : R2Score(),
-            "rmse" : MeanSquaredError(False),
-        })
-        self.val_imitation = self.train_imitation.clone(prefix="val_")
+        create_imitation_metrics = lambda prefix: MetricCollection({
+            f"{prefix}_mae"  : MeanAbsoluteError(),
+            f"{prefix}_mse"  : MeanSquaredError(),
+            f"{prefix}_r2"   : R2Score(multioutput='uniform_average'),
+            f"{prefix}_rmse" : MeanSquaredError(squared=False),
+        }, compute_groups=False)
+        
+        self.train_imitation = create_imitation_metrics("training")
+        self.val_imitation   = create_imitation_metrics("validation")
     
     def _init_murmuration_metrics(self):
         """
@@ -866,7 +892,7 @@ class MetricsCollector:
             "susceptibility"       : SusceptibilityMetric(self.metrics, self.mmm),
             "topological_fidelity" : TopologicalFidelityMetric(self.mmm)
         })
-        self.val_murmuration = self.train_murmuration.clone(prefix="val_")
+        self.val_murmuration = self.train_murmuration.clone(prefix="validation_")
 
     def log_all_metrics(
         self,
@@ -893,8 +919,7 @@ class MetricsCollector:
             step_data   : Optional step metrics (loss, predictions, targets) for
                           step-level logging. When None, only logs aggregated metrics.
         """
-        phase = "train" if is_training else "val"
-
+        phase = "training" if is_training else "validation"
         if step_data is not None:
             module.log(
                 name     = f"{phase}/loss",
@@ -912,14 +937,26 @@ class MetricsCollector:
                     value    = (step_data["predictions"][..., i] - 
                                step_data["targets"][..., i]).pow(2).mean()
                 )
-
-        if step_data is not None:
-            metrics = self._get_metrics(is_training, "imitation")
-            module.log_dict(
-                dictionary = metrics.compute(),
-                on_epoch   = True,
-                on_step    = is_training
-            )
+            
+            if computed := self._compute_ready_metrics(
+                self._get_metrics(is_training, "imitation")
+            ):
+                module.log_dict(
+                    dictionary = computed,
+                    on_epoch   = True,
+                    on_step    = is_training
+                )
+        
+        if not is_training or step_data is None:
+            for metric_type in ["evaluation", "murmuration"]:
+                if computed := self._compute_ready_metrics(
+                    self._get_metrics(is_training, metric_type)
+                ):
+                    module.log_dict(
+                        dictionary = computed,
+                        on_epoch   = True,
+                        on_step    = False
+                    )
 
     def update_evaluation_metrics(
         self,
