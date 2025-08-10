@@ -167,6 +167,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         auto_close              = "${lightning.watch.auto_close}",
         fps                     = "${lightning.watch.fps}",
         start_epoch             = "${lightning.watch.start_epoch}",
+        trajectories_to_monitor = "${visualization.vista.trajectories_to_monitor}",
         update_frequency        = "${lightning.watch.update_frequency}",
         video_duration          = "${lightning.watch.video_duration}",
         visualizer              = "${_system.visualizer}",

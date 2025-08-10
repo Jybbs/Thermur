@@ -15,6 +15,8 @@ from thermur.cli import app
 from typer       import Argument, Exit, Option
 from typing      import Any, Callable, TYPE_CHECKING
 
+import traceback
+
 if TYPE_CHECKING:
     from omegaconf import DictConfig
 
@@ -684,5 +686,8 @@ class TrainCommand:
 
                 case _:
                     self.ui.print_message(f"Training failed: {e}", "error")
+                    if any(k in str(e).lower() for k in ["dimension", "shape", "size"]):
+                        self.ui.console.print("\n[DEBUG] Full stack trace:")
+                        self.ui.console.print(traceback.format_exc())
 
             raise Exit(1)
