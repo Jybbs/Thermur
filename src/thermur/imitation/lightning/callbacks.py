@@ -8,8 +8,10 @@ into the training loop:
 """
 
 from __future__        import annotations
-from numpy             import array
+from imageio           import get_writer
+from os                import unlink
 from pytorch_lightning import Callback
+from tempfile          import NamedTemporaryFile
 from torch             import randperm
 from typing            import TYPE_CHECKING
 from wandb             import log, Video
@@ -220,6 +222,32 @@ class VisualizationCallback(Callback):
         self.video_buffer_size     = int(fps * video_duration)
         self.visualization_active  = False
 
+    def _encode_video_with_h264(self, frames: list[NDArray[uint8]]) -> str:
+        """
+        Encode frames to H.264 MP4 for Safari compatibility.
+        
+        Args:
+            frames: List of video frames as numpy arrays
+            
+        Returns:
+            Path to the encoded video file
+        """
+        with NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
+            video_path = tmp_file.name
+        
+        writer = get_writer(
+            codec            = 'h264',
+            ffmpeg_params    = ['-crf', '23', '-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2'],
+            fps              = self.fps,
+            uri              = video_path
+        )
+        
+        for frame in frames:
+            writer.append_data(frame)
+        writer.close()
+        
+        return video_path
+
     def _flush_trajectory_buffers(
         self,
         pl_module   : LightningModule,
@@ -274,16 +302,18 @@ class VisualizationCallback(Callback):
         if not frames_buffer or not trainer.logger:
             return
             
+        video_path = None
         try:
-            video_key = (
+            video_path = self._encode_video_with_h264(frames_buffer)
+            video_key  = (
                 f"visualization/trajectory_{trajectory_idx}/"
                 f"epoch_{trainer.current_epoch}"
             )
+            
             video_data = {
-                video_key : Video(
-                    data_or_path = array(frames_buffer), 
-                    format       = "mp4",
-                    fps          = self.fps
+                video_key      : Video(
+                    data_or_path = video_path,
+                    format       = "mp4"
                 ),
                 "global_step" : trainer.global_step
             }
@@ -297,6 +327,12 @@ class VisualizationCallback(Callback):
             raise RuntimeError(
                 f"Failed to log trajectory {trajectory_idx} video: {e}"
             ) from e
+        finally:
+            if video_path:
+                try:
+                    unlink(video_path)
+                except:
+                    pass
 
     def on_exception(
         self,

@@ -226,14 +226,14 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     gradient_clip_val: PositiveFloat = Field(
-        default     = 1.0,
+        default     = 10.0,
         description = (
             "Maximum gradient norm threshold for clipping to prevent exploding "
             "gradients and maintain stable training dynamics."
         )
     )
     learning_rate: PositiveFloat = Field(
-        default     = 3e-4,
+        default     = 2e-3,
         description = (
             "Initial learning rate α for AdamW optimizer, controlling step size "
             "in parameter space during gradient descent optimization."

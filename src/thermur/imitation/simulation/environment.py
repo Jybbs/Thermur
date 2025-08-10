@@ -352,7 +352,7 @@ class SimulationEnv(EnvBase):
         )
 
         self.episode_time     = 0.0
-        self.velocities       = th.zeros_like(positions)
+        self.velocities       = th.randn_like(positions) * 2.0
         self.positions        = positions.clone()
         self.timestep         = 0
         self.trajectory_id    = th.randint(0, 100000, (1,)).item()
@@ -421,7 +421,7 @@ class SimulationEnv(EnvBase):
         self.wrf.current_time = self.episode_time
         wind                  = self.wrf.query_wind(self.positions)
         
-        self.velocities = self._integrate_velocities(
+        new_velocities = self._integrate_velocities(
             acceleration = self._compute_forces(
                 actions    = actions,
                 velocities = self.velocities,
@@ -431,12 +431,14 @@ class SimulationEnv(EnvBase):
             velocities   = self.velocities
         )
         
-        self.positions, at_bounds = self._integrate_positions(
+        self.velocities = new_velocities
+        new_positions, at_bounds = self._integrate_positions(
             positions  = self.positions,
             timestep   = self.physics.simulation_step,
             velocities = self.velocities
         )
         
+        self.positions = new_positions
         thermal        = self.wrf.query_thermal(self.positions)
         next_obs       = self.observation_spec.zero()
         self.timestep += 1
