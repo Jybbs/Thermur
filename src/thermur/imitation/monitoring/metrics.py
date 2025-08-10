@@ -115,12 +115,17 @@ class CohesionMetric(AveragingMetric):
         graph Laplacian to quantify algebraic connectivity.
 
         Args:
-            edge_index : Graph connectivity tensor [2, E] in COO format
+            edge_index : Graph connectivity tensor [2, E] or [B, 2, E] in COO format
             num_agents : Total number of agents in the graph
         """
         if edge_index.numel() == 0:
             self.sum   += 0.0
             self.count += 1
+            return
+
+        if edge_index.dim() == 3:
+            for i in range(edge_index.shape[0]):
+                self.update(edge_index[i], num_agents)
             return
 
         laplacian = self._compute_graph_laplacian(edge_index, num_agents)
@@ -394,11 +399,10 @@ class LegibilitySSIMMetric(AveragingMetric):
             metrics    : Configuration with grid size and kernel parameters
         """
         super().__init__()
-        self.grid_size   = metrics.legibility_grid_size
-        self.kernel_size = metrics.legibility_kernel_size
-        self.sigma       = metrics.legibility_sigma
-
-        self.ssim_metric = StructuralSimilarityIndexMeasure(
+        self.grid_size    = metrics.legibility_grid_size
+        self.kernel_size  = metrics.legibility_kernel_size
+        self.sigma        = metrics.legibility_sigma
+        self.ssim_metric  = StructuralSimilarityIndexMeasure(
             data_range  = 1.0,
             kernel_size = self.kernel_size,
             reduction   = 'elementwise_mean'
@@ -461,12 +465,10 @@ class LegibilitySSIMMetric(AveragingMetric):
             (self.grid_size - 1)
         )
 
-        distance_squared = (
-            (self.coords.unsqueeze(2) - grid_positions) ** 2
-        ).sum(dim=-1)
-        
-        kernel_weights = th.exp(-distance_squared / (2 * self.sigma ** 2))
-        field          = (kernel_weights * velocity_magnitude).sum(dim=-1)
+        distance_squared = th.cdist(self.coords.view(-1, 2), grid_positions).pow(2)
+        kernel_weights   = th.exp(-distance_squared * (1.0 / (2 * self.sigma ** 2)))
+        flattened        = (kernel_weights * velocity_magnitude).sum(dim=-1)
+        field            = flattened.view(self.grid_size, self.grid_size)
 
         return field / field.max().clamp_min(1e-8)
 
@@ -483,31 +485,37 @@ class LegibilitySSIMMetric(AveragingMetric):
         field onto 2D grids, then computes their structural similarity.
 
         Args:
-            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
-            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)  
-            wind       : Environmental wind field 𝐰 ∈ ℝ^(n×3)
+            positions  : Agent positions 𝐱 ∈ ℝ^(B×n×3)
+            velocities : Agent velocities 𝐯 ∈ ℝ^(B×n×3)
+            wind       : Environmental wind field 𝐰 ∈ ℝ^(B×n×3)
         """
-        flock_field = self._render_velocity_field(
-            bounds_max = self.bounds_max,
-            bounds_min = self.bounds_min,
-            positions  = positions,
-            velocities = velocities
-        )
+        batch_size = positions.shape[0]
+        total_ssim = 0.0
+        
+        for i in range(batch_size):
+            flock_field = self._render_velocity_field(
+                bounds_max = self.bounds_max,
+                bounds_min = self.bounds_min,
+                positions  = positions[i],
+                velocities = velocities[i]
+            )
 
-        wind_field = self._render_velocity_field(
-            bounds_max = self.bounds_max,
-            bounds_min = self.bounds_min,
-            positions  = positions,
-            velocities = wind
-        )
+            wind_field = self._render_velocity_field(
+                bounds_max = self.bounds_max,
+                bounds_min = self.bounds_min,
+                positions  = positions[i],
+                velocities = wind[i]
+            )
 
-        ssim_value = self.ssim_metric(
-            preds  = flock_field.unsqueeze(0).unsqueeze(0),
-            target = wind_field.unsqueeze(0).unsqueeze(0)
-        )
-
-        self.sum   += ssim_value
-        self.count += 1
+            ssim_value = self.ssim_metric(
+                preds  = flock_field.unsqueeze(0).unsqueeze(0),
+                target = wind_field.unsqueeze(0).unsqueeze(0)
+            )
+            
+            total_ssim += ssim_value
+        
+        self.sum   += total_ssim
+        self.count += batch_size
 
 
 class ScaleFreeCorrelationMetric(AveragingMetric):
@@ -950,8 +958,9 @@ class MetricsCollector:
                 wind       = batch["wind"]
             )
 
-        if "edge_index" in batch:
-            num_agents = batch["position"].shape[0] if "position" in batch else 0
+        if "edge_index" in batch and "position" in batch:
+            num_agents = batch["position"].shape[1]
+            
             metrics["λ₂"].update(
                 edge_index = batch["edge_index"],
                 num_agents = num_agents

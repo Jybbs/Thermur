@@ -6,8 +6,9 @@ __pycache__/
 # Build artifacts
 *.egg-info/
 *.lock
-dist/
 build/
+checkpoints/
+dist/
 
 # Class materials
 requirements.pdf

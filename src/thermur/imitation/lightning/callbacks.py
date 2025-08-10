@@ -51,23 +51,16 @@ class MonitoringCallback(Callback):
         pl_module : LightningModule
     ):
         """
-        Flush accumulated events and log final summary statistics.
+        Clean up resources when training completes.
 
-        Ensures all buffered event data is written to logging backends
-        and provides aggregate statistics for the entire training run.
+        Ensures all buffered event data is written to logging backends.
 
         Args:
             trainer   : PyTorch Lightning trainer coordinating the training process
-            pl_module : Lightning module instance for logging
+            pl_module : Lightning module instance
         """
-        if not self.events:
-            return
-
-        self.events.flush_all(pl_module)
-        pl_module.log_dict({
-            f"summary/{k}": v
-            for k, v in self.events.get_event_summary().items()
-        })
+        if self.events:
+            self.events.flush_all(pl_module)
 
     def on_train_batch_end(
         self,
@@ -102,18 +95,22 @@ class MonitoringCallback(Callback):
         pl_module : LightningModule
     ):
         """
-        Reset per-epoch counters to ensure accurate rate calculations.
+        Reset per-epoch counters and log summary statistics.
 
         Clears CBF activation counts and event statistics that are
-        tracked on a per-epoch basis for trend analysis.
+        tracked on a per-epoch basis for trend analysis. Also logs
+        summary metrics for the completed epoch.
 
         Args:
             trainer   : PyTorch Lightning trainer instance
             pl_module : Lightning module for state management
         """
         if self.events:
+            pl_module.log_dict({
+                f"summary/{k}" : v
+                for k, v in self.events.get_event_summary().items()
+            })
             self.events.reset_epoch_metrics()
-
     def on_validation_batch_end(
         self,
         trainer        : Trainer,
