@@ -68,6 +68,10 @@ class SimulationEnv(EnvBase):
         self.velocities   = th.zeros(flock.agent_count, 3)
         self.wrf          = wrf
         
+        # Temporal tracking
+        self.timestep      = 0
+        self.trajectory_id = th.randint(0, 100000, (1,)).item()
+        
         super().__init__(device="cpu")
 
     def _compute_edge_index(self, position: Tensor) -> Tensor:
@@ -179,11 +183,14 @@ class SimulationEnv(EnvBase):
             edge_index  = Bounded(0, n-1,    Size([2, n*(n-1)]), dtype=th.int64),
             temperature = Bounded(0, th.inf, Size([n, 1]),       dtype=th.float32),
 
-            gradient    = Unbounded(shape=Size([n, 3]), dtype=th.float32),
-            position    = Unbounded(shape=Size([n, 3]), dtype=th.float32),
-            reward      = Unbounded(shape=Size([n]),    dtype=th.float32),
-            velocity    = Unbounded(shape=Size([n, 3]), dtype=th.float32),
-            wind        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            action        = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            gradient      = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            position      = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            reward        = Unbounded(shape=Size([n]),    dtype=th.float32), 
+            timestep      = Unbounded(shape=Size([1]),    dtype=th.int64),
+            trajectory_id = Unbounded(shape=Size([1]),    dtype=th.int64),
+            velocity      = Unbounded(shape=Size([n, 3]), dtype=th.float32),
+            wind          = Unbounded(shape=Size([n, 3]), dtype=th.float32),
         )
 
     def _generate_initial_positions(self, n: int) -> Tensor:
@@ -347,18 +354,23 @@ class SimulationEnv(EnvBase):
         self.episode_time     = 0.0
         self.velocities       = th.zeros_like(positions)
         self.positions        = positions.clone()
+        self.timestep         = 0
+        self.trajectory_id    = th.randint(0, 100000, (1,)).item()
         self.wrf.current_time = self.episode_time
         thermal               = self.wrf.query_thermal(positions)
         initial_obs           = self.observation_spec.zero()
         
         initial_obs.update({
-            "battery"     : th.ones(self.flock.agent_count, 1),
-            "edge_index"  : self._compute_edge_index(positions),
-            "gradient"    : thermal[0],
-            "position"    : self.positions,
-            "temperature" : thermal[1],
-            "velocity"    : self.velocities,
-            "wind"        : self.wrf.query_wind(positions),
+            "action"        : th.zeros(self.flock.agent_count, 3),
+            "battery"       : th.ones(self.flock.agent_count, 1),
+            "edge_index"    : self._compute_edge_index(positions),
+            "gradient"      : thermal[0],
+            "position"      : self.positions,
+            "temperature"   : thermal[1],
+            "timestep"      : th.tensor([self.timestep]),
+            "trajectory_id" : th.tensor([self.trajectory_id]),
+            "velocity"      : self.velocities,
+            "wind"          : self.wrf.query_wind(positions),
         })
 
         return initial_obs
@@ -425,18 +437,23 @@ class SimulationEnv(EnvBase):
             velocities = self.velocities
         )
         
-        thermal  = self.wrf.query_thermal(self.positions)
-        next_obs = self.observation_spec.zero()
+        thermal        = self.wrf.query_thermal(self.positions)
+        next_obs       = self.observation_spec.zero()
+        self.timestep += 1
+        
         next_obs.update({
-            "battery"     : th.ones(self.flock.agent_count, 1),
-            "done"        : at_bounds.any().unsqueeze(0),
-            "edge_index"  : self._compute_edge_index(self.positions),
-            "gradient"    : thermal[0],
-            "position"    : self.positions.clone(),
-            "reward"      : th.zeros(self.flock.agent_count, dtype=th.float32),
-            "temperature" : thermal[1],
-            "velocity"    : self.velocities.clone(),
-            "wind"        : wind,
+            "action"       : actions.clone(),
+            "battery"      : th.ones(self.flock.agent_count, 1),
+            "done"         : at_bounds.any().unsqueeze(0),
+            "edge_index"   : self._compute_edge_index(self.positions),
+            "gradient"     : thermal[0],
+            "position"     : self.positions.clone(),
+            "reward"       : th.zeros(self.flock.agent_count, dtype=th.float32),
+            "temperature"  : thermal[1],
+            "timestep"     : th.tensor([self.timestep]),
+            "trajectory_id": th.tensor([self.trajectory_id]),
+            "velocity"     : self.velocities.clone(),
+            "wind"         : wind,
         })
         
         self.episode_time += self.physics.simulation_step

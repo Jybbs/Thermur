@@ -105,13 +105,6 @@ class MonitoringCallback(Callback):
             trainer   : PyTorch Lightning trainer instance
             pl_module : Lightning module for state management
         """
-        if self.collector:
-            self.collector.log_all_metrics(
-                is_training = True,
-                module      = pl_module,
-                step_data   = None
-            )
-        
         if self.events:
             pl_module.log_dict({
                 f"summary/{k}" : v

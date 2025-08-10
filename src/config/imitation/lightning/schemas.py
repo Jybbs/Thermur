@@ -268,7 +268,7 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     training_metric: str = Field(
-        default     = "train/loss",
+        default     = "training/loss",
         description = (
             "Primary metric monitored during training for logging and model "
             "selection. Also used by early stopping callback."
@@ -281,7 +281,7 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     scheduler_metric: str = Field(
-        default     = "val/loss",
+        default     = "validation/loss",
         description = (
             "Metric monitored by learning rate scheduler for reducing learning rate "
             "on plateau. Typically a validation metric to avoid overfitting."

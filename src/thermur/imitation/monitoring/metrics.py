@@ -776,7 +776,7 @@ class MetricsCollector:
                 module.log_dict(
                     dictionary = computed,
                     on_epoch   = True,
-                    on_step    = False
+                    on_step    = is_training
                 )
 
     def update_evaluation_metrics(
