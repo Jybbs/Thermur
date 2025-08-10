@@ -135,8 +135,19 @@ class ExperienceModel(BaseModel, extra="forbid"):
     validation_batches: PositiveInt = Field(
         default     = 2,
         description = (
-            "Number of batches to sample for validation. Kept small since we're "
-            "sampling from the same replay buffer as training."
+            "Number of batches to sample for validation from the replay buffer. "
+            "Validation samples from the oldest portion of the buffer to avoid overlap "
+            "with recent training data."
+        )
+    )
+    validation_split: float = Field(
+        default     = 0.2,
+        ge          = 0.0,
+        le          = 0.5,
+        description = (
+            "Fraction of replay buffer reserved for validation sampling. "
+            "A value of 0.2 means validation samples from the oldest 20% of the buffer, "
+            "ensuring temporal separation from recent training data."
         )
     )
 

@@ -7,6 +7,7 @@ during imitation learning.
 """
 from __future__                  import annotations
 from pytorch_lightning           import LightningDataModule
+from torch                       import randint
 from torchrl.collectors          import SyncDataCollector
 from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
@@ -125,21 +126,22 @@ class DataModule(LightningDataModule):
         """
         Create the validation dataloader.
         
-        Since we're doing behavioral cloning from a fixed expert, we sample
-        validation batches from the same replay buffer as training. This helps
-        monitor training progress without needing a separate validation set.
+        Returns a dataloader that samples from the dedicated validation buffer,
+        ensuring proper train/validation separation for better generalization
+        monitoring.
         
         Returns:
-            ValidationDataLoader that yields batches from the replay buffer, or
-            empty list if buffer is not yet initialized.
+            ValidationDataLoader that yields batches from the validation buffer.
+            The dataloader will handle cases where the buffer is still filling.
         """
-        if self.buffer is None or len(self.buffer) == 0:
+        if self.buffer is None:
             return []
         
         return ValidationDataLoader(
-            buffer      = self.buffer,
-            batch_size  = self.experience.batch_size,
-            num_batches = self.experience.validation_batches
+            buffer           = self.buffer,
+            batch_size       = self.experience.batch_size,
+            num_batches      = self.experience.validation_batches,
+            validation_split = self.experience.validation_split
         )
 
 
@@ -203,32 +205,62 @@ class ValidationDataLoader:
     
     def __init__(
         self,
-        batch_size  : int,
-        buffer      : TensorDictReplayBuffer,
-        num_batches : int
+        batch_size       : int,
+        buffer           : TensorDictReplayBuffer,
+        num_batches      : int,
+        validation_split : float
     ):
         """
         Initialize the validation dataloader.
         
         Args:
-            batch_size  : Number of samples per batch.
-            buffer      : The replay buffer to sample from.
-            num_batches : Number of validation batches to yield.
+            batch_size       : Number of samples per batch.
+            buffer           : The replay buffer to sample from.
+            num_batches      : Number of validation batches to yield.
+            validation_split : Fraction of buffer reserved for validation.
         """
-        self.batch_size  = batch_size
-        self.buffer      = buffer
-        self.num_batches = num_batches
+        self.batch_size       = batch_size
+        self.buffer           = buffer
+        self.num_batches      = num_batches
+        self.validation_split = validation_split
     
     def __iter__(self):
         """
         Yield validation batches from the replay buffer.
+        
+        Samples from the portion of the buffer reserved for validation.
+        During early training when buffer is filling, yields whatever data
+        is available to ensure val/loss metric is computed.
         """
+        buffer_len = len(self.buffer)
+        
+        # Need at least one sample to create a batch
+        if buffer_len == 0:
+            for _ in range(self.num_batches):
+                yield from []
+            return
+            
+        val_size          = max(1, int(buffer_len * self.validation_split))
+        val_end_idx       = min(val_size, buffer_len)
+        actual_batch_size = min(self.batch_size, val_end_idx)
+        
         for _ in range(self.num_batches):
-            if len(self.buffer) >= self.batch_size:
-                yield self.buffer.sample()
+            if actual_batch_size == 1:
+                yield self.buffer[[0]]
+            else:
+                indices = randint(
+                    high = val_end_idx,
+                    low  = 0,
+                    size = (actual_batch_size,)
+                )
+                yield self.buffer[indices]
     
     def __len__(self) -> int:
         """
         Return the number of validation batches.
+        
+        Always returns the configured number of batches to ensure Lightning
+        runs validation even when the buffer is still filling. The __iter__
+        method handles empty buffer cases gracefully.
         """
-        return self.num_batches if len(self.buffer) >= self.batch_size else 0
+        return self.num_batches
