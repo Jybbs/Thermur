@@ -7,7 +7,6 @@ metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
 from __future__         import annotations
-from collections        import deque
 from itertools          import pairwise
 from tensordict         import TensorDictBase
 from torchmetrics       import MeanAbsoluteError, MeanSquaredError
@@ -312,58 +311,6 @@ class EnergyConsumptionMetric(AveragingMetric):
         self.count += u_safe.shape[0]
 
 
-class InformationPropagationMetric(AveragingMetric):
-    """
-    Measures empirical information propagation speed through the learned flock.
-
-    Tracks how velocity perturbations propagate from the flock's edge to center,
-    comparing against the theoretical range v_info ∈ [15, 45] m/s observed in
-    starling murmurations (Cavagna et al. 2010). This empirical measurement
-    reveals whether the learned policy maintains proper information transfer.
-    """
-    
-    def __init__(self, metrics: MetricsModel):
-        """
-        Initialize with target propagation speed range.
-
-        Args:
-            metrics : Metrics configuration containing propagation speeds
-        """
-        super().__init__()
-        self.previous_velocities = None
-        self.target_min          = metrics.info_propagation_min_speed
-        self.target_max          = metrics.info_propagation_max_speed
-        self.time_step           = metrics.info_propagation_time_step
-    
-    def update(self, batch: TensorDictBase):
-        """
-        Measure empirical propagation speed from velocity changes.
-
-        Args:
-            batch: TensorDict containing position and velocity
-        """
-        if self.previous_velocities is None:
-            self.previous_velocities = batch["velocity"].clone()
-            return
-
-        v_changes = (batch["velocity"] - self.previous_velocities).norm(dim=1)
-        
-        if (threshold := v_changes.mean() + v_changes.std()) > 0 and \
-           (significant := v_changes > threshold).any():
-            center = batch["position"].mean(dim=0)
-            radii  = (batch["position"] - center).norm(dim=1)
-            
-            if (significant & (radii > radii.mean())).any():
-                propagation_speed = (
-                    (radii.max() - radii.min()) / self.time_step
-                )
-                
-                self.sum   += propagation_speed
-                self.count += 1
-        
-        self.previous_velocities = batch["velocity"].clone()
-
-
 class LegibilitySSIMMetric(AveragingMetric):
     """
     Measure visual similarity between flock motion and wind field.
@@ -420,7 +367,7 @@ class LegibilitySSIMMetric(AveragingMetric):
         Gaussian kernels during velocity field rendering.
 
         Args:
-            grid_size : Resolution of the rendering grid
+            grid_size: Resolution of the rendering grid
 
         Returns:
             Tensor [grid_size, grid_size, 2] of grid coordinates
@@ -633,109 +580,6 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
             self.count += 1
 
 
-class SusceptibilityMetric(AveragingMetric):
-    """
-    Computes learned flock susceptibility χ = N · Var[Φ] to assess critical dynamics.
-    
-    Measures how well the learned policy maintains critical state susceptibility
-    compared to the expert controller. From Cavagna et al. (2010), susceptibility
-    quantifies the flock's responsiveness to perturbations:
-    
-        χ = N · ⟨(Φ - ⟨Φ⟩)²⟩
-    
-    where Φ = |Σ_i 𝐬_i|/N is the polarization order parameter. At critical
-    state (χ ∈ [5, 20]), information propagates near-instantaneously.
-    """
-    
-    def __init__(self, metrics: MetricsModel, mmm: MurmurationModel):
-        """
-        Initialize with target susceptibility range and polarization tracking.
-        
-        Args:
-            metrics: Metrics configuration containing susceptibility range
-            mmm: Murmuration model with polarization window parameter
-        """
-        super().__init__()
-        self.polarization_queue = deque(maxlen=mmm.polarization_window)
-        self.target_min         = metrics.susceptibility_min
-        self.target_max         = metrics.susceptibility_max
-    
-    def update(self, batch: TensorDictBase):
-        """
-        Compute susceptibility from learned policy's velocities.
-        
-        Args:
-            batch: TensorDict containing velocity
-        """
-        spin_vectors = (
-            batch["velocity"] / 
-            batch["velocity"].norm(dim=1, keepdim=True).clamp_min(1e-8)
-        )
-        
-        polarization = spin_vectors.mean(dim=0).norm()
-        self.polarization_queue.append(polarization.item())
-        
-        variance = (
-            th.tensor(
-                data   = list(self.polarization_queue), 
-                device = batch["velocity"].device,
-                dtype  = batch["velocity"].dtype
-            ).var()
-            if len(self.polarization_queue) > 1
-            else polarization * (1 - polarization)
-        )
-        
-        susceptibility = batch["velocity"].shape[0] * variance
-        
-        self.sum   += susceptibility
-        self.count += 1
-
-
-class TopologicalFidelityMetric(AveragingMetric):
-    """
-    Measures consistency of k-nearest neighbor connections.
-    
-    Tracks how well agents maintain their topological neighborhoods
-    over time, essential for information flow in murmurations.
-    """
-    
-    def __init__(self, mmm: MurmurationModel):
-        """
-        Initialize with number of topological neighbors.
-        
-        Args:
-            mmm : Murmuration model containing k_neighbors
-        """
-        super().__init__()
-        self.k_neighbors        = mmm.k_neighbors
-        self.previous_neighbors = None
-    
-    def update(self, batch: TensorDictBase):
-        """
-        Update metric with neighbor consistency measurement.
-        
-        Args:
-            batch: TensorDict containing position
-        """
-            
-        _, indices = th.cdist(batch["position"], batch["position"]).topk(
-            k       = self.k_neighbors + 1, 
-            largest = False
-        )
-
-        current_neighbors = indices[:, 1:]
-        if self.previous_neighbors is not None:
-            overlap_count = (
-                self.previous_neighbors.unsqueeze(2) == 
-                current_neighbors.unsqueeze(1)
-            ).any(dim=2).sum(dim=1).float()
-            
-            self.sum   += overlap_count.mean() / self.k_neighbors
-            self.count += 1
-        
-        self.previous_neighbors = current_neighbors.clone()
-
-
 class MetricsCollector:
     """
     Centralized metric collection and management for training and evaluation.
@@ -779,7 +623,6 @@ class MetricsCollector:
 
         self._init_evaluation_metrics()
         self._init_imitation_metrics()
-        self._init_murmuration_metrics()
 
     def _compute_ready_metrics(
         self, 
@@ -853,46 +696,25 @@ class MetricsCollector:
         """
         Initialize metrics for evaluating imitation learning performance.
 
-        These regression metrics measure how well the neural network policy
-        mimics the murmuration controller's behavior:
-        - MSE  : Mean squared error of velocity predictions
-        - RMSE : Root mean squared error for interpretable units
-        - MAE  : Mean absolute error for robustness to outliers
-        - R²   : Coefficient of determination for overall fit quality
+        These metrics include regression accuracy and spatial murmuration properties:
+        - dynamic_balance  : Density ratio under thermal threat
+        - MSE/RMSE/MAE/R²  : Regression metrics for velocity predictions
+        - scale_free_error : Deviation from power-law correlations C(r) ~ r^(-1/3)
 
-        All metrics track 3D velocity predictions (x, y, z).
+        All metrics work on individual frames without temporal dependencies.
         """
         create_imitation_metrics = lambda prefix: MetricCollection({
-            f"{prefix}_mae"  : MeanAbsoluteError(),
-            f"{prefix}_mse"  : MeanSquaredError(),
-            f"{prefix}_r2"   : R2Score(multioutput='uniform_average'),
-            f"{prefix}_rmse" : MeanSquaredError(squared=False),
+            f"{prefix}_dynamic_balance" : DynamicBalanceMetric(self.safety),
+            f"{prefix}_mae"             : MeanAbsoluteError(),
+            f"{prefix}_mse"             : MeanSquaredError(),
+            f"{prefix}_r2"              : R2Score(multioutput='uniform_average'),
+            f"{prefix}_rmse"            : MeanSquaredError(squared=False),
+            f"{prefix}_scale_free"      : ScaleFreeCorrelationMetric(self.mmm)
         }, compute_groups=False)
         
         self.train_imitation = create_imitation_metrics("training")
         self.val_imitation   = create_imitation_metrics("validation")
     
-    def _init_murmuration_metrics(self):
-        """
-        Initialize murmuration-specific evaluation metrics.
-        
-        These metrics assess the emergent properties of the murmuration dynamics:
-        - correlation_mse      : Scale-free velocity correlations C(r) ~ r^(-1/3)
-        - dynamic_balance      : Balance between expansion/contraction in alert mode
-        - info_speed           : Information propagation speed (15-45 m/s target)
-        - susceptibility       : System responsiveness χ = N·Var[Φ] (5-20 target)
-        - topological_fidelity : Consistency of k-nearest neighbor connections
-        
-        Each metric is wrapped in MetricCollection for automatic train/val splitting.
-        """
-        self.train_murmuration = MetricCollection({
-            "correlation_mse"      : ScaleFreeCorrelationMetric(self.mmm),
-            "dynamic_balance"      : DynamicBalanceMetric(self.safety), 
-            "info_speed"           : InformationPropagationMetric(self.metrics),
-            "susceptibility"       : SusceptibilityMetric(self.metrics, self.mmm),
-            "topological_fidelity" : TopologicalFidelityMetric(self.mmm)
-        })
-        self.val_murmuration = self.train_murmuration.clone(prefix="validation_")
 
     def log_all_metrics(
         self,
@@ -948,15 +770,14 @@ class MetricsCollector:
                 )
         
         if not is_training or step_data is None:
-            for metric_type in ["evaluation", "murmuration"]:
-                if computed := self._compute_ready_metrics(
-                    self._get_metrics(is_training, metric_type)
-                ):
-                    module.log_dict(
-                        dictionary = computed,
-                        on_epoch   = True,
-                        on_step    = False
-                    )
+            if computed := self._compute_ready_metrics(
+                self._get_metrics(is_training, "evaluation")
+            ):
+                module.log_dict(
+                    dictionary = computed,
+                    on_epoch   = True,
+                    on_step    = False
+                )
 
     def update_evaluation_metrics(
         self,
@@ -1009,50 +830,33 @@ class MetricsCollector:
 
     def update_imitation_metrics(
         self,
+        batch       : TensorDictBase | None,
         is_training : bool,
         predictions : Tensor,
         targets     : Tensor
     ):
         """
-        Update regression metrics measuring behavioral cloning accuracy.
+        Update regression and spatial murmuration metrics.
 
-        Computes multiple error metrics between the neural network's velocity
-        predictions and the murmuration controller's demonstrated actions. These
-        metrics guide the imitation learning process and help diagnose
-        prediction quality across different error characteristics.
+        Computes both behavioral cloning accuracy and spatial murmuration properties
+        that don't require temporal continuity.
 
         Args:
+            batch       : Optional TensorDict with position, velocity, temperature
             is_training : Whether this is training (True) or validation (False)
             predictions : Model velocity outputs [batch_size, 3] in m/s
             targets     : Expert velocity commands [batch_size, 3] in m/s
         """
-        self._get_metrics(is_training, "imitation").update(predictions, targets)
+        metrics = self._get_metrics(is_training, "imitation")
+        
+        for name in ["mae", "mse", "r2", "rmse"]:
+            key = f"training_{name}" if is_training else f"validation_{name}"
+            if key in metrics:
+                metrics[key].update(predictions, targets)
+        
+        if batch is not None:
+            for name in ["scale_free", "dynamic_balance"]:
+                key = f"training_{name}" if is_training else f"validation_{name}"
+                if key in metrics:
+                    metrics[key].update(batch)
     
-    def update_murmuration_metrics(
-        self,
-        batch       : TensorDictBase,
-        is_training : bool
-    ):
-        """
-        Update murmuration-specific metrics from simulation state.
-        
-        Tracks emergent properties of the murmuration dynamics including
-        scale-free correlations, critical state indicators, and topological
-        consistency. These metrics verify the biological plausibility of
-        the learned flocking behavior.
-        
-        Field requirements by metric:
-        - correlation_mse      : position, velocity
-        - dynamic_balance      : position, in_alert_mode flag
-        - info_speed           : position, velocity (tracked over time)
-        - susceptibility       : velocity
-        - topological_fidelity : position (tracked over time)
-        
-        Args:
-            batch       : TensorDict containing simulation state
-            is_training : Whether this is training (True) or validation (False)
-        """
-        metrics = self._get_metrics(is_training, "murmuration")
-        
-        for metric in metrics.values():
-            metric.update(batch)

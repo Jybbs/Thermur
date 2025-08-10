@@ -85,7 +85,6 @@ class MonitoringCallback(Callback):
         """
         if self.collector:
             self.collector.update_evaluation_metrics(batch,  True)
-            self.collector.update_murmuration_metrics(batch, True)
 
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -145,7 +144,6 @@ class MonitoringCallback(Callback):
         """
         if self.collector:
             self.collector.update_evaluation_metrics(batch, False)
-            self.collector.update_murmuration_metrics(batch, False)
 
         if self.events:
             self.events.analyze_batch(batch, pl_module)
