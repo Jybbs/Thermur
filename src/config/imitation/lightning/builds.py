@@ -94,6 +94,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         log_model               = "${lightning.wandb.log_model}",
         mode                    = "${lightning.wandb.mode}",
         name                    = "${lightning.wandb.run_name}",
+        notes                   = "${lightning.wandb.notes}",
         project                 = "${lightning.wandb.project}",
         populate_full_signature = True
     ),

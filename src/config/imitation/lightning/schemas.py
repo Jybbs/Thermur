@@ -341,6 +341,14 @@ class WandbModel(BaseModel, extra="forbid"):
             "disabled skips W&B integration entirely."
         )
     )
+    notes: str | None = Field(
+        default     = None,
+        description = (
+            "Detailed description of the run, like a commit message. Use this to capture "
+            "context, experimental setup, or purpose that helps recall what this run was "
+            "testing. Appears in W&B UI Overview tab."
+        )
+    )
     project: str = Field(
         default     = "thermur-imitation",
         description = (
