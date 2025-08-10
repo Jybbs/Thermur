@@ -184,17 +184,21 @@ class MurmurationController:
         
         local_density = weights.sum(dim=1, keepdim=True)
         displacements = (
-            flock["position"].unsqueeze(0) -  # [1, N, 3]
-            flock["position"].unsqueeze(1)    # [N, 1, 3]
+            flock["position"].unsqueeze(1) -  # [N, 1, 3]
+            flock["position"].unsqueeze(0)    # [1, N, 3]
         )
         
         density_gradient = (
-            (weights.unsqueeze(2) *  displacements).sum(dim=1) /
+            (weights.unsqueeze(2) * displacements).sum(dim=1) /
             local_density.clamp_min(self.mmm.epsilon)
         )
         
-        # Ensure threat_amplification broadcasts correctly with density_gradient
-        threat_amplification  = 1 + flock["threats"] * 2  # [N]
+        threats = flock["threats"]
+        # Handle case where threats might be [N, 1] instead of [N]
+        if threats.dim() == 2 and threats.shape[1] == 1:
+            threats = threats.squeeze(1)
+        
+        threat_amplification  = 1 + threats * 2  # [N]
         
         if density_gradient.dim() == 2:  # [N, 3]
             threat_amplification = threat_amplification.unsqueeze(-1)  # [N, 1]
@@ -302,13 +306,37 @@ class MurmurationController:
         without external forces, as observed in real bird flocks where
         cruising speeds are typically 10-20 m/s (Cavagna et al., 2010).
         
+        For agents with zero velocity (|𝐯| < ε), the heading direction 𝐬 is
+        determined from:
+            1. Negative temperature gradient direction: 𝐬 = -∇T/|∇T| (if |∇T| > δ)
+            2. Random unit vector: 𝐬 = 𝝃/|𝝃| where 𝝃 ~ N(0, I) (fallback)
+        
+        This ensures the flock can bootstrap movement from rest states.
+        
         Args:
             flock: TensorDict containing velocities, updated with
                    self_propulsion forces
         """
-        speed      = flock["velocity"].norm(dim=-1, keepdim=True).clamp_min(1e-8)
-        heading    = flock["velocity"] / speed
-        wind       = flock.get("wind", th.zeros_like(flock["velocity"]))
+        speed = flock["velocity"].norm(dim=-1, keepdim=True)
+        wind  = flock.get("wind", th.zeros_like(flock["velocity"]))
+        
+        velocity_heading = flock["velocity"] / speed.clamp_min(1e-8)
+        gradient_heading = -th.nn.functional.normalize(flock["gradient"], dim=-1)
+        random_heading   = th.nn.functional.normalize(
+            th.randn_like(flock["velocity"]), dim=-1
+        )
+        
+        zero_vel = (speed < 1e-6).expand_as(flock["velocity"])
+        use_grad = (
+            flock["gradient"].norm(dim=-1, keepdim=True) > 0.01
+        ).expand_as(flock["velocity"])
+        
+        heading = th.where(
+            zero_vel & use_grad,
+            gradient_heading,
+            th.where(zero_vel, random_heading, velocity_heading)
+        )
+        
         target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
         
         # Using inverse of info speed as relaxation timescale

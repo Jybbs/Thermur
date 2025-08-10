@@ -465,6 +465,193 @@ class LegibilitySSIMMetric(AveragingMetric):
         self.count += batch_size
 
 
+class StateMetrics(Metric):
+    """
+    Tracks average physical state properties of the flock.
+    
+    Monitors key physical quantities including velocity magnitude |𝐯|,
+    temperature θ, and acceleration magnitude |𝐚| across all agents.
+    These reveal whether the learned policy maintains realistic flight
+    dynamics matching both the expert controller and empirical observations
+    from Cavagna et al. (2010) and Attanasi et al. (2014).
+    
+    The metrics track:
+        - |𝐯|_avg : Mean velocity magnitude, expected 10-20 m/s in cruise
+                    (starlings typically fly at 15 m/s per Cavagna et al.)
+        - θ_avg   : Mean sensed temperature across flock, critical for
+                    thermal safety constraints
+        - |𝐚|_avg : Mean acceleration magnitude, indicating control effort
+                    and energy expenditure (typical range 5-15 m/s²)
+    
+    These quantities help diagnose whether the learned policy captures the
+    active matter dynamics of self-propelled particles maintaining constant
+    speed while adapting to environmental gradients.
+    """
+    acceleration_sum : Tensor
+    count            : Tensor
+    temperature_sum  : Tensor
+    velocity_sum     : Tensor
+    
+    def __init__(self):
+        """
+        Initialize state tracking for physical quantities.
+        """
+        super().__init__()
+        self.add_state("acceleration_sum", th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("count",            th.tensor(0),   dist_reduce_fx="sum")
+        self.add_state("temperature_sum",  th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("velocity_sum",     th.tensor(0.0), dist_reduce_fx="sum")
+    
+    def compute(self) -> dict[str, Tensor]:
+        """
+        Compute averages from accumulated sums.
+        
+        Returns:
+            Dictionary containing avg_acceleration, avg_temperature, avg_velocity
+        """
+        if self.count == 0:
+            zero = th.tensor(0.0)
+            return {
+                "avg_acceleration" : zero,
+                "avg_temperature"  : zero,
+                "avg_velocity"     : zero,
+            }
+        
+        count = self.count.float()
+        return {
+            "avg_acceleration" : self.acceleration_sum / count,
+            "avg_temperature"  : self.temperature_sum  / count,
+            "avg_velocity"     : self.velocity_sum     / count,
+        }
+    
+    def update(self, batch: TensorDictBase):
+        """
+        Update running sums with batch statistics.
+        
+        Extracts physical quantities from the batch and accumulates their
+        magnitudes for computing running averages.
+        
+        Args:
+            batch: TensorDict containing velocity, temperature, and optionally action
+        """
+        if "action" in batch:
+            action = batch["action"]
+            if action.dim() == 3:
+                action = action.reshape(-1, action.shape[-1])
+            self.acceleration_sum += action.norm(dim=-1).mean()
+        
+        if "temperature" in batch and batch["temperature"].numel() > 0:
+            self.temperature_sum += batch["temperature"].mean()
+        
+        if "velocity" in batch:
+            velocity = batch["velocity"]
+            if velocity.dim() == 3:
+                velocity = velocity.reshape(-1, velocity.shape[-1])
+            self.velocity_sum += velocity.norm(dim=-1).mean()
+        
+        self.count += 1
+
+
+class ConnectivityMetrics(Metric):
+    """
+    Tracks topological connectivity of the k-nearest neighbor graph.
+    
+    Monitors how well the topological interaction structure is maintained
+    during flight dynamics. Ballerini et al. (2008) discovered that starlings
+    interact with a fixed number of k = 6-7 nearest neighbors regardless of
+    metric distance, a topological rule that enables scale-free correlations
+    and optimal information transfer (Bialek et al., 2012).
+    
+    The metrics track:
+        - k_avg : Mean degree ⟨k_i⟩ across the flock, should stabilize near 7
+        - ρ_k   : Fraction of agents maintaining k ≥ k_target neighbors,
+                  indicates structural integrity of the interaction network
+        - N_iso : Count of isolated agents with k < 3 (danger threshold),
+                  as agents with fewer than 3 neighbors cannot triangulate
+                  information and lose flock cohesion
+    
+    where k_i = |𝒩_i| is the neighbor count for agent i. The topological
+    interaction rule is critical for achieving the maximum entropy state
+    that balances individual freedom with collective response.
+    """
+    connected_ratio_sum : Tensor
+    count               : Tensor
+    isolated_sum        : Tensor
+    k_target            : int
+    neighbors_sum       : Tensor
+    
+    def __init__(self, k_target: int = 7):
+        """
+        Initialize connectivity tracking with target degree.
+        
+        Args:
+            k_target: Target number of neighbors (default 7 from Ballerini, 2008)
+        """
+        super().__init__()
+        self.k_target = k_target
+        self.add_state("connected_ratio_sum", th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("count",               th.tensor(0),   dist_reduce_fx="sum")
+        self.add_state("isolated_sum",        th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("neighbors_sum",       th.tensor(0.0), dist_reduce_fx="sum")
+    
+    def compute(self) -> dict[str, Tensor]:
+        """
+        Compute connectivity statistics from accumulated data.
+        
+        Returns:
+            Dictionary containing avg_neighbors, connectivity_ratio, isolated_agents
+        """
+        if self.count == 0:
+            zero = th.tensor(0.0)
+            return {
+                "avg_neighbors"      : zero,
+                "connectivity_ratio" : zero,
+                "isolated_agents"    : zero,
+            }
+        
+        count = self.count.float()
+        return {
+            "avg_neighbors"      : self.neighbors_sum / count,
+            "connectivity_ratio" : self.connected_ratio_sum / count,
+            "isolated_agents"    : self.isolated_sum / count,
+        }
+    
+    def update(self, batch: TensorDictBase):
+        """
+        Update connectivity statistics from graph topology.
+        
+        Computes degree distribution from the edge list and tracks how well
+        the k-NN structure is maintained under dynamics.
+        
+        Args:
+            batch: TensorDict containing edge_index and position tensors
+        """
+        if "edge_index" not in batch or "position" not in batch:
+            return
+        
+        edge_index = batch["edge_index"]
+        if edge_index.dim() == 3:
+            edge_index = edge_index[0]
+        
+        if edge_index.numel() == 0:
+            return
+        
+        n_agents = (
+            batch["position"].shape[1] if batch["position"].dim() == 3
+            else batch["position"].shape[0]
+        )
+        
+        neighbor_counts = th.bincount(
+            input     = edge_index[0].long(),
+            minlength = n_agents
+        ).float()
+        
+        self.connected_ratio_sum += (neighbor_counts >= self.k_target).float().mean()
+        self.isolated_sum        += (neighbor_counts < 3).float().sum()
+        self.neighbors_sum       += neighbor_counts.mean()
+        self.count               += 1
+
+
 class ScaleFreeCorrelationMetric(AveragingMetric):
     """
     Measure deviation from scale-free velocity correlations.
@@ -644,6 +831,9 @@ class MetricsCollector:
         for metric in metrics.values():
             if isinstance(metric, AveragingMetric) and metric.count > 0:
                 return metrics.compute()
+            elif isinstance(metric, (StateMetrics, ConnectivityMetrics)):
+                if metric.count > 0:
+                    return metrics.compute()
             elif not isinstance(metric, AveragingMetric):
                 return metrics.compute()
         return None
@@ -704,12 +894,14 @@ class MetricsCollector:
         All metrics work on individual frames without temporal dependencies.
         """
         create_imitation_metrics = lambda prefix: MetricCollection({
+            f"{prefix}_connectivity"    : ConnectivityMetrics(self.mmm.k_neighbors),
             f"{prefix}_dynamic_balance" : DynamicBalanceMetric(self.safety),
             f"{prefix}_mae"             : MeanAbsoluteError(),
             f"{prefix}_mse"             : MeanSquaredError(),
             f"{prefix}_r2"              : R2Score(multioutput='uniform_average'),
             f"{prefix}_rmse"            : MeanSquaredError(squared=False),
-            f"{prefix}_scale_free"      : ScaleFreeCorrelationMetric(self.mmm)
+            f"{prefix}_scale_free"      : ScaleFreeCorrelationMetric(self.mmm),
+            f"{prefix}_state"           : StateMetrics()
         }, compute_groups=False)
         
         self.train_imitation = create_imitation_metrics("training")
@@ -855,7 +1047,7 @@ class MetricsCollector:
                 metrics[key].update(predictions, targets)
         
         if batch is not None:
-            for name in ["scale_free", "dynamic_balance"]:
+            for name in ["connectivity", "dynamic_balance", "scale_free", "state"]:
                 key = f"training_{name}" if is_training else f"validation_{name}"
                 if key in metrics:
                     metrics[key].update(batch)
