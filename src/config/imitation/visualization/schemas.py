@@ -160,6 +160,14 @@ class VistaModel(BaseModel, extra="forbid"):
             "fading paths that reveal recent agent trajectories."
         )
     )
+    trajectories_to_monitor: PositiveInt = Field(
+        default     = 5,
+        description = (
+            "Maximum number of trajectory simulations to monitor from each training batch. "
+            "Each trajectory represents a complete flock simulation and gets its own video "
+            "stream in WandB for comparison."
+        )
+    )
     wind_resolution: PositiveInt = Field(
         default     = 5,
         description = (
