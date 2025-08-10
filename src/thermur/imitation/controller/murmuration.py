@@ -193,7 +193,12 @@ class MurmurationController:
             local_density.clamp_min(self.mmm.epsilon)
         )
         
-        threat_amplification  = 1 + flock["threats"] * 2
+        # Ensure threat_amplification broadcasts correctly with density_gradient
+        threat_amplification  = 1 + flock["threats"] * 2  # [N]
+        
+        if density_gradient.dim() == 2:  # [N, 3]
+            threat_amplification = threat_amplification.unsqueeze(-1)  # [N, 1]
+        
         flock["density_wave"] = (
             -self.mmm.density_diffusion *
             density_gradient            *

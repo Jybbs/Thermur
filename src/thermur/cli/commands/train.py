@@ -526,10 +526,6 @@ class TrainCommand:
             message  = "Monitoring thermal constraints and flock dynamics",
             msg_type = "thermal"
         )
-        self.ui.print_message(
-            message  = " Track progress in your wandb dashboard",
-            msg_type = "magic"
-        )
         self.ui.console.print()
 
         components["trainer"].fit(
