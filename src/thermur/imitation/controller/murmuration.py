@@ -425,10 +425,14 @@ class MurmurationController(th.nn.Module):
         Args:
             flock: TensorDict with edge indices, updated with topo_distances
         """
+        device = flock["position"].device
+        n      = self.flock.agent_count
+        
         dist = th.full(
-            device     = flock["position"].device,
+            device     = device,
+            dtype      = th.float32,
             fill_value = float('inf'),
-            size       = (self.flock.agent_count, self.flock.agent_count)
+            size       = (n, n)
         )
         dist.fill_diagonal_(0)
 
@@ -436,7 +440,7 @@ class MurmurationController(th.nn.Module):
             dist[flock["edge_source"], flock["edge_target"]] = 1
             dist[flock["edge_target"], flock["edge_source"]] = 1
 
-        for k in range(self.flock.agent_count):
+        for k in range(n):
             dist = th.minimum(dist, dist[:, k:k+1] + dist[k:k+1, :])
 
         flock["topo_distances"] = dist

@@ -87,7 +87,11 @@ class GNNPolicy(LightningModule):
         self.grus       = self._build_module_list(architecture, GRUCell)
         self.decoder    = Linear(architecture.hidden_dim, 3)
         self.encoder    = Linear(13, architecture.hidden_dim)
+        
+        self._edge_offset_cache      = {}
+        self._batch_assignment_cache = {}
 
+    @th.jit.ignore
     def _batch_to_data(self, batch: TensorDictBase) -> Batch:
         """
         Convert TensorDict batch to PyTorch Geometric graph format.
@@ -114,14 +118,36 @@ class GNNPolicy(LightningModule):
             PyG Batch containing all graphs with concatenated node features and edges
         """
         features = ["position", "velocity", "temperature", "gradient", "wind"]
+        batch_size = batch["position"].shape[0]
+        num_agents = batch["position"].shape[1]
         
-        return Batch.from_data_list([
-            Data(
-                edge_index = batch["edge_index"][i],
-                x          = th.cat([batch[f][i] for f in features], dim=-1),
-            )
-            for i in range(batch["position"].shape[0])
-        ])
+        all_features = th.cat([batch[f] for f in features], dim=-1)     # [B, N, 13]
+        x            = all_features.reshape(-1, all_features.shape[-1]) # [B*N, 13]
+        device       = x.device
+        
+        cache_key = (batch_size, num_agents, device)
+        if cache_key not in self._edge_offset_cache:
+            offsets = th.arange(batch_size, device=device).unsqueeze(1) * num_agents
+            self._edge_offset_cache[cache_key] = offsets
+            
+            batch_assignment = th.arange(batch_size, device=device).repeat_interleave(num_agents)
+            self._batch_assignment_cache[cache_key] = batch_assignment
+        
+        offsets          = self._edge_offset_cache[cache_key]
+        batch_assignment = self._batch_assignment_cache[cache_key]
+        edge_indices     = batch["edge_index"]  # [B, 2, E]
+        
+        if (edge_indices.numel() > 0) and (edge_indices.shape[-1] > 0):
+            adjusted_edges = edge_indices + offsets.unsqueeze(1)
+            edge_index     = adjusted_edges.transpose(0, 1).reshape(2, -1)
+        else:
+            edge_index     = th.empty((2, 0), dtype=th.long, device=device)
+        
+        return Batch(
+            batch      = batch_assignment,
+            edge_index = edge_index, 
+            x          = x, 
+        )
 
     def _build_module_list(
         self,
@@ -244,10 +270,15 @@ class GNNPolicy(LightningModule):
             - u_nom: Nominal velocity command output
         """
         x, edge_index = data.x, data.edge_index
+        
+        if x.dim() == 2 and x.device.type == 'mps':
+            x = x.contiguous(th.channels_last) if x.shape[-1] % 4 == 0 else x
+        
         h = self.activation(self.encoder(x))
 
         for conv, gru in zip(self.convs, self.grus, strict=True):
-            h = gru(self.activation(conv(h, edge_index)), h)
+            conv_out = conv(h, edge_index)
+            h        = gru(self.activation(conv_out), h)
 
         return self.decoder(h)
     
@@ -260,7 +291,10 @@ class GNNPolicy(LightningModule):
         necessary because TorchMetrics creates metrics on CPU by default,
         but Lightning may move the model to GPU/MPS.
         """
-        for metric_name in ['train_imitation', 'val_imitation']:
+        for metric_name in [
+            'train_imitation',  'val_imitation', 
+            'train_evaluation', 'val_evaluation'
+        ]:
             metrics = getattr(self.collector, metric_name, None)
             if metrics is None:
                 raise AttributeError(

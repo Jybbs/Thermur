@@ -47,6 +47,20 @@ class AveragingMetric(Metric):
         super().__init__()
         self.add_state("count", default=th.tensor(0),   dist_reduce_fx="sum")
         self.add_state("sum",   default=th.tensor(0.0), dist_reduce_fx="sum")
+    
+    def _ensure_correct_device(self, reference_tensor: Tensor):
+        """
+        Ensure state variables are on the same device as the reference tensor.
+        
+        This is needed because TorchMetrics initializes states on CPU by default,
+        but computations may happen on GPU/MPS.
+        
+        Args:
+            reference_tensor: A tensor on the target device
+        """
+        if self.sum.device != reference_tensor.device:
+            self.sum   = self.sum.to(reference_tensor.device)
+            self.count = self.count.to(reference_tensor.device)
 
     def compute(self) -> Tensor:
         """
@@ -76,6 +90,52 @@ class CohesionMetric(AveragingMetric):
     where D is the degree matrix and A is the adjacency matrix.
     """
 
+    def _compute_fiedler_power_iteration(
+        self,
+        laplacian  : Tensor,
+        iterations : int = 30
+    ) -> Tensor:
+        """
+        Compute Fiedler value using power iteration method.
+        
+        MPS-compatible alternative to eigvalsh that avoids CPU fallback.
+        Uses inverse power iteration with shift to find second smallest eigenvalue.
+        
+        Args:
+            laplacian  : Graph Laplacian matrix [n, n]
+            iterations : Number of power iterations
+            
+        Returns:
+            Approximation of second smallest eigenvalue (Fiedler value)
+        """
+        n      = laplacian.shape[0]
+        device = laplacian.device
+        
+        if n <= 1:
+            return th.tensor(0.0, device=device)
+        
+        random_vector = th.randn(n, device=device)
+        orthogonal_vector = random_vector - random_vector.mean()
+        v = orthogonal_vector / orthogonal_vector.norm()
+        
+        shift = 0.001
+        shifted_laplacian = laplacian + shift * th.eye(n, device=device)
+        
+        for _ in range(iterations):
+            v_new = th.linalg.solve(shifted_laplacian, v)
+            orthogonalized = v_new - v_new.mean()
+            
+            if (norm := orthogonalized.norm()) > 1e-10:
+                v = orthogonalized / norm
+            else:
+                break
+        
+        rayleigh_numerator   = v @ (laplacian @ v)
+        rayleigh_denominator = v @ v
+        fiedler_value        = rayleigh_numerator / rayleigh_denominator
+        
+        return fiedler_value.clamp_min(0.0)
+    
     def _compute_graph_laplacian(
         self,
         edge_index : Tensor,
@@ -94,14 +154,18 @@ class CohesionMetric(AveragingMetric):
         Returns:
             Tensor [n, n] symmetric Laplacian matrix
         """
-        adj_sparse = th.sparse_coo_tensor(
-            indices = edge_index,
-            values  = th.ones(edge_index.shape[1], device=edge_index.device),
-            size    = (num_agents, num_agents)
+        adjacency_matrix = th.zeros(
+            (num_agents, num_agents), device=edge_index.device
         )
-        adj_matrix = (adj_sparse + adj_sparse.t()).to_dense().bool().float()
         
-        return th.diag_embed(adj_matrix.sum(1)) - adj_matrix
+        if edge_index.numel() > 0:
+            adjacency_matrix[edge_index[0], edge_index[1]] = 1.0
+            adjacency_matrix[edge_index[1], edge_index[0]] = 1.0
+        
+        degree_matrix = th.diag_embed(adjacency_matrix.sum(1))
+        laplacian     = degree_matrix - adjacency_matrix
+        
+        return laplacian
 
     def update(
         self,
@@ -130,12 +194,10 @@ class CohesionMetric(AveragingMetric):
 
         laplacian = self._compute_graph_laplacian(edge_index, num_agents)
 
-        try:
-            eigenvalues = th.linalg.eigvalsh(laplacian)
-            self.sum   += eigenvalues[1] if len(eigenvalues) > 1 else 0.0
-        except RuntimeError:
-            self.sum   += 0.0
+        fiedler_value = self._compute_fiedler_power_iteration(laplacian)
         
+        self._ensure_correct_device(fiedler_value)
+        self.sum   += fiedler_value
         self.count += 1
 
 
@@ -178,10 +240,12 @@ class DynamicBalanceMetric(AveragingMetric):
         pairwise = th.cdist(batch["position"], batch["position"]).triu(1)
         
         if (n_pairs := pairwise.gt(0).sum()) > 0:
-            self.sum   += (
+            balance_ratio = (
                 (batch["position"] - center).norm(dim=1).mean() / 
                 (pairwise.sum() / n_pairs).clamp_min(1e-8)
             )
+            self._ensure_correct_device(balance_ratio)
+            self.sum   += balance_ratio
             self.count += 1
 
 
@@ -226,7 +290,9 @@ class EnergyConsumptionMetric(AveragingMetric):
         gravity_vector[..., 2] = -self.gravity
         thrust_magnitude       = (u_safe - gravity_vector).norm(dim=-1)
 
-        self.sum   += thrust_magnitude.pow(self.power_exponent).sum()
+        power_sum = thrust_magnitude.pow(self.power_exponent).sum()
+        self._ensure_correct_device(power_sum)
+        self.sum   += power_sum
         self.count += u_safe.shape[0]
 
 
@@ -324,17 +390,60 @@ class LegibilitySSIMMetric(AveragingMetric):
         Returns:
             Tensor [grid_size, grid_size] of normalized velocity magnitudes
         """
+        device     = positions.device
+        bounds_max = bounds_max.to(device)
+        bounds_min = bounds_min.to(device)
+        coords     = self.coords.to(device)
+        
         velocity_magnitude = velocities[:, :2].norm(dim=1)
         grid_positions     = (
             (positions[:, :2] - bounds_min[:2]) /
             (bounds_max[:2]   - bounds_min[:2]) *
             (self.grid_size - 1)
         )
-
-        distance_squared = th.cdist(self.coords.view(-1, 2), grid_positions).pow(2)
-        kernel_weights   = th.exp(-distance_squared * (1.0 / (2 * self.sigma ** 2)))
-        flattened        = (kernel_weights * velocity_magnitude).sum(dim=-1)
-        field            = flattened.view(self.grid_size, self.grid_size)
+        
+        sparse_condition = (
+            self.grid_size > 32 and 
+            positions.shape[0] < self.grid_size * 2
+        )
+        
+        if sparse_condition:
+            field = th.zeros(
+                (self.grid_size, self.grid_size), device=device
+            )
+            kernel_radius = int(3 * self.sigma)
+            
+            for idx, grid_pos in enumerate(grid_positions):
+                x_min = max(0, int(grid_pos[0] - kernel_radius))
+                x_max = min(self.grid_size, int(grid_pos[0] + kernel_radius + 1))
+                y_min = max(0, int(grid_pos[1] - kernel_radius))
+                y_max = min(self.grid_size, int(grid_pos[1] + kernel_radius + 1))
+                
+                if x_max <= x_min or y_max <= y_min:
+                    continue
+                
+                local_region      = coords[y_min:y_max, x_min:x_max]
+                height, width     = local_region.shape[:2]
+                local_region_flat = local_region.reshape(-1, 2)
+                
+                # Compute Gaussian kernel weights
+                squared_distances = (
+                    (local_region_flat - grid_pos.unsqueeze(0)) ** 2
+                ).sum(dim=1)
+                
+                kernel_weights = th.exp(
+                    -squared_distances / (2 * self.sigma ** 2)
+                )
+                
+                field[y_min:y_max, x_min:x_max] += (
+                    kernel_weights.view(height, width) * velocity_magnitude[idx]
+                )
+        else:
+            flattened_coords  = coords.view(-1, 2)
+            squared_distances = th.cdist(flattened_coords, grid_positions).pow(2)
+            kernel_weights    = th.exp(-squared_distances / (2 * self.sigma ** 2))
+            weighted_field    = (kernel_weights * velocity_magnitude).sum(dim=-1)
+            field             = weighted_field.view(self.grid_size, self.grid_size)
 
         return field / field.max().clamp_min(1e-8)
 
@@ -355,31 +464,34 @@ class LegibilitySSIMMetric(AveragingMetric):
             velocities : Agent velocities 𝐯 ∈ ℝ^(B×n×3)
             wind       : Environmental wind field 𝐰 ∈ ℝ^(B×n×3)
         """
-        batch_size = positions.shape[0]
-        total_ssim = 0.0
+        batch_size   = positions.shape[0]
+        device       = positions.device
+        field_shape  = (batch_size, 1, self.grid_size, self.grid_size)
+        flock_fields = th.zeros(field_shape, device=device)
+        wind_fields  = th.zeros(field_shape, device=device)
         
         for i in range(batch_size):
-            flock_field = self._render_velocity_field(
+            flock_fields[i, 0] = self._render_velocity_field(
                 bounds_max = self.bounds_max,
                 bounds_min = self.bounds_min,
                 positions  = positions[i],
                 velocities = velocities[i]
             )
-
-            wind_field = self._render_velocity_field(
+            
+            wind_fields[i, 0] = self._render_velocity_field(
                 bounds_max = self.bounds_max,
                 bounds_min = self.bounds_min,
                 positions  = positions[i],
                 velocities = wind[i]
             )
-
-            ssim_value = self.ssim_metric(
-                preds  = flock_field.unsqueeze(0).unsqueeze(0),
-                target = wind_field.unsqueeze(0).unsqueeze(0)
-            )
-            
-            total_ssim += ssim_value
         
+        self.ssim_metric = self.ssim_metric.to(device)
+        ssim_values = self.ssim_metric(
+            preds=flock_fields, target=wind_fields
+        )
+        
+        total_ssim = ssim_values.sum()
+        self._ensure_correct_device(total_ssim)
         self.sum   += total_ssim
         self.count += batch_size
 
