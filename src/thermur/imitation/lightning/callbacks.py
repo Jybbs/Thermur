@@ -507,8 +507,10 @@ class VisualizationCallback(Callback):
 
         if batch_idx == 0:
             try:
-                self.visualizer.update(batch)
+                vis_batch = batch[0]
+                self.visualizer.update(vis_batch)
                 self.visualizer.render()
+
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to render validation batch: {e}"
