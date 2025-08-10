@@ -99,6 +99,17 @@ class DataModule(LightningDataModule):
                 total_frames        = self.experience.total_frames,
                 trust_policy        = True
             )
+            
+            prefill_target = min(
+                self.experience.buffer_size - 100,
+                self.experience.total_frames * 3 // 4
+            )
+            
+            for batch_idx, batch_data in enumerate(self.collector):
+                self.buffer.extend(batch_data)
+                frames_collected = (batch_idx + 1) * self.experience.frames_per_batch
+                if frames_collected >= prefill_target:
+                    break
 
     def teardown(self, stage: str) -> None:
         """
@@ -206,7 +217,7 @@ class ExperienceDataLoader:
             if self.choreography is not None:
                 self.choreography.analyze_trajectory(data, self.pl_module)
             
-            self.buffer.extend(data.cpu())
+            self.buffer.extend(data)
 
             if len(self.buffer) >= self.experience.batch_size:
                 yield self.buffer.sample()
@@ -258,28 +269,27 @@ class ValidationDataLoader:
         During early training when buffer is filling, yields whatever data
         is available to ensure val/loss metric is computed.
         """
-        buffer_len = len(self.buffer)
+        buffer_length = len(self.buffer)
         
-        # Need at least one sample to create a batch
-        if buffer_len == 0:
+        if buffer_length == 0:
             for _ in range(self.num_batches):
                 yield from []
             return
             
-        val_size          = max(1, int(buffer_len * self.validation_split))
-        val_end_idx       = min(val_size, buffer_len)
-        actual_batch_size = min(self.batch_size, val_end_idx)
+        validation_size = max(1, int(buffer_length * self.validation_split))
+        end_index = min(validation_size, buffer_length)
+        effective_batch_size = min(self.batch_size, end_index)
         
         for _ in range(self.num_batches):
-            if actual_batch_size == 1:
+            if effective_batch_size == 1:
                 yield self.buffer[[0]]
             else:
-                indices = randint(
-                    high = val_end_idx,
+                sample_indices = randint(
+                    high = end_index,
                     low  = 0,
-                    size = (actual_batch_size,)
+                    size = (effective_batch_size,)
                 )
-                yield self.buffer[indices]
+                yield self.buffer[sample_indices]
     
     def __len__(self) -> int:
         """

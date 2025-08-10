@@ -12,10 +12,9 @@ from omegaconf   import OmegaConf, open_dict
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
+from traceback   import format_exc
 from typer       import Argument, Exit, Option
 from typing      import Any, Callable, TYPE_CHECKING
-
-import traceback
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -681,9 +680,10 @@ class TrainCommand:
                         )
 
                 case _:
+                    failure_kws = ["dimension", "shape", "size", "device", "metric"]
                     self.ui.print_message(f"Training failed: {e}", "error")
-                    if any(k in str(e).lower() for k in ["dimension", "shape", "size"]):
+                    if any(k in str(e).lower() for k in failure_kws):
                         self.ui.console.print("\n[DEBUG] Full stack trace:")
-                        self.ui.console.print(traceback.format_exc())
+                        self.ui.console.print(format_exc())
 
             raise Exit(1)

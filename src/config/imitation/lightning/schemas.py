@@ -119,10 +119,10 @@ class ExperienceModel(BaseModel, extra="forbid"):
         )
     )
     prefetch: NonNegativeInt = Field(
-        default     = 8,
+        default     = 16,
         description = (
             "Concurrent batches loaded in background threads, hiding I/O latency "
-            "and maintaining GPU utilization during asynchronous data loading."
+            "and maintaining MPS/GPU utilization. Increased for better MPS performance."
         )
     )
     total_frames: PositiveInt = Field(
@@ -167,10 +167,10 @@ class HardwareModel(BaseModel, extra="forbid"):
         )
     )
     benchmark: bool = Field(
-        default     = False,
+        default     = True,
         description = (
-            "Enable cuDNN benchmarking to find optimal algorithms. Improves "
-            "performance for fixed input sizes but adds startup overhead."
+            "Enable algorithm benchmarking to find optimal kernels. Improves "
+            "performance for fixed input sizes. Recommended for MPS training."
         )
     )
     deterministic: bool = Field(
@@ -192,10 +192,10 @@ class HardwareModel(BaseModel, extra="forbid"):
         description = "Number of GPUs/TPUs to use for distributed training."
     )
     precision: Literal["16-mixed", "bf16-mixed", "32-true", "64-true", "32"] = Field(
-        default     = "32",
+        default     = "16-mixed",
         description = (
-            "Numerical precision mode for training. Default '32' lets Lightning "
-            "choose optimal precision. Mixed precision reduces memory usage."
+            "Numerical precision mode for training. '16-mixed' uses automatic "
+            "mixed precision for faster training and reduced memory usage on MPS."
         )
     )
     strategy: Literal["auto", "ddp", "dp", "deepspeed", "fsdp"] = Field(
