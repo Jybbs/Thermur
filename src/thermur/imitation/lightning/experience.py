@@ -14,7 +14,10 @@ from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplace
 from typing                      import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from config.imitation.controller       import MurmurationModel
     from config.imitation.lightning        import ExperienceModel
+    from config.imitation.monitoring       import MetricsModel
+    from pytorch_lightning                 import LightningModule
     from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
     from thermur.imitation.controller      import MurmurationController
     from thermur.imitation.simulation      import SimulationEnv
@@ -40,7 +43,9 @@ class DataModule(LightningDataModule):
         self,
         env        : SimulationEnv,
         experience : ExperienceModel,
-        expert     : MurmurationController
+        expert     : MurmurationController,
+        metrics    : MetricsModel | None = None,
+        mmm        : MurmurationModel | None = None
     ):
         """
         Initialize the experience module.
@@ -50,11 +55,15 @@ class DataModule(LightningDataModule):
             experience : Experience data configuration with batch sizes and buffer
                          settings
             expert     : The murmuration controller that generates actions
+            metrics    : Optional metrics configuration for choreography analysis
+            mmm        : Optional murmuration model for choreography analysis
         """
         super().__init__()
         self.env        = env
         self.experience = experience
         self.expert     = expert
+        self.metrics    = metrics
+        self.mmm        = mmm
 
         self.buffer    : TensorDictReplayBuffer | None = None
         self.collector : SyncDataCollector      | None = None
@@ -119,7 +128,9 @@ class DataModule(LightningDataModule):
         return ExperienceDataLoader(
             buffer     = self.buffer,
             collector  = self.collector,
-            experience = self.experience
+            experience = self.experience,
+            metrics    = self.metrics,
+            mmm        = self.mmm
         )
     
     def val_dataloader(self):
@@ -158,7 +169,10 @@ class ExperienceDataLoader:
         self,
         buffer     : TensorDictReplayBuffer,
         collector  : SyncDataCollector,
-        experience : ExperienceModel
+        experience : ExperienceModel,
+        metrics    : MetricsModel | None = None,
+        mmm        : MurmurationModel | None = None,
+        pl_module  : LightningModule | None = None
     ):
         """
         Initialize the experience dataloader.
@@ -167,10 +181,19 @@ class ExperienceDataLoader:
             buffer     : The replay buffer for experience storage.
             collector  : The trajectory collector.
             experience : Experience data configuration.
+            metrics    : Optional metrics configuration for choreography analysis.
+            mmm        : Optional murmuration model for choreography analysis.
+            pl_module  : Optional Lightning module for WandB logging.
         """
         self.buffer     = buffer
         self.collector  = collector
         self.experience = experience
+        self.pl_module  = pl_module
+        
+        self.choreography = None
+        if metrics is not None and mmm is not None:
+            from thermur.imitation.monitoring.choreography import ChoreographyCollector
+            self.choreography = ChoreographyCollector(metrics, mmm)
 
     def __iter__(self):
         """
@@ -180,6 +203,9 @@ class ExperienceDataLoader:
         collecting new experiences from the environment.
         """
         for data in self.collector:
+            if self.choreography is not None:
+                self.choreography.analyze_trajectory(data, self.pl_module)
+            
             self.buffer.extend(data.cpu())
 
             if len(self.buffer) >= self.experience.batch_size:

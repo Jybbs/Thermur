@@ -180,6 +180,7 @@ class GNNPolicy(LightningModule):
         loss              = mse_loss(predictions, targets)
 
         self.collector.update_imitation_metrics(
+            batch       = batch,
             is_training = is_training,
             predictions = predictions,
             targets     = targets
