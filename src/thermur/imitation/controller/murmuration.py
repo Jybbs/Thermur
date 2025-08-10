@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from torch                       import Tensor
 
 
-class MurmurationController:
+class MurmurationController(th.nn.Module):
     """
     Implements murmuration dynamics with topological interactions.
 
@@ -63,6 +63,7 @@ class MurmurationController:
             mmm    : Murmuration model with dynamics and weight parameters
             safety : Safety configuration with thresholds and CBF parameters
         """
+        super().__init__()
         self.cbf    = cbf
         self.flock  = flock
         self.mmm    = mmm
@@ -70,24 +71,6 @@ class MurmurationController:
 
         self.polarization_queues = {}
         self.max_queue_size      = mmm.polarization_window
-        
-
-    def __call__(self, flock: TensorDictBase) -> TensorDictBase:
-        """
-        Compute control actions in TorchRL-compatible format.
-
-        This method makes MurmurationController compatible with TorchRL's
-        expected policy interface by wrapping the nominal action
-        computation and returning a TensorDict with the action.
-
-        Args:
-            flock: TensorDict containing the current flock state
-
-        Returns:
-            TensorDict with the computed action added
-        """
-        self.design_nominal_action(flock)
-        return flock
     
     def _apply_alert_mode(self, flock: TensorDictBase):
         """
@@ -476,6 +459,49 @@ class MurmurationController:
         flock["edge_source"] = th.arange(n).repeat_interleave(self.mmm.k_neighbors)
         flock["edge_target"] = indices[:, 1:].flatten()
 
+    def _design_nominal_action(self, flock: TensorDictBase):
+        """
+        Pipeline that computes murmuration dynamics and builds final action.
+
+        Orchestrates the computation of all physics components through a 
+        series of transformations on the flock TensorDict, then combines
+        them into the final control action.
+
+        The pipeline computes:
+        1. Graph topology and temperature gradients
+        2. Base Hamiltonian forces from energy minimization
+        3. Critical state metrics (susceptibility, information speed)
+        4. Threat response components (density waves, alert mode)
+        5. Final action combining all force components
+
+        Args:
+            flock: TensorDict containing positions, velocities, temperatures,
+                   updated with computed physics and final action
+        """
+        for compute_fn in [
+            self._update_graph_state,
+            self._estimate_gradient,
+            self._compute_hamiltonian_forces,
+            self._compute_susceptibility,
+            self._compute_threats,
+            self._compute_information_speed,
+            self._compute_self_propulsion,
+            self._compute_density_wave,
+            self._apply_susceptibility_modulation,
+            self._apply_alert_mode,
+        ]:
+            compute_fn(flock)
+        
+        flock["action"] = (
+            flock["self_propulsion"]  +
+            flock["modulated_forces"] +
+            flock["density_wave"]     +
+            flock["cohesion_force"]
+        )
+
+        if self.cbf is not None:
+            flock["action"] = self.cbf.filter(flock, flock["action"])
+
     def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
         """
         Ensures temperature tensor is 1D by squeezing if it's [N, 1].
@@ -618,46 +644,20 @@ class MurmurationController:
         )
 
         return vertical_direction * normalized_temperature.unsqueeze(1)
-    
-    def design_nominal_action(self, flock: TensorDictBase):
+
+    def forward(self, flock: TensorDictBase) -> TensorDictBase:
         """
-        Pipeline that computes murmuration dynamics and builds final action.
+        Compute control actions in TorchRL-compatible format.
 
-        Orchestrates the computation of all physics components through a 
-        series of transformations on the flock TensorDict, then combines
-        them into the final control action.
-
-        The pipeline computes:
-        1. Graph topology and temperature gradients
-        2. Base Hamiltonian forces from energy minimization
-        3. Critical state metrics (susceptibility, information speed)
-        4. Threat response components (density waves, alert mode)
-        5. Final action combining all force components
+        This method makes MurmurationController compatible with TorchRL's
+        expected policy interface by wrapping the nominal action
+        computation and returning a TensorDict with the action.
 
         Args:
-            flock: TensorDict containing positions, velocities, temperatures,
-                   updated with computed physics and final action
-        """
-        for compute_fn in [
-            self._update_graph_state,
-            self._estimate_gradient,
-            self._compute_hamiltonian_forces,
-            self._compute_susceptibility,
-            self._compute_threats,
-            self._compute_information_speed,
-            self._compute_self_propulsion,
-            self._compute_density_wave,
-            self._apply_susceptibility_modulation,
-            self._apply_alert_mode,
-        ]:
-            compute_fn(flock)
-        
-        flock["action"] = (
-            flock["self_propulsion"]  +
-            flock["modulated_forces"] +
-            flock["density_wave"]     +
-            flock["cohesion_force"]
-        )
+            flock: TensorDict containing the current flock state
 
-        if self.cbf is not None:
-            flock["action"] = self.cbf.filter(flock, flock["action"])
+        Returns:
+            TensorDict with the computed action added
+        """
+        self._design_nominal_action(flock)
+        return flock.set("action", flock["action"])

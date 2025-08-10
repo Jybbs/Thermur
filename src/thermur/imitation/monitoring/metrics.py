@@ -7,6 +7,7 @@ metrics, and runtime performance tracking. The collector integrates seamlessly
 with PyTorch Lightning's logging system and Weights & Biases.
 """
 from __future__         import annotations
+from collections        import Counter
 from itertools          import pairwise
 from tensordict         import TensorDictBase
 from torchmetrics       import MeanAbsoluteError, MeanSquaredError
@@ -136,88 +137,6 @@ class CohesionMetric(AveragingMetric):
             self.sum   += 0.0
         
         self.count += 1
-
-
-class ColorAccuracyMetric(AveragingMetric):
-    """
-    Measures the Mean Absolute Error between sensed and displayed temperatures.
-
-    This metric quantifies how accurately the flock can display temperature
-    information through their RGB LEDs, using a heat colormap mapping where
-    blue represents cold and red represents hot temperatures.
-
-    The colormap follows:
-        T_min → Blue (0,0,1)
-        T_mid → Green (0,1,0)
-        T_max → Red (1,0,0)
-    """
-    temp_max : Tensor
-    temp_min : Tensor
-
-    def __init__(self, metrics: MetricsModel):
-        """
-        Initialize the color accuracy metric with temperature bounds.
-
-        Args:
-            metrics : Metrics configuration containing temperature bounds
-        """
-        super().__init__()
-        self.register_buffer("temp_max", th.tensor(metrics.color_temp_max))
-        self.register_buffer("temp_min", th.tensor(metrics.color_temp_min))
-
-    def _temperature_to_rgb(self, temperature: Tensor) -> Tensor:
-        """
-        Map temperature to RGB color using heat colormap.
-
-        Implements piecewise linear interpolation:
-            - R channel: 0 at T_min, 1 at T_max
-            - G channel: Peaks at T_mid
-            - B channel: 1 at T_min, 0 at T_max
-
-        Args:
-            temperature : Temperature values [N] in Kelvin
-
-        Returns:
-            RGB colors [N, 3] in range [0, 1]
-        """
-        normalized_temp = (
-            (temperature - self.temp_min) / 
-            (self.temp_max - self.temp_min)
-        ).clamp(0, 1)
-
-        return th.stack([
-            th.clamp(2 * normalized_temp - 0.5, 0, 1),
-            th.where(
-                normalized_temp < 0.5,
-                2 * normalized_temp,
-                2 * (1 - normalized_temp)
-            ),
-            th.clamp(1 - 2 * normalized_temp, 0, 1)
-        ], dim=-1)
-
-    def update(
-        self,
-        displayed_rgb      : Tensor | None,
-        sensed_temperature : Tensor
-    ):
-        """
-        Update metric with temperature and color data.
-
-        Args:
-            displayed_rgb      : RGB colors displayed by agents [N, 3] or None
-            sensed_temperature : Actual temperatures sensed by agents [N]
-        """
-        sensed_temperature = sensed_temperature.flatten()
-
-        if displayed_rgb is None:
-            displayed_rgb = self._temperature_to_rgb(sensed_temperature)
-
-        if (n_temps := sensed_temperature.numel()) > 0:
-            reconstructed_temp = th.lerp(
-                self.temp_min, self.temp_max, displayed_rgb[..., 0]
-            )
-            self.sum   += (sensed_temperature - reconstructed_temp).abs().sum()
-            self.count += n_temps
 
 
 class DynamicBalanceMetric(AveragingMetric):
@@ -816,26 +735,46 @@ class MetricsCollector:
         metrics: MetricCollection
     ) -> dict[str, Tensor] | None:
         """
-        Compute metrics that have received data.
+        Compute metrics that have received sufficient data.
         
-        Returns computed metrics if any have been updated, otherwise None.
-        This prevents warnings during sanity check when compute() is called
-        before any update() calls.
+        Returns computed metrics only when all have been properly updated.
+        This prevents warnings during sanity checks when compute() is called
+        before update() methods.
+        
+        Readiness criteria by metric type:
+        - Custom metrics (AveragingMetric, StateMetrics, etc.): count > 0
+        - R2Score: Requires at least 2 updates to compute correlation
+        - Standard metrics (MAE, MSE): At least 1 update required
+        - Unknown types: Check for _update_count attribute > 0
         
         Args:
             metrics: Collection of metrics to potentially compute
             
         Returns:
-            Dictionary of computed values or None if no metrics have data
+            Dictionary of computed values or None if any metric lacks data
         """
+        readiness = Counter()
+        
         for metric in metrics.values():
-            if isinstance(metric, AveragingMetric) and metric.count > 0:
-                return metrics.compute()
-            elif isinstance(metric, (StateMetrics, ConnectivityMetrics)):
-                if metric.count > 0:
-                    return metrics.compute()
-            elif not isinstance(metric, AveragingMetric):
-                return metrics.compute()
+            if isinstance(
+                metric, 
+                (
+                    AveragingMetric,      ConnectivityMetrics,
+                    DynamicBalanceMetric, StateMetrics 
+                )
+            ):
+                is_ready = hasattr(metric, 'count') and metric.count > 0
+            elif isinstance(metric, R2Score):
+                is_ready = getattr(metric, '_update_count', 0) >= 2
+            elif isinstance(metric, (MeanAbsoluteError, MeanSquaredError)):
+                is_ready = getattr(metric, '_update_count', 0) > 0
+            else:
+                is_ready = getattr(metric, '_update_count', 0) > 0
+            
+            readiness[is_ready] += 1
+        
+        if readiness[False] == 0 and readiness[True] > 0:
+            return metrics.compute()
         return None
 
     def _get_metrics(
@@ -875,12 +814,11 @@ class MetricsCollector:
         and distributed training synchronization.
         """
         self.train_evaluation = MetricCollection({
-            "avg_power"  : EnergyConsumptionMetric(self.gravity, self.metrics),
-            "λ₂"         : CohesionMetric(),
-            "mae_color"  : ColorAccuracyMetric(self.metrics),
-            "ssim"       : LegibilitySSIMMetric(self.bounds_max, self.metrics),
+            "avg_power" : EnergyConsumptionMetric(self.gravity, self.metrics),
+            "λ₂"        : CohesionMetric(),
+            "ssim"      : LegibilitySSIMMetric(self.bounds_max, self.metrics),
         })
-        self.val_evaluation = self.train_evaluation.clone(prefix="val_")
+        self.val_evaluation = self.train_evaluation.clone()
 
     def _init_imitation_metrics(self):
         """
@@ -893,19 +831,22 @@ class MetricsCollector:
 
         All metrics work on individual frames without temporal dependencies.
         """
-        create_imitation_metrics = lambda prefix: MetricCollection({
-            f"{prefix}_connectivity"    : ConnectivityMetrics(self.mmm.k_neighbors),
-            f"{prefix}_dynamic_balance" : DynamicBalanceMetric(self.safety),
-            f"{prefix}_mae"             : MeanAbsoluteError(),
-            f"{prefix}_mse"             : MeanSquaredError(),
-            f"{prefix}_r2"              : R2Score(multioutput='uniform_average'),
-            f"{prefix}_rmse"            : MeanSquaredError(squared=False),
-            f"{prefix}_scale_free"      : ScaleFreeCorrelationMetric(self.mmm),
-            f"{prefix}_state"           : StateMetrics()
-        }, compute_groups=False)
+        create_imitation_metrics = lambda prefix="": MetricCollection(
+            {
+                "connectivity"    : ConnectivityMetrics(self.mmm.k_neighbors),
+                "dynamic_balance" : DynamicBalanceMetric(self.safety),
+                "mae"             : MeanAbsoluteError(),
+                "mse"             : MeanSquaredError(),
+                "r2"              : R2Score(multioutput='uniform_average'),
+                "rmse"            : MeanSquaredError(squared=False),
+                "scale_free"      : ScaleFreeCorrelationMetric(self.mmm),
+                "state"           : StateMetrics()
+            }, 
+            compute_groups = False,
+            prefix         = prefix)
         
-        self.train_imitation = create_imitation_metrics("training")
-        self.val_imitation   = create_imitation_metrics("validation")
+        self.train_imitation = create_imitation_metrics()
+        self.val_imitation   = create_imitation_metrics()
     
 
     def log_all_metrics(
@@ -936,39 +877,45 @@ class MetricsCollector:
         phase = "training" if is_training else "validation"
         if step_data is not None:
             module.log(
-                name     = f"{phase}/loss",
-                on_epoch = True,
-                on_step  = is_training,
-                prog_bar = True,
-                value    = step_data["loss"]
+                name      = f"{phase}/loss",
+                on_epoch  = True,
+                on_step   = is_training,
+                prog_bar  = True,
+                sync_dist = True,
+                value     = step_data["loss"]
             )
 
             for i, dim in enumerate(["x", "y", "z"]):
                 module.log(
-                    name     = f"{phase}/velocity_{dim}_mse",
-                    on_epoch = True,
-                    on_step  = False,
-                    value    = (step_data["predictions"][..., i] - 
-                               step_data["targets"][..., i]).pow(2).mean()
+                    name      = f"{phase}/velocity_{dim}_mse",
+                    on_epoch  = True,
+                    on_step   = False,
+                    sync_dist = True,
+                    value     = (step_data["predictions"][..., i] - 
+                                step_data["targets"][..., i]).pow(2).mean()
                 )
             
             if computed := self._compute_ready_metrics(
                 self._get_metrics(is_training, "imitation")
             ):
+                prefixed = {f"{phase}/{k}": v for k, v in computed.items()}
                 module.log_dict(
-                    dictionary = computed,
+                    dictionary = prefixed,
                     on_epoch   = True,
-                    on_step    = is_training
+                    on_step    = is_training,
+                    sync_dist  = True
                 )
         
         if not is_training or step_data is None:
             if computed := self._compute_ready_metrics(
                 self._get_metrics(is_training, "evaluation")
             ):
+                prefixed = {f"{phase}/{k}": v for k, v in computed.items()}
                 module.log_dict(
-                    dictionary = computed,
+                    dictionary = prefixed,
                     on_epoch   = True,
-                    on_step    = is_training
+                    on_step    = is_training,
+                    sync_dist  = True,
                 )
 
     def update_evaluation_metrics(
@@ -995,11 +942,6 @@ class MetricsCollector:
         """
         metrics = self._get_metrics(is_training, "evaluation")
 
-        if "temperature" in batch:
-            metrics["mae_color"].update(
-                displayed_rgb      = None,
-                sensed_temperature = batch["temperature"]
-            )
 
         if all(k in batch for k in ["position", "velocity", "wind"]):
             metrics["ssim"].update(
@@ -1042,13 +984,11 @@ class MetricsCollector:
         metrics = self._get_metrics(is_training, "imitation")
         
         for name in ["mae", "mse", "r2", "rmse"]:
-            key = f"training_{name}" if is_training else f"validation_{name}"
-            if key in metrics:
-                metrics[key].update(predictions, targets)
+            if name in metrics:
+                metrics[name].update(predictions, targets)
         
         if batch is not None:
             for name in ["connectivity", "dynamic_balance", "scale_free", "state"]:
-                key = f"training_{name}" if is_training else f"validation_{name}"
-                if key in metrics:
-                    metrics[key].update(batch)
+                if name in metrics:
+                    metrics[name].update(batch)
     

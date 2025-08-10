@@ -115,7 +115,7 @@ class MonitoringCallback(Callback):
         """
         if self.events:
             pl_module.log_dict({
-                f"summary/{k}" : v
+                f"events/{k}" : v
                 for k, v in self.events.get_event_summary().items()
             })
             self.events.reset_epoch_metrics()
