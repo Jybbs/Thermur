@@ -68,7 +68,8 @@ class MurmurationController:
         self.mmm    = mmm
         self.safety = safety
 
-        self.polarization_queue = deque(maxlen=mmm.polarization_window)
+        self.polarization_queues = {}
+        self.max_queue_size      = mmm.polarization_window
         
 
     def __call__(self, flock: TensorDictBase) -> TensorDictBase:
@@ -112,7 +113,7 @@ class MurmurationController:
             flock["cohesion_force"]    = offset * self.mmm.density_strength
         else:
             flock["cohesion_force"]    = th.zeros_like(flock["position"])
-    
+
     def _apply_susceptibility_modulation(self, flock: TensorDictBase):
         """
         Apply susceptibility-based amplification to alignment forces.
@@ -192,7 +193,7 @@ class MurmurationController:
             local_density.clamp_min(self.mmm.epsilon)
         )
         
-        threat_amplification  = 1 + flock["threats"] * 2
+        threat_amplification  = (1 + flock["threats"] * 2).unsqueeze(-1)
         flock["density_wave"] = (
             -self.mmm.density_diffusion *
             density_gradient            *
@@ -281,6 +282,42 @@ class MurmurationController:
             th.sqrt(flock["susceptibility"] / self.mmm.effective_mass)
         ).clamp(self.mmm.info_speed_min, self.mmm.info_speed_max)
     
+    def _compute_self_propulsion(self, flock: TensorDictBase):
+        """
+        Compute self-propulsion forces following active matter dynamics.
+        
+        Implements self-propulsion where each agent maintains an intrinsic
+        velocity v₀ in its current heading direction with stochastic
+        fluctuations, based on active matter theory:
+        
+            F_prop = (v₀𝐬 - 𝐯) / τ + η𝝃
+        
+        where 𝐬 is the heading direction, τ is relaxation time, and 𝝃 is
+        Gaussian noise. This ensures agents maintain forward motion even
+        without external forces, as observed in real bird flocks where
+        cruising speeds are typically 10-20 m/s (Cavagna et al., 2010).
+        
+        Args:
+            flock: TensorDict containing velocities, updated with
+                   self_propulsion forces
+        """
+        speed      = flock["velocity"].norm(dim=-1, keepdim=True).clamp_min(1e-8)
+        heading    = flock["velocity"] / speed
+        wind       = flock.get("wind", th.zeros_like(flock["velocity"]))
+        target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
+        
+        # Using inverse of info speed as relaxation timescale
+        relaxation_rate = 1.0 / flock.get(
+            "info_speed", 
+            th.ones(1) * self.mmm.info_speed_min
+        ).mean()
+        
+        noise = th.randn_like(flock["velocity"]) * self.mmm.velocity_noise_scale
+        flock["self_propulsion"] = (
+            (target_vel - flock["velocity"]) * 
+            relaxation_rate + noise
+        )
+    
     def _compute_susceptibility(self, flock: TensorDictBase):
         """
         Compute flock susceptibility χ = N · Var[Φ] and store in TensorDict.
@@ -308,15 +345,28 @@ class MurmurationController:
         )
         
         flock["polarization"] = spin_vectors.mean(dim=0).norm()
-        self.polarization_queue.append(flock["polarization"].item())
+        
+        traj_id = 0
+        if "trajectory_id" in flock:
+            traj_id = (
+                flock["trajectory_id"].item() 
+                if hasattr(flock["trajectory_id"], 'item') 
+                else int(flock["trajectory_id"])
+            )
+        
+        if traj_id not in self.polarization_queues:
+            self.polarization_queues[traj_id] = deque(maxlen=self.max_queue_size)
+        
+        queue = self.polarization_queues[traj_id]
+        queue.append(flock["polarization"].item())
         
         variance = (
             th.tensor(
-                data   = list(self.polarization_queue), 
+                data   = list(queue), 
                 device = flock["velocity"].device,
                 dtype  = flock["velocity"].dtype
             ).var()
-            if len(self.polarization_queue) > 1
+            if len(queue) > 1
             else flock["polarization"] * (1 - flock["polarization"])
         )
         
@@ -411,22 +461,22 @@ class MurmurationController:
 
     def _estimate_gradient(self, flock: TensorDictBase):
         """
-        Estimates the temperature gradient ∇T at each agent position.
+        Uses provided gradient or estimates if not available.
 
-        Approximates gradients using finite differences from neighboring agents:
+        Prioritizes using the gradient provided by the environment (which has
+        access to the full temperature field). Falls back to estimation using
+        finite differences only if gradient is not provided:
 
             ∇T_i ≈ Σ_j (T_j - T_i)(𝐱_j - 𝐱_i) / |𝐱_j - 𝐱_i|²
 
-        For isolated agents or uniform temperature fields, assumes heat rises
-        vertically following the natural convection model:
-
-            ∇T = (T/T_max) 𝐞_z
-
         Args:
-            flock: TensorDict containing positions and temperatures,
-                   updated with gradient estimates
+            flock: TensorDict containing gradient or positions/temperatures,
+                   ensures gradient field is present
 
         """
+        if "gradient" in flock and flock["gradient"] is not None:
+            return
+        
         temperature = self._ensure_1d_temperature(flock["temperature"])
 
         if "edge_source" not in flock or not flock["edge_source"].numel():
@@ -470,16 +520,24 @@ class MurmurationController:
 
     def _update_graph_state(self, flock: TensorDictBase):
         """
-        Update graph connectivity using topological neighborhoods.
+        Update graph connectivity using provided or computed topology.
 
-        Computes k-nearest neighbor topology from current positions, overriding
-        any metric-based connectivity. This ensures topological interactions
-        as observed in Ballerini et al. (2008).
+        Uses provided edge topology if available (from environment), otherwise
+        computes k-nearest neighbor topology. This ensures consistency between
+        expert demonstrations and learned policy.
 
         Args:
-            flock: TensorDict containing positions, updated with graph state
+            flock: TensorDict containing positions and optionally edge_index,
+                   updated with graph state
         """
-        self._compute_topological_neighbors(flock)
+        if "edge_index" in flock and flock["edge_index"] is not None:
+            edge_idx = flock["edge_index"]
+            edge_idx = edge_idx[0] if edge_idx.dim() == 3 else edge_idx
+            flock["edge_source"] = edge_idx[0]
+            flock["edge_target"] = edge_idx[1]
+        else:
+            self._compute_topological_neighbors(flock)
+        
         self._compute_topological_distances(flock)
         
         if "edge_source" in flock and flock["edge_source"].numel() > 0:
@@ -554,6 +612,7 @@ class MurmurationController:
             self._compute_susceptibility,
             self._compute_threats,
             self._compute_information_speed,
+            self._compute_self_propulsion,
             self._compute_density_wave,
             self._apply_susceptibility_modulation,
             self._apply_alert_mode,
@@ -561,8 +620,9 @@ class MurmurationController:
             compute_fn(flock)
         
         flock["action"] = (
-            flock["modulated_forces"] + 
-            flock["density_wave"]     + 
+            flock["self_propulsion"]  +
+            flock["modulated_forces"] +
+            flock["density_wave"]     +
             flock["cohesion_force"]
         )
 
