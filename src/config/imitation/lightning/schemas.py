@@ -192,10 +192,10 @@ class HardwareModel(BaseModel, extra="forbid"):
         description = "Number of GPUs/TPUs to use for distributed training."
     )
     precision: Literal["16-mixed", "bf16-mixed", "32-true", "64-true", "32"] = Field(
-        default     = "16-mixed",
+        default     = "bf16-mixed",
         description = (
-            "Numerical precision mode for training. '16-mixed' uses automatic "
-            "mixed precision for faster training and reduced memory usage on MPS."
+            "Numerical precision mode for training. 'bf16-mixed' provides good "
+            "balance of speed and stability on modern hardware including MPS."
         )
     )
     strategy: Literal["auto", "ddp", "dp", "deepspeed", "fsdp"] = Field(

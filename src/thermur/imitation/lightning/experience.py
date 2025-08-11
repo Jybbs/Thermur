@@ -68,7 +68,7 @@ class DataModule(LightningDataModule):
         self.buffer    : TensorDictReplayBuffer | None = None
         self.collector : SyncDataCollector      | None = None
 
-    def setup(self, stage: str | None = None) -> None:
+    def setup(self, stage: str | None = None):
         """
         Set up data collection components for the given stage.
 
@@ -99,19 +99,8 @@ class DataModule(LightningDataModule):
                 total_frames        = self.experience.total_frames,
                 trust_policy        = True
             )
-            
-            prefill_target = min(
-                self.experience.buffer_size - 100,
-                self.experience.total_frames * 3 // 4
-            )
-            
-            for batch_idx, batch_data in enumerate(self.collector):
-                self.buffer.extend(batch_data)
-                frames_collected = (batch_idx + 1) * self.experience.frames_per_batch
-                if frames_collected >= prefill_target:
-                    break
 
-    def teardown(self, stage: str) -> None:
+    def teardown(self, stage: str):
         """
         Clean up data collection resources.
 
