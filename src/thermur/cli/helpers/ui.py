@@ -629,14 +629,11 @@ class ThermurUI:
 
         match context:
             case "info":
-                msg = (
-                    f" You are logged into wandb as [thermal]{user}[/thermal]" if user
-                    else "wandb: Not authenticated • Run 'wandb login'"
-                )
-                self.print_message(
-                    message  = msg,
-                    msg_type = "magic" if user else "warning"
-                )
+                if not user:
+                    self.print_message(
+                        message  = "wandb: Not authenticated • Run 'wandb login'",
+                        msg_type = "warning"
+                    )
             case "train" if url:
                 self.print_message(f" Live tracking dashboard → {url}", "magic")
             case "monitor":

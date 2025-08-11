@@ -12,6 +12,7 @@ from omegaconf   import OmegaConf, open_dict
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
+from traceback   import format_exc
 from typer       import Argument, Exit, Option
 from typing      import Any, Callable, TYPE_CHECKING
 
@@ -39,6 +40,11 @@ def train(
         "--interactive/--no-interactive", "-i/-n",
         help = "Enable interactive configuration prompts"
     ),
+    name: str | None = Option(
+        None,
+        "--name", "-n",
+        help = "Name for this training run (e.g., 'IM001', 'murmuration-test')"
+    ),
     resume: Path | None = Option(
         None,
         "--resume", "-r",
@@ -48,11 +54,6 @@ def train(
         False,
         "--sample", "-s",
         help = "Use bundled sample data instead of downloaded files"
-    ),
-    watch: bool = Option(
-        False,
-        "--watch", "-w",
-        help = "Enable real-time 3D visualization during training"
     )
 ):
     """
@@ -63,7 +64,7 @@ def train(
 
     Examples:
         thermur train                                   # Interactive training
-        thermur train --watch                           # Train with real-time visualization
+        thermur train --name my-experiment              # Named training run
         thermur train optimizer.learning_rate=0.001     # Override config value
         thermur train +model.new_param=42               # Append new config value
         thermur train ++model.force_param=true          # Force add/override
@@ -76,10 +77,10 @@ def train(
         dry_run     = dry_run,
         force       = force,
         interactive = interactive,
+        name        = name,
         overrides   = overrides or [],
         resume      = resume,
-        sample      = sample,
-        watch       = watch
+        sample      = sample
     )
 
 
@@ -104,11 +105,11 @@ class TrainCommand:
         self.dry_run     = False
         self.force       = False
         self.interactive = True
+        self.name        = None
         self.output_dir  = None
         self.overrides   = []
         self.resume      = None
         self.sample      = False
-        self.watch       = False
 
     def _display_override_details(self):
         """
@@ -255,7 +256,7 @@ class TrainCommand:
                         f"Configuration path '{path}' not found"
                     )
 
-                components[key] = instantiate(obj, pydantic_parser)
+                components[key] = instantiate(obj)
 
             progress.update(
                 completed = len(component_cfgs),
@@ -263,11 +264,7 @@ class TrainCommand:
             )
 
             if c := OmegaConf.select(cfg, "_system.visualizer"):
-                # If not interactive, disable watch
-                if not self.interactive:
-                    self.watch = False
-                
-                components['visualizer'] = instantiate(c, pydantic_parser)
+                components['visualizer'] = instantiate(c)
             else:
                 components['visualizer'] = None
 
@@ -407,6 +404,34 @@ class TrainCommand:
                 msg_type = "warning"
             )
             raise Exit()
+    
+    def _resolve_resume_path(self, resume: Path | None) -> Path | None:
+        """
+        Resolve the resume checkpoint path.
+        
+        Args:
+            resume: User-provided resume path or 'last' for most recent
+            
+        Returns:
+            Resolved checkpoint path or None
+            
+        Raises:
+            Exit: If checkpoint is not found
+        """
+        if not resume:
+            return None
+            
+        if str(resume) == "last":
+            if checkpoint := self._find_last_checkpoint():
+                return checkpoint
+            self.ui.print_message("No checkpoint found to resume from", "error")
+            raise Exit(1)
+            
+        if not resume.exists():
+            self.ui.print_message(f"Checkpoint not found: {resume}", "error" )
+            raise Exit(1)
+            
+        return resume
 
     def _task(
         self,
@@ -472,8 +497,8 @@ class TrainCommand:
         with open_dict(cfg):
             cfg.simulation.loader.data_path = self.data_path
 
-        if cfg.optimizer.seed is not None:
-            imports["seed_everything"](cfg.optimizer.seed)
+        if cfg.lightning.optimizer.seed is not None:
+            imports["seed_everything"](cfg.lightning.optimizer.seed)
 
         self.ui.console.print()
 
@@ -496,19 +521,9 @@ class TrainCommand:
                 msg_type = "info"
             )
         
-        if self.watch and components.get("visualizer"):
-            self.ui.print_message(
-                message  = "Real-time visualization enabled",
-                msg_type = "flock"
-            )
-        
         self.ui.print_message(
             message  = "Monitoring thermal constraints and flock dynamics",
             msg_type = "thermal"
-        )
-        self.ui.print_message(
-            message  = " Track progress in your wandb dashboard",
-            msg_type = "magic"
         )
         self.ui.console.print()
 
@@ -534,10 +549,10 @@ class TrainCommand:
         dry_run     : bool,
         force       : bool,
         interactive : bool,
+        name        : str       | None,
         overrides   : list[str] | None,
         resume      : Path      | None,
-        sample      : bool,
-        watch       : bool
+        sample      : bool
     ):
         """
         Executes the main training workflow from start to finish.
@@ -550,37 +565,23 @@ class TrainCommand:
             dry_run     : If True, shows configuration without training.
             force       : If True, skips system validation checks.
             interactive : If True, enables interactive prompts.
+            name        : Optional name for the training run.
             overrides   : A list of Hydra configuration overrides.
             resume      : Optional checkpoint path to resume training from.
             sample      : If True, use sample data.
-            watch       : If True, enable real-time visualization.
         """
         self.dry_run     = dry_run
         self.force       = force
         self.interactive = interactive
+        self.name        = name
         self.sample      = sample
-        self.watch       = watch
 
-        if resume:
-            if str(resume) == "last":
-                self.resume = self._find_last_checkpoint()
-                if not self.resume:
-                    self.ui.print_message(
-                        "No checkpoint found to resume from", "error"
-                    )
-                    raise Exit(1)
-            elif not resume.exists():
-                self.ui.print_message(
-                    f"Checkpoint not found: {resume}", "error"
-                )
-                raise Exit(1)
-            else:
-                self.resume = resume
-        else:
-            self.resume = None
+        self.resume = self._resolve_resume_path(resume)
 
-        if overrides:
-            self.overrides = overrides
+        self.overrides = list(filter(None, [
+            *(overrides or []),
+            f"lightning.wandb.run_name={self.name}" if self.name else None
+        ]))
 
         self.ui.print_header("Thermur Training System")
 
@@ -592,13 +593,8 @@ class TrainCommand:
                 msg_type = "warning"
             )
 
-        # Gather additional overrides in interactive mode
         if self.interactive:
-            self.overrides = self.overrides + self.prompts.ask_for_overrides()
-        
-        # Add the --watch flag as a config override
-        if self.watch:
-            self.overrides.append("lightning.watch.watch_run=true")
+            self.overrides.extend(self.prompts.ask_for_overrides())
 
         self.data_path = self._ensure_data_available()
 
@@ -684,6 +680,10 @@ class TrainCommand:
                         )
 
                 case _:
+                    failure_kws = ["dimension", "shape", "size", "device", "metric"]
                     self.ui.print_message(f"Training failed: {e}", "error")
+                    if any(k in str(e).lower() for k in failure_kws):
+                        self.ui.console.print("\n[DEBUG] Full stack trace:")
+                        self.ui.console.print(format_exc())
 
             raise Exit(1)

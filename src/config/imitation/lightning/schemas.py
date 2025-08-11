@@ -90,9 +90,11 @@ class ExperienceModel(BaseModel, extra="forbid"):
     """
     batch_size: PositiveInt = Field(
         default     = 256,
+        ge          = 16,
         description = (
             "Number of state-action transitions B sampled per gradient update, "
-            "balancing computational efficiency with gradient variance."
+            "balancing computational efficiency with gradient variance. "
+            "Minimum of 16 ensures stable gradients and efficient GPU utilization."
         )
     )
     buffer_size: PositiveInt = Field(
@@ -117,10 +119,10 @@ class ExperienceModel(BaseModel, extra="forbid"):
         )
     )
     prefetch: NonNegativeInt = Field(
-        default     = 8,
+        default     = 16,
         description = (
             "Concurrent batches loaded in background threads, hiding I/O latency "
-            "and maintaining GPU utilization during asynchronous data loading."
+            "and maintaining MPS/GPU utilization. Increased for better MPS performance."
         )
     )
     total_frames: PositiveInt = Field(
@@ -128,6 +130,24 @@ class ExperienceModel(BaseModel, extra="forbid"):
         description = (
             "Total environment interactions T over entire training run, determining "
             "sample efficiency and final policy performance convergence."
+        )
+    )
+    validation_batches: PositiveInt = Field(
+        default     = 2,
+        description = (
+            "Number of batches to sample for validation from the replay buffer. "
+            "Validation samples from the oldest portion of the buffer to avoid overlap "
+            "with recent training data."
+        )
+    )
+    validation_split: float = Field(
+        default     = 0.2,
+        ge          = 0.0,
+        le          = 0.5,
+        description = (
+            "Fraction of replay buffer reserved for validation sampling. "
+            "A value of 0.2 means validation samples from the oldest 20% of the buffer, "
+            "ensuring temporal separation from recent training data."
         )
     )
 
@@ -147,10 +167,10 @@ class HardwareModel(BaseModel, extra="forbid"):
         )
     )
     benchmark: bool = Field(
-        default     = False,
+        default     = True,
         description = (
-            "Enable cuDNN benchmarking to find optimal algorithms. Improves "
-            "performance for fixed input sizes but adds startup overhead."
+            "Enable algorithm benchmarking to find optimal kernels. Improves "
+            "performance for fixed input sizes. Recommended for MPS training."
         )
     )
     deterministic: bool = Field(
@@ -171,11 +191,11 @@ class HardwareModel(BaseModel, extra="forbid"):
         default     = 1,
         description = "Number of GPUs/TPUs to use for distributed training."
     )
-    precision: Literal["16-mixed", "bf16-mixed", "32-true", "64-true"] = Field(
-        default     = "16-mixed",
+    precision: Literal["16-mixed", "bf16-mixed", "32-true", "64-true", "32"] = Field(
+        default     = "bf16-mixed",
         description = (
-            "Numerical precision mode for training - mixed precision reduces memory "
-            "usage and accelerates computation on compatible hardware."
+            "Numerical precision mode for training. 'bf16-mixed' provides good "
+            "balance of speed and stability on modern hardware including MPS."
         )
     )
     strategy: Literal["auto", "ddp", "dp", "deepspeed", "fsdp"] = Field(
@@ -206,17 +226,24 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     gradient_clip_val: PositiveFloat = Field(
-        default     = 1.0,
+        default     = 10.0,
         description = (
             "Maximum gradient norm threshold for clipping to prevent exploding "
             "gradients and maintain stable training dynamics."
         )
     )
     learning_rate: PositiveFloat = Field(
-        default     = 3e-4,
+        default     = 2e-3,
         description = (
             "Initial learning rate α for AdamW optimizer, controlling step size "
             "in parameter space during gradient descent optimization."
+        )
+    )
+    log_every_n_steps: PositiveInt = Field(
+        default     = 1,
+        description = (
+            "How often to log metrics during training (every N batches). "
+            "Set to 1 for logging every step, useful when training with few batches."
         )
     )
     lr_factor: PositiveFloat = Field(
@@ -241,7 +268,7 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     training_metric: str = Field(
-        default     = "train/loss",
+        default     = "training/loss",
         description = (
             "Primary metric monitored during training for logging and model "
             "selection. Also used by early stopping callback."
@@ -254,7 +281,7 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     scheduler_metric: str = Field(
-        default     = "val/loss",
+        default     = "validation/loss",
         description = (
             "Metric monitored by learning rate scheduler for reducing learning rate "
             "on plateau. Typically a validation metric to avoid overfitting."
@@ -314,11 +341,27 @@ class WandbModel(BaseModel, extra="forbid"):
             "disabled skips W&B integration entirely."
         )
     )
+    notes: str | None = Field(
+        default     = None,
+        description = (
+            "Detailed description of the run, like a commit message. Use this to capture "
+            "context, experimental setup, or purpose that helps recall what this run was "
+            "testing. Appears in W&B UI Overview tab."
+        )
+    )
     project: str = Field(
         default     = "thermur-imitation",
         description = (
             "W&B project name for organizing experiments - groups related training "
             "runs for easier comparison and analysis."
+        )
+    )
+    run_name: str | None = Field(
+        default     = None,
+        description = (
+            "Explicit run name (e.g., 'IM001', 'murmuration-test-v2'). Propagates to "
+            "WandB, Hydra output directories, and checkpoint paths. If not set, "
+            "WandB auto-generates a random name like 'cosmic-sunset-42'."
         )
     )
 
@@ -367,12 +410,5 @@ class WatchModel(BaseModel, extra="forbid"):
             "Duration in seconds of each video clip logged to WandB. "
             "Training progress is captured as a series of video clips, each "
             "showing this many seconds of simulation at different training steps."
-        )
-    )
-    watch_run: bool = Field(
-        default     = False,
-        description = (
-            "Display a live visualization window during training. Typically controlled "
-            "via the --watch CLI flag rather than config files."
         )
     )

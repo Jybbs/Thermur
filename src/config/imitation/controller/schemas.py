@@ -28,10 +28,11 @@ class FlockModel(BaseModel, extra="forbid"):
     """
     agent_count: PositiveInt = Field(
         default     = 30,
-        gt          = 1,
+        ge          = 8,
         description = (
             "Total number of agents N in the multi-agent system, determining "
-            "computational complexity and emergent flock dynamics scale."
+            "computational complexity and emergent flock dynamics scale. "
+            "Minimum of 8 ensures k-nearest neighbor connectivity with k=7."
         )
     )
     communication_range: PositiveFloat = Field(
@@ -184,6 +185,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "over 30s windows, we use 100 steps to capture similar dynamics."
         )
     )
+    self_propulsion_speed: PositiveFloat = Field(
+        default     = 10.0,
+        description = (
+            "Self-propulsion speed v₀ in m/s from active matter theory, representing "
+            "the intrinsic cruising speed birds maintain. Empirical observations show "
+            "starlings fly at 10-20 m/s during murmuration displays (Cavagna et al., 2010)."
+        )
+    )
     susceptibility_amplification: PositiveFloat = Field(
         default     = 2.0,
         description = (
@@ -205,6 +214,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Multiplicative factor λ_thermal adjusting thermal avoidance strength "
             "relative to murmuration forces, balancing safety versus cohesive behavior."
+        )
+    )
+    velocity_noise_scale: PositiveFloat = Field(
+        default     = 0.1,
+        description = (
+            "Noise amplitude η for velocity fluctuations in active matter models, "
+            "implementing stochastic perturbations that prevent perfect alignment "
+            "and enable exploration: 𝐯' = v₀(𝐬 + η𝝃) where 𝝃 ~ N(0,1)."
         )
     )
 

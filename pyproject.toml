@@ -28,7 +28,7 @@ dependencies    = [
     "torchmetrics",
     "torchrl",
     "typer",
-    "wandb",
+    "wandb[media]",
     "xarray"
 ]
 

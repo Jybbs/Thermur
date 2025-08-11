@@ -7,14 +7,11 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
 from __future__ import annotations
+from qpth.qp    import QPFunction
 from typing     import TYPE_CHECKING
-from warnings   import catch_warnings, filterwarnings
 
 import torch as th
 
-with catch_warnings():
-    filterwarnings("ignore", category=SyntaxWarning, module="qpth")
-    from qpth.qp import QPFunction
 
 if TYPE_CHECKING:
     from config.imitation.controller import FlockModel, SafetyModel
@@ -97,21 +94,24 @@ class CBFSafetyFilter:
         device      = u_nominal.device
         h_grads     = -flock["gradient"]
         h_values    = self.max_temperature - flock["temperature"]
-
-        solver = QPFunction(
+        solver      = QPFunction(
             eps     = self.safety.qp_eps,
             maxIter = self.safety.qp_max_iter,
+            verbose = -1  # Suppress warnings
         )
 
         try:
-            u_safe = solver(
-                Q = self.Q.to(device).expand(agent_count, -1, -1),
-                p = -u_nominal,
-                G = -h_grads.unsqueeze(1),
-                h = (self.safety.cbf_alpha * h_values).unsqueeze(1),
-                A = th.empty(0, device=device),
-                b = th.empty(0, device=device),
-            )
+            if h_values.dim() == 2 and h_values.shape[1] == 1:
+                h_values = h_values.squeeze(-1)  # [N, 1] -> [N]
+            
+            Q = self.Q.to(device).expand(agent_count, -1, -1)     # [N, 3, 3]
+            p = -u_nominal                                        # [N, 3]
+            G = -h_grads.unsqueeze(1)                             # [N, 1, 3]
+            h = (self.safety.cbf_alpha * h_values).unsqueeze(-1)  # [N, 1]
+            A = th.empty(agent_count, 0, 3, device=device)
+            b = th.empty(agent_count, 0, device=device)
+            
+            u_safe = solver(Q, p, G, h, A, b)
 
             assert u_safe is not None
             delta     = u_safe - u_nominal
