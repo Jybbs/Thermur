@@ -282,7 +282,7 @@ class GNNPolicy(LightningModule):
 
         return self.decoder(h)
     
-    def on_fit_start(self) -> None:
+    def on_fit_start(self):
         """
         Lightning lifecycle hook called at the beginning of training.
         
