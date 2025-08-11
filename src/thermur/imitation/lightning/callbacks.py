@@ -8,15 +8,23 @@ into the training loop:
 """
 
 from __future__        import annotations
+from imageio           import get_writer
+from os                import unlink
 from pytorch_lightning import Callback
+from tempfile          import NamedTemporaryFile
+from torch             import randperm
 from typing            import TYPE_CHECKING
+from wandb             import log, Video
 
 if TYPE_CHECKING:
+    from numpy                             import uint8
+    from numpy.typing                      import NDArray
     from pytorch_lightning                 import LightningModule, Trainer
     from pytorch_lightning.utilities.types import STEP_OUTPUT
     from tensordict                        import TensorDictBase
     from thermur.imitation.monitoring      import EventLogger, MetricsCollector
     from thermur.imitation.visualization   import Visualizer
+
 
 
 class MonitoringCallback(Callback):
@@ -51,23 +59,16 @@ class MonitoringCallback(Callback):
         pl_module : LightningModule
     ):
         """
-        Flush accumulated events and log final summary statistics.
+        Clean up resources when training completes.
 
-        Ensures all buffered event data is written to logging backends
-        and provides aggregate statistics for the entire training run.
+        Ensures all buffered event data is written to logging backends.
 
         Args:
             trainer   : PyTorch Lightning trainer coordinating the training process
-            pl_module : Lightning module instance for logging
+            pl_module : Lightning module instance
         """
-        if not self.events:
-            return
-
-        self.events.flush_all(pl_module)
-        pl_module.log_dict({
-            f"summary/{k}": v
-            for k, v in self.events.get_event_summary().items()
-        })
+        if self.events:
+            self.events.flush_all(pl_module)
 
     def on_train_batch_end(
         self,
@@ -91,7 +92,7 @@ class MonitoringCallback(Callback):
             batch_idx : Index of the current batch within the epoch
         """
         if self.collector:
-            self.collector.update_evaluation_metrics(batch, True)
+            self.collector.update_evaluation_metrics(batch,  True)
 
         if self.events:
             self.events.analyze_batch(batch, pl_module)
@@ -102,16 +103,21 @@ class MonitoringCallback(Callback):
         pl_module : LightningModule
     ):
         """
-        Reset per-epoch counters to ensure accurate rate calculations.
+        Reset per-epoch counters and log summary statistics.
 
         Clears CBF activation counts and event statistics that are
-        tracked on a per-epoch basis for trend analysis.
+        tracked on a per-epoch basis for trend analysis. Also logs
+        summary metrics for the completed epoch.
 
         Args:
             trainer   : PyTorch Lightning trainer instance
             pl_module : Lightning module for state management
         """
         if self.events:
+            pl_module.log_dict({
+                f"events/{k}" : v
+                for k, v in self.events.get_event_summary().items()
+            })
             self.events.reset_epoch_metrics()
 
     def on_validation_batch_end(
@@ -179,83 +185,154 @@ class VisualizationCallback(Callback):
     proper resource cleanup. It only activates in interactive mode to avoid
     blocking headless training runs.
     """
-
     def __init__(
         self,
-        auto_close       : bool              = True,
-        fps              : int               = 30,
-        start_epoch      : int               = 0,
-        update_frequency : int               = 10,
-        video_duration   : float             = 30.0,
-        visualizer       : Visualizer | None = None,
-        watch_run        : bool              = False
+        auto_close              : bool,
+        fps                     : int,
+        start_epoch             : int,
+        trajectories_to_monitor : int,
+        update_frequency        : int,
+        video_duration          : float,
+        visualizer              : Visualizer | None
     ):
         """
         Configure visualization parameters for training integration.
 
         Args:
-            auto_close       : Automatically close window when training ends
-            fps              : Frames per second for video encoding
-            start_epoch      : Epoch to start visualization (0 = immediate)
-            update_frequency : Update visualization every N batches
-            video_duration   : Duration in seconds of each video segment
-            visualizer       : Pre-configured Visualizer instance for rendering
-            watch_run        : Show live visualization window (from --watch flag)
+            auto_close              : Automatically close window when training ends
+            fps                     : Frames per second for video encoding
+            start_epoch             : Epoch to start visualization (0 = immediate)
+            trajectories_to_monitor : Maximum number of trajectory sims to log
+            update_frequency        : Update visualization every N batches
+            video_duration          : Duration in seconds of each video segment
+            visualizer              : Pre-configured Visualizer instance for rendering
         """
         super().__init__()
-        self.auto_close       = auto_close
-        self.fps              = fps
-        self.start_epoch      = start_epoch
-        self.update_frequency = update_frequency
-        self.video_duration   = video_duration
-        self.visualizer       = visualizer
-        self.watch_run        = watch_run
+        self.auto_close              = auto_close
+        self.fps                     = fps
+        self.start_epoch             = start_epoch
+        self.trajectories_to_monitor = trajectories_to_monitor
+        self.update_frequency        = update_frequency
+        self.video_duration          = video_duration
+        self.visualizer              = visualizer
 
-        # Calculate buffer size from fps and duration
-        self.video_buffer_size    = int(fps * video_duration)
-        self.batch_counter        = 0
-        self.frames_buffer        = []
-        self.visualization_active = False
+        self.batch_counter         = 0
+        self.frames_buffers        = {}
+        self.selected_trajectories = None
+        self.video_buffer_size     = int(fps * video_duration)
+        self.visualization_active  = False
 
-    def _log_video_to_wandb(
+    def _encode_video_with_h264(self, frames: list[NDArray[uint8]]) -> str:
+        """
+        Encode frames to H.264 MP4 for Safari compatibility.
+        
+        Args:
+            frames: List of video frames as numpy arrays
+            
+        Returns:
+            Path to the encoded video file
+        """
+        with NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
+            video_path = tmp_file.name
+        
+        writer = get_writer(
+            codec            = 'h264',
+            ffmpeg_params    = ['-crf', '23', '-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2'],
+            fps              = self.fps,
+            uri              = video_path
+        )
+        
+        for frame in frames:
+            writer.append_data(frame)
+        writer.close()
+        
+        return video_path
+
+    def _flush_trajectory_buffers(
         self,
-        trainer   : Trainer,
-        pl_module : LightningModule
+        pl_module   : LightningModule,
+        trainer     : Trainer,
+        force_flush : bool = True
     ):
         """
-        Log accumulated frames as video to WandB.
+        Flush trajectory buffers to WandB.
 
-        Encodes buffered frames as MP4 video and uploads to WandB dashboard.
-        Clears the frame buffer after successful upload to prevent memory growth.
+        Logs accumulated frames as videos and clears buffers. Can either
+        flush all buffers with content (force_flush=True) or only flush
+        buffers that have reached the configured size threshold.
 
         Args:
-            trainer   : PyTorch Lightning trainer with logger attached
-            pl_module : Lightning module for accessing global step
+            pl_module   : Lightning module for accessing current epoch
+            trainer     : PyTorch Lightning trainer with logger access
+            force_flush : If True, flush all non-empty buffers; if False,
+                          only flush buffers that reached video_buffer_size
         """
-        if not self.frames_buffer or not trainer.logger:
+        if not trainer.logger or not self.frames_buffers:
             return
             
-        try:
-            import wandb
-            import numpy as np
+        for traj_idx, buffer in list(self.frames_buffers.items()):
+            should_flush = (
+                buffer and (force_flush or len(buffer) >= self.video_buffer_size)
+            )
+            if should_flush:
+                self._log_trajectory_video_to_wandb(
+                    buffer, pl_module, trainer, traj_idx
+                )
+                self.frames_buffers[traj_idx] = []
+    
+    def _log_trajectory_video_to_wandb(
+        self,
+        frames_buffer  : list[NDArray[uint8]],
+        pl_module      : LightningModule,
+        trainer        : Trainer,
+        trajectory_idx : int
+    ):
+        """
+        Log accumulated frames for a specific trajectory as video to WandB.
+
+        Creates a video from the buffered frames and logs it to the current
+        WandB run. Each trajectory gets its own video stream for comparison.
+
+        Args:
+            frames_buffer  : List of frames for this trajectory
+            pl_module      : Lightning module for accessing current epoch
+            trainer        : PyTorch Lightning trainer with logger access
+            trajectory_idx : Index of the trajectory being logged
+        """
+        if not frames_buffer or not trainer.logger:
+            return
             
-            video_array = np.array(self.frames_buffer)
-            video_data  = {
-                "visualization/policy_behavior": wandb.Video(
-                    video_array, fps=self.fps, format="mp4"
+        video_path = None
+        try:
+            video_path = self._encode_video_with_h264(frames_buffer)
+            video_key  = (
+                f"visualization/trajectory_{trajectory_idx}/"
+                f"epoch_{trainer.current_epoch}"
+            )
+            
+            video_data = {
+                video_key      : Video(
+                    data_or_path = video_path,
+                    format       = "mp4"
                 ),
-                "global_step": trainer.global_step
+                "global_step" : trainer.global_step
             }
             
             if experiment := getattr(trainer.logger, 'experiment', None):
                 experiment.log(video_data)
             else:
-                wandb.log(video_data)
-            
-            self.frames_buffer.clear()
-            
-        except Exception:
-            pass
+                log(video_data)
+                
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to log trajectory {trajectory_idx} video: {e}"
+            ) from e
+        finally:
+            if video_path:
+                try:
+                    unlink(video_path)
+                except:
+                    pass
 
     def on_exception(
         self,
@@ -300,10 +377,9 @@ class VisualizationCallback(Callback):
         if not self.visualizer:
             return
 
-        if trainer.logger and self.frames_buffer:
-            self._log_video_to_wandb(trainer, pl_module)
+        self._flush_trajectory_buffers(pl_module, trainer)
 
-        if self.visualization_active and self.auto_close and self.watch_run:
+        if self.visualization_active and self.auto_close:
             try:
                 self.visualizer.close()
             except Exception:
@@ -363,20 +439,42 @@ class VisualizationCallback(Callback):
             return
 
         try:
-            self.visualizer.update(batch)
-            
-            if self.watch_run:
+            if "position" in batch and batch["position"].dim() == 3:
+                batch_size = batch["position"].shape[0]
+                
+                if self.selected_trajectories is None:
+                    num_to_select = min(
+                        self.trajectories_to_monitor, batch_size
+                    )
+                    self.selected_trajectories = (
+                        randperm(batch_size)[:num_to_select].tolist()
+                    )
+                    self.frames_buffers = {
+                        idx: [] for idx in self.selected_trajectories
+                    }
+                
+                for traj_idx in self.selected_trajectories:
+                    vis_batch = batch[traj_idx]
+                    
+                    self.visualizer.update(vis_batch)
+                    self.visualizer.render()
+                    
+                    if trainer.logger and self.visualizer.plotter:
+                        frame = self.visualizer.plotter.screenshot(
+                            return_img = True
+                        )
+                        self.frames_buffers[traj_idx].append(frame)
+                
+                self._flush_trajectory_buffers(
+                    pl_module, trainer, force_flush=False
+                )
+            else:
+                self.visualizer.update(batch)
                 self.visualizer.render()
-            
-            if trainer.logger and self.visualizer.plotter:
-                frame = self.visualizer.plotter.screenshot(return_img=True)
-                self.frames_buffer.append(frame)
                 
-                if len(self.frames_buffer) >= self.video_buffer_size:
-                    self._log_video_to_wandb(trainer, pl_module)
-                
-        except Exception:
+        except Exception as e:
             self.visualization_active = False
+            raise RuntimeError(f"Visualization failed: {e}") from e
 
     def on_train_epoch_end(
         self,
@@ -393,8 +491,7 @@ class VisualizationCallback(Callback):
             trainer   : PyTorch Lightning trainer managing epochs
             pl_module : Lightning module completing the epoch
         """
-        if trainer.logger and self.frames_buffer:
-            self._log_video_to_wandb(trainer, pl_module)
+        self._flush_trajectory_buffers(pl_module, trainer)
 
     def on_train_epoch_start(
         self,
@@ -446,7 +543,11 @@ class VisualizationCallback(Callback):
 
         if batch_idx == 0:
             try:
-                self.visualizer.update(batch)
+                vis_batch = batch[0]
+                self.visualizer.update(vis_batch)
                 self.visualizer.render()
-            except Exception:
-                pass
+
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to render validation batch: {e}"
+                ) from e

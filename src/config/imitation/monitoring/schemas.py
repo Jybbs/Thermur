@@ -116,3 +116,10 @@ class MetricsModel(BaseModel, extra="forbid"):
             "state dynamics, lower values indicate insufficient system responsiveness."
         )
     )
+    trajectory_frequency: PositiveInt = Field(
+        default     = 10,
+        description = (
+            "Frequency for logging choreography metrics during expert trajectory "
+            "collection, logs every N trajectories to track temporal murmuration dynamics."
+        )
+    )

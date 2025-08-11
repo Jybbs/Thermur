@@ -7,13 +7,17 @@ during imitation learning.
 """
 from __future__                  import annotations
 from pytorch_lightning           import LightningDataModule
+from torch                       import randint
 from torchrl.collectors          import SyncDataCollector
 from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
 from typing                      import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from config.imitation.controller       import MurmurationModel
     from config.imitation.lightning        import ExperienceModel
+    from config.imitation.monitoring       import MetricsModel
+    from pytorch_lightning                 import LightningModule
     from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
     from thermur.imitation.controller      import MurmurationController
     from thermur.imitation.simulation      import SimulationEnv
@@ -39,7 +43,9 @@ class DataModule(LightningDataModule):
         self,
         env        : SimulationEnv,
         experience : ExperienceModel,
-        expert     : MurmurationController
+        expert     : MurmurationController,
+        metrics    : MetricsModel | None = None,
+        mmm        : MurmurationModel | None = None
     ):
         """
         Initialize the experience module.
@@ -49,16 +55,20 @@ class DataModule(LightningDataModule):
             experience : Experience data configuration with batch sizes and buffer
                          settings
             expert     : The murmuration controller that generates actions
+            metrics    : Optional metrics configuration for choreography analysis
+            mmm        : Optional murmuration model for choreography analysis
         """
         super().__init__()
         self.env        = env
         self.experience = experience
         self.expert     = expert
+        self.metrics    = metrics
+        self.mmm        = mmm
 
         self.buffer    : TensorDictReplayBuffer | None = None
         self.collector : SyncDataCollector      | None = None
 
-    def setup(self, stage: str):
+    def setup(self, stage: str | None = None):
         """
         Set up data collection components for the given stage.
 
@@ -66,25 +76,29 @@ class DataModule(LightningDataModule):
         this creates the trajectory collector and experience buffer.
 
         Args:
-            stage: The current stage ('fit', 'validate', 'test', or 'predict')
+            stage: The current stage ('fit', 'validate', 'test', or 'predict').
+                   Can also be a TrainerFn enum value.
         """
-        if stage != "fit":
+        if not stage or "fit" not in str(stage).lower():
             return
-
-        self.collector = SyncDataCollector(
-            create_env_fn       = self.env,
-            frames_per_batch    = self.experience.frames_per_batch,
-            max_frames_per_traj = self.experience.max_frames_per_traj,
-            policy              = self.expert,
-            total_frames        = self.experience.total_frames
-        )
-
-        self.buffer = TensorDictReplayBuffer(
-            batch_size = self.experience.batch_size,
-            prefetch   = self.experience.prefetch,
-            sampler    = SamplerWithoutReplacement(),
-            storage    = LazyTensorStorage(self.experience.buffer_size)
-        )
+        
+        if self.buffer is None:
+            self.buffer = TensorDictReplayBuffer(
+                batch_size = self.experience.batch_size,
+                prefetch   = self.experience.prefetch,
+                sampler    = SamplerWithoutReplacement(),
+                storage    = LazyTensorStorage(self.experience.buffer_size)
+            )
+            
+        if self.collector is None:
+            self.collector = SyncDataCollector(
+                create_env_fn       = self.env,
+                frames_per_batch    = self.experience.frames_per_batch,
+                max_frames_per_traj = self.experience.max_frames_per_traj,
+                policy              = self.expert,
+                total_frames        = self.experience.total_frames,
+                trust_policy        = True
+            )
 
     def teardown(self, stage: str):
         """
@@ -93,9 +107,9 @@ class DataModule(LightningDataModule):
         Properly shuts down the data collector when training ends.
 
         Args:
-            stage: The current stage being torn down
+            stage: The current stage being torn down.
         """
-        if stage == "fit" and self.collector:
+        if stage == "fit" and self.collector is not None:
             self.collector.shutdown()
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
@@ -106,15 +120,39 @@ class DataModule(LightningDataModule):
         and replay buffer, providing batches of experiences for training.
 
         Returns:
-            DataLoader that yields experience batches
+            DataLoader that yields experience batches.
         """
-        if not (self.buffer and self.collector):
-            raise RuntimeError("DataModule not properly set up. Call setup('fit')")
-
+        assert self.buffer    is not None
+        assert self.collector is not None
+        
         return ExperienceDataLoader(
             buffer     = self.buffer,
             collector  = self.collector,
-            experience = self.experience
+            experience = self.experience,
+            metrics    = self.metrics,
+            mmm        = self.mmm
+        )
+    
+    def val_dataloader(self):
+        """
+        Create the validation dataloader.
+        
+        Returns a dataloader that samples from the dedicated validation buffer,
+        ensuring proper train/validation separation for better generalization
+        monitoring.
+        
+        Returns:
+            ValidationDataLoader that yields batches from the validation buffer.
+            The dataloader will handle cases where the buffer is still filling.
+        """
+        if self.buffer is None:
+            return []
+        
+        return ValidationDataLoader(
+            buffer           = self.buffer,
+            batch_size       = self.experience.batch_size,
+            num_batches      = self.experience.validation_batches,
+            validation_split = self.experience.validation_split
         )
 
 
@@ -131,19 +169,31 @@ class ExperienceDataLoader:
         self,
         buffer     : TensorDictReplayBuffer,
         collector  : SyncDataCollector,
-        experience : ExperienceModel
+        experience : ExperienceModel,
+        metrics    : MetricsModel | None = None,
+        mmm        : MurmurationModel | None = None,
+        pl_module  : LightningModule | None = None
     ):
         """
         Initialize the experience dataloader.
 
         Args:
-            buffer     : The replay buffer for experience storage
-            collector  : The trajectory collector
-            experience : Experience data configuration
+            buffer     : The replay buffer for experience storage.
+            collector  : The trajectory collector.
+            experience : Experience data configuration.
+            metrics    : Optional metrics configuration for choreography analysis.
+            mmm        : Optional murmuration model for choreography analysis.
+            pl_module  : Optional Lightning module for WandB logging.
         """
         self.buffer     = buffer
         self.collector  = collector
         self.experience = experience
+        self.pl_module  = pl_module
+        
+        self.choreography = None
+        if metrics is not None and mmm is not None:
+            from thermur.imitation.monitoring.choreography import ChoreographyCollector
+            self.choreography = ChoreographyCollector(metrics, mmm)
 
     def __iter__(self):
         """
@@ -153,7 +203,10 @@ class ExperienceDataLoader:
         collecting new experiences from the environment.
         """
         for data in self.collector:
-            self.buffer.extend(data.cpu())
+            if self.choreography is not None:
+                self.choreography.analyze_trajectory(data, self.pl_module)
+            
+            self.buffer.extend(data)
 
             if len(self.buffer) >= self.experience.batch_size:
                 yield self.buffer.sample()
@@ -165,3 +218,74 @@ class ExperienceDataLoader:
         Calculates based on total frames and frames per batch.
         """
         return self.experience.total_frames // self.experience.frames_per_batch
+
+
+class ValidationDataLoader:
+    """
+    Validation dataloader that samples from the replay buffer.
+    
+    Since we're doing behavioral cloning from a fixed expert, we sample
+    validation batches from the same replay buffer as training. This helps
+    monitor training progress without needing a separate validation set.
+    """
+    
+    def __init__(
+        self,
+        batch_size       : int,
+        buffer           : TensorDictReplayBuffer,
+        num_batches      : int,
+        validation_split : float
+    ):
+        """
+        Initialize the validation dataloader.
+        
+        Args:
+            batch_size       : Number of samples per batch.
+            buffer           : The replay buffer to sample from.
+            num_batches      : Number of validation batches to yield.
+            validation_split : Fraction of buffer reserved for validation.
+        """
+        self.batch_size       = batch_size
+        self.buffer           = buffer
+        self.num_batches      = num_batches
+        self.validation_split = validation_split
+    
+    def __iter__(self):
+        """
+        Yield validation batches from the replay buffer.
+        
+        Samples from the portion of the buffer reserved for validation.
+        During early training when buffer is filling, yields whatever data
+        is available to ensure val/loss metric is computed.
+        """
+        buffer_length = len(self.buffer)
+        
+        if buffer_length == 0:
+            for _ in range(self.num_batches):
+                yield from []
+            return
+            
+        validation_size = max(1, int(buffer_length * self.validation_split))
+        end_index = min(validation_size, buffer_length)
+        effective_batch_size = min(self.batch_size, end_index)
+        
+        for _ in range(self.num_batches):
+            if effective_batch_size == 1:
+                yield self.buffer[[0]]
+            else:
+                sample_indices = randint(
+                    high = end_index,
+                    low  = 0,
+                    size = (effective_batch_size,)
+                )
+                yield self.buffer[sample_indices]
+    
+    def __len__(self) -> int:
+        """
+        Return the number of validation batches.
+        
+        Always returns the configured number of batches to ensure Lightning
+        runs validation even when the buffer is still filling. The __iter__
+        method handles empty buffer cases gracefully.
+        """
+        return self.num_batches

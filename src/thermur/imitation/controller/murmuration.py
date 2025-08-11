@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from torch                       import Tensor
 
 
-class MurmurationController:
+class MurmurationController(th.nn.Module):
     """
     Implements murmuration dynamics with topological interactions.
 
@@ -63,30 +63,14 @@ class MurmurationController:
             mmm    : Murmuration model with dynamics and weight parameters
             safety : Safety configuration with thresholds and CBF parameters
         """
+        super().__init__()
         self.cbf    = cbf
         self.flock  = flock
         self.mmm    = mmm
         self.safety = safety
 
-        self.polarization_queue = deque(maxlen=mmm.polarization_window)
-        
-
-    def __call__(self, flock: TensorDictBase) -> TensorDictBase:
-        """
-        Compute control actions in TorchRL-compatible format.
-
-        This method makes MurmurationController compatible with TorchRL's
-        expected policy interface by wrapping the nominal action
-        computation and returning a TensorDict with the action.
-
-        Args:
-            flock: TensorDict containing the current flock state
-
-        Returns:
-            TensorDict with the computed action added
-        """
-        self.design_nominal_action(flock)
-        return flock
+        self.polarization_queues = {}
+        self.max_queue_size      = mmm.polarization_window
     
     def _apply_alert_mode(self, flock: TensorDictBase):
         """
@@ -112,7 +96,7 @@ class MurmurationController:
             flock["cohesion_force"]    = offset * self.mmm.density_strength
         else:
             flock["cohesion_force"]    = th.zeros_like(flock["position"])
-    
+
     def _apply_susceptibility_modulation(self, flock: TensorDictBase):
         """
         Apply susceptibility-based amplification to alignment forces.
@@ -137,41 +121,75 @@ class MurmurationController:
 
     def _compute_density_wave(self, flock: TensorDictBase):
         """
-        Compute density wave forces from PDE dynamics.
+        Compute density wave forces from continuum density field dynamics.
 
-        Implements simplified density wave equation:
-            ∂ρ/∂t + ∇·(ρv) = D∇²ρ + S_threat
+        Implements a simplified reaction-diffusion model for density perturbations
+        that propagate through the flock, creating the characteristic "ink-like" 
+        evasion patterns observed in starling murmurations under predator attack.
+
+        The density field ρ(𝐱,t) evolves according to:
+
+            ∂ρ/∂t + ∇·(ρ𝐯) = D∇²ρ + S(θ)
         
-        where density perturbations propagate through the flock creating
-        the characteristic "ink-like" appearance during evasion.
+        where:
+            - ρ(𝐱,t) : Local agent density at position 𝐱 and time t
+            - 𝐯(𝐱,t) : Velocity field of the flock  
+            - D      : Diffusion coefficient controlling wave propagation speed
+            - S(θ)   : Source term modulated by threat level θ ∈ [0,1]
+
+        For computational efficiency, we approximate the density field using
+        kernel density estimation with Gaussian kernels:
+
+            ρ(𝐱ᵢ) = Σⱼ K(|𝐱ᵢ - 𝐱ⱼ|; σ)
+        
+        where K(r; σ) = exp(-r²/2σ²) is the Gaussian kernel with bandwidth σ.
+
+        The resulting force on agent i opposes density gradients:
+
+            𝐅ᵢ = -D·∇ρ(𝐱ᵢ)·(1 + 2θᵢ)
+
+        This creates an effective pressure that disperses high-density regions,
+        with the effect amplified under threat conditions (high θ).
 
         Args:
-            flock: TensorDict containing positions and threats,
-                   updated with density_wave forces
+            flock: TensorDict containing:
+                - position     : Agent positions 𝐱 ∈ ℝ^(N×3) [m]
+                - threats      : Normalized threat levels θ ∈ [0,1]^(N×1)
+                - density_wave : Dispersive forces 𝐅 ∈ ℝ^(N×3) [m/s²]
         """
         if self.flock.agent_count < 2:
             flock["density_wave"] = th.zeros_like(flock["position"])
             return
         
-        distances = th.cdist(flock["position"], flock["position"])
-        
-        weights = th.exp(
-            -distances**2 / (2 * self.mmm.density_bandwidth**2)
-        )
+        dists   = th.cdist(flock["position"], flock["position"], p=2)
+        weights = th.exp(-dists**2 / (2 * self.mmm.density_bandwidth**2))
         weights.fill_diagonal_(0)
         
-        local_density  = weights.sum(dim=1, keepdim=True)
-        position_diffs = flock["position"].unsqueeze(0) - flock["position"].unsqueeze(1)
-        weighted_diffs = weights.unsqueeze(2) * position_diffs
+        local_density = weights.sum(dim=1, keepdim=True)
+        displacements = (
+            flock["position"].unsqueeze(1) -  # [N, 1, 3]
+            flock["position"].unsqueeze(0)    # [1, N, 3]
+        )
         
         density_gradient = (
-            weighted_diffs.sum(dim=1) / 
+            (weights.unsqueeze(2) * displacements).sum(dim=1) /
             local_density.clamp_min(self.mmm.epsilon)
         )
         
+        threats = flock["threats"]
+        # Handle case where threats might be [N, 1] instead of [N]
+        if threats.dim() == 2 and threats.shape[1] == 1:
+            threats = threats.squeeze(1)
+        
+        threat_amplification  = 1 + threats * 2  # [N]
+        
+        if density_gradient.dim() == 2:  # [N, 3]
+            threat_amplification = threat_amplification.unsqueeze(-1)  # [N, 1]
+        
         flock["density_wave"] = (
-            -self.mmm.density_diffusion * density_gradient * 
-            (1 + flock["threats"].unsqueeze(1) * 2)
+            -self.mmm.density_diffusion *
+            density_gradient            *
+            threat_amplification
         )
     
     def _compute_hamiltonian_forces(self, flock: TensorDictBase):
@@ -256,6 +274,66 @@ class MurmurationController:
             th.sqrt(flock["susceptibility"] / self.mmm.effective_mass)
         ).clamp(self.mmm.info_speed_min, self.mmm.info_speed_max)
     
+    def _compute_self_propulsion(self, flock: TensorDictBase):
+        """
+        Compute self-propulsion forces following active matter dynamics.
+        
+        Implements self-propulsion where each agent maintains an intrinsic
+        velocity v₀ in its current heading direction with stochastic
+        fluctuations, based on active matter theory:
+        
+            F_prop = (v₀𝐬 - 𝐯) / τ + η𝝃
+        
+        where 𝐬 is the heading direction, τ is relaxation time, and 𝝃 is
+        Gaussian noise. This ensures agents maintain forward motion even
+        without external forces, as observed in real bird flocks where
+        cruising speeds are typically 10-20 m/s (Cavagna et al., 2010).
+        
+        For agents with zero velocity (|𝐯| < ε), the heading direction 𝐬 is
+        determined from:
+            1. Negative temperature gradient direction: 𝐬 = -∇T/|∇T| (if |∇T| > δ)
+            2. Random unit vector: 𝐬 = 𝝃/|𝝃| where 𝝃 ~ N(0, I) (fallback)
+        
+        This ensures the flock can bootstrap movement from rest states.
+        
+        Args:
+            flock: TensorDict containing velocities, updated with
+                   self_propulsion forces
+        """
+        speed = flock["velocity"].norm(dim=-1, keepdim=True)
+        wind  = flock.get("wind", th.zeros_like(flock["velocity"]))
+        
+        velocity_heading = flock["velocity"] / speed.clamp_min(1e-8)
+        gradient_heading = -th.nn.functional.normalize(flock["gradient"], dim=-1)
+        random_heading   = th.nn.functional.normalize(
+            th.randn_like(flock["velocity"]), dim=-1
+        )
+        
+        zero_vel = (speed < 1e-6).expand_as(flock["velocity"])
+        use_grad = (
+            flock["gradient"].norm(dim=-1, keepdim=True) > 0.01
+        ).expand_as(flock["velocity"])
+        
+        heading = th.where(
+            zero_vel & use_grad,
+            gradient_heading,
+            th.where(zero_vel, random_heading, velocity_heading)
+        )
+        
+        target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
+        
+        # Using inverse of info speed as relaxation timescale
+        relaxation_rate = 1.0 / flock.get(
+            "info_speed", 
+            th.ones(1) * self.mmm.info_speed_min
+        ).mean()
+        
+        noise = th.randn_like(flock["velocity"]) * self.mmm.velocity_noise_scale
+        flock["self_propulsion"] = (
+            (target_vel - flock["velocity"]) * 
+            relaxation_rate + noise
+        )
+    
     def _compute_susceptibility(self, flock: TensorDictBase):
         """
         Compute flock susceptibility χ = N · Var[Φ] and store in TensorDict.
@@ -283,15 +361,28 @@ class MurmurationController:
         )
         
         flock["polarization"] = spin_vectors.mean(dim=0).norm()
-        self.polarization_queue.append(flock["polarization"].item())
+        
+        traj_id = 0
+        if "trajectory_id" in flock:
+            traj_id = (
+                flock["trajectory_id"].item() 
+                if hasattr(flock["trajectory_id"], 'item') 
+                else int(flock["trajectory_id"])
+            )
+        
+        if traj_id not in self.polarization_queues:
+            self.polarization_queues[traj_id] = deque(maxlen=self.max_queue_size)
+        
+        queue = self.polarization_queues[traj_id]
+        queue.append(flock["polarization"].item())
         
         variance = (
             th.tensor(
-                data   = list(self.polarization_queue), 
+                data   = list(queue), 
                 device = flock["velocity"].device,
                 dtype  = flock["velocity"].dtype
             ).var()
-            if len(self.polarization_queue) > 1
+            if len(queue) > 1
             else flock["polarization"] * (1 - flock["polarization"])
         )
         
@@ -334,10 +425,14 @@ class MurmurationController:
         Args:
             flock: TensorDict with edge indices, updated with topo_distances
         """
+        device = flock["position"].device
+        n      = self.flock.agent_count
+        
         dist = th.full(
-            device     = flock["position"].device,
+            device     = device,
+            dtype      = th.float32,
             fill_value = float('inf'),
-            size       = (self.flock.agent_count, self.flock.agent_count)
+            size       = (n, n)
         )
         dist.fill_diagonal_(0)
 
@@ -345,7 +440,7 @@ class MurmurationController:
             dist[flock["edge_source"], flock["edge_target"]] = 1
             dist[flock["edge_target"], flock["edge_source"]] = 1
 
-        for k in range(self.flock.agent_count):
+        for k in range(n):
             dist = th.minimum(dist, dist[:, k:k+1] + dist[k:k+1, :])
 
         flock["topo_distances"] = dist
@@ -368,6 +463,49 @@ class MurmurationController:
         flock["edge_source"] = th.arange(n).repeat_interleave(self.mmm.k_neighbors)
         flock["edge_target"] = indices[:, 1:].flatten()
 
+    def _design_nominal_action(self, flock: TensorDictBase):
+        """
+        Pipeline that computes murmuration dynamics and builds final action.
+
+        Orchestrates the computation of all physics components through a 
+        series of transformations on the flock TensorDict, then combines
+        them into the final control action.
+
+        The pipeline computes:
+        1. Graph topology and temperature gradients
+        2. Base Hamiltonian forces from energy minimization
+        3. Critical state metrics (susceptibility, information speed)
+        4. Threat response components (density waves, alert mode)
+        5. Final action combining all force components
+
+        Args:
+            flock: TensorDict containing positions, velocities, temperatures,
+                   updated with computed physics and final action
+        """
+        for compute_fn in [
+            self._update_graph_state,
+            self._estimate_gradient,
+            self._compute_hamiltonian_forces,
+            self._compute_susceptibility,
+            self._compute_threats,
+            self._compute_information_speed,
+            self._compute_self_propulsion,
+            self._compute_density_wave,
+            self._apply_susceptibility_modulation,
+            self._apply_alert_mode,
+        ]:
+            compute_fn(flock)
+        
+        flock["action"] = (
+            flock["self_propulsion"]  +
+            flock["modulated_forces"] +
+            flock["density_wave"]     +
+            flock["cohesion_force"]
+        )
+
+        if self.cbf is not None:
+            flock["action"] = self.cbf.filter(flock, flock["action"])
+
     def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
         """
         Ensures temperature tensor is 1D by squeezing if it's [N, 1].
@@ -386,22 +524,22 @@ class MurmurationController:
 
     def _estimate_gradient(self, flock: TensorDictBase):
         """
-        Estimates the temperature gradient ∇T at each agent position.
+        Uses provided gradient or estimates if not available.
 
-        Approximates gradients using finite differences from neighboring agents:
+        Prioritizes using the gradient provided by the environment (which has
+        access to the full temperature field). Falls back to estimation using
+        finite differences only if gradient is not provided:
 
             ∇T_i ≈ Σ_j (T_j - T_i)(𝐱_j - 𝐱_i) / |𝐱_j - 𝐱_i|²
 
-        For isolated agents or uniform temperature fields, assumes heat rises
-        vertically following the natural convection model:
-
-            ∇T = (T/T_max) 𝐞_z
-
         Args:
-            flock: TensorDict containing positions and temperatures,
-                   updated with gradient estimates
+            flock: TensorDict containing gradient or positions/temperatures,
+                   ensures gradient field is present
 
         """
+        if "gradient" in flock and flock["gradient"] is not None:
+            return
+        
         temperature = self._ensure_1d_temperature(flock["temperature"])
 
         if "edge_source" not in flock or not flock["edge_source"].numel():
@@ -445,16 +583,24 @@ class MurmurationController:
 
     def _update_graph_state(self, flock: TensorDictBase):
         """
-        Update graph connectivity using topological neighborhoods.
+        Update graph connectivity using provided or computed topology.
 
-        Computes k-nearest neighbor topology from current positions, overriding
-        any metric-based connectivity. This ensures topological interactions
-        as observed in Ballerini et al. (2008).
+        Uses provided edge topology if available (from environment), otherwise
+        computes k-nearest neighbor topology. This ensures consistency between
+        expert demonstrations and learned policy.
 
         Args:
-            flock: TensorDict containing positions, updated with graph state
+            flock: TensorDict containing positions and optionally edge_index,
+                   updated with graph state
         """
-        self._compute_topological_neighbors(flock)
+        if "edge_index" in flock and flock["edge_index"] is not None:
+            edge_idx = flock["edge_index"]
+            edge_idx = edge_idx[0] if edge_idx.dim() == 3 else edge_idx
+            flock["edge_source"] = edge_idx[0]
+            flock["edge_target"] = edge_idx[1]
+        else:
+            self._compute_topological_neighbors(flock)
+        
         self._compute_topological_distances(flock)
         
         if "edge_source" in flock and flock["edge_source"].numel() > 0:
@@ -502,44 +648,20 @@ class MurmurationController:
         )
 
         return vertical_direction * normalized_temperature.unsqueeze(1)
-    
-    def design_nominal_action(self, flock: TensorDictBase):
+
+    def forward(self, flock: TensorDictBase) -> TensorDictBase:
         """
-        Pipeline that computes murmuration dynamics and builds final action.
+        Compute control actions in TorchRL-compatible format.
 
-        Orchestrates the computation of all physics components through a 
-        series of transformations on the flock TensorDict, then combines
-        them into the final control action.
-
-        The pipeline computes:
-        1. Graph topology and temperature gradients
-        2. Base Hamiltonian forces from energy minimization
-        3. Critical state metrics (susceptibility, information speed)
-        4. Threat response components (density waves, alert mode)
-        5. Final action combining all force components
+        This method makes MurmurationController compatible with TorchRL's
+        expected policy interface by wrapping the nominal action
+        computation and returning a TensorDict with the action.
 
         Args:
-            flock: TensorDict containing positions, velocities, temperatures,
-                   updated with computed physics and final action
-        """
-        for compute_fn in [
-            self._update_graph_state,
-            self._estimate_gradient,
-            self._compute_hamiltonian_forces,
-            self._compute_susceptibility,
-            self._compute_threats,
-            self._compute_information_speed,
-            self._compute_density_wave,
-            self._apply_susceptibility_modulation,
-            self._apply_alert_mode,
-        ]:
-            compute_fn(flock)
-        
-        flock["action"] = (
-            flock["modulated_forces"] + 
-            flock["density_wave"]     + 
-            flock["cohesion_force"]
-        )
+            flock: TensorDict containing the current flock state
 
-        if self.cbf is not None:
-            flock["action"] = self.cbf.filter(flock, flock["action"])
+        Returns:
+            TensorDict with the computed action added
+        """
+        self._design_nominal_action(flock)
+        return flock.set("action", flock["action"])

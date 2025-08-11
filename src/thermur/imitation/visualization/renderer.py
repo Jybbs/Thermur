@@ -149,9 +149,11 @@ class Renderer:
         point_cloud = pv.PolyData(position.detach().cpu().numpy())
         point_cloud["temperature"] = temperature.detach().cpu().numpy().flatten()
         point_cloud["velocity"]    = velocity.detach().cpu().numpy()
-        point_cloud["direction"]   = np.nan_to_num(
-            point_cloud["velocity"] /
-            np.linalg.norm(point_cloud["velocity"], axis=1, keepdims=True)
+        velocity_norms = np.linalg.norm(
+            point_cloud["velocity"], axis=1, keepdims=True
+        )
+        point_cloud["direction"] = (
+            point_cloud["velocity"] / np.maximum(velocity_norms, 1e-8)
         )
 
         agent_glyphs = point_cloud.glyph(
@@ -280,10 +282,15 @@ class Renderer:
 
         try:
             contour = target_grid.sample(point_cloud).contour([max_temperature])
+            smoothed = (
+                contour.smooth(n_iter=50) 
+                if contour.n_points > 0 
+                else contour
+            )
             return [
                 plotter.add_mesh(
                     color   = self.color_safety,
-                    mesh    = contour.smooth(n_iter=50),
+                    mesh    = smoothed,
                     opacity = 0.3
                 )
             ]
