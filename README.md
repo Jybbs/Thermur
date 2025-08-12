@@ -185,6 +185,18 @@ U(\mathbf{S}_t) = \sum_i \left( w_c U_{\text{coh}}^{(i)} + w_r U_{\text{sep}}^{(
 
 -   **Thermal Potential**: $`U_{\text{therm}}^{(i)}`$ is a function that increases sharply as $`T_i \to T_{\max}`$, e.g., $`U_{\text{therm}}^{(i)} = \frac{1}{T_{\max} - T_i}`$.
 
+#### Self-Propulsion Dynamics
+
+In addition to the gradient-based forces, each agent maintains a self-propulsion velocity following active matter theory [^31]. This ensures agents maintain forward motion characteristic of bird flight, with cruising speeds typically 10-20 m/s. The self-propulsion force follows:
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{F}_{\text{prop}}^{(i)} = \frac{\mathbf{v}_0 \hat{\mathbf{s}}_i - \mathbf{v}_i}{\tau} + \eta \boldsymbol{\xi}_i
+`$  
+<br>
+
+where $`\mathbf{v}_0`$ is the target cruising speed, $`\hat{\mathbf{s}}_i`$ is the heading direction, $`\tau`$ is the velocity relaxation time (typically 0.5-2.0 seconds for smooth yet responsive motion), $`\eta`$ is the noise amplitude, and $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ represents Gaussian noise. This formulation ensures realistic flight dynamics while maintaining the critical state necessary for rapid information propagation.
+
 #### Supervised Learning Objective
 
 We generate a large dataset of state-action pairs, $`\mathcal{D} = \{(\mathbf{s}_k, \mathbf{u}_{\text{nom}, k})\}_{k=1}^M`$, by running the expert policy in simulation. The neural network policy $`\pi_\theta`$ is then trained to predict the expert action given a state. The objective is to minimize the **Mean Squared Error (MSE)** between the network's output and the expert's action:
@@ -327,4 +339,5 @@ Deploying an autonomous swarm in a safety-critical environment requires careful 
 [^27]: Van den Oord, Aaron, Yazhe Li, and Oriol Vinyals. 2018. “Representation Learning with Contrastive Predictive Coding.” *arXiv* 1807.03748. https://doi.org/10.48550/arXiv.1807.03748  
 [^28]: Wang, Zhou, Alan C. Bovik, Hamid R. Sheikh, and Eero P. Simoncelli. 2004. “Image Quality Assessment: From Error Visibility to Structural Similarity.” *IEEE Transactions on Image Processing* 13 (4): 600–612. https://doi.org/10.1109/TIP.2003.819861  
 [^29]: Lopez, Neil Stephen, Christian Roice Tayag, Joshua Ezekiel Rito, Jeun Rei Barlis, and Jose Bienvenido Manuel Biona. 2023. “Thermal Analysis of an EV Lithium Iron Phosphate Battery Pack for Improved Cooling.” *2023 IEEE Transportation Electrification Conference and Expo, Asia-Pacific (ITEC Asia-Pacific)*, 1-5. https://doi.org/10.1109/ITECAsia-Pacific59272.2023.10372365  
-[^30]: Clarke, Roger. 2019. “Principles and Business Processes for Responsible AI.” *Computer Law & Security Review* 35 (4): 410–422. https://doi.org/10.1016/j.clsr.2019.04.007
+[^30]: Clarke, Roger. 2019. "Principles and Business Processes for Responsible AI." *Computer Law & Security Review* 35 (4): 410–422. https://doi.org/10.1016/j.clsr.2019.04.007
+[^31]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
