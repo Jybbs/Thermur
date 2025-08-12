@@ -48,20 +48,6 @@ class AveragingMetric(Metric):
         self.add_state("count", default=th.tensor(0),   dist_reduce_fx="sum")
         self.add_state("sum",   default=th.tensor(0.0), dist_reduce_fx="sum")
     
-    def _ensure_correct_device(self, reference_tensor: Tensor):
-        """
-        Ensure state variables are on the same device as the reference tensor.
-        
-        This is needed because TorchMetrics initializes states on CPU by default,
-        but computations may happen on GPU/MPS.
-        
-        Args:
-            reference_tensor: A tensor on the target device
-        """
-        if self.sum.device != reference_tensor.device:
-            self.sum   = self.sum.to(reference_tensor.device)
-            self.count = self.count.to(reference_tensor.device)
-
     def compute(self) -> Tensor:
         """
         Compute the average of accumulated values.
@@ -196,7 +182,6 @@ class CohesionMetric(AveragingMetric):
 
         fiedler_value = self._compute_fiedler_power_iteration(laplacian)
         
-        self._ensure_correct_device(fiedler_value)
         self.sum   += fiedler_value
         self.count += 1
 
@@ -244,7 +229,6 @@ class DynamicBalanceMetric(AveragingMetric):
                 (batch["position"] - center).norm(dim=1).mean() / 
                 (pairwise.sum() / n_pairs).clamp_min(1e-8)
             )
-            self._ensure_correct_device(balance_ratio)
             self.sum   += balance_ratio
             self.count += 1
 
@@ -291,7 +275,6 @@ class EnergyConsumptionMetric(AveragingMetric):
         thrust_magnitude       = (u_safe - gravity_vector).norm(dim=-1)
 
         power_sum = thrust_magnitude.pow(self.power_exponent).sum()
-        self._ensure_correct_device(power_sum)
         self.sum   += power_sum
         self.count += u_safe.shape[0]
 
@@ -491,7 +474,6 @@ class LegibilitySSIMMetric(AveragingMetric):
         )
         
         total_ssim = ssim_values.sum()
-        self._ensure_correct_device(total_ssim)
         self.sum   += total_ssim
         self.count += batch_size
 
@@ -533,6 +515,33 @@ class StateMetrics(Metric):
         self.add_state("temperature_sum",  th.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("velocity_sum",     th.tensor(0.0), dist_reduce_fx="sum")
     
+    def _flatten_agent_batch(self, tensor: Tensor) -> tuple[Tensor, int]:
+        """
+        Flatten hierarchical agent batches for statistical computation.
+        
+        Transforms multi-agent batch tensors from [batch, agents, features]
+        format to [batch*agents, features] format for computing per-agent
+        statistics across the entire flock.
+        
+        Args:
+            tensor: Input with shape [batch, agents, features] for batched
+                    trajectories, [agents, features] for single timesteps,
+                    or [features] for single agents
+        
+        Returns:
+            Tuple of (flattened_tensor, n_samples) where flattened has shape
+            [total_samples, features] and n_samples counts individual agents
+        """
+        if tensor.dim() == 3:
+            shape = tensor.shape
+            return tensor.reshape(-1, shape[2]), shape[0] * shape[1]
+        
+        elif tensor.dim() == 2:
+            return tensor, tensor.shape[0]
+        
+        else:
+            return tensor.unsqueeze(0), 1
+    
     def compute(self) -> dict[str, Tensor]:
         """
         Compute averages from accumulated sums.
@@ -569,23 +578,16 @@ class StateMetrics(Metric):
         if "action" not in batch:
             return
         
-        n_samples = (
-            batch["action"].shape[0] * batch["action"].shape[1]
-            if batch["action"].dim() == 3
-            else batch["action"].shape[0]
-        )
-        
-        flat_action = batch["action"].reshape(-1, batch["action"].shape[-1])
-        self.acceleration_sum += flat_action.norm(dim=-1).sum()
-        self.count            += n_samples
+        flattened_action, n_samples = self._flatten_agent_batch(batch["action"])
+        self.acceleration_sum      += flattened_action.norm(dim=-1).sum()
+        self.count                 += n_samples
         
         if "temperature" in batch and batch["temperature"].numel() > 0:
             self.temperature_sum += batch["temperature"].sum()
         
         if "velocity" in batch:
-            velocity = batch["velocity"]
-            flat_velocity = batch["velocity"].reshape(-1, velocity.shape[-1])
-            self.velocity_sum += flat_velocity.norm(dim=-1).sum()
+            flattened_velocity, _ = self._flatten_agent_batch(batch["velocity"])
+            self.velocity_sum    += flattened_velocity.norm(dim=-1).sum()
 
 
 class ConnectivityMetrics(Metric):

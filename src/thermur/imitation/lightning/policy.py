@@ -117,31 +117,28 @@ class GNNPolicy(LightningModule):
         Returns:
             PyG Batch containing all graphs with concatenated node features and edges
         """
-        features = ["position", "velocity", "temperature", "gradient", "wind"]
-        batch_size = batch["position"].shape[0]
-        num_agents = batch["position"].shape[1]
+        features       = ["position", "velocity", "temperature", "gradient", "wind"]
+        batch_size     = batch["position"].shape[0]
+        num_agents     = batch["position"].shape[1]
+        agent_features = th.cat([batch[f] for f in features], dim=-1)
+        x, _           = self._flatten_agent_batch(agent_features)
+        cache_key      = (batch_size, num_agents, x.device.type)
         
-        all_features = th.cat([batch[f] for f in features], dim=-1)     # [B, N, 13]
-        x            = all_features.reshape(-1, all_features.shape[-1]) # [B*N, 13]
-        device       = x.device
-        
-        cache_key = (batch_size, num_agents, device)
-        if cache_key not in self._edge_offset_cache:
-            offsets = th.arange(batch_size, device=device).unsqueeze(1) * num_agents
-            self._edge_offset_cache[cache_key] = offsets
-            
-            batch_assignment = th.arange(batch_size, device=device).repeat_interleave(num_agents)
-            self._batch_assignment_cache[cache_key] = batch_assignment
-        
-        offsets          = self._edge_offset_cache[cache_key]
-        batch_assignment = self._batch_assignment_cache[cache_key]
-        edge_indices     = batch["edge_index"]  # [B, 2, E]
+        offsets = self._edge_offset_cache.setdefault(
+            cache_key,
+            th.arange(batch_size, device=x.device).unsqueeze(1) * num_agents
+        )
+        batch_assignment = self._batch_assignment_cache.setdefault(
+            cache_key,
+            th.arange(batch_size, device=x.device).repeat_interleave(num_agents)
+        )
+        edge_indices = batch["edge_index"]
         
         if (edge_indices.numel() > 0) and (edge_indices.shape[-1] > 0):
             adjusted_edges = edge_indices + offsets.unsqueeze(1)
             edge_index     = adjusted_edges.transpose(0, 1).reshape(2, -1)
         else:
-            edge_index     = th.empty((2, 0), dtype=th.long, device=device)
+            edge_index     = th.empty((2, 0), dtype=th.long, device=x.device)
         
         return Batch(
             batch      = batch_assignment,
@@ -221,6 +218,33 @@ class GNNPolicy(LightningModule):
         )
 
         return loss
+    
+    def _flatten_agent_batch(self, tensor: Tensor) -> tuple[Tensor, int]:
+        """
+        Flatten hierarchical agent batches for node-level processing.
+        
+        Transforms multi-agent batch tensors from [batch, agents, features]
+        format used by replay buffers to [batch*agents, features] format
+        required by graph neural networks.
+        
+        Args:
+            tensor: Input with shape [batch, agents, features] for batched
+                    trajectories, [agents, features] for single timesteps,
+                    or [features] for single agents
+        
+        Returns:
+            Tuple of (flattened_tensor, n_samples) where flattened has shape
+            [total_samples, features] and n_samples counts individual agents
+        """
+        if tensor.dim() == 3:
+            shape = tensor.shape
+            return tensor.reshape(-1, shape[2]), shape[0] * shape[1]
+        
+        elif tensor.dim() == 2:
+            return tensor, tensor.shape[0]
+        
+        else:
+            return tensor.unsqueeze(0), 1
 
     def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
         """
