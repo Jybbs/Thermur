@@ -254,53 +254,6 @@ class ValidationDataLoader:
         self.val_trajectory_ids = th.empty(0, dtype=th.long)
         self._update_trajectory_split()
     
-    def _update_trajectory_split(self):
-        """
-        Assign trajectories to validation set.
-        
-        Samples a subset of unique trajectory IDs for consistent
-        train/validation separation.
-        """
-        if not (buffer_size := len(self.buffer)):
-            return
-        
-        probe_data = self.buffer[:min(buffer_size, 1000)]
-        if "trajectory_id" not in probe_data:
-            return
-        
-        trajectory_ids = probe_data["trajectory_id"].view(-1)
-        unique_trajectories = unique(trajectory_ids)
-        
-        if not (n_trajectories := unique_trajectories.numel()):
-            return
-        
-        n_val    = max(1, int(n_trajectories * self.validation_split))
-        shuffled = th.randperm(
-            device = unique_trajectories.device,
-            n      = n_trajectories
-        )
-
-        self.val_trajectory_ids = unique_trajectories[shuffled[:n_val]]
-        self._refresh_sample_indices()
-    
-    def _refresh_sample_indices(self):
-        """
-        Cache indices of samples belonging to validation trajectories.
-        """
-        if (
-            not self.val_trajectory_ids.numel() or 
-            not len(self.buffer) or
-            "trajectory_id" not in (full_data := self.buffer[:])
-        ):
-            self.val_sample_indices = th.empty(0, dtype=th.long)
-            return
-        
-        all_ids       = full_data["trajectory_id"].view(-1)
-        val_ids       = self.val_trajectory_ids.to(all_ids.device)
-        is_validation = (all_ids.unsqueeze(1) == val_ids).any(dim=1)
-        
-        self.val_sample_indices = where(is_validation)[0]
-    
     def __iter__(self):
         """
         Yield batches sampled from validation trajectories.
@@ -343,3 +296,55 @@ class ValidationDataLoader:
         method handles empty buffer cases gracefully.
         """
         return self.num_batches
+
+    def _refresh_sample_indices(self):
+        """
+        Cache indices of samples belonging to validation trajectories.
+        
+        Uses vectorized comparison to identify which buffer samples belong
+        to trajectories reserved for validation. This precomputation enables
+        efficient batch sampling without repeated trajectory lookups.
+        """
+        if (
+            not self.val_trajectory_ids.numel() or 
+            not len(self.buffer) or
+            "trajectory_id" not in (full_data := self.buffer[:])
+        ):
+            self.val_sample_indices = th.empty(0, dtype=th.long)
+            return
+        
+        all_trajectory_ids = full_data["trajectory_id"].view(-1)
+        validation_mask    = (
+            all_trajectory_ids.unsqueeze(1) == self.val_trajectory_ids
+        ).any(dim=1)
+        
+        self.val_sample_indices = where(validation_mask)[0]
+
+    def _update_trajectory_split(self):
+        """
+        Assign trajectories to validation set.
+        
+        Samples a subset of unique trajectory IDs for consistent
+        train/validation separation.
+        """
+        if not (buffer_size := len(self.buffer)):
+            return
+        
+        probe_data = self.buffer[:min(buffer_size, 1000)]
+        if "trajectory_id" not in probe_data:
+            return
+        
+        trajectory_ids      = probe_data["trajectory_id"].view(-1)
+        unique_trajectories = unique(trajectory_ids)
+        
+        if not (n_trajectories := unique_trajectories.numel()):
+            return
+        
+        n_val    = max(1, int(n_trajectories * self.validation_split))
+        shuffled = th.randperm(
+            device = unique_trajectories.device,
+            n      = n_trajectories
+        )
+
+        self.val_trajectory_ids = unique_trajectories[shuffled[:n_val]]
+        self._refresh_sample_indices()
