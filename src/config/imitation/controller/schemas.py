@@ -224,6 +224,16 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "and enable exploration: 𝐯' = v₀(𝐬 + η𝝃) where 𝝃 ~ N(0,1)."
         )
     )
+    velocity_relaxation_time: PositiveFloat = Field(
+        default     = 1.0,
+        description = (
+            "Time constant τ (in seconds) for velocity relaxation in self-propulsion "
+            "dynamics, controlling how quickly agents adjust to target velocity: "
+            "F_prop = (v_target - v)/τ + η𝝃. Based on active matter theory (Ginelli, 2016), "
+            "typical values are 0.5-2.0s for responsive yet smooth motion that maintains "
+            "realistic bird flight dynamics."
+        )
+    )
 
 
 class SafetyModel(BaseModel, extra="forbid"):
