@@ -320,10 +320,7 @@ class MurmurationController(th.nn.Module):
             th.where(zero_vel, random_heading, velocity_heading)
         )
         
-        target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
-        
-        # Use proper velocity relaxation time from active matter theory
-        # τ controls how quickly agents adjust velocity (F = (v_target - v)/τ)
+        target_vel      = heading * self.mmm.self_propulsion_speed + wind * 0.3
         relaxation_rate = 1.0 / self.mmm.velocity_relaxation_time
         
         noise = th.randn_like(flock["velocity"]) * self.mmm.velocity_noise_scale
