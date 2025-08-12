@@ -180,17 +180,16 @@ class GNNPolicy(LightningModule):
         is_training : bool
     ) -> Tensor:
         """
-        Computes behavioral cloning loss and logs metrics.
+        Compute behavioral cloning loss and update metrics.
 
         Implements the imitation learning objective:
+         
             ℒ(θ) = 𝔼[(π_θ(s) - a*)²]
+        where π_θ represents the learned policy and a* the expert demonstrations.
         
-        where π_θ is the learned policy and a* are expert demonstrations.
-        The loss is computed over all nodes in the graph batch.
-        
-        Target actions are flattened from [B, N, 3] to [B*N, 3] to match
-        PyTorch Geometric's concatenated node format, where B is batch size
-        and N is the number of agents per graph.
+        The loss computation operates over all agents in the batch, with targets
+        reshaped from [B, N, 3] to [B*N, 3] to match PyTorch Geometric's 
+        concatenated node format.
 
         Args:
             batch       : TensorDict containing graph observations and expert actions
@@ -199,11 +198,10 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar MSE loss for gradient computation
         """
-        data              = self._batch_to_data(batch)
-        predictions       = self(data)
-        actual_batch_size = batch["position"].shape[0]
-        targets           = batch["action"][:actual_batch_size].view(-1, 3)
-        loss              = mse_loss(predictions, targets)
+        data        = self._batch_to_data(batch)
+        predictions = self(data)
+        targets     = batch["action"].reshape(-1, 3)
+        loss        = mse_loss(predictions, targets)
 
         self.collector.update_imitation_metrics(
             batch       = batch,
