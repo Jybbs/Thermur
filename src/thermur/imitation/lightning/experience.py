@@ -250,8 +250,8 @@ class ValidationDataLoader:
         self.buffer             = buffer
         self.num_batches        = num_batches
         self.validation_split   = validation_split
-        self.val_trajectory_ids = th.empty(0, dtype=th.long)
         self.val_sample_indices = th.empty(0, dtype=th.long)
+        self.val_trajectory_ids = th.empty(0, dtype=th.long)
         self._update_trajectory_split()
     
     def _update_trajectory_split(self):
@@ -331,7 +331,7 @@ class ValidationDataLoader:
                 device = available_indices.device,
                 n      = n_available,
             )[:batch_size]
-            
+
             yield self.buffer[available_indices[batch_selection].tolist()]
     
     def __len__(self) -> int:
