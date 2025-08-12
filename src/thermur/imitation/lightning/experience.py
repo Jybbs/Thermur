@@ -7,11 +7,13 @@ during imitation learning.
 """
 from __future__                  import annotations
 from pytorch_lightning           import LightningDataModule
-from torch                       import randint
+from torch                       import randint, stack, tensor, unique, where
 from torchrl.collectors          import SyncDataCollector
 from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
 from typing                      import TYPE_CHECKING
+
+import torch as th
 
 if TYPE_CHECKING:
     from config.imitation.controller       import MurmurationModel
@@ -222,11 +224,10 @@ class ExperienceDataLoader:
 
 class ValidationDataLoader:
     """
-    Validation dataloader that samples from the replay buffer.
+    Trajectory-aware validation dataloader.
     
-    Since we're doing behavioral cloning from a fixed expert, we sample
-    validation batches from the same replay buffer as training. This helps
-    monitor training progress without needing a separate validation set.
+    Reserves entire trajectories for validation to prevent temporal
+    leakage and ensure meaningful generalization metrics.
     """
     
     def __init__(
@@ -237,48 +238,101 @@ class ValidationDataLoader:
         validation_split : float
     ):
         """
-        Initialize the validation dataloader.
+        Initialize validation dataloader with trajectory splitting.
         
         Args:
             batch_size       : Number of samples per batch.
             buffer           : The replay buffer to sample from.
             num_batches      : Number of validation batches to yield.
-            validation_split : Fraction of buffer reserved for validation.
+            validation_split : Fraction of trajectories reserved for validation.
         """
-        self.batch_size       = batch_size
-        self.buffer           = buffer
-        self.num_batches      = num_batches
-        self.validation_split = validation_split
+        self.batch_size         = batch_size
+        self.buffer             = buffer
+        self.num_batches        = num_batches
+        self.validation_split   = validation_split
+        self.val_trajectory_ids = th.empty(0, dtype=th.long)
+        self.val_sample_indices = th.empty(0, dtype=th.long)
+        self._update_trajectory_split()
+    
+    def _update_trajectory_split(self):
+        """
+        Assign trajectories to validation set.
+        
+        Samples a subset of unique trajectory IDs for consistent
+        train/validation separation.
+        """
+        if not (buffer_size := len(self.buffer)):
+            return
+        
+        probe_data = self.buffer[:min(buffer_size, 1000)]
+        if "trajectory_id" not in probe_data:
+            return
+        
+        trajectory_ids = probe_data["trajectory_id"].view(-1)
+        unique_trajectories = unique(trajectory_ids)
+        
+        if not (n_trajectories := unique_trajectories.numel()):
+            return
+        
+        n_val    = max(1, int(n_trajectories * self.validation_split))
+        shuffled = th.randperm(
+            device = unique_trajectories.device,
+            n      = n_trajectories
+        )
+
+        self.val_trajectory_ids = unique_trajectories[shuffled[:n_val]]
+        self._refresh_sample_indices()
+    
+    def _refresh_sample_indices(self):
+        """
+        Cache indices of samples belonging to validation trajectories.
+        """
+        if (
+            not self.val_trajectory_ids.numel() or 
+            not len(self.buffer) or
+            "trajectory_id" not in (full_data := self.buffer[:])
+        ):
+            self.val_sample_indices = th.empty(0, dtype=th.long)
+            return
+        
+        all_ids       = full_data["trajectory_id"].view(-1)
+        val_ids       = self.val_trajectory_ids.to(all_ids.device)
+        is_validation = (all_ids.unsqueeze(1) == val_ids).any(dim=1)
+        
+        self.val_sample_indices = where(is_validation)[0]
     
     def __iter__(self):
         """
-        Yield validation batches from the replay buffer.
+        Yield batches sampled from validation trajectories.
         
-        Samples from the portion of the buffer reserved for validation.
-        During early training when buffer is filling, yields whatever data
-        is available to ensure val/loss metric is computed.
+        Falls back to random sampling during warmup before trajectory
+        assignment is complete.
         """
-        buffer_length = len(self.buffer)
-        
-        if buffer_length == 0:
-            for _ in range(self.num_batches):
-                yield from []
+        if not (buffer_size := len(self.buffer)):
+            yield from ([] for _ in range(self.num_batches))
             return
-            
-        validation_size = max(1, int(buffer_length * self.validation_split))
-        end_index = min(validation_size, buffer_length)
-        effective_batch_size = min(self.batch_size, end_index)
         
+        if not self.val_trajectory_ids.numel():
+            self._update_trajectory_split()
+        
+        available_indices = (
+            self.val_sample_indices 
+            if self.val_sample_indices.numel()
+            else th.arange(buffer_size)
+        )
+        
+        if not (n_available := available_indices.numel()):
+            yield from (self.buffer.sample() for _ in range(self.num_batches))
+            return
+        
+        batch_size = min(self.batch_size, n_available)
         for _ in range(self.num_batches):
-            if effective_batch_size == 1:
-                yield self.buffer[[0]]
-            else:
-                sample_indices = randint(
-                    high = end_index,
-                    low  = 0,
-                    size = (effective_batch_size,)
-                )
-                yield self.buffer[sample_indices]
+            batch_selection = th.randperm(
+                device = available_indices.device,
+                n      = n_available,
+            )[:batch_size]
+            
+            yield self.buffer[available_indices[batch_selection].tolist()]
     
     def __len__(self) -> int:
         """
