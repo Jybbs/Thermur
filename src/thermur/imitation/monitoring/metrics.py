@@ -560,27 +560,32 @@ class StateMetrics(Metric):
         Update running sums with batch statistics.
         
         Extracts physical quantities from the batch and accumulates their
-        magnitudes for computing running averages.
+        magnitudes for computing running averages across all agents.
+        Only tracks states when control actions are present.
         
         Args:
             batch: TensorDict containing velocity, temperature, and optionally action
         """
-        if "action" in batch:
-            action = batch["action"]
-            if action.dim() == 3:
-                action = action.reshape(-1, action.shape[-1])
-            self.acceleration_sum += action.norm(dim=-1).mean()
+        if "action" not in batch:
+            return
+        
+        n_samples = (
+            batch["action"].shape[0] * batch["action"].shape[1]
+            if batch["action"].dim() == 3
+            else batch["action"].shape[0]
+        )
+        
+        flat_action = batch["action"].reshape(-1, batch["action"].shape[-1])
+        self.acceleration_sum += flat_action.norm(dim=-1).sum()
+        self.count            += n_samples
         
         if "temperature" in batch and batch["temperature"].numel() > 0:
-            self.temperature_sum += batch["temperature"].mean()
+            self.temperature_sum += batch["temperature"].sum()
         
         if "velocity" in batch:
             velocity = batch["velocity"]
-            if velocity.dim() == 3:
-                velocity = velocity.reshape(-1, velocity.shape[-1])
-            self.velocity_sum += velocity.norm(dim=-1).mean()
-        
-        self.count += 1
+            flat_velocity = batch["velocity"].reshape(-1, velocity.shape[-1])
+            self.velocity_sum += flat_velocity.norm(dim=-1).sum()
 
 
 class ConnectivityMetrics(Metric):
