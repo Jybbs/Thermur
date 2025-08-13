@@ -121,18 +121,21 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "controlling how density perturbations spread through the flock."
         )
     )
-    effective_mass: PositiveFloat = Field(
-        default     = 1.0,
-        description = (
-            "Effective mass m_eff in information speed formula v_info = c_0√(χ/m_eff), "
-            "normalized to unity for standard agent dynamics."
-        )
-    )
     epsilon: PositiveFloat = Field(
         default     = 1e-8,
         description = (
             "Numerical stability constant ε preventing division by zero in "
             "potential gradient calculations, particularly for separation forces."
+        )
+    )
+    expected_alert_fraction: PositiveFloat = Field(
+        default     = 0.3,
+        le          = 1.0,
+        description = (
+            "Expected steady-state fraction of alert agents in the flock. "
+            "Based on λ/(λ+μ) where λ is relaxed_to_alert_rate and μ is "
+            "alert_to_relaxed_rate. Empirical observations show ~30% vigilance "
+            "in bird flocks (Beauchamp 2015)."
         )
     )
     j_base: PositiveFloat = Field(
@@ -150,14 +153,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Number of topological nearest neighbors each agent tracks, based on "
             "empirical observations of 6-7 neighbors in real starling flocks."
-        )
-    )
-    info_speed_coefficient: PositiveFloat = Field(
-        default     = 30.0,
-        description = (
-            "Coefficient c_0 for information propagation speed "
-            "v_info = c_0 * sqrt(χ/m_eff), "
-            "calibrated to achieve empirical range of 15-45 m/s in starling flocks."
         )
     )
     info_speed_max: PositiveFloat = Field(
@@ -194,8 +189,8 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Number of timesteps to retain for computing temporal variance of "
             "polarization Φ used in susceptibility χ = N·Var[Φ]. Window of 30 "
-            "timesteps captures short-term fluctuations while avoiding averaging "
-            "out the variance needed to achieve χ ≥ 5."
+            "timesteps captures short-term fluctuations. Used by metrics module "
+            "for measuring emergent susceptibility (not for control decisions)."
         )
     )
     relaxed_to_alert_rate: PositiveFloat = Field(
@@ -216,20 +211,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Value of 12 m/s represents typical cruising speed within observed range."
         )
     )
-    susceptibility_amplification: PositiveFloat = Field(
-        default     = 2.0,
-        description = (
-            "Amplification factor α_χ for alignment weight modulation based on "
-            "susceptibility, creating stronger velocity correlation as the flock "
-            "approaches critical state."
-        )
-    )
     susceptibility_target: PositiveFloat = Field(
         default     = 10.0,
         description = (
             "Target susceptibility χ_target for maintaining critical state "
             "dynamics, where "
-            "χ = N·Var[Φ] measures the flock's responsiveness to perturbations."
+            "χ = N·Var[Φ] measures the flock's responsiveness to perturbations. "
+            "Based on Cavagna et al. (2010), χ ≥ 5 indicates critical state."
         )
     )
     temperature_scaling: PositiveFloat = Field(
