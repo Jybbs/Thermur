@@ -262,7 +262,6 @@ class ValidationDataLoader:
         assignment is complete.
         """
         if not (buffer_size := len(self.buffer)):
-            yield from ([] for _ in range(self.num_batches))
             return
         
         if not self.val_trajectory_ids.numel():
