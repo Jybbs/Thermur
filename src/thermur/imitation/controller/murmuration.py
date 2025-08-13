@@ -72,10 +72,7 @@ class MurmurationController(th.nn.Module):
         self.flock  = flock
         self.mmm    = mmm
         self.safety = safety
-
-        self.polarization_queues = {}
-        self.max_queue_size      = mmm.polarization_window
-        self.alert_states_memory = {}  # Persistent alert states by trajectory
+        self.alert_states_memory = {}
 
     def _compute_density_wave(self, flock: TensorDictBase):
         """
@@ -278,26 +275,6 @@ class MurmurationController(th.nn.Module):
         flock["alert_states"]   = new_states
         flock["alert_fraction"] = new_states.mean()
     
-    def _compute_information_speed(self, flock: TensorDictBase):
-        """
-        Compute information propagation speed through the flock.
-
-        Following empirical observations, information speed scales with
-        susceptibility:
-
-            v_info = c_0 √(χ/m_eff)
-
-        where c_0 is a proportionality constant and m_eff is effective mass.
-        Real murmurations achieve v_info ∈ [15, 45] m/s.
-
-        Args:
-            flock: TensorDict containing susceptibility, updated with info_speed
-        """
-        flock["info_speed"] = (
-            self.mmm.info_speed_coefficient * 
-            th.sqrt(flock["susceptibility"] / self.mmm.effective_mass)
-        ).clamp(self.mmm.info_speed_min, self.mmm.info_speed_max)
-    
     def _compute_self_propulsion(self, flock: TensorDictBase):
         """
         Compute self-propulsion forces following active matter dynamics.
@@ -356,60 +333,6 @@ class MurmurationController(th.nn.Module):
             (target_vel - flock["velocity"]) / self.mmm.velocity_relaxation_time +
             noise
         )
-    
-    def _compute_susceptibility(self, flock: TensorDictBase):
-        """
-        Compute flock susceptibility χ = N · Var[Φ] and store in TensorDict.
-
-        From Cavagna et al. (2010), susceptibility measures the flock's
-        responsiveness to perturbations:
-
-            χ = N · ⟨(Φ - ⟨Φ⟩)²⟩
-
-        where Φ = |Σ_i 𝐬_i|/N is the polarization order parameter. At critical
-        state, χ diverges, enabling rapid information propagation with speed:
-
-            v_info = c_0 √(χ/m_eff) ∈ [15, 45] m/s
-
-        Note: For real-time control, we use instantaneous variance. Full temporal
-        variance would require maintaining history across timesteps.
-
-        Args:
-            flock: TensorDict containing velocities, updated with susceptibility
-                   and polarization values
-        """
-        spin_vectors = (
-            flock["velocity"] / 
-            flock["velocity"].norm(dim=1, keepdim=True).clamp_min(1e-8)
-        )
-        
-        flock["polarization"] = spin_vectors.mean(dim=0).norm()
-        
-        traj_id = 0
-        if "trajectory_id" in flock:
-            traj_id = (
-                flock["trajectory_id"].item() 
-                if hasattr(flock["trajectory_id"], 'item') 
-                else int(flock["trajectory_id"])
-            )
-        
-        if traj_id not in self.polarization_queues:
-            self.polarization_queues[traj_id] = deque(maxlen=self.max_queue_size)
-        
-        queue = self.polarization_queues[traj_id]
-        queue.append(flock["polarization"].item())
-        
-        variance = (
-            th.tensor(
-                data   = list(queue), 
-                device = flock["velocity"].device,
-                dtype  = flock["velocity"].dtype
-            ).var()
-            if len(queue) > 1
-            else flock["polarization"] * (1 - flock["polarization"])
-        )
-        
-        flock["susceptibility"] = self.flock.agent_count * variance
     
     def _compute_threats(self, flock: TensorDictBase):
         """
@@ -510,9 +433,8 @@ class MurmurationController(th.nn.Module):
             self._estimate_gradient,
             self._compute_individual_alert_states,
             self._compute_hamiltonian_forces,
-            self._compute_susceptibility,
             self._compute_threats,
-            self._compute_information_speed,
+            self._set_information_speed,
             self._compute_self_propulsion,
             self._compute_density_wave,
         ]:
@@ -601,6 +523,25 @@ class MurmurationController(th.nn.Module):
             other     = gradient_estimate
         )
 
+    def _set_information_speed(self, flock: TensorDictBase):
+        """
+        Set information propagation speed based on alert fraction.
+
+        Uses empirical range from Cavagna et al. (2010):
+        - Relaxed state: 15 m/s (low responsiveness)
+        - Alert state: 45 m/s (high responsiveness)
+        
+        Speed interpolates linearly with alert fraction to represent
+        increasing flock responsiveness as more agents become vigilant.
+
+        Args:
+            flock: TensorDict containing alert_fraction, updated with info_speed
+        """
+        # Use actual alert fraction computed in _compute_individual_alert_states
+        flock["info_speed"] = (
+            self.mmm.info_speed_min + 
+            flock["alert_fraction"] * (self.mmm.info_speed_max - self.mmm.info_speed_min)
+        )
 
     def _update_graph_state(self, flock: TensorDictBase):
         """

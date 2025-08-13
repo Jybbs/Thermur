@@ -350,6 +350,9 @@ class SimulationEnv(EnvBase):
             self.flock.communication_range * 
             self.physics.initial_spacing_factor
         )
+        
+        # Center the flock at specified altitude
+        positions[:, 2] += self.physics.initial_altitude
 
         self.episode_time     = 0.0
         self.velocities       = th.randn_like(positions) * 2.0
