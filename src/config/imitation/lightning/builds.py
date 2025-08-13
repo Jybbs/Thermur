@@ -77,8 +77,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         env                     = "${_system.env}",
         experience              = "${lightning.experience}",
         expert                  = "${_system.murmuration_controller}",
-        metrics                 = "${monitoring.metrics}",
-        mmm                     = "${controller.mmm}",
         populate_full_signature = True
     ),
 

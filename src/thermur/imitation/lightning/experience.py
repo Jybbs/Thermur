@@ -1,14 +1,13 @@
 """
 Lightning DataModule for experience collection and replay.
 
-This module wraps TorchRL's trajectory collection and replay buffer components
-into a Lightning DataModule, managing the flow of expert demonstrations
-during imitation learning.
+This module provides a Lightning-compatible interface for expert demonstration
+collection and replay buffer management during imitation learning.
 """
 from __future__                  import annotations
+from .collector                  import ExperienceCollector
 from pytorch_lightning           import LightningDataModule
 from torch                       import unique, where
-from torchrl.collectors          import SyncDataCollector
 from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
 from typing                      import TYPE_CHECKING
@@ -16,9 +15,7 @@ from typing                      import TYPE_CHECKING
 import torch as th
 
 if TYPE_CHECKING:
-    from config.imitation.controller       import MurmurationModel
     from config.imitation.lightning        import ExperienceModel
-    from config.imitation.monitoring       import MetricsModel
     from pytorch_lightning                 import LightningModule
     from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
     from thermur.imitation.controller      import MurmurationController
@@ -29,25 +26,17 @@ class DataModule(LightningDataModule):
     """
     Lightning DataModule for managing expert demonstration data.
 
-    This module handles the data collection pipeline for imitation learning,
-    wrapping TorchRL's SyncDataCollector and TensorDictReplayBuffer into
-    Lightning's standardized interface. It manages:
-
-    1. Expert trajectory collection via SyncDataCollector
-    2. Experience storage in a replay buffer
-    3. Batch sampling for training
-
-    The DataModule ensures proper lifecycle management of data resources
-    and provides a clean interface for the Lightning Trainer.
+    This module orchestrates the data collection pipeline for imitation learning,
+    integrating our custom ExperienceCollector with TorchRL's replay buffer.
+    It manages trajectory collection, experience storage, and batch sampling
+    while ensuring proper lifecycle management within Lightning's training loop.
     """
 
     def __init__(
         self,
         env        : SimulationEnv,
         experience : ExperienceModel,
-        expert     : MurmurationController,
-        metrics    : MetricsModel | None = None,
-        mmm        : MurmurationModel | None = None
+        expert     : MurmurationController
     ):
         """
         Initialize the experience module.
@@ -57,18 +46,14 @@ class DataModule(LightningDataModule):
             experience : Experience data configuration with batch sizes and buffer
                          settings
             expert     : The murmuration controller that generates actions
-            metrics    : Optional metrics configuration for choreography analysis
-            mmm        : Optional murmuration model for choreography analysis
         """
         super().__init__()
         self.env        = env
         self.experience = experience
         self.expert     = expert
-        self.metrics    = metrics
-        self.mmm        = mmm
 
         self.buffer    : TensorDictReplayBuffer | None = None
-        self.collector : SyncDataCollector      | None = None
+        self.collector : ExperienceCollector    | None = None
 
     def setup(self, stage: str | None = None):
         """
@@ -93,13 +78,12 @@ class DataModule(LightningDataModule):
             )
             
         if self.collector is None:
-            self.collector = SyncDataCollector(
-                create_env_fn       = self.env,
+            self.collector = ExperienceCollector(
+                env                 = self.env,
+                expert              = self.expert,
                 frames_per_batch    = self.experience.frames_per_batch,
                 max_frames_per_traj = self.experience.max_frames_per_traj,
-                policy              = self.expert,
-                total_frames        = self.experience.total_frames,
-                trust_policy        = True
+                total_frames        = self.experience.total_frames
             )
 
     def teardown(self, stage: str):
@@ -130,9 +114,7 @@ class DataModule(LightningDataModule):
         return ExperienceDataLoader(
             buffer     = self.buffer,
             collector  = self.collector,
-            experience = self.experience,
-            metrics    = self.metrics,
-            mmm        = self.mmm
+            experience = self.experience
         )
     
     def val_dataloader(self):
@@ -170,10 +152,8 @@ class ExperienceDataLoader:
     def __init__(
         self,
         buffer     : TensorDictReplayBuffer,
-        collector  : SyncDataCollector,
+        collector  : ExperienceCollector,
         experience : ExperienceModel,
-        metrics    : MetricsModel | None = None,
-        mmm        : MurmurationModel | None = None,
         pl_module  : LightningModule | None = None
     ):
         """
@@ -183,19 +163,12 @@ class ExperienceDataLoader:
             buffer     : The replay buffer for experience storage.
             collector  : The trajectory collector.
             experience : Experience data configuration.
-            metrics    : Optional metrics configuration for choreography analysis.
-            mmm        : Optional murmuration model for choreography analysis.
             pl_module  : Optional Lightning module for WandB logging.
         """
         self.buffer     = buffer
         self.collector  = collector
         self.experience = experience
         self.pl_module  = pl_module
-        
-        self.choreography = None
-        if metrics is not None and mmm is not None:
-            from thermur.imitation.monitoring.choreography import ChoreographyCollector
-            self.choreography = ChoreographyCollector(metrics, mmm)
 
     def __iter__(self):
         """
@@ -205,9 +178,6 @@ class ExperienceDataLoader:
         collecting new experiences from the environment.
         """
         for data in self.collector:
-            if self.choreography is not None:
-                self.choreography.analyze_trajectory(data, self.pl_module)
-            
             self.buffer.extend(data)
 
             if len(self.buffer) >= self.experience.batch_size:
