@@ -322,7 +322,7 @@ class GNNPolicy(LightningModule):
                 raise AttributeError(
                     f"MetricsCollector missing required '{metric_name}' metrics"
                 )
-            metrics.to(self.device)
+            setattr(self.collector, metric_name, metrics.to(self.device))
 
     def training_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
         """

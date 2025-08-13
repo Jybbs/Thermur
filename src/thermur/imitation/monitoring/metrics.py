@@ -174,12 +174,19 @@ class CohesionMetric(AveragingMetric):
             return
 
         if edge_index.dim() == 3:
-            for i in range(edge_index.shape[0]):
-                self.update(edge_index[i], num_agents)
+            batch_size     = edge_index.shape[0]
+            fiedler_values = th.zeros(batch_size, device=edge_index.device)
+            
+            for i in range(batch_size):
+                if edge_index[i].numel() > 0:
+                    laplacian = self._compute_graph_laplacian(edge_index[i], num_agents)
+                    fiedler_values[i] = self._compute_fiedler_power_iteration(laplacian)
+            
+            self.sum   += fiedler_values.sum()
+            self.count += batch_size
             return
 
-        laplacian = self._compute_graph_laplacian(edge_index, num_agents)
-
+        laplacian     = self._compute_graph_laplacian(edge_index, num_agents)
         fiedler_value = self._compute_fiedler_power_iteration(laplacian)
         
         self.sum   += fiedler_value
@@ -323,12 +330,25 @@ class HamiltonianEnergyMetric(AveragingMetric):
             coupling  = self.j_base * th.exp(-distances / self.coupling_decay)
             coupling.diagonal(dim1=-2, dim2=-1).fill_(0)
         else:
-            n_agents = spins.shape[0]
-            coupling = th.zeros(n_agents, n_agents, device=spins.device)
+            batch_size, n_agents = spins.shape[:2]
+            coupling  = th.zeros(
+                batch_size, 
+                n_agents, 
+                n_agents, 
+                device = spins.device
+            )
             
             if batch["edge_source"].numel() > 0:
-                alert_states_source = batch["alert_states"][batch["edge_source"]]
-                coupling_modifier   = th.where(
+                n_edges       = batch["edge_source"].shape[1]
+                batch_indices = th.arange(
+                    device = spins.device,
+                    end    = batch_size
+                ).unsqueeze(1).expand(-1, n_edges)
+                
+                alert_states_source = batch["alert_states"][
+                    batch_indices, batch["edge_source"]
+                ]
+                coupling_modifier = th.where(
                     alert_states_source > 0.5,
                     self.alert_coupling_factor,
                     1.0
@@ -336,16 +356,20 @@ class HamiltonianEnergyMetric(AveragingMetric):
                 
                 j_edges = self.j_base * coupling_modifier * th.exp(
                     -batch["topo_distances"][
-                        batch["edge_source"], batch["edge_target"]
+                        batch_indices, batch["edge_source"], batch["edge_target"]
                     ] / self.coupling_decay
                 )
                 
-                coupling[batch["edge_source"], batch["edge_target"]] = j_edges
-                coupling[batch["edge_target"], batch["edge_source"]] = j_edges
+                coupling[batch_indices, batch["edge_source"], 
+                        batch["edge_target"]] = j_edges
+                coupling[batch_indices, batch["edge_target"], 
+                        batch["edge_source"]] = j_edges
 
-        energy      = -(coupling * (spins @ spins.mT)).sum() / 2
-        self.sum   += energy
-        self.count += 1
+        spin_products = spins @ spins.transpose(-2, -1)
+        energies      = -(coupling * spin_products).sum(dim=(-2, -1)) / 2
+        
+        self.sum   += energies.sum()
+        self.count += energies.numel()
 
 
 class LegibilitySSIMMetric(AveragingMetric):
@@ -442,12 +466,9 @@ class LegibilitySSIMMetric(AveragingMetric):
         Returns:
             Tensor [grid_size, grid_size] of normalized velocity magnitudes
         """
-        if (
-            not hasattr(self, '_coords_cache') 
-            or self._coords_cache.device != positions.device
-        ):
-            self._coords_cache = self.coords.to(positions.device)
-        coords = self._coords_cache
+        coords     = self.coords
+        bounds_min = self.bounds_min
+        bounds_max = self.bounds_max
         
         velocity_magnitude = velocities[:, :2].norm(dim=1)
         grid_positions     = (
@@ -501,7 +522,6 @@ class LegibilitySSIMMetric(AveragingMetric):
                 velocities = wind[i]
             )
         
-        self.ssim_metric = self.ssim_metric.to(device)
         ssim_values = self.ssim_metric(
             preds=flock_fields, target=wind_fields
         )
@@ -854,7 +874,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
             self.sum   += abs(fitted_exponent - self.target_exponent)
 
 
-class MetricsCollector:
+class MetricsCollector(th.nn.Module):
     """
     Centralized metric collection and management for training and evaluation.
 
@@ -889,6 +909,7 @@ class MetricsCollector:
             mmm        : Murmuration dynamics configuration
             safety     : Safety configuration with temperature thresholds
         """
+        super().__init__()
         self.bounds_max = bounds_max
         self.gravity    = gravity
         self.metrics    = metrics

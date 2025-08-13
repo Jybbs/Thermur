@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from thermur.imitation.monitoring      import EventLogger, MetricsCollector
 
 
-
 class MonitoringCallback(Callback):
     """
     Unified monitoring callback for metrics and event tracking.
@@ -83,6 +82,12 @@ class MonitoringCallback(Callback):
             batch_idx : Index of the current batch within the epoch
         """
         if self.collector:
+            # Ensure metrics are on same device as model (minimal fix for device hopping)
+            if not hasattr(self, '_metrics_synced'):
+                for name in ['train_evaluation', 'val_evaluation', 'train_imitation', 'val_imitation']:
+                    metrics = getattr(self.collector, name)
+                    setattr(self.collector, name, metrics.to(pl_module.device))
+                self._metrics_synced = True
             self.collector.update_evaluation_metrics(batch,  True)
 
         if self.events:

@@ -53,28 +53,6 @@ class TemporalMetric(Metric):
             else th.zeros_like(self.sum)
         )
     
-    def _ensure_device(
-        self, 
-        cache_name    : str,
-        target_device : th.device, 
-        tensor        : Tensor
-    ) -> Tensor:
-        """
-        Ensure tensor is on target device with caching to avoid repeated transfers.
-
-        Args:
-            cache_name    : Unique name for caching this tensor
-            target_device : Target device for the tensor
-            tensor        : Source tensor to transfer
-
-        Returns:
-            Tensor on target device
-        """
-        cache_attr = f'_{cache_name}_cache'
-        if (not hasattr(self, cache_attr) or 
-            getattr(self, cache_attr).device != target_device):
-            setattr(self, cache_attr, tensor.to(target_device))
-        return getattr(self, cache_attr)
 
     def reset(self):
         """
@@ -119,21 +97,10 @@ class InformationPropagationMetric(TemporalMetric):
                    trajectory_id tensors
         """
         current_velocities = batch["velocity"]
-        device = current_velocities.device
-        
-        cached_last_value = self._ensure_device(
-            cache_name    = 'last_value',
-            target_device = device,
-            tensor        = self.last_value
-        )
-        cached_last_value.fill_(0.0)
+        self.last_value.fill_(0.0)
         
         if self.temporal_state is not None:
-            previous_velocities = self._ensure_device(
-                cache_name    = 'temporal_state',
-                target_device = device,
-                tensor        = self.temporal_state
-            )
+            previous_velocities = self.temporal_state
             
             velocity_changes = (
                 current_velocities - previous_velocities
@@ -150,7 +117,7 @@ class InformationPropagationMetric(TemporalMetric):
                         propagation_speed = (
                             (radii.max() - radii.min()) / self.time_step
                         )
-                        cached_last_value.copy_(propagation_speed)
+                        self.last_value.copy_(propagation_speed)
                         self.sum   += propagation_speed
                         self.count += 1
         
@@ -202,12 +169,6 @@ class SusceptibilityMetric(TemporalMetric):
         Args:
             batch: TensorDict containing velocity and trajectory_id
         """
-        device = batch["velocity"].device
-        cached_last_value = self._ensure_device(
-            cache_name    = 'last_value',
-            target_device = device,
-            tensor        = self.last_value
-        )
         
         polarization = th.nn.functional.normalize(
             dim   = 1,
@@ -227,7 +188,7 @@ class SusceptibilityMetric(TemporalMetric):
         )
         
         susceptibility = batch["velocity"].shape[0] * variance
-        cached_last_value.copy_(susceptibility)
+        self.last_value.copy_(susceptibility)
         self.sum   += susceptibility
         self.count += 1
 
@@ -269,39 +230,29 @@ class TopologicalFidelityMetric(TemporalMetric):
         Args:
             batch: TensorDict containing position, timestep, and trajectory_id
         """
-        device = batch["position"].device
-        cached_last_value = self._ensure_device(
-            cache_name    = 'last_value',
-            target_device = device,
-            tensor        = self.last_value
-        )
         
         _, indices = th.cdist(batch["position"], batch["position"]).topk(
             k       = self.k_neighbors + 1,
             largest = False
         )
         current_neighbors = indices[:, 1:]
-        cached_last_value.fill_(1.0)
+        self.last_value.fill_(1.0)
         if self.temporal_state is not None:
-            previous_neighbors = self._ensure_device(
-                cache_name    = 'temporal_state',
-                target_device = device,
-                tensor        = self.temporal_state
-            )
+            previous_neighbors = self.temporal_state
             
             overlap = (
                 previous_neighbors.unsqueeze(2) == current_neighbors.unsqueeze(1)
             ).any(dim=2).sum(dim=1).float()
             
             fidelity = overlap.mean() / self.k_neighbors
-            cached_last_value.copy_(fidelity)
+            self.last_value.copy_(fidelity)
             self.sum   += fidelity
             self.count += 1
         
         self.temporal_state = current_neighbors.clone().detach()
 
 
-class ChoreographyCollector:
+class ChoreographyCollector(th.nn.Module):
     """
     Centralized choreography collection for temporal murmuration dynamics.
     
@@ -333,6 +284,7 @@ class ChoreographyCollector:
             metrics : Metrics configuration with target ranges
             mmm     : Murmuration dynamics configuration
         """
+        super().__init__()
         self.metrics = metrics
         self.mmm     = mmm
         
