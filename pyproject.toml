@@ -19,7 +19,6 @@ dependencies    = [
     "pydantic",
     "pydantic-settings",
     "pyarrow",
-    "pyvista",
     "qpth",
     "questionary",
     "rich",

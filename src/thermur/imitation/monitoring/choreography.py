@@ -19,31 +19,27 @@ if TYPE_CHECKING:
     from torch                       import Tensor
 
 import torch as th
-import wandb
 
 
-class AveragingMetric(Metric):
+class TemporalMetric(Metric):
     """
-    Base class for metrics that compute running averages.
+    Base class for metrics that track temporal evolution.
 
-    Provides common sum/count state management and averaging logic
-    for metrics that accumulate values over batches. Subclasses should
-    implement the update() method to add values to the sum.
+    Provides state management for metrics that require comparison
+    between consecutive timesteps to measure dynamics.
     """
     count : Tensor
     sum   : Tensor
 
     def __init__(self):
         """
-        Initialize state variables for computing running averages.
-
-        Creates two state variables that are synchronized across distributed
-        training: 'count' for tracking the number of measurements and 'sum'
-        for accumulating the values to be averaged.
+        Initialize temporal metric with state tracking.
         """
         super().__init__()
-        self.add_state("count", default=th.tensor(0),   dist_reduce_fx="sum")
-        self.add_state("sum",   default=th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("count",      th.tensor(0),   "sum")
+        self.add_state("sum",        th.tensor(0.0), "sum")
+        self.add_state("last_value", th.tensor(0.0), "mean")
+        self.temporal_state = None
 
     def compute(self) -> Tensor:
         """
@@ -56,9 +52,39 @@ class AveragingMetric(Metric):
             self.sum / self.count if self.count > 0 
             else th.zeros_like(self.sum)
         )
+    
+    def _ensure_device(
+        self, 
+        cache_name    : str,
+        target_device : th.device, 
+        tensor        : Tensor
+    ) -> Tensor:
+        """
+        Ensure tensor is on target device with caching to avoid repeated transfers.
+
+        Args:
+            cache_name    : Unique name for caching this tensor
+            target_device : Target device for the tensor
+            tensor        : Source tensor to transfer
+
+        Returns:
+            Tensor on target device
+        """
+        cache_attr = f'_{cache_name}_cache'
+        if (not hasattr(self, cache_attr) or 
+            getattr(self, cache_attr).device != target_device):
+            setattr(self, cache_attr, tensor.to(target_device))
+        return getattr(self, cache_attr)
+
+    def reset(self):
+        """
+        Reset metric state including temporal tracking.
+        """
+        super().reset()
+        self.temporal_state = None
 
 
-class InformationPropagationMetric(AveragingMetric):
+class InformationPropagationMetric(TemporalMetric):
     """
     Measures empirical information propagation speed through the learned flock.
 
@@ -76,41 +102,62 @@ class InformationPropagationMetric(AveragingMetric):
             metrics : Metrics configuration containing propagation speeds
         """
         super().__init__()
-        self.previous_velocities = None
-        self.target_min          = metrics.info_propagation_min_speed
-        self.target_max          = metrics.info_propagation_max_speed
-        self.time_step           = metrics.info_propagation_time_step
+        self.target_min = metrics.info_propagation_min_speed
+        self.target_max = metrics.info_propagation_max_speed
+        self.time_step  = metrics.info_propagation_time_step
     
     def update(self, batch: TensorDictBase):
         """
         Measure empirical propagation speed from velocity changes.
+        
+        Computes velocity perturbations and detects information propagation
+        events when significant changes occur at the flock's edge. Propagation
+        speed v = Δr/Δt where Δr is the spatial extent and Δt is the timestep.
 
         Args:
-            batch: TensorDict containing position and velocity
+            batch: TensorDict containing position, velocity, timestep, and
+                   trajectory_id tensors
         """
-        if self.previous_velocities is None:
-            self.previous_velocities = batch["velocity"].clone()
-            return
-
-        v_changes = (batch["velocity"] - self.previous_velocities).norm(dim=1)
+        current_velocities = batch["velocity"]
+        device = current_velocities.device
         
-        if (threshold := v_changes.mean() + v_changes.std()) > 0 and \
-           (significant := v_changes > threshold).any():
-            center = batch["position"].mean(dim=0)
-            radii  = (batch["position"] - center).norm(dim=1)
+        cached_last_value = self._ensure_device(
+            cache_name    = 'last_value',
+            target_device = device,
+            tensor        = self.last_value
+        )
+        cached_last_value.fill_(0.0)
+        
+        if self.temporal_state is not None:
+            previous_velocities = self._ensure_device(
+                cache_name    = 'temporal_state',
+                target_device = device,
+                tensor        = self.temporal_state
+            )
             
-            if (significant & (radii > radii.mean())).any():
-                propagation_speed = (
-                    (radii.max() - radii.min()) / self.time_step
-                )
+            velocity_changes = (
+                current_velocities - previous_velocities
+            ).norm(dim=1)
+            
+            if (threshold := velocity_changes.mean() + velocity_changes.std()) > 0:
+                significant_changes = velocity_changes > threshold
                 
-                self.sum   += propagation_speed
-                self.count += 1
+                if significant_changes.any():
+                    center = batch["position"].mean(dim=0)
+                    radii  = (batch["position"] - center).norm(dim=1)
+                    
+                    if (significant_changes & (radii > radii.mean())).any():
+                        propagation_speed = (
+                            (radii.max() - radii.min()) / self.time_step
+                        )
+                        cached_last_value.copy_(propagation_speed)
+                        self.sum   += propagation_speed
+                        self.count += 1
         
-        self.previous_velocities = batch["velocity"].clone()
+        self.temporal_state = current_velocities.clone().detach()
 
 
-class SusceptibilityMetric(AveragingMetric):
+class SusceptibilityMetric(TemporalMetric):
     """
     Computes learned flock susceptibility χ = N · Var[Φ] to assess critical dynamics.
     
@@ -137,24 +184,41 @@ class SusceptibilityMetric(AveragingMetric):
         self.target_min         = metrics.susceptibility_min
         self.target_max         = metrics.susceptibility_max
     
+    def reset(self):
+        """
+        Reset the metric state.
+        """
+        super().reset()
+        self.polarization_queue.clear()
+    
     def update(self, batch: TensorDictBase):
         """
         Compute susceptibility from learned policy's velocities.
         
+        Updates the polarization history for the current trajectory and
+        computes susceptibility χ = N·Var[Φ] where N is the number of agents
+        and Var[Φ] is the variance of polarization over the time window.
+        
         Args:
-            batch: TensorDict containing velocity
+            batch: TensorDict containing velocity and trajectory_id
         """
-        spin_vectors = (
-            batch["velocity"] / 
-            batch["velocity"].norm(dim=1, keepdim=True).clamp_min(1e-8)
+        device = batch["velocity"].device
+        cached_last_value = self._ensure_device(
+            cache_name    = 'last_value',
+            target_device = device,
+            tensor        = self.last_value
         )
         
-        polarization = spin_vectors.mean(dim=0).norm()
+        polarization = th.nn.functional.normalize(
+            dim   = 1,
+            input = batch["velocity"]
+        ).mean(dim=0).norm()
+        
         self.polarization_queue.append(polarization.item())
         
         variance = (
             th.tensor(
-                data   = list(self.polarization_queue), 
+                data   = list(self.polarization_queue),
                 device = batch["velocity"].device,
                 dtype  = batch["velocity"].dtype
             ).var()
@@ -163,12 +227,12 @@ class SusceptibilityMetric(AveragingMetric):
         )
         
         susceptibility = batch["velocity"].shape[0] * variance
-        
+        cached_last_value.copy_(susceptibility)
         self.sum   += susceptibility
         self.count += 1
 
 
-class TopologicalFidelityMetric(AveragingMetric):
+class TopologicalFidelityMetric(TemporalMetric):
     """
     Measures consistency of k-nearest neighbor connections.
     
@@ -184,33 +248,57 @@ class TopologicalFidelityMetric(AveragingMetric):
             mmm: Murmuration model containing k_neighbors
         """
         super().__init__()
-        self.k_neighbors        = mmm.k_neighbors
-        self.previous_neighbors = None
+        self.k_neighbors = mmm.k_neighbors
+        self.last_value.fill_(1.0)
+    
+    def reset(self):
+        """
+        Reset the metric state with fidelity default of 1.0.
+        """
+        super().reset()
+        self.last_value.fill_(1.0)
     
     def update(self, batch: TensorDictBase):
         """
         Update metric with neighbor consistency measurement.
         
+        Computes the fraction of k-nearest neighbors maintained from the
+        previous timestep. Fidelity φ = |N_t ∩ N_{t-1}| / k where N_t is
+        the set of k-nearest neighbors at timestep t.
+        
         Args:
-            batch: TensorDict containing position
+            batch: TensorDict containing position, timestep, and trajectory_id
         """
-            
+        device = batch["position"].device
+        cached_last_value = self._ensure_device(
+            cache_name    = 'last_value',
+            target_device = device,
+            tensor        = self.last_value
+        )
+        
         _, indices = th.cdist(batch["position"], batch["position"]).topk(
-            k       = self.k_neighbors + 1, 
+            k       = self.k_neighbors + 1,
             largest = False
         )
-
         current_neighbors = indices[:, 1:]
-        if self.previous_neighbors is not None:
-            overlap_count = (
-                self.previous_neighbors.unsqueeze(2) == 
-                current_neighbors.unsqueeze(1)
+        cached_last_value.fill_(1.0)
+        if self.temporal_state is not None:
+            previous_neighbors = self._ensure_device(
+                cache_name    = 'temporal_state',
+                target_device = device,
+                tensor        = self.temporal_state
+            )
+            
+            overlap = (
+                previous_neighbors.unsqueeze(2) == current_neighbors.unsqueeze(1)
             ).any(dim=2).sum(dim=1).float()
             
-            self.sum   += overlap_count.mean() / self.k_neighbors
+            fidelity = overlap.mean() / self.k_neighbors
+            cached_last_value.copy_(fidelity)
+            self.sum   += fidelity
             self.count += 1
         
-        self.previous_neighbors = current_neighbors.clone()
+        self.temporal_state = current_neighbors.clone().detach()
 
 
 class ChoreographyCollector:
@@ -256,12 +344,57 @@ class ChoreographyCollector:
         
         self.trajectory_count     = 0
         self.trajectory_frequency = metrics.trajectory_frequency
+        self.timestep_history     = []
+    
+    def _log_timestep_metrics(self, pl_module: LightningModule | None):
+        """
+        Log timestep-by-timestep metrics to WandB.
+        
+        Logs temporal evolution of choreography metrics, enabling visualization
+        of how information propagation, susceptibility, and topological fidelity
+        change over the course of trajectories.
+        
+        Args:
+            pl_module: Lightning module with WandB logger access
+        """
+        if not pl_module:
+            return
+            
+        for timestep_metrics in self.timestep_history:
+            metrics_dict = {
+                f"timestep/{k}": v for k, v in timestep_metrics.items()
+                if k != "timestep"
+            }
+            metrics_dict["timestep/global_step"] = timestep_metrics["timestep"]
+            pl_module.log_dict(metrics_dict)
+        
+        self.timestep_history.clear()
+
+    def _log_metrics(self, pl_module: LightningModule | None):
+        """
+        Log computed metrics to WandB.
+        
+        Sends choreography metrics to WandB under the "choreography/" namespace,
+        allowing them to be tracked alongside training metrics in the same run.
+        
+        Args:
+            pl_module: Lightning module with WandB logger access
+        """
+        if not pl_module:
+            return
+            
+        computed = self.choreography_metrics.compute()
+        pl_module.log_dict({
+            f"choreography/{k}": v 
+            for k, v in computed.items()
+        })
+        self.choreography_metrics.reset()
     
     def analyze_trajectory(
         self,
         trajectory : TensorDictBase,
         pl_module  : LightningModule | None = None
-    ):
+    ) -> list[dict]:
         """
         Analyze a complete trajectory for temporal murmuration properties.
         
@@ -274,8 +407,14 @@ class ChoreographyCollector:
             trajectory : TensorDict with shape [T, n_agents, features] where T is
                         the number of sequential timesteps
             pl_module  : Optional Lightning module for accessing the WandB logger
+        
+        Returns:
+            List of per-timestep metrics
         """
         num_timesteps = trajectory["position"].shape[0]
+        base_timestep = self.trajectory_count * num_timesteps
+        prev_values   = {"susceptibility" : 0.0, "topological_fidelity" : 1.0}
+        timestep_data = []
         
         for t in range(num_timesteps):
             frame = TensorDict({
@@ -284,37 +423,58 @@ class ChoreographyCollector:
             
             for metric in self.choreography_metrics.values():
                 metric.update(frame)
+            
+            current_values = {
+                name: metric.last_value.item()
+                for name, metric in self.choreography_metrics.items()
+            }
+            current_values["timestep"] = base_timestep + t
+            
+            if t > 0:
+                for name in ["susceptibility", "topological_fidelity"]:
+                    current_values[f"delta_{name}"] = (
+                        current_values[name] - prev_values.get(name, 0)
+                    )
+            
+            timestep_data.append(current_values)
+            self.timestep_history.append(current_values)
+            prev_values = current_values
         
         self.trajectory_count += 1
         
         if self.trajectory_count % self.trajectory_frequency == 0:
             self._log_metrics(pl_module)
-    
-    def _log_metrics(self, pl_module: LightningModule | None):
-        """
-        Log computed metrics to WandB.
+            self._log_timestep_metrics(pl_module)
         
-        Sends choreography metrics to WandB under the "choreography/" namespace,
-        allowing them to be tracked alongside training metrics in the same run.
+        return timestep_data
+    
+    def compute_temporal_changes(
+        self,
+        trajectories : list[TensorDictBase],
+        pl_module    : LightningModule | None = None
+    ) -> dict[int, list[dict]]:
+        """
+        Compute and log temporal changes in choreography metrics.
+        
+        Processes trajectories to extract per-timestep metrics and their
+        temporal derivatives, providing insight into how the flock's
+        dynamics evolve over time.
         
         Args:
-            pl_module: Lightning module with WandB logger access
+            trajectories : List of TensorDicts, each with shape [T, n_agents, features]
+            pl_module    : Optional Lightning module for WandB logging
+        
+        Returns:
+            Dictionary mapping trajectory index to list of timestep metrics
         """
-        computed = self.choreography_metrics.compute()
-        
-        if wandb.run is not None:
-            wandb.log({
-                f"choreography/{k}": v 
-                for k, v in computed.items()
-            }, step = self.trajectory_count)
-            
-        elif pl_module and hasattr(pl_module, "logger") and pl_module.logger:
-            pl_module.logger.log_metrics({
-                f"choreography/{k}": v 
-                for k, v in computed.items()
-            }, step = self.trajectory_count)
-        
-        self.choreography_metrics.reset()
+        return {
+            idx: timestep_data
+            for idx, trajectory in enumerate(trajectories)
+            if (
+                self.choreography_metrics.reset(),
+                timestep_data := self.analyze_trajectory(trajectory, pl_module)
+            )[1]
+        }
     
     def get_summary(self) -> dict[str, Tensor]:
         """

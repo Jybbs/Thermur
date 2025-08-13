@@ -28,22 +28,26 @@ class MurmurationController(th.nn.Module):
     rather than metric distances. The flock maintains critical state dynamics
     for rapid information propagation and exhibits distinct cruise/alert modes.
 
-    The controller implements the Hamiltonian formulation from Bialek et al. (2012):
+    The controller implements a modified Hamiltonian formulation based on 
+    Bialek et al. (2012) with heterogeneous coupling for alert states:
 
-        E = -Σ_{<ij>} J_{ij} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
+        E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
 
     where:
         - 𝐬_i = 𝐯_i / |𝐯_i| are normalized velocity vectors (spin variables)
-        - J_{ij} = J_0 exp(-d_{ij}/λ) are pairwise coupling strengths
+        - J_{ij}^{alert} = κ_i × J_0 exp(-d_{ij}/λ) with alert-dependent coupling
+        - κ_i = 1.0 for relaxed birds, alert_coupling_factor for alert birds
         - d_{ij} is the topological distance (minimum hop count)
         - 𝐡_i represents external fields (thermal gradients)
 
     Forces are derived as 𝐮_i = -∂E/∂𝐱_i, yielding:
 
-        F_i = Σ_j J_{ij} (𝐯_j - 𝐯_i)
+        F_i = κ_i × Σ_j J_{ij} (𝐯_j - 𝐯_i)
 
-    This formulation reproduces scale-free correlations C(r) ~ r^{-1/3} and
-    information propagation speeds of 15-45 m/s observed in real murmurations.
+    With alert_coupling_factor = -1.3, alert birds actively oppose alignment,
+    creating oscillations that maintain critical state susceptibility χ = N·Var[Φ] ≥ 5.
+    This heterogeneity, motivated by vigilance behavior (Beauchamp 2015), enables
+    scale-free correlations C(r) ~ r^{-1/3} and information speeds of 15-45 m/s.
     """
 
     def __init__(
@@ -71,53 +75,7 @@ class MurmurationController(th.nn.Module):
 
         self.polarization_queues = {}
         self.max_queue_size      = mmm.polarization_window
-    
-    def _apply_alert_mode(self, flock: TensorDictBase):
-        """
-        Apply alert mode modifications when threat level exceeds threshold.
-        
-        In alert mode, the flock increases correlation strength and cohesion 
-        to create the characteristic 'ink-like' evasion pattern observed in 
-        starling murmurations under predator attack:
-        
-            F_alert = (1 + α_corr) F_modulated + β_dense(𝐱_cm - 𝐱_i)
-        
-        where α_corr enhances velocity correlation and β_dense pulls agents
-        toward the center of mass, increasing flock density.
-        
-        Args:
-            flock: TensorDict with threats, positions, and modulated_forces
-        """
-        flock["in_alert_mode"] = flock["threats"].max() > self.mmm.alert_threshold
-        
-        if flock["in_alert_mode"]:
-            offset = flock["position"].mean(dim=0) - flock["position"]
-            flock["modulated_forces"] *= (1 + self.mmm.correlation_strength)
-            flock["cohesion_force"]    = offset * self.mmm.density_strength
-        else:
-            flock["cohesion_force"]    = th.zeros_like(flock["position"])
-
-    def _apply_susceptibility_modulation(self, flock: TensorDictBase):
-        """
-        Apply susceptibility-based amplification to alignment forces.
-        
-        Modulates the base Hamiltonian forces based on the flock's critical
-        state, implementing adaptive response:
-        
-            F_modulated = F_base × (1 + α_χ tanh(χ/χ_target))
-        
-        where α_χ is the amplification factor and χ_target is the desired
-        susceptibility for maintaining critical dynamics. The tanh function
-        provides smooth saturation as χ approaches criticality.
-        
-        Args:
-            flock: TensorDict with base_forces and susceptibility,
-                   updated with modulated_forces
-        """
-        flock["modulated_forces"] = flock["base_forces"] * (
-            1 + self.mmm.susceptibility_amplification * 
-            th.tanh(flock["susceptibility"] / self.mmm.susceptibility_target)
-        )
+        self.alert_states_memory = {}  # Persistent alert states by trajectory
 
     def _compute_density_wave(self, flock: TensorDictBase):
         """
@@ -194,30 +152,44 @@ class MurmurationController(th.nn.Module):
     
     def _compute_hamiltonian_forces(self, flock: TensorDictBase):
         """
-        Compute forces from Hamiltonian energy minimization.
+        Compute forces from Hamiltonian energy minimization with alert modulation.
 
-        Implements the Hamiltonian formulation from Bialek et al. (2012):
+        Implements the Hamiltonian formulation from Bialek et al. (2012) with
+        heterogeneous coupling based on alert states:
 
-            E = -Σ_{<ij>} J_{ij} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
+            E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
 
-        where 𝐬_i are normalized velocities (spin variables) and J_{ij} decay
-        with topological distance. Forces are computed as 𝐮_i = -∂E/∂𝐱_i.
+        where J_{ij}^{alert} = J_{ij} × κ_i, and κ_i is the alert coupling modifier:
+            - κ_i = 1.0 for relaxed birds (normal alignment)
+            - κ_i = alert_coupling_factor for alert birds
+        
+        When alert_coupling_factor < 0, alert birds actively oppose alignment,
+        creating perturbations that increase polarization variance and maintain
+        critical state susceptibility χ = N·Var[Φ] ≥ 5.
 
-        From the energy minimization, the alignment force on agent i becomes:
+        The modified alignment force on agent i becomes:
 
-            F_i^{align} = Σ_j J_{ij} (𝐯_j - 𝐯_i)
+            F_i^{align} = κ_i × Σ_j J_{ij} (𝐯_j - 𝐯_i)
 
-        where j runs over topological neighbors. This produces velocity
-        correlations with power-law decay C(r) ~ r^{-γ} with γ ≈ 1/3.
+        This heterogeneity is biologically motivated by vigilance behavior where
+        scanning birds prioritize threat detection over flock following.
 
         Args:
-            flock: TensorDict containing positions, velocities, gradient,
+            flock: TensorDict containing positions, velocities, gradient, alert_states,
                    edge indices, and topo_distances, updated with base_forces
         """
         flock["base_forces"] = th.zeros_like(flock["position"])
         
         if "edge_source" in flock and flock["edge_source"].numel() > 0:
-            J_edges = self.mmm.j_base * th.exp(
+            alert_states_source = flock["alert_states"][flock["edge_source"]]
+            
+            coupling_modifier = th.where(
+                condition = alert_states_source > 0.5,
+                input     = self.mmm.alert_coupling_factor,
+                other     = 1.0
+            )
+            
+            J_edges = self.mmm.j_base * coupling_modifier * th.exp(
                 -flock["topo_distances"][
                     flock["edge_source"], flock["edge_target"]
                 ] / self.mmm.coupling_decay
@@ -253,6 +225,58 @@ class MurmurationController(th.nn.Module):
             )
         
         flock["base_forces"] -= self.mmm.temperature_scaling * flock["gradient"]
+
+    def _compute_individual_alert_states(self, flock: TensorDictBase):
+        """
+        Compute alert states following two-state Markov dynamics.
+        
+        Implements vigilance state transitions as a continuous-time Markov
+        chain with asymmetric rates creating realistic bout durations:
+        
+            P(relaxed → alert) = λ
+            P(alert → relaxed) = μ
+            
+        where λ is the relaxed-to-alert transition rate and μ is the 
+        alert-to-relaxed rate. These rates are constant, reflecting the
+        intrinsic vigilance dynamics observed in bird flocks.
+        
+        Steady-state             : π_alert = λ/(λ+μ)  ≈ 0.30
+        Mean alert bout duration : E[T_alert] = 1/μ   ≈ 20 timesteps
+        Mean relaxed duration    : E[T_relaxed] = 1/λ ≈ 47 timesteps
+        
+        Args:
+            flock: TensorDict updated with alert_states and alert_fraction
+        """
+        traj_id = 0
+        if "trajectory_id" in flock:
+            traj_id = (
+                flock["trajectory_id"].item()
+                if hasattr(flock["trajectory_id"], 'item')
+                else int(flock["trajectory_id"])
+            )
+        
+        device   = flock["position"].device
+        n_agents = self.flock.agent_count
+        
+        if traj_id not in self.alert_states_memory:
+            steady_state = self.mmm.relaxed_to_alert_rate / (
+                self.mmm.relaxed_to_alert_rate + self.mmm.alert_to_relaxed_rate
+            )
+            self.alert_states_memory[traj_id] = th.bernoulli(
+                th.ones(n_agents, device=device) * steady_state
+            )
+        
+        previous    = self.alert_states_memory[traj_id].to(device)
+        random_vals = th.rand(n_agents, device=device)
+        new_states  = th.where(
+            previous    > 0.5,
+            random_vals > self.mmm.alert_to_relaxed_rate,
+            random_vals < self.mmm.relaxed_to_alert_rate
+        ).float()
+        
+        self.alert_states_memory[traj_id] = new_states
+        flock["alert_states"]   = new_states
+        flock["alert_fraction"] = new_states.mean()
     
     def _compute_information_speed(self, flock: TensorDictBase):
         """
@@ -285,9 +309,9 @@ class MurmurationController(th.nn.Module):
             F_prop = (v₀𝐬 - 𝐯) / τ + η𝝃
         
         where 𝐬 is the heading direction, τ is relaxation time, and 𝝃 is
-        Gaussian noise. This ensures agents maintain forward motion even
-        without external forces, as observed in real bird flocks where
-        cruising speeds are typically 10-20 m/s (Cavagna et al., 2010).
+        Gaussian noise. Alert agents have noise amplitude that places them
+        at the order-disorder phase transition (η ≈ 0.4) while relaxed 
+        agents remain in the ordered phase (η ≈ 0.1).
         
         For agents with zero velocity (|𝐯| < ε), the heading direction 𝐬 is
         determined from:
@@ -297,8 +321,8 @@ class MurmurationController(th.nn.Module):
         This ensures the flock can bootstrap movement from rest states.
         
         Args:
-            flock: TensorDict containing velocities, updated with
-                   self_propulsion forces
+            flock: TensorDict containing velocities and alert_states,
+                   updated with self_propulsion forces
         """
         speed = flock["velocity"].norm(dim=-1, keepdim=True)
         wind  = flock.get("wind", th.zeros_like(flock["velocity"]))
@@ -320,13 +344,17 @@ class MurmurationController(th.nn.Module):
             th.where(zero_vel, random_heading, velocity_heading)
         )
         
-        target_vel      = heading * self.mmm.self_propulsion_speed + wind * 0.3
-        relaxation_rate = 1.0 / self.mmm.velocity_relaxation_time
+        alert_states = flock.get("alert_states", th.zeros(self.flock.agent_count))
+        noise_scale  = self.mmm.velocity_noise_scale * (
+            1.0 + self.mmm.alert_amplification * alert_states
+        )
         
-        noise = th.randn_like(flock["velocity"]) * self.mmm.velocity_noise_scale
+        target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
+        noise      = th.randn_like(flock["velocity"]) * noise_scale.unsqueeze(-1)
+        
         flock["self_propulsion"] = (
-            (target_vel - flock["velocity"]) * 
-            relaxation_rate + noise
+            (target_vel - flock["velocity"]) / self.mmm.velocity_relaxation_time +
+            noise
         )
     
     def _compute_susceptibility(self, flock: TensorDictBase):
@@ -483,19 +511,17 @@ class MurmurationController(th.nn.Module):
             self._compute_hamiltonian_forces,
             self._compute_susceptibility,
             self._compute_threats,
+            self._compute_individual_alert_states,
             self._compute_information_speed,
             self._compute_self_propulsion,
             self._compute_density_wave,
-            self._apply_susceptibility_modulation,
-            self._apply_alert_mode,
         ]:
             compute_fn(flock)
         
         flock["action"] = (
-            flock["self_propulsion"]  +
-            flock["modulated_forces"] +
-            flock["density_wave"]     +
-            flock["cohesion_force"]
+            flock["self_propulsion"] +
+            flock["base_forces"]     +
+            flock["density_wave"]
         )
 
         if self.cbf is not None:

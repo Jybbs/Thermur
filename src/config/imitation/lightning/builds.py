@@ -35,11 +35,12 @@ Logging:
 """
 from __future__                  import annotations
 from .schemas                    import *
+from config.cli.schemas          import WandbModel
 from hydra_zen                   import builds, make_config
 from pytorch_lightning           import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers   import WandbLogger
-from thermur.imitation.lightning import DataModule, GNNPolicy, MonitoringCallback, VisualizationCallback
+from thermur.imitation.lightning import DataModule, GNNPolicy, MonitoringCallback
 from torch.optim                 import AdamW
 from torch.optim.lr_scheduler    import ReduceLROnPlateau
 from typing                      import Any, TYPE_CHECKING
@@ -146,8 +147,7 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         callbacks               = [
             "${_system.checkpoint_callback}",
             "${_system.early_stopping_callback}",
-            "${_system.monitoring_callback}",
-            "${_system.watch_callback}"
+            "${_system.monitoring_callback}"
         ],
         detect_anomaly          = "${lightning.hardware.detect_anomaly}",
         deterministic           = "${lightning.hardware.deterministic}",
@@ -160,18 +160,6 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         profiler                = "${monitoring.metrics.profiler}",
         strategy                = "${lightning.hardware.strategy}",
         val_check_interval      = "${lightning.optimizer.val_check_interval}",
-        populate_full_signature = True
-    ),
-
-    "watch_callback": builds(
-        VisualizationCallback,
-        auto_close              = "${lightning.watch.auto_close}",
-        fps                     = "${lightning.watch.fps}",
-        start_epoch             = "${lightning.watch.start_epoch}",
-        trajectories_to_monitor = "${visualization.vista.trajectories_to_monitor}",
-        update_frequency        = "${lightning.watch.update_frequency}",
-        video_duration          = "${lightning.watch.video_duration}",
-        visualizer              = "${_system.visualizer}",
         populate_full_signature = True
     )
 }

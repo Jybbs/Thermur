@@ -45,8 +45,8 @@ class AveragingMetric(Metric):
         for accumulating the values to be averaged.
         """
         super().__init__()
-        self.add_state("count", default=th.tensor(0),   dist_reduce_fx="sum")
-        self.add_state("sum",   default=th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("count", th.tensor(0),   "sum")
+        self.add_state("sum",   th.tensor(0.0), "sum")
     
     def compute(self) -> Tensor:
         """
@@ -279,6 +279,42 @@ class EnergyConsumptionMetric(AveragingMetric):
         self.count += u_safe.shape[0]
 
 
+class HamiltonianEnergyMetric(AveragingMetric):
+    """
+    Track Hamiltonian energy E = -Σ J_ij s_i·s_j per timestep.
+
+    Computes the interaction energy of the flock using a physics-inspired
+    Hamiltonian model where agents are treated as spins with pairwise
+    coupling that decays exponentially with distance.
+    """
+
+    def __init__(self, mmm: MurmurationModel):
+        """
+        Initialize with murmuration model parameters.
+
+        Args:
+            mmm: Murmuration model containing alignment strength and decay length
+        """
+        super().__init__()
+        self.coupling_strength = mmm.alignment_strength
+        self.decay_length      = mmm.topological_decay_length
+
+    def update(self, batch: TensorDictBase):
+        """
+        Compute Hamiltonian energy from agent positions and velocities.
+
+        Args:
+            batch: TensorDict containing 'velocity' and 'position' tensors
+        """
+        spins     = th.nn.functional.normalize(batch["velocity"], dim=-1)
+        distances = th.cdist(batch["position"], batch["position"])
+        coupling  = self.coupling_strength * th.exp(-distances / self.decay_length)
+        coupling.diagonal(dim1=-2, dim2=-1).fill_(0)
+
+        self.sum   += -(coupling * (spins @ spins.mT)).sum() / 2
+        self.count += 1
+
+
 class LegibilitySSIMMetric(AveragingMetric):
     """
     Measure visual similarity between flock motion and wind field.
@@ -373,10 +409,12 @@ class LegibilitySSIMMetric(AveragingMetric):
         Returns:
             Tensor [grid_size, grid_size] of normalized velocity magnitudes
         """
-        device     = positions.device
-        bounds_max = bounds_max.to(device)
-        bounds_min = bounds_min.to(device)
-        coords     = self.coords.to(device)
+        if (
+            not hasattr(self, '_coords_cache') 
+            or self._coords_cache.device != positions.device
+        ):
+            self._coords_cache = self.coords.to(positions.device)
+        coords = self._coords_cache
         
         velocity_magnitude = velocities[:, :2].norm(dim=1)
         grid_positions     = (
@@ -385,48 +423,10 @@ class LegibilitySSIMMetric(AveragingMetric):
             (self.grid_size - 1)
         )
         
-        sparse_condition = (
-            self.grid_size > 32 and 
-            positions.shape[0] < self.grid_size * 2
-        )
-        
-        if sparse_condition:
-            field = th.zeros(
-                (self.grid_size, self.grid_size), device=device
-            )
-            kernel_radius = int(3 * self.sigma)
-            
-            for idx, grid_pos in enumerate(grid_positions):
-                x_min = max(0, int(grid_pos[0] - kernel_radius))
-                x_max = min(self.grid_size, int(grid_pos[0] + kernel_radius + 1))
-                y_min = max(0, int(grid_pos[1] - kernel_radius))
-                y_max = min(self.grid_size, int(grid_pos[1] + kernel_radius + 1))
-                
-                if x_max <= x_min or y_max <= y_min:
-                    continue
-                
-                local_region      = coords[y_min:y_max, x_min:x_max]
-                height, width     = local_region.shape[:2]
-                local_region_flat = local_region.reshape(-1, 2)
-                
-                # Compute Gaussian kernel weights
-                squared_distances = (
-                    (local_region_flat - grid_pos.unsqueeze(0)) ** 2
-                ).sum(dim=1)
-                
-                kernel_weights = th.exp(
-                    -squared_distances / (2 * self.sigma ** 2)
-                )
-                
-                field[y_min:y_max, x_min:x_max] += (
-                    kernel_weights.view(height, width) * velocity_magnitude[idx]
-                )
-        else:
-            flattened_coords  = coords.view(-1, 2)
-            squared_distances = th.cdist(flattened_coords, grid_positions).pow(2)
-            kernel_weights    = th.exp(-squared_distances / (2 * self.sigma ** 2))
-            weighted_field    = (kernel_weights * velocity_magnitude).sum(dim=-1)
-            field             = weighted_field.view(self.grid_size, self.grid_size)
+        flattened_coords  = coords.view(-1, 2)
+        squared_distances = th.cdist(flattened_coords, grid_positions).pow(2)
+        kernel_weights    = th.exp(-squared_distances / (2 * self.sigma ** 2))
+        field             = (kernel_weights @ velocity_magnitude).view(self.grid_size, self.grid_size)
 
         return field / field.max().clamp_min(1e-8)
 
@@ -510,10 +510,10 @@ class StateMetrics(Metric):
         Initialize state tracking for physical quantities.
         """
         super().__init__()
-        self.add_state("acceleration_sum", th.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("count",            th.tensor(0),   dist_reduce_fx="sum")
-        self.add_state("temperature_sum",  th.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("velocity_sum",     th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("acceleration_sum", th.tensor(0.0), "sum")
+        self.add_state("count",            th.tensor(0),   "sum")
+        self.add_state("temperature_sum",  th.tensor(0.0), "sum")
+        self.add_state("velocity_sum",     th.tensor(0.0), "sum")
     
     def _flatten_agent_batch(self, tensor: Tensor) -> tuple[Tensor, int]:
         """
@@ -627,10 +627,10 @@ class ConnectivityMetrics(Metric):
         """
         super().__init__()
         self.k_target = k_target
-        self.add_state("connected_ratio_sum", th.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("count",               th.tensor(0),   dist_reduce_fx="sum")
-        self.add_state("isolated_sum",        th.tensor(0.0), dist_reduce_fx="sum")
-        self.add_state("neighbors_sum",       th.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("connected_ratio_sum", th.tensor(0.0), "sum")
+        self.add_state("count",               th.tensor(0),   "sum")
+        self.add_state("isolated_sum",        th.tensor(0.0), "sum")
+        self.add_state("neighbors_sum",       th.tensor(0.0), "sum")
     
     def compute(self) -> dict[str, Tensor]:
         """
@@ -768,8 +768,14 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         """
         Update metric with scale-free correlation measurement.
         
-        Computes velocity correlations, bins by distance, and fits
-        a power law to measure deviation from expected exponent.
+        Computes velocity correlations C(r) as a function of distance r and fits
+        power law C(r) ~ r^(-γ) to measure deviation from expected scaling. Uses
+        adaptive logarithmic binning with n_bins ∈ [3, 10] based on flock size:
+        
+            n_bins = min(10, max(3, n_pairs // 10))
+        
+        Handles edge cases where d_min = d_max (no variation) or n_agents < 4
+        (insufficient data for power law fitting).
         
         Args:
             batch: TensorDict containing position and velocity
@@ -781,11 +787,21 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         triu_mask = th.triu(th.ones_like(distances), diagonal=1).bool()
         if not triu_mask.any():
             return
-            
+        
+        unique_distances = distances[triu_mask]
+        max_dist         = unique_distances.max()
+        min_dist         = unique_distances.min()
+        
+        if min_dist == max_dist:
+            return
+        
+        n_pairs = triu_mask.sum().item()
+        n_bins  = min(10, max(3, n_pairs // 10))
+        
         bin_edges = th.logspace(
-            end   = distances[triu_mask].max().log10(),
-            start = distances[triu_mask].min().log10(),
-            steps = 11
+            end   = max_dist.log10(),
+            start = min_dist.log10(),
+            steps = n_bins + 1
         )
         
         bin_stats = [
@@ -795,14 +811,14 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         ]
         
         if len(bin_stats) >= 3:
-            bin_data = th.tensor(bin_stats)
+            bin_data        = th.tensor(bin_stats, device=distances.device)
             fitted_exponent = self._fit_power_law(
-                bin_distances   = bin_data[:, 1],
-                bin_correlations = bin_data[:, 0]
+                bin_correlations = bin_data[:, 0],
+                bin_distances    = bin_data[:, 1]
             )
             
-            self.sum   += abs(fitted_exponent - self.target_exponent)
             self.count += 1
+            self.sum   += abs(fitted_exponent - self.target_exponent)
 
 
 class MetricsCollector:
@@ -933,9 +949,10 @@ class MetricsCollector:
         and distributed training synchronization.
         """
         self.train_evaluation = MetricCollection({
-            "avg_power" : EnergyConsumptionMetric(self.gravity, self.metrics),
-            "λ₂"        : CohesionMetric(),
-            "ssim"      : LegibilitySSIMMetric(self.bounds_max, self.metrics),
+            "avg_power"   : EnergyConsumptionMetric(self.gravity, self.metrics),
+            "hamiltonian" : HamiltonianEnergyMetric(self.mmm),
+            "λ₂"          : CohesionMetric(),
+            "ssim"        : LegibilitySSIMMetric(self.bounds_max, self.metrics),
         })
         self.val_evaluation = self.train_evaluation.clone()
 
@@ -1068,6 +1085,9 @@ class MetricsCollector:
                 velocities = batch["velocity"],
                 wind       = batch["wind"]
             )
+
+        if all(k in batch for k in ["position", "velocity"]):
+            metrics["hamiltonian"].update(batch)
 
         if "edge_index" in batch and "position" in batch:
             num_agents = batch["position"].shape[1]

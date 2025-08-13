@@ -16,13 +16,14 @@ from __future__   import annotations
 from config.cli   import GlobusSecrets
 from config.types import EndpointInfo, FileInfo, TransferStatus
 from contextlib   import suppress
-from globus_sdk   import NativeAppAuthClient, RefreshTokenAuthorizer, TransferClient, TransferData
 from pathlib      import Path
 from time         import perf_counter, sleep
-from typing       import Callable, TYPE_CHECKING
+from typing       import Any, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.cli import DownloadModel
+    from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer
+    from globus_sdk import TransferClient, TransferData
 
 
 class GlobusManager:
@@ -55,6 +56,29 @@ class GlobusManager:
         self.endpoint_id  = download.globus_endpoint_id
         self.scopes       = download.globus_scopes
         self.secrets      = GlobusSecrets()
+
+    def _get_globus_sdk(self):
+        """
+        Lazy import Globus SDK modules.
+
+        Returns:
+            Dict containing Globus SDK classes: NativeAppAuthClient,
+            RefreshTokenAuthorizer, TransferClient, TransferData.
+        """
+        if not hasattr(self, '_globus_cache'):
+            from globus_sdk import (
+                NativeAppAuthClient,
+                RefreshTokenAuthorizer, 
+                TransferClient,
+                TransferData
+            )
+            self._globus_cache = {
+                "NativeAppAuthClient"    : NativeAppAuthClient,
+                "RefreshTokenAuthorizer" : RefreshTokenAuthorizer,
+                "TransferClient"         : TransferClient,
+                "TransferData"           : TransferData,
+            }
+        return self._globus_cache
 
     def _save_secrets(self):
         """
@@ -141,8 +165,9 @@ class GlobusManager:
 
         self._save_secrets()
 
-        return TransferClient(
-            authorizer = RefreshTokenAuthorizer(
+        sdk = self._get_globus_sdk()
+        return sdk["TransferClient"](
+            authorizer = sdk["RefreshTokenAuthorizer"](
                 auth_client   = client,
                 refresh_token = transfer_tokens["refresh_token"]
             )
@@ -197,13 +222,14 @@ class GlobusManager:
             Exception: If authentication fails after user interaction
         """
         if self.secrets and self.secrets.is_valid and self.secrets.refresh_token:
-            auth_client = NativeAppAuthClient(self.client_id)
-            authorizer  = RefreshTokenAuthorizer(
+            sdk = self._get_globus_sdk()
+            auth_client = sdk["NativeAppAuthClient"](self.client_id)
+            authorizer  = sdk["RefreshTokenAuthorizer"](
                 auth_client   = auth_client,
                 refresh_token = self.secrets.refresh_token.get_secret_value()
             )
 
-            return TransferClient(authorizer=authorizer)
+            return sdk["TransferClient"](authorizer=authorizer)
 
         # If no valid secrets, auth needs to be handled by caller
         return None
@@ -277,7 +303,8 @@ class GlobusManager:
         Raises:
             globus_sdk.GlobusAPIError: If submission fails
         """
-        transfer_data = TransferData(
+        sdk = self._get_globus_sdk()
+        transfer_data = sdk["TransferData"](
             transfer_client,
             destination_endpoint = dest_endpoint,
             label                = label,
@@ -302,7 +329,8 @@ class GlobusManager:
         Returns:
             Tuple of (auth_client, auth_url) for the OAuth2 flow
         """
-        client = NativeAppAuthClient(self.client_id)
+        sdk = self._get_globus_sdk()
+        client = sdk["NativeAppAuthClient"](self.client_id)
         client.oauth2_start_flow(
             requested_scopes=self.scopes,
             refresh_tokens=True  # Enable refresh tokens
