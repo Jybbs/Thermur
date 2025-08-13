@@ -414,28 +414,34 @@ class InformationPropagationMetric(AveragingMetric):
         Args:
             batch: TensorDict containing position and velocity tensors
         """
-        if batch["position"].shape[0] < 10:
-            return
-        
-        distances    = th.cdist(batch["position"], batch["position"])
-        correlations = (
-            th.nn.functional.normalize(batch["velocity"], dim=-1) @
-            th.nn.functional.normalize(batch["velocity"], dim=-1).mT
-        ).abs()
-        
-        mask = ~th.eye(
-            batch["position"].shape[0], 
-            device = batch["position"].device,
-            dtype  = th.bool
+        position = (
+            batch["position"] if batch["position"].dim() == 3 
+            else batch["position"].unsqueeze(0)
+        )
+        velocity = (
+            batch["velocity"] if batch["velocity"].dim() == 3
+            else batch["velocity"].unsqueeze(0)
         )
         
-        if (high_corr := (correlations[mask] > 0.5)).any():
-            propagation_speed = (
-                distances[mask][high_corr].mean() / self.time_step
-            ).clamp(0.0, 100.0)
-            
-            self.sum   += propagation_speed
-            self.count += 1
+        n_agents = position.shape[-2]
+        if n_agents < 10:
+            return
+        
+        distances    = th.cdist(position, position)
+        normed_vel   = th.nn.functional.normalize(velocity, dim=-1)
+        correlations = th.bmm(normed_vel, normed_vel.transpose(-2, -1)).abs()
+        mask         = ~th.eye(n_agents, device=position.device, dtype=th.bool)
+        high_corr    = (correlations > 0.5) & mask
+        
+        speeds = th.where(
+            high_corr,
+            distances / self.time_step,
+            th.tensor(0.0, device=distances.device)
+        )[high_corr].clamp(self.target_min, self.target_max)
+        
+        if speeds.numel() > 0:
+            self.sum   += speeds.mean() * position.shape[0]
+            self.count += position.shape[0]
 
 
 class LegibilitySSIMMetric(AveragingMetric):
@@ -968,15 +974,16 @@ class SusceptibilityMetric(AveragingMetric):
     freedom with collective coordination.
     """
     
-    def __init__(self, mmm: MurmurationModel):
+    def __init__(self, metrics: MetricsModel):
         """
-        Initialize with critical susceptibility threshold.
+        Initialize with susceptibility configuration.
         
         Args:
-            mmm: Murmuration model containing susceptibility_threshold
+            metrics: Metrics configuration with susceptibility range
         """
         super().__init__()
-        self.threshold = mmm.susceptibility_threshold
+        self.target_min = metrics.susceptibility_min
+        self.target_max = metrics.susceptibility_max
     
     def update(self, batch: TensorDictBase):
         """
@@ -985,17 +992,22 @@ class SusceptibilityMetric(AveragingMetric):
         Args:
             batch: TensorDict containing velocity tensor [n_agents, 3]
         """
-        if batch["velocity"].shape[0] < 2:
-            return
-        
-        spins = th.nn.functional.normalize(batch["velocity"], dim=-1)
-        susceptibility = (
-            batch["velocity"].shape[0] *
-            (spins * spins.mean(dim=0)).sum(dim=-1).var()
+        velocity = (
+            batch["velocity"] if batch["velocity"].dim() == 3
+            else batch["velocity"].unsqueeze(0)
         )
         
-        self.sum   += susceptibility
-        self.count += 1
+        n_agents = velocity.shape[-2]
+        if n_agents < 2:
+            return
+        
+        spins = th.nn.functional.normalize(velocity, dim=-1)
+        mean_spin = spins.mean(dim=-2, keepdim=True)
+        polarizations = (spins * mean_spin).sum(dim=-1)
+        susceptibilities = n_agents * polarizations.var(dim=-1)
+        
+        self.sum   += susceptibilities.sum()
+        self.count += susceptibilities.numel()
 
 
 class TopologicalFidelityMetric(AveragingMetric):
@@ -1052,7 +1064,11 @@ class TopologicalFidelityMetric(AveragingMetric):
             edge_ids = th.empty(0, dtype=th.long, device=edge_index.device)
         
         if "trajectory_id" in batch:
-            current_traj = batch["trajectory_id"].item()
+            traj_ids = batch["trajectory_id"] 
+            current_traj = (
+                traj_ids.flatten()[0].item() if traj_ids.numel() > 1
+                else traj_ids.item()
+            )
             if (
                 hasattr(self, "last_trajectory_id") 
                 and current_traj != self.last_trajectory_id
@@ -1236,7 +1252,7 @@ class MetricsCollector(th.nn.Module):
                 "rmse"              : MeanSquaredError(squared=False),
                 "scale_free"        : ScaleFreeCorrelationMetric(self.mmm),
                 "state"             : StateMetrics(),
-                "susceptibility"    : SusceptibilityMetric(self.mmm),
+                "susceptibility"    : SusceptibilityMetric(self.metrics),
                 "topo_fidelity"     : TopologicalFidelityMetric()
             }, 
             compute_groups = False,
