@@ -22,8 +22,8 @@ from typing       import Any, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.cli import DownloadModel
-    from globus_sdk import NativeAppAuthClient, RefreshTokenAuthorizer
-    from globus_sdk import TransferClient, TransferData
+    from globus_sdk import NativeAppAuthClient
+    from globus_sdk import TransferClient
 
 
 class GlobusManager:
