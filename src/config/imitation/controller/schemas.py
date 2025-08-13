@@ -149,14 +149,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
         default     = 45.0,
         description = (
             "Maximum information propagation speed in m/s, based on empirical "
-            "observations of starling murmurations (Cavagna et al., 2010)."
+            "observations of starling murmurations (Attanasi et al., 2014)."
         )
     )
     info_speed_min: PositiveFloat = Field(
         default     = 15.0,
         description = (
             "Minimum information propagation speed in m/s, based on empirical "
-            "observations of starling murmurations (Cavagna et al., 2010)."
+            "observations of starling murmurations (Attanasi et al., 2014)."
         )
     )
     min_distance: PositiveFloat = Field(

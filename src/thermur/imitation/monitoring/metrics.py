@@ -385,7 +385,7 @@ class InformationPropagationMetric(AveragingMetric):
     
         v_info = ξ / Δt
     
-    Natural murmurations exhibit v_info ∈ [15, 45] m/s (Cavagna et al. 2010),
+    Natural murmurations exhibit v_info ∈ [15, 45] m/s (Attanasi et al. 2014),
     with higher speeds indicating more responsive collective dynamics. The range
     depends on flock alertness:
         - Relaxed state: v_info ≈ 15 m/s (low responsiveness)  
