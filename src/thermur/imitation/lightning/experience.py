@@ -7,7 +7,7 @@ during imitation learning.
 """
 from __future__                  import annotations
 from pytorch_lightning           import LightningDataModule
-from torch                       import randint, stack, tensor, unique, where
+from torch                       import unique, where
 from torchrl.collectors          import SyncDataCollector
 from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement

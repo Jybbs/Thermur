@@ -20,6 +20,6 @@ class CLIConfiguration(BaseModel):
     display  : DisplayModel  = DisplayModel()
     download : DownloadModel = DownloadModel()
     secrets  : GlobusSecrets = GlobusSecrets()
-    wandb    : WandbConfig   = WandbConfig()
+    wandb    : WandbModel    = WandbModel()
 
 cfg = CLIConfiguration()
