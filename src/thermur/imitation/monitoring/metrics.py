@@ -1064,7 +1064,7 @@ class TopologicalFidelityMetric(AveragingMetric):
             edge_ids = th.empty(0, dtype=th.long, device=edge_index.device)
         
         if "trajectory_id" in batch:
-            traj_ids = batch["trajectory_id"] 
+            traj_ids     = batch["trajectory_id"] 
             current_traj = (
                 traj_ids.flatten()[0].item() if traj_ids.numel() > 1
                 else traj_ids.item()
