@@ -47,7 +47,8 @@ class MurmurationController(th.nn.Module):
     With alert_coupling_factor = -1.3, alert birds actively oppose alignment,
     creating oscillations that maintain critical state susceptibility χ = N·Var[Φ] ≥ 5.
     This heterogeneity, motivated by vigilance behavior (Beauchamp 2015), enables
-    scale-free correlations C(r) ~ r^{-1/3} and information speeds of 15-45 m/s.
+    scale-free correlations C(r) ~ r^{-1/3} and information speeds of 15-45 m/s
+    (Attanasi et al. 2014).
     """
 
     def __init__(
@@ -186,13 +187,13 @@ class MurmurationController(th.nn.Module):
                 1.0
             )
             
-            J_edges = self.mmm.j_base * coupling_modifier * th.exp(
+            j_edges = self.mmm.j_base * coupling_modifier * th.exp(
                 -flock["topo_distances"][
                     flock["edge_source"], flock["edge_target"]
                 ] / self.mmm.coupling_decay
             )
 
-            force_contrib = J_edges.unsqueeze(1) * (
+            force_contrib = j_edges.unsqueeze(1) * (
                 flock["velocity"][flock["edge_target"]] - 
                 flock["velocity"][flock["edge_source"]]
             )
@@ -527,7 +528,7 @@ class MurmurationController(th.nn.Module):
         """
         Set information propagation speed based on alert fraction.
 
-        Uses empirical range from Cavagna et al. (2010):
+        Uses empirical range from Attanasi et al. (2014):
         - Relaxed state: 15 m/s (low responsiveness)
         - Alert state: 45 m/s (high responsiveness)
         

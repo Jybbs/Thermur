@@ -49,14 +49,14 @@ class MetricsModel(BaseModel, extra="forbid"):
         default     = 45.0,
         description = (
             "Maximum expected information propagation speed in m/s for murmuration "
-            "dynamics, based on empirical observations from Cavagna et al. (2010)."
+            "dynamics, based on empirical observations from Attanasi et al. (2014)."
         )
     )
     info_propagation_min_speed: PositiveFloat = Field(
         default     = 15.0,
         description = (
             "Minimum expected information propagation speed in m/s for murmuration "
-            "dynamics, based on empirical observations from Cavagna et al. (2010)."
+            "dynamics, based on empirical observations from Attanasi et al. (2014)."
         )
     )
     info_propagation_time_step: PositiveFloat = Field(

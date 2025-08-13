@@ -343,3 +343,5 @@ Deploying an autonomous swarm in a safety-critical environment requires careful 
 [^31]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
 [^32]: Beauchamp, Guy. 2015. *Animal Vigilance: Monitoring Predators and Competitors*. Academic Press.
 [^33]: Fernández-Juricic, Esteban. 2012. "Sensory Basis of Vigilance Behavior in Birds: Synthesis and Future Prospects." *Behavioural Processes* 89 (2): 143–152. https://doi.org/10.1016/j.beproc.2011.10.006
+[^34]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
+[^35]: Attanasi, Alessandro, Andrea Cavagna, Lorenzo Del Castello, Irene Giardina, Tomas S. Grigera, Asja Jelić, Stefania Melillo, et al. 2014. "Information Transfer and Behavioural Inertia in Starling Flocks." *Nature Physics* 10 (9): 691–696. https://doi.org/10.1038/nphys3035
