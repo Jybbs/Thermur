@@ -184,9 +184,9 @@ class MurmurationController(th.nn.Module):
             alert_states_source = flock["alert_states"][flock["edge_source"]]
             
             coupling_modifier = th.where(
-                condition = alert_states_source > 0.5,
-                input     = self.mmm.alert_coupling_factor,
-                other     = 1.0
+                alert_states_source > 0.5,
+                self.mmm.alert_coupling_factor,
+                1.0
             )
             
             J_edges = self.mmm.j_base * coupling_modifier * th.exp(
@@ -508,10 +508,10 @@ class MurmurationController(th.nn.Module):
         for compute_fn in [
             self._update_graph_state,
             self._estimate_gradient,
+            self._compute_individual_alert_states,
             self._compute_hamiltonian_forces,
             self._compute_susceptibility,
             self._compute_threats,
-            self._compute_individual_alert_states,
             self._compute_information_speed,
             self._compute_self_propulsion,
             self._compute_density_wave,

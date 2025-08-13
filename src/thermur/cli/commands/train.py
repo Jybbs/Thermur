@@ -680,7 +680,10 @@ class TrainCommand:
                         )
 
                 case _:
-                    failure_kws = ["dimension", "shape", "size", "device", "metric"]
+                    failure_kws = [
+                        "dimension", "device", "metric", "indices", "range", "shape", 
+                        "size", "slice"
+                    ]
                     self.ui.print_message(f"Training failed: {e}", "error")
                     if any(k in str(e).lower() for k in failure_kws):
                         self.ui.console.print("\n[DEBUG] Full stack trace:")

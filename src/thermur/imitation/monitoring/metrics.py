@@ -293,25 +293,58 @@ class HamiltonianEnergyMetric(AveragingMetric):
         Initialize with murmuration model parameters.
 
         Args:
-            mmm: Murmuration model containing alignment strength and decay length
+            mmm: Murmuration model containing coupling parameters
         """
         super().__init__()
-        self.coupling_strength = mmm.alignment_strength
-        self.decay_length      = mmm.topological_decay_length
+        self.j_base                = mmm.j_base
+        self.coupling_decay        = mmm.coupling_decay
+        self.alert_coupling_factor = mmm.alert_coupling_factor
 
     def update(self, batch: TensorDictBase):
         """
-        Compute Hamiltonian energy from agent positions and velocities.
+        Compute Hamiltonian energy matching controller implementation.
+        
+        Implements the exact energy formulation from MurmurationController:
+        E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j
+        
+        where J_{ij}^{alert} = κ_i × J_0 exp(-d_{ij}/λ) with:
+        - κ_i = 1.0 for relaxed birds, alert_coupling_factor for alert birds  
+        - d_{ij} is topological distance from k-NN graph
+        - Only includes edges that exist in the controller's graph
 
         Args:
-            batch: TensorDict containing 'velocity' and 'position' tensors
+            batch: TensorDict containing velocity, alert_states, edge indices, 
+                   and topo_distances from controller
         """
-        spins     = th.nn.functional.normalize(batch["velocity"], dim=-1)
-        distances = th.cdist(batch["position"], batch["position"])
-        coupling  = self.coupling_strength * th.exp(-distances / self.decay_length)
-        coupling.diagonal(dim1=-2, dim2=-1).fill_(0)
+        spins = th.nn.functional.normalize(batch["velocity"], dim=-1)
+        
+        if "topo_distances" not in batch or "edge_source" not in batch:
+            distances = th.cdist(batch["position"], batch["position"])
+            coupling  = self.j_base * th.exp(-distances / self.coupling_decay)
+            coupling.diagonal(dim1=-2, dim2=-1).fill_(0)
+        else:
+            n_agents = spins.shape[0]
+            coupling = th.zeros(n_agents, n_agents, device=spins.device)
+            
+            if batch["edge_source"].numel() > 0:
+                alert_states_source = batch["alert_states"][batch["edge_source"]]
+                coupling_modifier   = th.where(
+                    alert_states_source > 0.5,
+                    self.alert_coupling_factor,
+                    1.0
+                )
+                
+                j_edges = self.j_base * coupling_modifier * th.exp(
+                    -batch["topo_distances"][
+                        batch["edge_source"], batch["edge_target"]
+                    ] / self.coupling_decay
+                )
+                
+                coupling[batch["edge_source"], batch["edge_target"]] = j_edges
+                coupling[batch["edge_target"], batch["edge_source"]] = j_edges
 
-        self.sum   += -(coupling * (spins @ spins.mT)).sum() / 2
+        energy      = -(coupling * (spins @ spins.mT)).sum() / 2
+        self.sum   += energy
         self.count += 1
 
 
