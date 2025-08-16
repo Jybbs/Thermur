@@ -83,14 +83,14 @@ class PhysicsModel(BaseModel, extra="forbid"):
     where ê_i are the standard basis vectors in ℝ^d.
     """
     bounds_max: list[float] = Field(
-        default     = [50.0, 50.0, 20.0],
+        default     = [500.0, 500.0, 40.0],
         description = (
             "Upper bounds [x_max, y_max, z_max] in meters defining the rectangular "
             "workspace volume where agents can safely operate."
         )
     )
     bounds_min: list[float] = Field(
-        default     = [0.0, 0.0, 0.0],
+        default     = [-500.0, -500.0, 0.0],
         description = (
             "Lower bounds [x_min, y_min, z_min] in meters defining the rectangular "
             "workspace origin, typically [0, 0, 0] for simplicity."
@@ -124,8 +124,15 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "and energy consumption estimation."
         )
     )
+    initial_altitude: PositiveFloat = Field(
+        default     = 20.0,
+        description = (
+            "Initial altitude in meters for flock center of mass. Agents start "
+            "at this height above ground level to simulate aerial murmuration."
+        )
+    )
     initial_spacing_factor: PositiveFloat = Field(
-        default     = 0.5,
+        default     = 0.1,
         description = (
             "Multiplicative factor for initial Fibonacci lattice spacing relative to "
             "communication range, ensuring strong initial k-NN connectivity."

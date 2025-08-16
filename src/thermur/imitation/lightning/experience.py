@@ -1,22 +1,21 @@
 """
 Lightning DataModule for experience collection and replay.
 
-This module wraps TorchRL's trajectory collection and replay buffer components
-into a Lightning DataModule, managing the flow of expert demonstrations
-during imitation learning.
+This module provides a Lightning-compatible interface for expert demonstration
+collection and replay buffer management during imitation learning.
 """
 from __future__                  import annotations
+from .collector                  import ExperienceCollector
 from pytorch_lightning           import LightningDataModule
-from torch                       import randint
-from torchrl.collectors          import SyncDataCollector
+from torch                       import unique, where
 from torchrl.data                import TensorDictReplayBuffer
 from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
 from typing                      import TYPE_CHECKING
 
+import torch as th
+
 if TYPE_CHECKING:
-    from config.imitation.controller       import MurmurationModel
     from config.imitation.lightning        import ExperienceModel
-    from config.imitation.monitoring       import MetricsModel
     from pytorch_lightning                 import LightningModule
     from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
     from thermur.imitation.controller      import MurmurationController
@@ -27,25 +26,17 @@ class DataModule(LightningDataModule):
     """
     Lightning DataModule for managing expert demonstration data.
 
-    This module handles the data collection pipeline for imitation learning,
-    wrapping TorchRL's SyncDataCollector and TensorDictReplayBuffer into
-    Lightning's standardized interface. It manages:
-
-    1. Expert trajectory collection via SyncDataCollector
-    2. Experience storage in a replay buffer
-    3. Batch sampling for training
-
-    The DataModule ensures proper lifecycle management of data resources
-    and provides a clean interface for the Lightning Trainer.
+    This module orchestrates the data collection pipeline for imitation learning,
+    integrating our custom ExperienceCollector with TorchRL's replay buffer.
+    It manages trajectory collection, experience storage, and batch sampling
+    while ensuring proper lifecycle management within Lightning's training loop.
     """
 
     def __init__(
         self,
         env        : SimulationEnv,
         experience : ExperienceModel,
-        expert     : MurmurationController,
-        metrics    : MetricsModel | None = None,
-        mmm        : MurmurationModel | None = None
+        expert     : MurmurationController
     ):
         """
         Initialize the experience module.
@@ -55,18 +46,14 @@ class DataModule(LightningDataModule):
             experience : Experience data configuration with batch sizes and buffer
                          settings
             expert     : The murmuration controller that generates actions
-            metrics    : Optional metrics configuration for choreography analysis
-            mmm        : Optional murmuration model for choreography analysis
         """
         super().__init__()
         self.env        = env
         self.experience = experience
         self.expert     = expert
-        self.metrics    = metrics
-        self.mmm        = mmm
 
         self.buffer    : TensorDictReplayBuffer | None = None
-        self.collector : SyncDataCollector      | None = None
+        self.collector : ExperienceCollector    | None = None
 
     def setup(self, stage: str | None = None):
         """
@@ -91,13 +78,12 @@ class DataModule(LightningDataModule):
             )
             
         if self.collector is None:
-            self.collector = SyncDataCollector(
-                create_env_fn       = self.env,
+            self.collector = ExperienceCollector(
+                env                 = self.env,
+                expert              = self.expert,
                 frames_per_batch    = self.experience.frames_per_batch,
                 max_frames_per_traj = self.experience.max_frames_per_traj,
-                policy              = self.expert,
-                total_frames        = self.experience.total_frames,
-                trust_policy        = True
+                total_frames        = self.experience.total_frames
             )
 
     def teardown(self, stage: str):
@@ -128,9 +114,7 @@ class DataModule(LightningDataModule):
         return ExperienceDataLoader(
             buffer     = self.buffer,
             collector  = self.collector,
-            experience = self.experience,
-            metrics    = self.metrics,
-            mmm        = self.mmm
+            experience = self.experience
         )
     
     def val_dataloader(self):
@@ -168,10 +152,8 @@ class ExperienceDataLoader:
     def __init__(
         self,
         buffer     : TensorDictReplayBuffer,
-        collector  : SyncDataCollector,
+        collector  : ExperienceCollector,
         experience : ExperienceModel,
-        metrics    : MetricsModel | None = None,
-        mmm        : MurmurationModel | None = None,
         pl_module  : LightningModule | None = None
     ):
         """
@@ -181,19 +163,12 @@ class ExperienceDataLoader:
             buffer     : The replay buffer for experience storage.
             collector  : The trajectory collector.
             experience : Experience data configuration.
-            metrics    : Optional metrics configuration for choreography analysis.
-            mmm        : Optional murmuration model for choreography analysis.
             pl_module  : Optional Lightning module for WandB logging.
         """
         self.buffer     = buffer
         self.collector  = collector
         self.experience = experience
         self.pl_module  = pl_module
-        
-        self.choreography = None
-        if metrics is not None and mmm is not None:
-            from thermur.imitation.monitoring.choreography import ChoreographyCollector
-            self.choreography = ChoreographyCollector(metrics, mmm)
 
     def __iter__(self):
         """
@@ -203,9 +178,6 @@ class ExperienceDataLoader:
         collecting new experiences from the environment.
         """
         for data in self.collector:
-            if self.choreography is not None:
-                self.choreography.analyze_trajectory(data, self.pl_module)
-            
             self.buffer.extend(data)
 
             if len(self.buffer) >= self.experience.batch_size:
@@ -222,11 +194,10 @@ class ExperienceDataLoader:
 
 class ValidationDataLoader:
     """
-    Validation dataloader that samples from the replay buffer.
+    Trajectory-aware validation dataloader.
     
-    Since we're doing behavioral cloning from a fixed expert, we sample
-    validation batches from the same replay buffer as training. This helps
-    monitor training progress without needing a separate validation set.
+    Reserves entire trajectories for validation to prevent temporal
+    leakage and ensure meaningful generalization metrics.
     """
     
     def __init__(
@@ -237,48 +208,53 @@ class ValidationDataLoader:
         validation_split : float
     ):
         """
-        Initialize the validation dataloader.
+        Initialize validation dataloader with trajectory splitting.
         
         Args:
             batch_size       : Number of samples per batch.
             buffer           : The replay buffer to sample from.
             num_batches      : Number of validation batches to yield.
-            validation_split : Fraction of buffer reserved for validation.
+            validation_split : Fraction of trajectories reserved for validation.
         """
-        self.batch_size       = batch_size
-        self.buffer           = buffer
-        self.num_batches      = num_batches
-        self.validation_split = validation_split
+        self.batch_size         = batch_size
+        self.buffer             = buffer
+        self.num_batches        = num_batches
+        self.validation_split   = validation_split
+        self.val_sample_indices = th.empty(0, dtype=th.long)
+        self.val_trajectory_ids = th.empty(0, dtype=th.long)
+        self._update_trajectory_split()
     
     def __iter__(self):
         """
-        Yield validation batches from the replay buffer.
+        Yield batches sampled from validation trajectories.
         
-        Samples from the portion of the buffer reserved for validation.
-        During early training when buffer is filling, yields whatever data
-        is available to ensure val/loss metric is computed.
+        Falls back to random sampling during warmup before trajectory
+        assignment is complete.
         """
-        buffer_length = len(self.buffer)
-        
-        if buffer_length == 0:
-            for _ in range(self.num_batches):
-                yield from []
+        if not (buffer_size := len(self.buffer)):
             return
-            
-        validation_size = max(1, int(buffer_length * self.validation_split))
-        end_index = min(validation_size, buffer_length)
-        effective_batch_size = min(self.batch_size, end_index)
         
+        if not self.val_trajectory_ids.numel():
+            self._update_trajectory_split()
+        
+        available_indices = (
+            self.val_sample_indices 
+            if self.val_sample_indices.numel()
+            else th.arange(buffer_size)
+        )
+        
+        if not (n_available := available_indices.numel()):
+            yield from (self.buffer.sample() for _ in range(self.num_batches))
+            return
+        
+        batch_size = min(self.batch_size, n_available)
         for _ in range(self.num_batches):
-            if effective_batch_size == 1:
-                yield self.buffer[[0]]
-            else:
-                sample_indices = randint(
-                    high = end_index,
-                    low  = 0,
-                    size = (effective_batch_size,)
-                )
-                yield self.buffer[sample_indices]
+            batch_selection = th.randperm(
+                device = available_indices.device,
+                n      = n_available,
+            )[:batch_size]
+
+            yield self.buffer[available_indices[batch_selection].tolist()]
     
     def __len__(self) -> int:
         """
@@ -289,3 +265,55 @@ class ValidationDataLoader:
         method handles empty buffer cases gracefully.
         """
         return self.num_batches
+
+    def _refresh_sample_indices(self):
+        """
+        Cache indices of samples belonging to validation trajectories.
+        
+        Uses vectorized comparison to identify which buffer samples belong
+        to trajectories reserved for validation. This precomputation enables
+        efficient batch sampling without repeated trajectory lookups.
+        """
+        if (
+            not self.val_trajectory_ids.numel() or 
+            not len(self.buffer) or
+            "trajectory_id" not in (full_data := self.buffer[:])
+        ):
+            self.val_sample_indices = th.empty(0, dtype=th.long)
+            return
+        
+        all_trajectory_ids = full_data["trajectory_id"].view(-1)
+        validation_mask    = (
+            all_trajectory_ids.unsqueeze(1) == self.val_trajectory_ids
+        ).any(dim=1)
+        
+        self.val_sample_indices = where(validation_mask)[0]
+
+    def _update_trajectory_split(self):
+        """
+        Assign trajectories to validation set.
+        
+        Samples a subset of unique trajectory IDs for consistent
+        train/validation separation.
+        """
+        if not (buffer_size := len(self.buffer)):
+            return
+        
+        probe_data = self.buffer[:min(buffer_size, 1000)]
+        if "trajectory_id" not in probe_data:
+            return
+        
+        trajectory_ids      = probe_data["trajectory_id"].view(-1)
+        unique_trajectories = unique(trajectory_ids)
+        
+        if not (n_trajectories := unique_trajectories.numel()):
+            return
+        
+        n_val    = max(1, int(n_trajectories * self.validation_split))
+        shuffled = th.randperm(
+            device = unique_trajectories.device,
+            n      = n_trajectories
+        )
+
+        self.val_trajectory_ids = unique_trajectories[shuffled[:n_val]]
+        self._refresh_sample_indices()

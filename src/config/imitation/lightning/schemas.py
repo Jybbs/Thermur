@@ -192,10 +192,10 @@ class HardwareModel(BaseModel, extra="forbid"):
         description = "Number of GPUs/TPUs to use for distributed training."
     )
     precision: Literal["16-mixed", "bf16-mixed", "32-true", "64-true", "32"] = Field(
-        default     = "bf16-mixed",
+        default     = "32-true",
         description = (
-            "Numerical precision mode for training. 'bf16-mixed' provides good "
-            "balance of speed and stability on modern hardware including MPS."
+            "Numerical precision mode for training. '32-true' provides full "
+            "precision and compatibility across all devices including MPS."
         )
     )
     strategy: Literal["auto", "ddp", "dp", "deepspeed", "fsdp"] = Field(
@@ -306,109 +306,5 @@ class OptimizerModel(BaseModel, extra="forbid"):
         description = (
             "L2 regularization coefficient λ penalizing large weights to improve "
             "generalization and prevent overfitting to training demonstrations."
-        )
-    )
-
-
-class WandbModel(BaseModel, extra="forbid"):
-    """
-    Configuration for Weights & Biases experiment tracking.
-
-    W&B provides comprehensive experiment tracking for machine learning workflows,
-    including metric logging, hyperparameter tracking, model versioning, and
-    visualization. This configuration controls how Lightning integrates with W&B
-    during training and how the CLI accesses W&B for monitoring.
-
-    The mode parameter allows flexible deployment:
-    - "online": Full cloud synchronization for collaborative work
-    - "offline": Local logging for air-gapped environments
-    - "disabled": No W&B integration (useful for debugging)
-
-    The API key is read from an environment variable to avoid hardcoding
-    credentials in configuration files.
-    """
-    log_model: Literal["all", "false"] | bool = Field(
-        default     = "all",
-        description = (
-            "Model checkpoint logging policy - 'all' saves every checkpoint, "
-            "'false' or False disables model logging to save bandwidth."
-        )
-    )
-    mode: Literal["online", "offline", "disabled"] = Field(
-        default     = "online",
-        description = (
-            "W&B tracking mode - online syncs to cloud, offline stores locally, "
-            "disabled skips W&B integration entirely."
-        )
-    )
-    notes: str | None = Field(
-        default     = None,
-        description = (
-            "Detailed description of the run, like a commit message. Use this to capture "
-            "context, experimental setup, or purpose that helps recall what this run was "
-            "testing. Appears in W&B UI Overview tab."
-        )
-    )
-    project: str = Field(
-        default     = "thermur-imitation",
-        description = (
-            "W&B project name for organizing experiments - groups related training "
-            "runs for easier comparison and analysis."
-        )
-    )
-    run_name: str | None = Field(
-        default     = None,
-        description = (
-            "Explicit run name (e.g., 'IM001', 'murmuration-test-v2'). Propagates to "
-            "WandB, Hydra output directories, and checkpoint paths. If not set, "
-            "WandB auto-generates a random name like 'cosmic-sunset-42'."
-        )
-    )
-
-
-class WatchModel(BaseModel, extra="forbid"):
-    """
-    Watch configuration for real-time training visualization.
-
-    Controls the integration of PyVista 3D visualization into the training loop,
-    allowing researchers to observe emergent flock behaviors and thermal dynamics
-    as the policy learns. Visualization frames can be automatically logged to
-    WandB for later review without re-running simulations.
-    """
-    auto_close: bool = Field(
-        default     = True,
-        description = (
-            "Automatically close visualization window when training completes. "
-            "Disable to keep window open for final state inspection."
-        )
-    )
-    fps: PositiveInt = Field(
-        default     = 30,
-        description = (
-            "Frames per second for video encoding when logging to WandB. "
-            "Standard video framerates are 24, 30, or 60 fps."
-        )
-    )
-    start_epoch: NonNegativeInt = Field(
-        default     = 0,
-        description = (
-            "Epoch at which to start visualization. Delaying start can skip early "
-            "random policy behavior and focus on emergent learned behaviors."
-        )
-    )
-    update_frequency: PositiveInt = Field(
-        default     = 10,
-        description = (
-            "Batch interval between visualization updates. Higher values reduce "
-            "computational overhead but provide less frequent visual feedback."
-        )
-    )
-    video_duration: float = Field(
-        default     = 30.0,
-        gt          = 0,
-        description = (
-            "Duration in seconds of each video clip logged to WandB. "
-            "Training progress is captured as a series of video clips, each "
-            "showing this many seconds of simulation at different training steps."
         )
     )

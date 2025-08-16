@@ -31,34 +31,6 @@ class MetricsModel(BaseModel, extra="forbid"):
     Defines parameters for metric computation, logging frequency, and
     visualization settings used by the MetricsCollector.
     """
-    color_temp_max: PositiveFloat = Field(
-        default     = 475.0,
-        description = (
-            "Maximum temperature in Kelvin for color mapping visualization, values "
-            "above are clamped to maximum intensity in heat colormap."
-        )
-    )
-    color_temp_min: PositiveFloat = Field(
-        default     = 275.0,
-        description = (
-            "Minimum temperature in Kelvin for color mapping visualization, values "
-            "below are clamped to minimum intensity in heat colormap."
-        )
-    )
-    info_propagation_max_speed: PositiveFloat = Field(
-        default     = 45.0,
-        description = (
-            "Maximum expected information propagation speed in m/s for murmuration "
-            "dynamics, based on empirical observations from Cavagna et al. (2010)."
-        )
-    )
-    info_propagation_min_speed: PositiveFloat = Field(
-        default     = 15.0,
-        description = (
-            "Minimum expected information propagation speed in m/s for murmuration "
-            "dynamics, based on empirical observations from Cavagna et al. (2010)."
-        )
-    )
     info_propagation_time_step: PositiveFloat = Field(
         default     = 0.05,
         description = (
@@ -114,12 +86,5 @@ class MetricsModel(BaseModel, extra="forbid"):
         description = (
             "Minimum expected susceptibility χ = N·Var[Φ] for maintaining critical "
             "state dynamics, lower values indicate insufficient system responsiveness."
-        )
-    )
-    trajectory_frequency: PositiveInt = Field(
-        default     = 10,
-        description = (
-            "Frequency for logging choreography metrics during expert trajectory "
-            "collection, logs every N trajectories to track temporal murmuration dynamics."
         )
     )

@@ -58,36 +58,53 @@ class MurmurationModel(BaseModel, extra="forbid"):
     susceptibility diverges, enabling near-instantaneous response to threats
     while maintaining cohesion through topological neighbor tracking.
     """
-    alert_threshold: PositiveFloat = Field(
-        default     = 0.3,
+    alert_amplification: PositiveFloat = Field(
+        default     = 4.5,
         description = (
-            "Normalized threat level θ_alert ∈ [0,1] triggering transition from cruise "
-            "to alert mode, where 0 represents ambient temperature and 1 represents "
-            "T_max."
+            "Amplification factor α for alert state noise. Alert birds experience "
+            "noise η_alert = η_base × (1 + α), placing them into the disordered "
+            "phase where they create perturbations that propagate through the flock. "
+            "Value of 4.5 ensures alert birds operate near the disorder transition, "
+            "generating variance needed for critical state susceptibility χ ≥ 5."
+        )
+    )
+    alert_coupling_factor: float = Field(
+        default     = -1.3,
+        ge          = -2.0,
+        le          = 1.0,
+        description = (
+            "Coupling strength modifier for alert birds in Hamiltonian alignment. "
+            "J_alert = J_base × alert_coupling_factor. Value of -1.3 means alert "
+            "birds actively oppose alignment (negative coupling), creating the "
+            "oscillations and variance needed for χ = N·Var[Φ] ≥ 5. Based on "
+            "vigilance behavior where scanning birds prioritize threat detection "
+            "over flock following (Beauchamp 2015, Fernández-Juricic 2012)."
+        )
+    )
+    alert_to_relaxed_rate: PositiveFloat = Field(
+        default     = 0.05,
+        le          = 1.0,
+        description = (
+            "Transition rate μ from alert to relaxed state (per timestep). "
+            "Mean alert duration = 1/μ = 20 timesteps. Based on vigilance "
+            "bout durations observed in birds."
         )
     )
     correlation_exponent: PositiveFloat = Field(
         default     = 0.333,
         description = (
             "Target power-law exponent γ ≈ 1/3 for velocity correlation decay "
-            "C(r) ∼ r^(-γ), matching empirical observations of scale-free "
+            "C(r) ~ r^(-γ), matching empirical observations of scale-free "
             "correlations in starling flocks."
         )
     )
-    correlation_strength: PositiveFloat = Field(
-        default     = 1.5,
-        description = (
-            "Additional alignment weight α_corr applied in alert mode to enhance "
-            "velocity "
-            "correlation and create tighter, more responsive collective motion."
-        )
-    )
     coupling_decay: PositiveFloat = Field(
-        default     = 0.5,
+        default     = 0.3,
         description = (
             "Exponential decay rate λ for topological interaction strength "
-            "J_ij = J_0 exp(-d_ij/λ), "
-            "controlling how influence diminishes with topological distance."
+            "J_ij = J_0 exp(-d_ij/λ). Value of 0.3 ensures influence is primarily "
+            "limited to k-nearest topological neighbors, creating local interactions "
+            "that allow heterogeneous patterns to emerge rather than global synchronization."
         )
     )
     density_bandwidth: PositiveFloat = Field(
@@ -104,21 +121,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "controlling how density perturbations spread through the flock."
         )
     )
-    density_strength: PositiveFloat = Field(
-        default     = 0.8,
-        description = (
-            "Additional cohesion weight β_dense applied in alert mode to increase "
-            "flock "
-            "density, creating the characteristic 'ink-like' appearance during evasion."
-        )
-    )
-    effective_mass: PositiveFloat = Field(
-        default     = 1.0,
-        description = (
-            "Effective mass m_eff in information speed formula v_info = c_0√(χ/m_eff), "
-            "normalized to unity for standard agent dynamics."
-        )
-    )
     epsilon: PositiveFloat = Field(
         default     = 1e-8,
         description = (
@@ -127,10 +129,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     j_base: PositiveFloat = Field(
-        default     = 1.0,
+        default     = 0.5,
         description = (
-            "Base coupling strength J_0 in Hamiltonian formulation, controlling the "
-            "overall strength of velocity alignment interactions between neighbors."
+            "Base coupling strength J_0 in Hamiltonian formulation controlling "
+            "velocity alignment between neighbors. Value of 0.5 balances cohesion "
+            "with flexibility, allowing perturbations from alert birds to propagate "
+            "through the flock while maintaining structural integrity. This enables "
+            "the variance generation needed for critical state susceptibility χ ≥ 5."
         )
     )
     k_neighbors: PositiveInt = Field(
@@ -140,26 +145,18 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "empirical observations of 6-7 neighbors in real starling flocks."
         )
     )
-    info_speed_coefficient: PositiveFloat = Field(
-        default     = 30.0,
-        description = (
-            "Coefficient c_0 for information propagation speed "
-            "v_info = c_0 * sqrt(χ/m_eff), "
-            "calibrated to achieve empirical range of 15-45 m/s in starling flocks."
-        )
-    )
     info_speed_max: PositiveFloat = Field(
         default     = 45.0,
         description = (
             "Maximum information propagation speed in m/s, based on empirical "
-            "observations of starling murmurations (Cavagna et al., 2010)."
+            "observations of starling murmurations (Attanasi et al., 2014)."
         )
     )
     info_speed_min: PositiveFloat = Field(
         default     = 15.0,
         description = (
             "Minimum information propagation speed in m/s, based on empirical "
-            "observations of starling murmurations (Cavagna et al., 2010)."
+            "observations of starling murmurations (Attanasi et al., 2014)."
         )
     )
     min_distance: PositiveFloat = Field(
@@ -177,36 +174,22 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "F_sep = -w_sep · Σ (𝐱_j - 𝐱_i) / ||𝐱_j - 𝐱_i||³."
         )
     )
-    polarization_window: PositiveInt = Field(
-        default     = 100,
+    relaxed_to_alert_rate: PositiveFloat = Field(
+        default     = 0.021,
+        le          = 1.0,
         description = (
-            "Number of timesteps to retain for computing temporal variance of "
-            "polarization Φ. Based on Cavagna et al. (2010), who sampled at 170Hz "
-            "over 30s windows, we use 100 steps to capture similar dynamics."
+            "Transition rate λ from relaxed to alert state (per timestep). "
+            "Steady-state alert fraction = λ/(λ+μ) ≈ 0.30 matching the "
+            "~30% vigilance observed in bird flocks."
         )
     )
     self_propulsion_speed: PositiveFloat = Field(
-        default     = 10.0,
+        default     = 12.0,
         description = (
             "Self-propulsion speed v₀ in m/s from active matter theory, representing "
             "the intrinsic cruising speed birds maintain. Empirical observations show "
-            "starlings fly at 10-20 m/s during murmuration displays (Cavagna et al., 2010)."
-        )
-    )
-    susceptibility_amplification: PositiveFloat = Field(
-        default     = 2.0,
-        description = (
-            "Amplification factor α_χ for alignment weight modulation based on "
-            "susceptibility, creating stronger velocity correlation as the flock "
-            "approaches critical state."
-        )
-    )
-    susceptibility_target: PositiveFloat = Field(
-        default     = 10.0,
-        description = (
-            "Target susceptibility χ_target for maintaining critical state "
-            "dynamics, where "
-            "χ = N·Var[Φ] measures the flock's responsiveness to perturbations."
+            "starlings fly at 10-20 m/s during murmuration displays (Cavagna et al., 2010). "
+            "Value of 12 m/s represents typical cruising speed within observed range."
         )
     )
     temperature_scaling: PositiveFloat = Field(
@@ -217,11 +200,22 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     velocity_noise_scale: PositiveFloat = Field(
-        default     = 0.1,
+        default     = 0.2,
         description = (
-            "Noise amplitude η for velocity fluctuations in active matter models, "
-            "implementing stochastic perturbations that prevent perfect alignment "
-            "and enable exploration: 𝐯' = v₀(𝐬 + η𝝃) where 𝝃 ~ N(0,1)."
+            "Noise amplitude η for velocity fluctuations in active matter models. "
+            "Value of 0.2 places the system near the critical point of the Vicsek "
+            "model (η_c ≈ 0.15-0.25), where susceptibility is maximized. Implements "
+            "stochastic perturbations via 𝐯' = v₀(𝐬 + η𝝃) where 𝝃 ~ N(0,1)."
+        )
+    )
+    velocity_relaxation_time: PositiveFloat = Field(
+        default     = 0.6,
+        description = (
+            "Time constant τ (in seconds) for velocity relaxation in self-propulsion "
+            "dynamics: F_prop = (v_target - v)/τ + η𝝃. Based on active matter theory "
+            "(Ginelli, 2016), values of 0.5-2.0s provide responsive yet smooth motion. "
+            "Value of 0.6s ensures quick response to perturbations while maintaining "
+            "realistic bird flight dynamics."
         )
     )
 

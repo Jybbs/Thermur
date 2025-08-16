@@ -209,14 +209,14 @@ class WRFDataSource:
         )
 
         self.coord_vars        = list(self.dataset.dims)
-        self.num_time_steps    = self.dataset.dims.get('Time', 1)
+        self.num_time_steps    = self.dataset.sizes.get('Time', 1)
         self.wrf_time_interval = 300.0
         
         # Extract WRF grid dimensions for coordinate transformation
         self.grid_dims = {
-            "west_east"   : self.dataset.dims.get("west_east",   500),
-            "south_north" : self.dataset.dims.get("south_north", 250),
-            "bottom_top"  : self.dataset.dims.get("bottom_top",  50)
+            "west_east"   : self.dataset.sizes.get("west_east",   500),
+            "south_north" : self.dataset.sizes.get("south_north", 250),
+            "bottom_top"  : self.dataset.sizes.get("bottom_top",  50)
         }
     
     def _interpolate_field(
