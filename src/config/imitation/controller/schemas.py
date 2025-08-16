@@ -94,7 +94,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         default     = 0.333,
         description = (
             "Target power-law exponent γ ≈ 1/3 for velocity correlation decay "
-            "C(r) ∼ r^(-γ), matching empirical observations of scale-free "
+            "C(r) ~ r^(-γ), matching empirical observations of scale-free "
             "correlations in starling flocks."
         )
     )
