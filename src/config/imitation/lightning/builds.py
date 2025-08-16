@@ -55,8 +55,7 @@ LIGHTNING_USER_CONFIG = make_config(
     experience   = ExperienceModel(),
     hardware     = HardwareModel(),
     optimizer    = OptimizerModel(),
-    wandb        = WandbModel(),
-    watch        = WatchModel()
+    wandb        = WandbModel()
 )
 
 LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
