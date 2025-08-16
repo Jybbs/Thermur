@@ -354,7 +354,11 @@ class RunsCommand:
         )
 
         for run_path in runs:
-            runtime = run_path.stat().st_ctime
+            config_file = run_path / ".hydra" / "config.yaml"
+            runtime     = (
+                config_file.stat().st_ctime if config_file.exists()
+                else run_path.stat().st_ctime
+            )
             table.add_row(
                 str(run_path.relative_to(self.outputs_dir)),
                 datetime.fromtimestamp(runtime).strftime("%Y-%m-%d %H:%M"),
@@ -435,15 +439,14 @@ class RunsCommand:
         if not self.outputs_dir.exists():
             return []
 
-        all_paths = chain.from_iterable(
-            sorted(date_dir.iterdir(), reverse=True)
-            for date_dir in sorted(self.outputs_dir.iterdir(), reverse=True)
-            if date_dir.is_dir()
+        hydra_dirs = self.outputs_dir.glob("**/.hydra")
+        run_dirs   = [hydra_dir.parent for hydra_dir in hydra_dirs]
+        
+        return sorted(
+            run_dirs, 
+            key      = lambda p: p.stat().st_mtime, 
+            reverse  = True
         )
-
-        return [
-            p for p in all_paths if p.is_dir() and (p / ".hydra").exists()
-        ]
 
     def _get_domains(self, cfg: dict[str, Any]) -> list[str]:
         """

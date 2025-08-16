@@ -12,8 +12,7 @@ from pathlib            import Path
 from platform           import platform, python_version
 from shutil             import disk_usage
 from sys                import version_info
-from torch              import __version__ as torch_version, cuda
-from typing             import TYPE_CHECKING
+from typing             import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.cli.builds import CLIConfiguration
@@ -45,9 +44,15 @@ class SystemInspector:
             Dictionary containing CUDA availability, device count, GPU name,
             memory, and CUDA version if available.
         """
+        torch_info = self._get_torch()
+        if not torch_info["available"]:
+            return {"cuda": False, "device_count": 0}
+            
+        cuda = torch_info["cuda"]
         if not cuda.is_available():
             return {"cuda": False, "device_count": 0}
 
+        torch_version = torch_info["version"]
         return {
             "cuda"         : True,
             "cuda_version" : (
@@ -131,6 +136,30 @@ class SystemInspector:
             return version(package_name)
         return default
 
+    def _get_torch(self) -> dict[str, Any]:
+        """
+        Lazy import and cache PyTorch modules.
+
+        Returns:
+            Dictionary containing PyTorch availability, version, and cuda module.
+            Keys: available, version, cuda.
+        """
+        if not hasattr(self, '_torch_cache'):
+            try:
+                import torch
+                self._torch_cache = {
+                    "available" : True,
+                    "cuda"      : torch.cuda,
+                    "version"   : torch.__version__,
+                }
+            except ImportError:
+                self._torch_cache = {
+                    "available" : False,
+                    "cuda"      : None,
+                    "version"   : "not installed",
+                }
+        return self._torch_cache
+
     def _get_wrf_files(self) -> list[Path]:
         """
         Get list of WRF-SFIRE NetCDF files from configured directory.
@@ -186,12 +215,14 @@ class SystemInspector:
             - System info      : platform, python, python_version_info
             - Hardware         : cuda info, memory stats, disk usage
         """
+        torch_info = self._get_torch()
+            
         base_info: SystemInfo = {
             "platform"            : platform(),
             "python"              : python_version(),
             "python_version_info" : version_info,
             "thermur"             : self._get_package_version("thermur", "dev"),
-            "torch"               : torch_version,
+            "torch"               : torch_info["version"],
         }
 
         return (
@@ -276,7 +307,10 @@ class SystemInspector:
                     f"Invalid override key (must be alphanumeric): {o}"
                 )
 
-        if not cuda.is_available():
+        torch_info = self._get_torch()
+        if not torch_info["available"]:
+            issues.append("PyTorch not installed - training requires PyTorch")
+        elif not torch_info["cuda"].is_available():
             issues.append("GPU not available - training will be slower on CPU")
 
         return issues
