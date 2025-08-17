@@ -90,14 +90,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "bout durations observed in birds."
         )
     )
-    correlation_exponent: PositiveFloat = Field(
-        default     = 0.333,
-        description = (
-            "Target power-law exponent γ ≈ 1/3 for velocity correlation decay "
-            "C(r) ~ r^(-γ), matching empirical observations of scale-free "
-            "correlations in starling flocks."
-        )
-    )
     coupling_decay: PositiveFloat = Field(
         default     = 0.3,
         description = (
@@ -143,20 +135,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Number of topological nearest neighbors each agent tracks, based on "
             "empirical observations of 6-7 neighbors in real starling flocks."
-        )
-    )
-    info_speed_max: PositiveFloat = Field(
-        default     = 45.0,
-        description = (
-            "Maximum information propagation speed in m/s, based on empirical "
-            "observations of starling murmurations (Attanasi et al., 2014)."
-        )
-    )
-    info_speed_min: PositiveFloat = Field(
-        default     = 15.0,
-        description = (
-            "Minimum information propagation speed in m/s, based on empirical "
-            "observations of starling murmurations (Attanasi et al., 2014)."
         )
     )
     min_distance: PositiveFloat = Field(
@@ -240,7 +218,7 @@ class SafetyModel(BaseModel, extra="forbid"):
         default     = 3.0,
         description = (
             "Control deviation threshold in m/s for detecting CBF interventions, "
-            "used by both safety filter and event logging systems."
+            "used by the safety filter for detecting CBF interventions."
         )
     )
     max_temperature: PositiveFloat = Field(

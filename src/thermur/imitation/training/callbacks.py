@@ -3,7 +3,7 @@ Lightning callbacks for monitoring and evaluation.
 
 This module provides PyTorch Lightning callbacks that integrate various systems
 into the training loop:
-- MonitoringCallback: Integrates metrics collection and event logging
+- MonitoringCallback: Integrates metrics collection
 """
 
 from __future__        import annotations
@@ -11,37 +11,33 @@ from pytorch_lightning import Callback
 from typing            import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .metrics                          import MetricsCollector
     from pytorch_lightning                 import LightningModule, Trainer
     from pytorch_lightning.utilities.types import STEP_OUTPUT
     from tensordict                        import TensorDictBase
-    from thermur.imitation.monitoring      import EventLogger, MetricsCollector
 
 
 class MonitoringCallback(Callback):
     """
-    Unified monitoring callback for metrics and event tracking.
+    Unified monitoring callback for metrics tracking.
 
-    Consolidates metric collection and event logging into a single callback,
-    reducing code duplication and simplifying the training pipeline integration.
-    Updates metrics during batch processing and manages state resets at epoch
-    boundaries.
+    Consolidates metric collection into a single callback, reducing code
+    duplication and simplifying the training pipeline integration. Updates
+    metrics during batch processing and manages state resets at epoch boundaries.
     """
 
     def __init__(
         self,
-        collector : MetricsCollector | None = None,
-        events    : EventLogger      | None = None
+        collector : MetricsCollector | None = None
     ):
         """
         Configure monitoring components for training lifecycle integration.
 
         Args:
             collector : Optional metrics collector for performance tracking
-            events    : Optional event logger for tracking critical agent behaviors
         """
         super().__init__()
         self.collector = collector
-        self.events    = events
 
     def on_fit_end(
         self,
@@ -51,14 +47,11 @@ class MonitoringCallback(Callback):
         """
         Clean up resources when training completes.
 
-        Ensures all buffered event data is written to logging backends.
-
         Args:
             trainer   : PyTorch Lightning trainer coordinating the training process
             pl_module : Lightning module instance
         """
-        if self.events:
-            self.events.flush_all(pl_module)
+        pass
 
     def on_train_batch_end(
         self,
@@ -69,10 +62,9 @@ class MonitoringCallback(Callback):
         batch_idx : int
     ):
         """
-        Process training batch for metrics and event detection.
+        Process training batch for metrics.
 
-        Updates evaluation metrics, tracks CBF activations, and analyzes
-        batch data for critical events like thermal violations.
+        Updates evaluation metrics from the training batch.
 
         Args:
             trainer   : PyTorch Lightning trainer managing the training loop
@@ -82,16 +74,13 @@ class MonitoringCallback(Callback):
             batch_idx : Index of the current batch within the epoch
         """
         if self.collector:
-            # Ensure metrics are on same device as model (minimal fix for device hopping)
+
             if not hasattr(self, '_metrics_synced'):
                 for name in ['train_evaluation', 'val_evaluation', 'train_imitation', 'val_imitation']:
                     metrics = getattr(self.collector, name)
                     setattr(self.collector, name, metrics.to(pl_module.device))
                 self._metrics_synced = True
             self.collector.update_evaluation_metrics(batch,  True)
-
-        if self.events:
-            self.events.analyze_batch(batch, pl_module)
 
     def on_train_epoch_end(
         self,
@@ -101,20 +90,13 @@ class MonitoringCallback(Callback):
         """
         Reset per-epoch counters and log summary statistics.
 
-        Clears CBF activation counts and event statistics that are
-        tracked on a per-epoch basis for trend analysis. Also logs
-        summary metrics for the completed epoch.
+        Logs summary metrics for the completed epoch.
 
         Args:
             trainer   : PyTorch Lightning trainer instance
             pl_module : Lightning module for state management
         """
-        if self.events:
-            pl_module.log_dict({
-                f"events/{k}" : v
-                for k, v in self.events.get_event_summary().items()
-            })
-            self.events.reset_epoch_metrics()
+        pass
 
     def on_validation_batch_end(
         self,
@@ -126,7 +108,7 @@ class MonitoringCallback(Callback):
         dataloader_idx : int = 0
     ):
         """
-        Update metrics and detect events during validation.
+        Update metrics during validation.
 
         Tracks the same metrics as training but without updating
         model parameters, providing unbiased performance estimates.
@@ -141,9 +123,6 @@ class MonitoringCallback(Callback):
         """
         if self.collector:
             self.collector.update_evaluation_metrics(batch, False)
-
-        if self.events:
-            self.events.analyze_batch(batch, pl_module)
 
     def on_validation_epoch_end(
         self,
