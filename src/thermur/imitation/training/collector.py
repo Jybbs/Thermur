@@ -95,7 +95,7 @@ class ExperienceCollector(Module):
             obs = self.env.reset()
             traj_length = 0
             
-            for frame_idx in range(self.frames_per_batch):
+            for _ in range(self.frames_per_batch):
                 with th.no_grad():
                     action = self.expert(obs.clone()).get("action")
                 
@@ -104,33 +104,34 @@ class ExperienceCollector(Module):
                 
                 obs["action"] = action
                 
-                experience = TensorDict({
-                    **{
-                        key: (val.clone() if th.is_tensor(val) else val)
-                        for key in core_keys
-                        if (val := obs.get(key)) is not None
-                           or (val := self._default_value(key)) is not None
-                    },
-                    "next": TensorDict({
-                        key: (val.clone() if th.is_tensor(val) else val)
-                        for key in core_keys
-                        if (val := next_obs.get(key)) is not None
-                           or (val := self._default_value(key)) is not None
-                    }, batch_size=[])
-                }, batch_size=[])
+                extract = lambda src: {
+                    k: v.clone() if th.is_tensor(v) else v
+                    for k in core_keys
+                    if (v := src.get(k) or self._default_value(k)) is not None
+                }
+                
+                experience         = TensorDict(extract(obs),      [])
+                experience["next"] = TensorDict(extract(next_obs), [])
                 
                 batch_data.append(experience)
                 traj_length += 1
                 
-                if (done := next_obs.get("done", th.tensor([False]))[0].item()) or \
-                   (self.max_frames_per_traj > 0 and traj_length >= self.max_frames_per_traj):
-                    obs = self.env.reset()
+                if next_obs.get("done", th.tensor([False]))[0].item() or \
+                    (
+                        self.max_frames_per_traj > 0 
+                        and traj_length >= self.max_frames_per_traj
+                    ):
+                    obs         = self.env.reset()
                     traj_length = 0
                 else:
                     obs = next_obs
             
             self.frames_collected += self.frames_per_batch
-            yield stack(batch_data, dim=0) if batch_data else None
+            if (
+                batch_data 
+                and isinstance(stacked := stack(batch_data, 0), TensorDict)
+            ):
+                yield stacked
     
     def _default_value(self, key: str) -> th.Tensor | None:
         """

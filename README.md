@@ -38,7 +38,7 @@ thermur download
 
 # Train with custom configuration
 thermur train controller.flock.agent_count=50 \
-              lightning.optimizer.learning_rate=0.001
+              training.optimizer.learning_rate=0.001
 ```
 
 ---
@@ -249,7 +249,7 @@ thermur train --resume checkpoints/epoch5.ckpt
 thermur train --no-interactive \
               controller.murmuration.k_neighbors=7 \
               controller.murmuration.alert_coupling_factor=-1.5 \
-              lightning.optimizer.learning_rate=0.001
+              training.optimizer.learning_rate=0.001
 
 # Dry run to validate configuration without training
 thermur train --dry-run
@@ -269,8 +269,8 @@ thermur train ~model.remove_param           # Remove parameter
 # Combining multiple overrides
 thermur train --sample \
               controller.flock.agent_count=50 \
-              lightning.hardware.accelerator=gpu \
-              lightning.optimizer.max_epochs=100
+              training.hardware.accelerator=gpu \
+              training.optimizer.max_epochs=100
 ```
 
 ### Data Management

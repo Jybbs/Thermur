@@ -15,7 +15,7 @@ from typing                      import TYPE_CHECKING
 import torch as th
 
 if TYPE_CHECKING:
-    from config.imitation.lightning        import ExperienceModel
+    from config.imitation.training         import ExperienceModel
     from pytorch_lightning                 import LightningModule
     from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
     from thermur.imitation.controller      import MurmurationController

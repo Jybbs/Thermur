@@ -17,7 +17,7 @@ from typing             import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.imitation.controller import MurmurationModel, SafetyModel
-    from config.imitation.monitoring import MetricsModel
+    from config.imitation.training   import MetricsModel
     from config.types                import StepMetrics
     from pytorch_lightning           import LightningModule
     from torch                       import Tensor
@@ -108,7 +108,7 @@ class CohesionMetric(AveragingMetric):
         shifted_laplacian = laplacian + shift * th.eye(n, device=device)
         
         for _ in range(iterations):
-            v_new = th.linalg.solve(shifted_laplacian, v)
+            v_new          = th.linalg.solve(shifted_laplacian, v)
             orthogonalized = v_new - v_new.mean()
             
             if (norm := orthogonalized.norm()) > 1e-10:
@@ -828,15 +828,15 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
     where γ ≈ 1/3 for natural murmurations (Cavagna et al. 2010).
     """
     
-    def __init__(self, mmm: MurmurationModel):
+    def __init__(self, metrics: MetricsModel):
         """
         Initialize with target correlation exponent.
         
         Args:
-            mmm: Murmuration model with expected exponent γ
+            metrics: Metrics model with expected exponent γ
         """
         super().__init__()
-        self.target_exponent = mmm.correlation_exponent
+        self.target_exponent = metrics.correlation_exponent
     
     def _compute_velocity_correlations(
         self,
@@ -926,7 +926,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         bin_edges = th.logspace(
             end   = max_dist.log10(),
             start = min_dist.log10(),
-            steps = n_bins + 1
+            steps = int(n_bins + 1)
         )
         
         bin_stats = [
@@ -1040,7 +1040,7 @@ class TopologicalFidelityMetric(AveragingMetric):
         Initialize fidelity tracking with edge memory.
         """
         super().__init__()
-        self.previous_edges = None
+        self.previous_edges: th.Tensor | None = None
     
     def update(self, batch: TensorDictBase):
         """
@@ -1073,12 +1073,12 @@ class TopologicalFidelityMetric(AveragingMetric):
                 hasattr(self, "last_trajectory_id") 
                 and current_traj != self.last_trajectory_id
             ):
-                self.previous_edge_ids = None
+                self.previous_edges = None
             self.last_trajectory_id = current_traj
         
-        if hasattr(self, 'previous_edge_ids') and self.previous_edge_ids is not None:
+        if self.previous_edges is not None:
             curr_unique = th.unique(edge_ids)
-            prev_unique = self.previous_edge_ids
+            prev_unique = self.previous_edges
             
             if curr_unique.numel() > 0 and prev_unique.numel() > 0:
                 
@@ -1091,7 +1091,7 @@ class TopologicalFidelityMetric(AveragingMetric):
                     self.sum   += fidelity
                     self.count += 1
         
-        self.previous_edge_ids = th.unique(edge_ids) if edge_ids.numel() > 0 else None
+        self.previous_edges = th.unique(edge_ids) if edge_ids.numel() > 0 else None
 
 
 class MetricsCollector(th.nn.Module):
@@ -1250,7 +1250,7 @@ class MetricsCollector(th.nn.Module):
                 "mse"               : MeanSquaredError(),
                 "r2"                : R2Score(multioutput='uniform_average'),
                 "rmse"              : MeanSquaredError(squared=False),
-                "scale_free"        : ScaleFreeCorrelationMetric(self.mmm),
+                "scale_free"        : ScaleFreeCorrelationMetric(self.metrics),
                 "state"             : StateMetrics(),
                 "susceptibility"    : SusceptibilityMetric(self.metrics),
                 "topo_fidelity"     : TopologicalFidelityMetric()
@@ -1271,10 +1271,10 @@ class MetricsCollector(th.nn.Module):
         """
         Log all metrics to PyTorch Lightning and external loggers.
 
-        Orchestrates the logging of different metric categories with appropriate
-        frequencies and visualization settings. Imitation metrics are logged at
-        every training step for close monitoring of learning progress, while
-        evaluation metrics are logged only at epoch boundaries to reduce noise.
+        Uses a simplified logging strategy where training metrics are logged
+        step-wise and validation metrics are logged epoch-wise. This eliminates
+        the need for _step/_epoch suffixes since each metric logs at only one
+        granularity.
 
         Special handling includes:
         - Loss displayed in progress bar for immediate feedback
@@ -1287,12 +1287,15 @@ class MetricsCollector(th.nn.Module):
             step_data   : Optional step metrics (loss, predictions, targets) for
                           step-level logging. When None, only logs aggregated metrics.
         """
-        phase = "training" if is_training else "validation"
+        phase        = "training" if is_training else "validation"
+        log_on_step  = is_training
+        log_on_epoch = not is_training
+        
         if step_data is not None:
             module.log(
                 name      = f"{phase}/loss",
-                on_epoch  = True,
-                on_step   = is_training,
+                on_epoch  = log_on_epoch,
+                on_step   = log_on_step,
                 prog_bar  = True,
                 sync_dist = True,
                 value     = step_data["loss"]
@@ -1301,8 +1304,8 @@ class MetricsCollector(th.nn.Module):
             for i, dim in enumerate(["x", "y", "z"]):
                 module.log(
                     name      = f"{phase}/velocity_{dim}_mse",
-                    on_epoch  = True,
-                    on_step   = False,
+                    on_epoch  = log_on_epoch,
+                    on_step   = log_on_step,
                     sync_dist = True,
                     value     = (step_data["predictions"][..., i] - 
                                 step_data["targets"][..., i]).pow(2).mean()
@@ -1314,8 +1317,8 @@ class MetricsCollector(th.nn.Module):
                 prefixed = {f"{phase}/{k}": v for k, v in computed.items()}
                 module.log_dict(
                     dictionary = prefixed,
-                    on_epoch   = True,
-                    on_step    = is_training,
+                    on_epoch   = log_on_epoch,
+                    on_step    = log_on_step,
                     sync_dist  = True
                 )
         
@@ -1326,8 +1329,8 @@ class MetricsCollector(th.nn.Module):
                 prefixed = {f"{phase}/{k}": v for k, v in computed.items()}
                 module.log_dict(
                     dictionary = prefixed,
-                    on_epoch   = True,
-                    on_step    = is_training,
+                    on_epoch   = log_on_epoch,
+                    on_step    = log_on_step,
                     sync_dist  = True,
                 )
 

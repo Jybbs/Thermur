@@ -9,7 +9,6 @@ settings with pagination support for large configurations.
 from config.types import ConfigItem, TableColumn
 from contextlib   import contextmanager, suppress
 from datetime     import datetime
-from itertools    import chain
 from pathlib      import Path
 from yaml         import safe_load
 from shutil       import rmtree
@@ -337,7 +336,7 @@ class RunsCommand:
     def _display_runs_table(
         self,
         columns      : list[TableColumn],
-        runs         : list[Path],
+        runs         : list[tuple[Path, float]],
         border_style : str = "bright_blue"
     ):
         """
@@ -345,7 +344,7 @@ class RunsCommand:
 
         Args:
             columns      : Column definitions for the table
-            runs         : List of run paths to display
+            runs         : List of (path, timestamp) tuples
             border_style : Border style for the table
         """
         table = self.ui.create_aligned_table(
@@ -353,19 +352,16 @@ class RunsCommand:
             columns      = columns
         )
 
-        for run_path in runs:
-            config_file = run_path / ".hydra" / "config.yaml"
-            runtime     = (
-                config_file.stat().st_ctime if config_file.exists()
-                else run_path.stat().st_ctime
-            )
+        [
             table.add_row(
                 str(run_path.relative_to(self.outputs_dir)),
-                datetime.fromtimestamp(runtime).strftime("%Y-%m-%d %H:%M"),
-                self.ui.format_summary_list(overrides)
+                datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M"),
+                self.ui.format_summary_list(overrides) 
                 if (overrides := self._load_overrides(run_path)) else "-",
                 self.ui.format_run_status(run_path)
             )
+            for run_path, timestamp in runs
+        ]
 
         self.ui.display_panel(table)
 
@@ -403,11 +399,12 @@ class RunsCommand:
 
             if isinstance(value, dict):
                 if '_target_' in value:
-                    model_params: dict[str, Any] = {
-                        k: v for k, v in value.items() if k != '_target_'
+                    value_dict   : dict[str, Any] = value
+                    model_params : dict[str, Any] = {
+                        k: v for k, v in value_dict.items() if k != '_target_'
                     }
                     if not model_params:
-                        target_value = str(value['_target_'])
+                        target_value = str(value_dict['_target_'])
                         items[full_key] = ConfigItem(
                             is_override = False,
                             path        = full_key,
@@ -425,27 +422,33 @@ class RunsCommand:
 
         return items
 
-    def _get_all_runs(self) -> list[Path]:
+    def _get_all_runs(self) -> list[tuple[Path, float]]:
         """
-        Get all run directories sorted by timestamp.
+        Get all run directories with their timestamps, sorted by timestamp.
 
         Scans the outputs directory for Hydra run folders (identified by the
         presence of a .hydra subdirectory) and returns them in reverse
         chronological order. This ensures the most recent runs appear first.
 
         Returns:
-            List of Path objects pointing to valid run directories
+            List of (Path, timestamp) tuples sorted by timestamp
         """
         if not self.outputs_dir.exists():
             return []
 
-        hydra_dirs = self.outputs_dir.glob("**/.hydra")
-        run_dirs   = [hydra_dir.parent for hydra_dir in hydra_dirs]
-        
         return sorted(
-            run_dirs, 
-            key      = lambda p: p.stat().st_mtime, 
-            reverse  = True
+            [
+                (run_path, timestamp)
+                for hydra_dir in self.outputs_dir.glob("**/.hydra")
+                if (run_path  := hydra_dir.parent)
+                for config_file in [run_path / ".hydra" / "config.yaml"]
+                if (timestamp := (
+                    config_file.stat().st_ctime if config_file.exists()
+                    else run_path.stat().st_ctime
+                ))
+            ],
+            key     = lambda x: x[1],
+            reverse = True
         )
 
     def _get_domains(self, cfg: dict[str, Any]) -> list[str]:
@@ -586,7 +589,7 @@ class RunsCommand:
             )
             raise Exit(1)
 
-        return runs[n - 1]
+        return runs[n - 1][0]
 
     def clean_runs(self, keep: int):
         """
@@ -653,9 +656,9 @@ class RunsCommand:
         deleted = 0
         with (progress := self.ui.create_thermal_progress()):
             task = progress.add_task("Deleting runs...", total=len(to_delete))
-            for run in to_delete:
+            for run_path, _ in to_delete:
                 with suppress(Exception):
-                    rmtree(run)
+                    rmtree(run_path)
                     deleted += 1
                     progress.update(task, advance=1)
 

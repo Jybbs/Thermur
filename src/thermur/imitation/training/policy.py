@@ -19,10 +19,10 @@ from torch_geometric.nn    import GCNConv
 from typing                import Callable, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config.imitation.lightning        import ArchitectureModel
+    from .metrics                          import MetricsCollector
+    from config.imitation.training         import ArchitectureModel
     from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig, STEP_OUTPUT
     from tensordict                        import TensorDictBase
-    from thermur.imitation.monitoring      import MetricsCollector
     from torch                             import Tensor
     from torch.nn                          import Module
     from torch.optim                       import Optimizer
@@ -91,7 +91,7 @@ class GNNPolicy(LightningModule):
         self._edge_offset_cache      = {}
         self._batch_assignment_cache = {}
 
-    @th.jit.ignore
+    @th.jit.ignore(drop=True)
     def _batch_to_data(self, batch: TensorDictBase) -> Batch:
         """
         Convert TensorDict batch to PyTorch Geometric graph format.
@@ -291,7 +291,9 @@ class GNNPolicy(LightningModule):
             - l: Layer index from 1 to num_layers
             - u_nom: Nominal velocity command output
         """
-        x, edge_index = data.x, data.edge_index
+        x          = data.x
+        edge_index = data.edge_index
+        assert x is not None
         
         if x.dim() == 2 and x.device.type == 'mps':
             x = x.contiguous(th.channels_last) if x.shape[-1] % 4 == 0 else x

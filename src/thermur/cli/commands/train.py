@@ -215,8 +215,7 @@ class TrainCommand:
     def _instantiate_components(
         self,
         cfg             : DictConfig,
-        instantiate     : Callable[..., Any],
-        pydantic_parser : Callable[..., Any]
+        instantiate     : Callable[..., Any]
     ) -> dict[str, Any]:
         """
         Create concrete objects from the configuration.
@@ -228,7 +227,6 @@ class TrainCommand:
         Args:
             cfg             : Resolved hydra configuration.
             instantiate     : Hydra-zen instantiate function.
-            pydantic_parser : Parser for pydantic models.
 
         Returns:
             Dictionary of instantiated components ready for training.
@@ -497,15 +495,14 @@ class TrainCommand:
         with open_dict(cfg):
             cfg.simulation.loader.data_path = self.data_path
 
-        if cfg.lightning.optimizer.seed is not None:
-            imports["seed_everything"](cfg.lightning.optimizer.seed)
+        if cfg.training.optimizer.seed is not None:
+            imports["seed_everything"](cfg.training.optimizer.seed)
 
         self.ui.console.print()
 
         components = self._instantiate_components(
             cfg             = cfg,
-            instantiate     = imports["instantiate"],
-            pydantic_parser = imports["pydantic_parser"],
+            instantiate     = imports["instantiate"]
         )
 
         self.ui.print_message(
@@ -578,11 +575,9 @@ class TrainCommand:
 
         self.resume = self._resolve_resume_path(resume)
 
-        self.overrides = list(filter(None, [
-            *(overrides or []),
-            f"lightning.wandb.run_name={self.name}" if self.name else None
-        ]))
-
+        self.overrides = overrides or []
+        if self.name:
+            self.overrides = [*self.overrides, f"training.wandb.run_name={self.name}"]
         self.ui.print_header("Thermur Training System")
 
         if not self.force:

@@ -84,7 +84,7 @@ class CLIPrompts:
 
         overrides: list[str] = []
         while override := questionary.text(
-            instruction = "(e.g., lightning.optimizer.learning_rate=0.001)",
+            instruction = "(e.g., training.optimizer.learning_rate=0.001)",
             message     = "Override:",
             style       = self.thermal
         ).ask():
