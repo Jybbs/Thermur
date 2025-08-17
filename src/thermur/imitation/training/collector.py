@@ -95,7 +95,7 @@ class ExperienceCollector(Module):
             obs = self.env.reset()
             traj_length = 0
             
-            for frame_idx in range(self.frames_per_batch):
+            for _ in range(self.frames_per_batch):
                 with th.no_grad():
                     action = self.expert(obs.clone()).get("action")
                 
@@ -122,7 +122,7 @@ class ExperienceCollector(Module):
                 batch_data.append(experience)
                 traj_length += 1
                 
-                if (done := next_obs.get("done", th.tensor([False]))[0].item()) or \
+                if next_obs.get("done", th.tensor([False]))[0].item() or \
                    (self.max_frames_per_traj > 0 and traj_length >= self.max_frames_per_traj):
                     obs = self.env.reset()
                     traj_length = 0

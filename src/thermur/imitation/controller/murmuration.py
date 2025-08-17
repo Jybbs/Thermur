@@ -7,7 +7,6 @@ than metric distances. The flock maintains critical state dynamics for
 rapid information propagation and exhibits distinct cruise/alert modes.
 """
 from __future__  import annotations
-from collections import deque
 from typing      import TYPE_CHECKING
 
 import torch as th

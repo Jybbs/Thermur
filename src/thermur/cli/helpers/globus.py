@@ -18,7 +18,7 @@ from config.types import EndpointInfo, FileInfo, TransferStatus
 from contextlib   import suppress
 from pathlib      import Path
 from time         import perf_counter, sleep
-from typing       import Any, Callable, TYPE_CHECKING
+from typing       import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.cli import DownloadModel
