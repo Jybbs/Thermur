@@ -21,16 +21,19 @@ from .training.builds   import TRAINING_USER_CONFIG,   TRAINING_SYSTEM_BUILDS
 from datetime           import datetime
 from hydra_zen          import make_config
 from omegaconf          import OmegaConf
+from typing             import Callable
+
+resolver: Callable[[str | None], str] = lambda run_name: (
+    f"outputs/{run_name}" if run_name 
+    else (
+        f"outputs/{datetime.now().strftime('%Y-%m-%d')}/"
+        f"{datetime.now().strftime('%H-%M-%S')}"
+    )
+)
 
 OmegaConf.register_new_resolver(
     "output_dir",
-    lambda run_name: (
-        f"outputs/{run_name}" if run_name 
-        else (
-            f"outputs/{datetime.now().strftime('%Y-%m-%d')}/"
-            f"{datetime.now().strftime('%H-%M-%S')}"
-        )
-    ),
+    resolver,
     replace = True
 )
 

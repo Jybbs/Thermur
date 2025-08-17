@@ -108,7 +108,7 @@ class CohesionMetric(AveragingMetric):
         shifted_laplacian = laplacian + shift * th.eye(n, device=device)
         
         for _ in range(iterations):
-            v_new = th.linalg.solve(shifted_laplacian, v)
+            v_new          = th.linalg.solve(shifted_laplacian, v)
             orthogonalized = v_new - v_new.mean()
             
             if (norm := orthogonalized.norm()) > 1e-10:
@@ -926,7 +926,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         bin_edges = th.logspace(
             end   = max_dist.log10(),
             start = min_dist.log10(),
-            steps = n_bins + 1
+            steps = int(n_bins + 1)
         )
         
         bin_stats = [
@@ -1040,7 +1040,7 @@ class TopologicalFidelityMetric(AveragingMetric):
         Initialize fidelity tracking with edge memory.
         """
         super().__init__()
-        self.previous_edges = None
+        self.previous_edges: th.Tensor | None = None
     
     def update(self, batch: TensorDictBase):
         """
@@ -1073,12 +1073,12 @@ class TopologicalFidelityMetric(AveragingMetric):
                 hasattr(self, "last_trajectory_id") 
                 and current_traj != self.last_trajectory_id
             ):
-                self.previous_edge_ids = None
+                self.previous_edges = None
             self.last_trajectory_id = current_traj
         
-        if hasattr(self, 'previous_edge_ids') and self.previous_edge_ids is not None:
+        if self.previous_edges is not None:
             curr_unique = th.unique(edge_ids)
-            prev_unique = self.previous_edge_ids
+            prev_unique = self.previous_edges
             
             if curr_unique.numel() > 0 and prev_unique.numel() > 0:
                 
@@ -1091,7 +1091,7 @@ class TopologicalFidelityMetric(AveragingMetric):
                     self.sum   += fidelity
                     self.count += 1
         
-        self.previous_edge_ids = th.unique(edge_ids) if edge_ids.numel() > 0 else None
+        self.previous_edges = th.unique(edge_ids) if edge_ids.numel() > 0 else None
 
 
 class MetricsCollector(th.nn.Module):

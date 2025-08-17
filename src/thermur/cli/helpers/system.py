@@ -35,6 +35,7 @@ class SystemInspector:
             cfg: The CLI configuration object containing all settings.
         """
         self.download = cfg.download
+        self._torch_cache: dict[str, Any] | None = None
 
     def _get_cuda_info(self) -> SystemInfo:
         """
@@ -144,7 +145,7 @@ class SystemInspector:
             Dictionary containing PyTorch availability, version, and cuda module.
             Keys: available, version, cuda.
         """
-        if not hasattr(self, '_torch_cache'):
+        if self._torch_cache is None:
             try:
                 import torch
                 self._torch_cache = {

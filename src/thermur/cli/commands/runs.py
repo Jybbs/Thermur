@@ -399,11 +399,12 @@ class RunsCommand:
 
             if isinstance(value, dict):
                 if '_target_' in value:
-                    model_params: dict[str, Any] = {
-                        k: v for k, v in value.items() if k != '_target_'
+                    value_dict   : dict[str, Any] = value
+                    model_params : dict[str, Any] = {
+                        k: v for k, v in value_dict.items() if k != '_target_'
                     }
                     if not model_params:
-                        target_value = str(value['_target_'])
+                        target_value = str(value_dict['_target_'])
                         items[full_key] = ConfigItem(
                             is_override = False,
                             path        = full_key,
