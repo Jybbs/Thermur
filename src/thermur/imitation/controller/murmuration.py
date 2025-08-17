@@ -435,7 +435,6 @@ class MurmurationController(th.nn.Module):
             self._compute_individual_alert_states,
             self._compute_hamiltonian_forces,
             self._compute_threats,
-            self._set_information_speed,
             self._compute_self_propulsion,
             self._compute_density_wave,
         ]:
@@ -524,26 +523,6 @@ class MurmurationController(th.nn.Module):
             other     = gradient_estimate
         )
 
-    def _set_information_speed(self, flock: TensorDictBase):
-        """
-        Set information propagation speed based on alert fraction.
-
-        Uses empirical range from Attanasi et al. (2014):
-        - Relaxed state: 15 m/s (low responsiveness)
-        - Alert state: 45 m/s (high responsiveness)
-        
-        Speed interpolates linearly with alert fraction to represent
-        increasing flock responsiveness as more agents become vigilant.
-
-        Args:
-            flock: TensorDict containing alert_fraction, updated with info_speed
-        """
-        # Use actual alert fraction computed in _compute_individual_alert_states
-        flock["info_speed"] = (
-            self.mmm.info_speed_min + 
-            flock["alert_fraction"] * (self.mmm.info_speed_max - self.mmm.info_speed_min)
-        )
-
     def _update_graph_state(self, flock: TensorDictBase):
         """
         Update graph connectivity using provided or computed topology.
@@ -565,20 +544,6 @@ class MurmurationController(th.nn.Module):
             self._compute_topological_neighbors(flock)
         
         self._compute_topological_distances(flock)
-        
-        if "edge_source" in flock and flock["edge_source"].numel() > 0:
-            flock["neighbor_count"] = th.bincount(
-                input     = flock["edge_source"],
-                minlength = self.flock.agent_count
-            ).to(flock["position"].device)
-        else:
-            flock["neighbor_count"] = th.zeros(
-                device = flock["position"].device,
-                dtype  = th.long,
-                size   = (self.flock.agent_count,)
-            )
-        
-        flock["safe_count"] = flock["neighbor_count"].clamp_min(1)
 
     def _vertical_heat_gradient(self, flock: TensorDictBase) -> Tensor:
         """

@@ -29,6 +29,7 @@ CONTROLLER_USER_CONFIG = make_config(
 )
 
 CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
+
     "cbf": builds(
         CBFSafetyFilter,
         flock                   = "${controller.flock}",
@@ -44,4 +45,5 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         safety                  = "${controller.safety}",
         populate_full_signature = True
     )
+    
 }

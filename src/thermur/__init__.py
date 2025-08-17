@@ -5,13 +5,11 @@ This package implements a complete system for training autonomous drone flocks
 to navigate wildfire scenarios using graph neural networks and behavioral cloning.
 
 Key components:
-- cli/: Command-line interface for training, validation, and monitoring
+- cli/: Command-line interface for training and validation
 - imitation/: Complete imitation learning pipeline including:
   - controller/: Expert controllers with Reynolds flocking and thermal constraints
-  - lightning/: PyTorch Lightning training infrastructure
   - simulation/: Physics environment with Euler integration
-  - sources/: WRF-Fire data loading and interpolation
-  - visualization/: Real-time 3D rendering with PyVista
+  - training/: Training infrastructure with metrics collection
 
 The system uses PyTorch Lightning to streamline the training pipeline, reducing
 boilerplate while maintaining flexibility. Configuration is managed through

@@ -48,17 +48,6 @@ class EndpointInfo(TypedDict):
     id           : str  # UUID of the endpoint
 
 
-class EventConfig(TypedDict):
-    """
-    Configuration for a specific event type in the monitoring system.
-
-    Defines the structure for event logging configuration including
-    which data columns to track and the metric name for rate tracking.
-    """
-    columns : list[str]  # Data fields to log for this event type
-    rate    : str        # Metric name for event rate tracking
-
-
 class StepMetrics(TypedDict):
     """
     Step-level metrics data for logging during training/validation.

@@ -497,8 +497,8 @@ class TrainCommand:
         with open_dict(cfg):
             cfg.simulation.loader.data_path = self.data_path
 
-        if cfg.lightning.optimizer.seed is not None:
-            imports["seed_everything"](cfg.lightning.optimizer.seed)
+        if cfg.training.optimizer.seed is not None:
+            imports["seed_everything"](cfg.training.optimizer.seed)
 
         self.ui.console.print()
 
@@ -580,7 +580,7 @@ class TrainCommand:
 
         self.overrides = list(filter(None, [
             *(overrides or []),
-            f"lightning.wandb.run_name={self.name}" if self.name else None
+            f"training.wandb.run_name={self.name}" if self.name else None
         ]))
 
         self.ui.print_header("Thermur Training System")

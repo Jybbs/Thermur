@@ -1,7 +1,7 @@
 """
-Lightning domain builds for hydra-zen configuration.
+Training domain builds for hydra-zen configuration.
 
-This module provides pre-built components for PyTorch Lightning training infrastructure:
+This module provides pre-built components for the training infrastructure:
 
 Training Components:
 - Trainer                : PyTorch Lightning trainer with hardware configuration,
@@ -40,7 +40,7 @@ from hydra_zen                   import builds, make_config
 from pytorch_lightning           import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers   import WandbLogger
-from thermur.imitation.lightning import DataModule, GNNPolicy, MonitoringCallback
+from thermur.imitation.training  import DataModule, GNNPolicy, MetricsCollector, MonitoringCallback
 from torch.optim                 import AdamW
 from torch.optim.lr_scheduler    import ReduceLROnPlateau
 from typing                      import Any, TYPE_CHECKING
@@ -49,51 +49,63 @@ if TYPE_CHECKING:
     from hydra_zen.typing import Builds
 
 
-LIGHTNING_USER_CONFIG = make_config(
+TRAINING_USER_CONFIG = make_config(
     architecture = ArchitectureModel(),
     checkpoint   = CheckpointModel(),
     experience   = ExperienceModel(),
     hardware     = HardwareModel(),
+    metrics      = MetricsModel(),
     optimizer    = OptimizerModel(),
     wandb        = WandbModel()
 )
 
-LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
+TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
+
     "checkpoint_callback": builds(
         ModelCheckpoint,
-        dirpath                 = "${lightning.checkpoint.dirpath}",
-        every_n_train_steps     = "${lightning.checkpoint.every_n_train_steps}",
+        dirpath                 = "${training.checkpoint.dirpath}",
+        every_n_train_steps     = "${training.checkpoint.every_n_train_steps}",
         filename                = "checkpoint-{step}",
-        monitor                 = "${lightning.optimizer.training_metric}",
-        mode                    = "${lightning.optimizer.mode}",
-        save_last               = "${lightning.checkpoint.save_last}",
-        save_top_k              = "${lightning.checkpoint.save_top_k}",
+        monitor                 = "${training.optimizer.training_metric}",
+        mode                    = "${training.optimizer.mode}",
+        save_last               = "${training.checkpoint.save_last}",
+        save_top_k              = "${training.checkpoint.save_top_k}",
+        populate_full_signature = True
+    ),
+
+    "collector": builds(
+        MetricsCollector,
+        bounds_max              = "${simulation.physics.bounds_max}",
+        gravity                 = "${simulation.physics.gravity}",
+        metrics                 = "${training.metrics}",
+        mmm                     = "${controller.mmm}",
+        safety                  = "${controller.safety}",
         populate_full_signature = True
     ),
 
     "datamodule": builds(
         DataModule,
         env                     = "${_system.env}",
-        experience              = "${lightning.experience}",
+        experience              = "${training.experience}",
         expert                  = "${_system.murmuration_controller}",
         populate_full_signature = True
     ),
 
     "early_stopping_callback": builds(
         EarlyStopping,
-        monitor                 = "${lightning.optimizer.training_metric}",
-        mode                    = "${lightning.optimizer.mode}",
-        patience                = "${lightning.optimizer.early_stopping_patience}",
+        monitor                 = "${training.optimizer.training_metric}",
+        mode                    = "${training.optimizer.mode}",
+        patience                = "${training.optimizer.early_stopping_patience}",
         populate_full_signature = True
     ),
 
     "logger": builds(
         WandbLogger,
-        log_model               = "${lightning.wandb.log_model}",
-        mode                    = "${lightning.wandb.mode}",
-        name                    = "${lightning.wandb.run_name}",
-        notes                   = "${lightning.wandb.notes}",
-        project                 = "${lightning.wandb.project}",
+        log_model               = "${training.wandb.log_model}",
+        mode                    = "${training.wandb.mode}",
+        name                    = "${training.wandb.run_name}",
+        notes                   = "${training.wandb.notes}",
+        project                 = "${training.wandb.project}",
         populate_full_signature = True
     ),
 
@@ -105,58 +117,58 @@ LIGHTNING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "monitoring_callback": builds(
         MonitoringCallback,
         collector               = "${_system.collector}",
-        events                  = "${_system.events}",
         populate_full_signature = True
     ),
 
     "optimizer": builds(
         AdamW,
-        lr                      = "${lightning.optimizer.learning_rate}",
-        weight_decay            = "${lightning.optimizer.weight_decay}",
+        lr                      = "${training.optimizer.learning_rate}",
+        weight_decay            = "${training.optimizer.weight_decay}",
         zen_partial             = True,
         populate_full_signature = True
     ),
 
     "policy": builds(
         GNNPolicy,
-        architecture            = "${lightning.architecture}",
+        architecture            = "${training.architecture}",
         collector               = "${_system.collector}",
         optimizer               = "${_system.optimizer}",
         scheduler               = "${_system.scheduler}",
-        scheduler_metric        = "${lightning.optimizer.scheduler_metric}",
-        training_metric         = "${lightning.optimizer.training_metric}",
+        scheduler_metric        = "${training.optimizer.scheduler_metric}",
+        training_metric         = "${training.optimizer.training_metric}",
         populate_full_signature = True
     ),
 
     "scheduler": builds(
         ReduceLROnPlateau,
-        factor                  = "${lightning.optimizer.lr_factor}",
-        patience                = "${lightning.optimizer.lr_patience}",
-        mode                    = "${lightning.optimizer.mode}",
+        factor                  = "${training.optimizer.lr_factor}",
+        patience                = "${training.optimizer.lr_patience}",
+        mode                    = "${training.optimizer.mode}",
         zen_partial             = True,
         populate_full_signature = True
     ),
 
     "trainer": builds(
         Trainer,
-        accelerator             = "${lightning.hardware.accelerator}",
-        benchmark               = "${lightning.hardware.benchmark}",
+        accelerator             = "${training.hardware.accelerator}",
+        benchmark               = "${training.hardware.benchmark}",
         callbacks               = [
             "${_system.checkpoint_callback}",
             "${_system.early_stopping_callback}",
             "${_system.monitoring_callback}"
         ],
-        detect_anomaly          = "${lightning.hardware.detect_anomaly}",
-        deterministic           = "${lightning.hardware.deterministic}",
-        devices                 = "${lightning.hardware.devices}",
-        gradient_clip_val       = "${lightning.optimizer.gradient_clip_val}",
-        log_every_n_steps       = "${lightning.optimizer.log_every_n_steps}",
+        detect_anomaly          = "${training.hardware.detect_anomaly}",
+        deterministic           = "${training.hardware.deterministic}",
+        devices                 = "${training.hardware.devices}",
+        gradient_clip_val       = "${training.optimizer.gradient_clip_val}",
+        log_every_n_steps       = "${training.optimizer.log_every_n_steps}",
         logger                  = "${_system.logger}",
-        max_epochs              = "${lightning.optimizer.max_epochs}",
-        precision               = "${lightning.hardware.precision}",
-        profiler                = "${monitoring.metrics.profiler}",
-        strategy                = "${lightning.hardware.strategy}",
-        val_check_interval      = "${lightning.optimizer.val_check_interval}",
+        max_epochs              = "${training.optimizer.max_epochs}",
+        precision               = "${training.hardware.precision}",
+        profiler                = "${training.metrics.profiler}",
+        strategy                = "${training.hardware.strategy}",
+        val_check_interval      = "${training.optimizer.val_check_interval}",
         populate_full_signature = True
     )
+
 }

@@ -19,10 +19,10 @@ from torch_geometric.nn    import GCNConv
 from typing                import Callable, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config.imitation.lightning        import ArchitectureModel
+    from .metrics                          import MetricsCollector
+    from config.imitation.training         import ArchitectureModel
     from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig, STEP_OUTPUT
     from tensordict                        import TensorDictBase
-    from thermur.imitation.monitoring      import MetricsCollector
     from torch                             import Tensor
     from torch.nn                          import Module
     from torch.optim                       import Optimizer
