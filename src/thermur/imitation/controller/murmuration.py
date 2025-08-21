@@ -642,7 +642,11 @@ class MurmurationController(th.nn.Module):
                     y          = action
                 )
             )
-            state = env.step({"action": action})["next"]
+            # TODO: Phase 5 - Convert to PyG Data objects throughout
+            # State will be PyG Data object (not TensorDict)
+            # Environment step: (Data, action) -> Data
+            # Controller forward: Data -> action tensor
+            state = env.step(state, action)  # Will return Data object
         
         return trajectory
 

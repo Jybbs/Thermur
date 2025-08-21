@@ -81,6 +81,39 @@ class CheckpointModel(BaseModel, extra="forbid"):
     )
 
 
+class DemonstrationsModel(BaseModel, extra="forbid"):
+    """
+    Configuration for offline demonstration generation and storage.
+    
+    Manages the generation of expert demonstrations from controller
+    trajectories for imitation learning. Demonstrations are generated
+    once offline and cached for efficient training without repeated
+    environment interaction.
+    
+    The system tracks total frames generated across all scenarios to
+    ensure sufficient data for training requirements specified in
+    ExperienceModel.total_frames.
+    """
+    frames_per_episode: PositiveInt = Field(
+        default     = 1000,
+        description = (
+            "Number of timesteps per demonstration episode, determining trajectory "
+            "length for behavioral cloning. Longer episodes capture extended "
+            "temporal dependencies in flocking behavior."
+        )
+    )
+    train_split: float = Field(
+        default     = 0.8,
+        ge          = 0.5,
+        le          = 0.95,
+        description = (
+            "Fraction of demonstrations reserved for training, with remainder "
+            "used for validation. Split occurs at episode level to prevent "
+            "temporal leakage between train and validation sets."
+        )
+    )
+
+
 class ExperienceModel(BaseModel, extra="forbid"):
     """
     Experience data handling and batching configuration.
