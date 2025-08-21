@@ -100,7 +100,7 @@ class TrainCommand:
         self.prompts     = app.prompts
         self.system      = app.system
         self.ui          = app.ui
-
+        
         self.data_path   = "auto"
         self.dry_run     = False
         self.force       = False
@@ -494,6 +494,7 @@ class TrainCommand:
 
         with open_dict(cfg):
             cfg.simulation.loader.data_path = self.data_path
+            cfg._ui = self.ui  # Pass UI instance for demonstrations progress
 
         if cfg.training.optimizer.seed is not None:
             imports["seed_everything"](cfg.training.optimizer.seed)

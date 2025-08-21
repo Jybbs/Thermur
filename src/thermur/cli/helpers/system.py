@@ -163,16 +163,22 @@ class SystemInspector:
 
     def _get_wrf_files(self) -> list[Path]:
         """
-        Get list of WRF-SFIRE NetCDF files from configured directory.
+        Get list of WRF NetCDF files following project's discovery pattern.
+        
+        Checks wrf-sfire first for full dataset, then falls back to sample.
 
         Returns:
             List of Path objects for WRF files, empty list if none found.
         """
-        wrf_dir = Path(self.download.wrf_sfire_dir)
-        if not wrf_dir.exists():
-            return []
-
-        return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
+        wrf_sfire = Path(self.download.wrf_sfire_dir)
+        sample    = Path(self.download.sample_data_path)
+        
+        if wrf_sfire.exists():
+            files = [f for f in wrf_sfire.glob("*.nc") if f.is_file()]
+            if files:
+                return sorted(files)
+        
+        return [sample] if sample.exists() else []
 
     def create_status_marker(self, status: str, output_dir: Path | None = None):
         """

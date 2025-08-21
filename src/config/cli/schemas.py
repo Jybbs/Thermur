@@ -5,11 +5,10 @@ This module provides configuration models for CLI components that need to be
 configurable or contain structured data (arrays/dicts). Single-use strings
 have been moved inline to reduce indirection.
 """
+from pathlib           import Path
 from pydantic          import BaseModel, computed_field, Field, PositiveInt, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing            import Literal
-
-from pathlib import Path
 
 SECRETS_DIR = str(Path.home() / ".config" / "thermur" / "secrets")
 
@@ -283,7 +282,7 @@ class DownloadModel(BaseModel, extra="forbid"):
         )
     )
     sample_data_path: str = Field(
-        default     = "data/samples/wrf_sample.nc",
+        default     = "data/raw/samples/wrf_sample.nc",
         description = (
             "Filesystem path where extracted sample NetCDF dataset file will be saved "
             "after download and decompression."
@@ -297,7 +296,7 @@ class DownloadModel(BaseModel, extra="forbid"):
         )
     )
     sample_extract_dir: str = Field(
-        default     = "data",
+        default     = "data/raw",
         description = (
             "Target directory for extracting downloaded sample dataset archive files "
             "during the download process."
@@ -318,7 +317,7 @@ class DownloadModel(BaseModel, extra="forbid"):
         )
     )
     wrf_sfire_dir: str = Field(
-        default     = "data/wrf-sfire",
+        default     = "data/raw/wrf-sfire",
         description = (
             "Local filesystem directory designated for storing downloaded WRF-SFIRE "
             "simulation dataset files from Globus transfers."

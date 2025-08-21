@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from ..simulation              import SimulationEnv
     from config.imitation.training import DemonstrationsModel
     from omegaconf                 import DictConfig
+    from thermur.cli.helpers       import ThermurUI
 
 
 class DemonstrationsDataset(InMemoryDataset):
@@ -35,7 +36,8 @@ class DemonstrationsDataset(InMemoryDataset):
         controller     : MurmurationController,
         demonstrations : DemonstrationsModel,
         env            : SimulationEnv,
-        root           : str = "data/demonstrations"
+        ui             : ThermurUI,
+        root           : str | None = None
     ):
         """
         Initialize the demonstrations dataset.
@@ -45,14 +47,26 @@ class DemonstrationsDataset(InMemoryDataset):
             controller     : Expert controller for trajectory generation
             demonstrations : Demonstrations configuration
             env            : Simulation environment
-            root           : Cache directory (default: data/demonstrations)
+            ui             : CLI UI instance for progress display
+            root           : Cache directory (auto-determined if None)
         """
         self.cfg            = cfg
         self.config_hash    = self._compute_hash(cfg)
         self.controller     = controller
         self.demonstrations = demonstrations
         self.env            = env
-        super().__init__(root)
+        self.ui             = ui
+        
+        if root is None:
+            wrf_files = self._find_wrf_files()
+            if not wrf_files:
+                raise FileNotFoundError(
+                    "No WRF data files found. Run 'thermur download -s' to get "
+                    "started with sample data."
+                )
+            source_dir = wrf_files[0].parent
+        
+        super().__init__(str(source_dir).replace("/raw/", "/processed/"))
         self.data, self.slices = th.load(self.processed_paths[0])
     
     def process(self):
@@ -62,25 +76,30 @@ class DemonstrationsDataset(InMemoryDataset):
         Called automatically by PyG when processed file doesn't exist.
         Generates expert trajectories across WRF scenarios until total_frames reached.
         """
-        data_list = []
-        total     = 0
-        wrf_files = self._find_wrf_files()
+        # TODO: Phase 4 - Use wrf_files to vary environments
+        # wrf_files = self._find_wrf_files()
+        # Could use itertools slice/cycle
         
-        while total < self.demonstrations.total_frames:
-            for wrf in wrf_files:
-                if total >= self.demonstrations.total_frames:
-                    break
-                    
-                # TODO: Phase 4 - Switch environment to use wrf file
-                # For now, generate with current environment settings
+        frames_per_ep  = self.demonstrations.frames_per_episode
+        total_episodes = self.demonstrations.total_frames // frames_per_ep
+        data_list      = []
+        
+        with self.ui.create_thermal_progress() as progress:
+            task = progress.add_task(
+                description = "Generating expert demonstrations", 
+                total       = self.demonstrations.total_frames
+            )
+            
+            for _ in range(total_episodes):
                 trajectory = self.controller.generate_trajectories(
                     env           = self.env,
-                    num_timesteps = self.demonstrations.frames_per_episode
+                    num_timesteps = frames_per_ep
                 )
                 
                 data_list.extend(trajectory)
-                total += self.demonstrations.frames_per_episode
+                progress.update(task, advance=frames_per_ep)
         
+        self.ui.print_message("Saving demonstrations to cache...", "info")
         th.save(self.collate(data_list), self.processed_paths[0])
 
     @property
@@ -110,8 +129,8 @@ class DemonstrationsDataset(InMemoryDataset):
         
         Checks wrf-sfire first for full dataset, then falls back to sample.
         """
-        wrf_sfire = Path("data/wrf-sfire")
-        sample    = Path("data/samples/wrf_sample.nc")
+        wrf_sfire = Path(self.cfg.cli.download.wrf_sfire_dir)
+        sample    = Path(self.cfg.cli.download.sample_data_path)
         
         if wrf_sfire.exists():
             files = sorted(wrf_sfire.glob("*.nc"))

@@ -51,7 +51,6 @@ def download(
         thermur download              # Interactive mode - choose data source
         thermur download --sample     # Download sample dataset directly
         thermur download --wrf-sfire  # Browse full FRDR dataset
-        thermur download -s           # Short form for sample
         thermur download -w           # Short form for wrf-sfire
     """
     if sample and wrf_sfire:
@@ -62,7 +61,7 @@ def download(
         raise Exit(1)
 
     command = DownloadCommand()
-    command.run(sample=sample, wrf_sfire=wrf_sfire)
+    command.run(sample, wrf_sfire)
 
 
 class DownloadCommand:
@@ -83,13 +82,13 @@ class DownloadCommand:
         self.system        = app.system
         self.ui            = app.ui
         self.wrf_sfire_dir = Path(app.cfg.download.wrf_sfire_dir)
-
+    
     def _download_sample(self):
         """
         Downloads and extracts the sample data from Hugging Face.
 
         Downloads a tar.gz file containing sample WRF data and extracts it
-        to the data/samples directory.
+        to the data/raw/sample directory.
         """
         sample_file = Path(self.cfg.download.sample_data_path)
 
@@ -416,6 +415,7 @@ class DownloadCommand:
 
         if self.prompts.confirm("Wait for transfer to complete?"):
             self._monitor_transfer(file_info, globus_client, task_id)
+
 
     def _stream_http_download(
         self,

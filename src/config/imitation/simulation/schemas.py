@@ -22,7 +22,7 @@ class LoaderModel(BaseModel, extra="forbid"):
         default     = "auto",
         description = (
             "Path to WRF-Fire NetCDF dataset file. Use 'auto' to automatically find "
-            "wrf-sfire/*.nc, then fallback to data/samples/wrf_sample.nc"
+            "wrf-sfire/*.nc, then fallback to data/raw/samples/wrf_sample.nc"
         )
     )
     domain_randomization: bool = Field(
