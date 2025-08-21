@@ -83,23 +83,32 @@ class CheckpointModel(BaseModel, extra="forbid"):
 
 class DemonstrationsModel(BaseModel, extra="forbid"):
     """
-    Configuration for offline demonstration generation and storage.
+    Demonstrations configuration for offline imitation learning.
     
-    Manages the generation of expert demonstrations from controller
-    trajectories for imitation learning. Demonstrations are generated
-    once offline and cached for efficient training without repeated
-    environment interaction.
-    
-    The system tracks total frames generated across all scenarios to
-    ensure sufficient data for training requirements specified in
-    ExperienceModel.total_frames.
+    Configures the generation and loading of expert demonstrations via
+    the DemonstrationsDataset and PyG's LightningDataset wrapper.
     """
+    batch_size: PositiveInt = Field(
+        default     = 256,
+        ge          = 16,
+        description = (
+            "Number of graph snapshots per training batch. Each snapshot contains "
+            "the full flock state at a single timestep. Larger batches improve "
+            "gradient stability but require more memory."
+        )
+    )
     frames_per_episode: PositiveInt = Field(
         default     = 1000,
         description = (
-            "Number of timesteps per demonstration episode, determining trajectory "
-            "length for behavioral cloning. Longer episodes capture extended "
-            "temporal dependencies in flocking behavior."
+            "Number of timesteps per demonstration episode. Longer episodes "
+            "capture extended temporal dependencies in flocking behavior."
+        )
+    )
+    total_frames: PositiveInt = Field(
+        default     = 200_000,
+        description = (
+            "Total demonstration frames to generate across all scenarios. "
+            "Determines the size of the offline dataset for training."
         )
     )
     train_split: float = Field(
@@ -107,80 +116,8 @@ class DemonstrationsModel(BaseModel, extra="forbid"):
         ge          = 0.5,
         le          = 0.95,
         description = (
-            "Fraction of demonstrations reserved for training, with remainder "
-            "used for validation. Split occurs at episode level to prevent "
-            "temporal leakage between train and validation sets."
-        )
-    )
-
-
-class ExperienceModel(BaseModel, extra="forbid"):
-    """
-    Experience data handling and batching configuration.
-
-    Manages how experience data is collected, stored, and sampled during
-    imitation learning from expert demonstrations.
-    """
-    batch_size: PositiveInt = Field(
-        default     = 256,
-        ge          = 16,
-        description = (
-            "Number of state-action transitions B sampled per gradient update, "
-            "balancing computational efficiency with gradient variance. "
-            "Minimum of 16 ensures stable gradients and efficient GPU utilization."
-        )
-    )
-    buffer_size: PositiveInt = Field(
-        default     = 50_000,
-        description = (
-            "Maximum trajectory transitions |𝒟| stored in circular replay buffer "
-            "before oldest experiences are overwritten with new demonstrations."
-        )
-    )
-    frames_per_batch: PositiveInt = Field(
-        default     = 1024,
-        description = (
-            "Environment steps N_batch collected between training updates, controlling "
-            "the ratio of environment interaction to gradient computation."
-        )
-    )
-    max_frames_per_traj: int = Field(
-        default     = -1,
-        description = (
-            "Maximum frames per trajectory before episode reset. Use -1 for infinite "
-            "episodes that only reset when environment signals done."
-        )
-    )
-    prefetch: NonNegativeInt = Field(
-        default     = 16,
-        description = (
-            "Concurrent batches loaded in background threads, hiding I/O latency "
-            "and maintaining MPS/GPU utilization. Increased for better MPS performance."
-        )
-    )
-    total_frames: PositiveInt = Field(
-        default     = 200_000,
-        description = (
-            "Total environment interactions T over entire training run, determining "
-            "sample efficiency and final policy performance convergence."
-        )
-    )
-    validation_batches: PositiveInt = Field(
-        default     = 2,
-        description = (
-            "Number of batches to sample for validation from the replay buffer. "
-            "Validation samples from the oldest portion of the buffer to avoid overlap "
-            "with recent training data."
-        )
-    )
-    validation_split: float = Field(
-        default     = 0.2,
-        ge          = 0.0,
-        le          = 0.5,
-        description = (
-            "Fraction of replay buffer reserved for validation sampling. "
-            "A value of 0.2 means validation samples from the oldest 20% of the buffer, "
-            "ensuring temporal separation from recent training data."
+            "Fraction of data reserved for training, with remainder for validation. "
+            "Split occurs randomly across all timesteps to ensure diverse validation."
         )
     )
 
@@ -236,6 +173,20 @@ class HardwareModel(BaseModel, extra="forbid"):
         description = (
             "Distributed training strategy. 'auto' selects based on hardware, "
             "'ddp' for multi-GPU, 'deepspeed'/'fsdp' for large model training."
+        )
+    )
+    num_workers: NonNegativeInt = Field(
+        default     = 8,
+        description = (
+            "Number of worker processes for data loading. Set to 0 for debugging "
+            "or when using CPU. Higher values improve throughput with GPUs."
+        )
+    )
+    pin_memory: bool = Field(
+        default     = True,
+        description = (
+            "Pin memory for faster GPU transfers. Disable for CPU-only training "
+            "or when memory is limited."
         )
     )
 

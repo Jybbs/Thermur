@@ -34,13 +34,19 @@ Logging:
                            metric visualization.
 """
 from __future__                  import annotations
-from .schemas                    import *
+from .schemas                        import *
 from config.cli.schemas          import WandbModel
 from hydra_zen                   import builds, make_config
 from pytorch_lightning           import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers   import WandbLogger
-from thermur.imitation.training  import DataModule, GNNPolicy, MetricsCollector, MonitoringCallback
+from thermur.imitation.training      import (
+    DemonstrationsDataset,
+    GNNPolicy,
+    MetricsCollector,
+    MonitoringCallback
+)
+from torch_geometric.data.lightning  import LightningDataset
 from torch.optim                 import AdamW
 from torch.optim.lr_scheduler    import ReduceLROnPlateau
 from typing                      import Any, TYPE_CHECKING
@@ -50,13 +56,13 @@ if TYPE_CHECKING:
 
 
 TRAINING_USER_CONFIG = make_config(
-    architecture = ArchitectureModel(),
-    checkpoint   = CheckpointModel(),
-    experience   = ExperienceModel(),
-    hardware     = HardwareModel(),
-    metrics      = MetricsModel(),
-    optimizer    = OptimizerModel(),
-    wandb        = WandbModel()
+    architecture    = ArchitectureModel(),
+    checkpoint      = CheckpointModel(),
+    demonstrations  = DemonstrationsModel(),
+    hardware        = HardwareModel(),
+    metrics         = MetricsModel(),
+    optimizer       = OptimizerModel(),
+    wandb           = WandbModel()
 )
 
 TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
@@ -83,12 +89,14 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
 
-    "datamodule": builds(
-        DataModule,
-        env                     = "${_system.env}",
-        experience              = "${training.experience}",
-        expert                  = "${_system.murmuration_controller}",
-        populate_full_signature = True
+    "demonstrations": builds(
+        LightningDataset,
+        # Phase 4: Will be instantiated with actual dataset splits in CLI
+        batch_size              = "${training.demonstrations.batch_size}",
+        num_workers             = "${training.hardware.num_workers}",
+        pin_memory              = "${training.hardware.pin_memory}",
+        populate_full_signature = True,
+        zen_partial             = True
     ),
 
     "early_stopping_callback": builds(
