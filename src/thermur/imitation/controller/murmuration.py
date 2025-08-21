@@ -6,12 +6,14 @@ murmurations, using topological neighborhoods (k-nearest neighbors) rather
 than metric distances. The flock maintains critical state dynamics for
 rapid information propagation and exhibits distinct cruise/alert modes.
 """
-from __future__  import annotations
-from typing      import TYPE_CHECKING
+from __future__           import annotations
+from torch_geometric.data import Data
+from typing               import TYPE_CHECKING
 
 import torch as th
 
 if TYPE_CHECKING:
+    from ..simulation                import SimulationEnv
     from .safety                     import CBFSafetyFilter
     from config.imitation.controller import FlockModel, MurmurationModel, SafetyModel
     from tensordict                  import TensorDictBase
@@ -592,3 +594,55 @@ class MurmurationController(th.nn.Module):
         """
         self._design_nominal_action(flock)
         return flock.set("action", flock["action"])
+    
+    def generate_trajectories(
+        self,
+        env           : SimulationEnv,
+        num_timesteps : int
+    ) -> list[Data]:
+        """
+        Generate expert demonstration trajectory as PyG Data objects.
+        
+        Produces a sequence of graph snapshots representing the flock's evolution
+        under expert control. Each Data object contains node features, edge topology,
+        and expert actions suitable for behavioral cloning.
+        
+        Args:
+            env           : Simulation environment providing WRF data and physics
+            num_timesteps : Number of simulation steps to generate
+        
+        Returns:
+            List of PyG Data objects, one per timestep, containing:
+                - edge_index : Topological connectivity [2, E]
+                - timestep   : Temporal index
+                - x          : Node features  [N, 13]
+                - y          : Expert actions [N, 3]
+        """
+        state      = env.reset()
+        trajectory = []
+        
+        for t in range(num_timesteps):
+            action   = self.forward(state).get("action")
+            features = th.cat(
+                dim     = -1,
+                tensors = [
+                    state["position"],
+                    state["velocity"],
+                    state["temperature"],
+                    state["gradient"],
+                    state["wind"]
+                ]
+            )
+            
+            trajectory.append(
+                Data(
+                    edge_index = state["edge_index"],
+                    timestep   = t,
+                    x          = features,
+                    y          = action
+                )
+            )
+            state = env.step({"action": action})["next"]
+        
+        return trajectory
+
