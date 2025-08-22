@@ -18,13 +18,6 @@ class LoaderModel(BaseModel, extra="forbid"):
     The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
     uses staggered grids where U, V, W wind components are offset from cell centers.
     """
-    data_path: str = Field(
-        default     = "auto",
-        description = (
-            "Path to WRF-Fire NetCDF dataset file. Use 'auto' to automatically find "
-            "wrf-sfire/*.nc, then fallback to data/raw/samples/wrf_sample.nc"
-        )
-    )
     domain_randomization: bool = Field(
         default     = True,
         description = (

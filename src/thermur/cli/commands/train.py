@@ -49,11 +49,6 @@ def train(
         None,
         "--resume", "-r",
         help = "Resume from checkpoint. Path to checkpoint or 'last' for most recent."
-    ),
-    sample: bool = Option(
-        False,
-        "--sample", "-s",
-        help = "Use bundled sample data instead of downloaded files"
     )
 ):
     """
@@ -79,8 +74,7 @@ def train(
         interactive = interactive,
         name        = name,
         overrides   = overrides or [],
-        resume      = resume,
-        sample      = sample
+        resume      = resume
     )
 
 
@@ -101,7 +95,6 @@ class TrainCommand:
         self.system      = app.system
         self.ui          = app.ui
         
-        self.data_path   = "auto"
         self.dry_run     = False
         self.force       = False
         self.interactive = True
@@ -109,7 +102,6 @@ class TrainCommand:
         self.output_dir  = None
         self.overrides   = []
         self.resume      = None
-        self.sample      = False
 
     def _display_override_details(self):
         """

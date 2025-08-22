@@ -7,6 +7,7 @@ interpolation and gradient computation.
 """
 from __future__ import annotations
 from numpy      import zeros
+from pathlib    import Path
 from torch      import Tensor
 from typing     import Any, Mapping, TYPE_CHECKING
 from xarray     import DataArray, open_dataset
@@ -46,7 +47,8 @@ class WRFDataSource:
         Initialize WRF data source for environmental field queries.
 
         Creates a data source that provides temperature, wind, and fire heat flux
-        fields from WRF-SFIRE NetCDF outputs. Handles temporal interpolation between
+        fields from WRF-SFIRE NetCDF outputs. Automatically discovers all valid
+        NetCDF files in the data directory. Handles temporal interpolation between
         snapshots and stochastic domain randomization for robust training.
 
         Args:
@@ -64,7 +66,10 @@ class WRFDataSource:
         self.temperature_noise_std    = loader.temperature_noise_std
         self.wind_noise_std           = loader.wind_noise_std
         
-        self._initialize_dataset(loader.data_path)
+        self.current_file = 0
+        self.datasets     = []
+        
+        self._discover_and_load_datasets()
 
     def _add_domain_noise(self, data: Tensor, noise_std: float) -> Tensor:
         """
@@ -127,7 +132,62 @@ class WRFDataSource:
             ) / (2 * self.epsilon)
 
         return gradients
+    
+    def _discover_and_load_datasets(self):
+        """
+        Discover and load all valid NetCDF files from the data directory.
+        
+        Attempts to open all files in data/raw/ as NetCDF datasets using the
+        netcdf4 engine. Successfully opened datasets are cached and kept.
+        
+        Raises:
+            FileNotFoundError: If no valid NetCDF files are found
+        """
+        data_dir = Path("data/raw")
+        if not data_dir.exists():
+            raise FileNotFoundError(
+                "No data directory found. Run 'thermur download -s' "
+                "to get started with sample data."
+            )
+        
+        for file_path in sorted(data_dir.rglob("*")):
+            if file_path.is_file():
+                try:
+                    dataset = open_dataset(
+                        cache           = True,
+                        engine          = 'netcdf4',
+                        filename_or_obj = str(file_path)
+                    )
+                    self.datasets.append(dataset)
+                except Exception:
+                    continue
+        
+        if not self.datasets:
+            raise FileNotFoundError(
+                "No valid NetCDF files found in data/raw/. "
+                "Run 'thermur download -s' to get started with sample data."
+            )
+        
+        self.dataset = self.datasets[0]
+        self._extract_dataset_metadata()
 
+    def _extract_dataset_metadata(self):
+        """
+        Extract metadata from the current dataset for coordinate transformations.
+        
+        Sets up coordinate variables, time steps, and grid dimensions needed
+        for field interpolation and temporal navigation.
+        """
+        self.coord_vars        = list(self.dataset.dims)
+        self.num_time_steps    = self.dataset.sizes.get('Time', 1)
+        self.wrf_time_interval = 300.0
+        
+        self.grid_dims = {
+            "west_east"   : self.dataset.sizes.get("west_east",   500),
+            "south_north" : self.dataset.sizes.get("south_north", 250),
+            "bottom_top"  : self.dataset.sizes.get("bottom_top",  50)
+        }
+    
     def _handle_out_of_bounds(
         self,
         gradients    : Tensor,
@@ -372,8 +432,7 @@ class WRFDataSource:
             - temperature : Tensor [N, 1] of temperature values in Kelvin
         """
         coords_dict = self._transform_coordinates(positions)
-        
-        in_bounds = self._handle_out_of_bounds(
+        in_bounds   = self._handle_out_of_bounds(
             gradients = Tensor(
                 self._calculate_gradient(coords_dict, positions, "T"),
                 device = positions.device
@@ -436,3 +495,29 @@ class WRFDataSource:
         ], dim=1)
         
         return self._add_domain_noise(wind_values, self.wind_noise_std)
+    
+    def reset(self, seed: int | None = None) -> None:
+        """
+        Reset WRF data source, optionally selecting a new scenario.
+        
+        When multiple WRF files are available, can cycle through them
+        deterministically or randomly based on seed.
+        
+        Args:
+            seed: Random seed for scenario selection, or None for sequential
+        """
+        if len(self.datasets) == 1:
+            self.dataset = self.datasets[0]
+
+        elif seed is not None:
+            rng = th.Generator().manual_seed(seed)
+            idx = int(th.randint(len(self.datasets), (1,), generator=rng).item())
+            self.current_file = idx
+            self.dataset      = self.datasets[idx]
+
+        else:
+            self.current_file = int((self.current_file + 1) % len(self.datasets))
+            self.dataset      = self.datasets[self.current_file]
+        
+        self.current_time = 0.0
+        self._extract_dataset_metadata()

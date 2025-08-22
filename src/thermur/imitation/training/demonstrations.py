@@ -18,7 +18,6 @@ import torch  as th
 if TYPE_CHECKING:
     from ..controller              import MurmurationController
     from ..simulation              import SimulationEnv
-    from config.cli.schemas        import DownloadModel
     from config.imitation.training import DemonstrationsModel, HardwareModel
     from omegaconf                 import DictConfig
     from thermur.cli.helpers       import ThermurUI
@@ -36,7 +35,6 @@ class DemonstrationsDataset(InMemoryDataset):
         self,
         controller     : MurmurationController,
         demonstrations : DemonstrationsModel,
-        download_paths : DownloadModel,
         env            : SimulationEnv,
         hashable       : dict,
         ui             : ThermurUI
@@ -47,14 +45,12 @@ class DemonstrationsDataset(InMemoryDataset):
         Args:
             controller     : Expert controller for trajectory generation
             demonstrations : Demonstrations configuration
-            download_paths : Download paths for WRF data discovery
             env            : Simulation environment
             hashable       : Configuration dict for cache invalidation
             ui             : CLI UI instance for progress display
         """
         self.controller     = controller
         self.demonstrations = demonstrations
-        self.download_paths = download_paths
         self.env            = env
         self.hashable       = hashable
         self.ui             = ui
