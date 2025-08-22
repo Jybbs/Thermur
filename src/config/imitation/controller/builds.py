@@ -37,7 +37,7 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
     
-    "murmuration_controller": builds(
+    "controller": builds(
         MurmurationController,
         cbf                     = "${_system.cbf}",
         flock                   = "${controller.flock}",

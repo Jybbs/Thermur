@@ -8,7 +8,7 @@ imitation learning workflow.
 from __future__  import annotations
 from functools   import partial
 from itertools   import chain
-from omegaconf   import OmegaConf, open_dict
+from omegaconf   import OmegaConf
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
@@ -254,7 +254,13 @@ class TrainCommand:
                         f"Configuration path '{path}' not found"
                     )
 
-                components[key] = instantiate(obj)
+                extras = {
+                    "datamodule": {
+                        "download_paths" : self.cfg.download,
+                        "ui"             : self.ui
+                    }
+                }.get(key, {})
+                components[key] = instantiate(obj, **extras)
 
             progress.update(
                 completed = len(component_cfgs),
@@ -491,10 +497,6 @@ class TrainCommand:
 
         if imports is None:
             raise ValueError("Training modules not provided")
-
-        with open_dict(cfg):
-            cfg.simulation.loader.data_path = self.data_path
-            cfg._ui = self.ui  # Pass UI instance for demonstrations progress
 
         if cfg.training.optimizer.seed is not None:
             imports["seed_everything"](cfg.training.optimizer.seed)

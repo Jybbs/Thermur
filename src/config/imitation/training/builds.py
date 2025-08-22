@@ -34,19 +34,13 @@ Logging:
                            metric visualization.
 """
 from __future__                  import annotations
-from .schemas                        import *
+from .schemas                    import *
 from config.cli.schemas          import WandbModel
 from hydra_zen                   import builds, make_config
 from pytorch_lightning           import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers   import WandbLogger
-from thermur.imitation.training      import (
-    DemonstrationsDataset,
-    GNNPolicy,
-    MetricsCollector,
-    MonitoringCallback
-)
-from torch_geometric.data.lightning  import LightningDataset
+from thermur.imitation.training  import DemonstrationsDataset, GNNPolicy, MetricsCollector, MonitoringCallback
 from torch.optim                 import AdamW
 from torch.optim.lr_scheduler    import ReduceLROnPlateau
 from typing                      import Any, TYPE_CHECKING
@@ -89,14 +83,15 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
 
-    "demonstrations": builds(
-        LightningDataset,
-        # Phase 4: Will be instantiated with actual dataset splits in CLI
-        batch_size              = "${training.demonstrations.batch_size}",
-        num_workers             = "${training.hardware.num_workers}",
-        pin_memory              = "${training.hardware.pin_memory}",
-        populate_full_signature = True,
-        zen_partial             = True
+    "datamodule": builds(
+        DemonstrationsDataset.as_lightning_datamodule,
+        controller              = "${_system.controller}",
+        demonstrations          = "${training.demonstrations}",
+        env                     = "${_system.env}",
+        hardware                = "${training.hardware}",
+        hashable                = "${_system.hashable}",
+        zen_partial             = True,
+        populate_full_signature = True
     ),
 
     "early_stopping_callback": builds(
@@ -105,6 +100,13 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         mode                    = "${training.optimizer.mode}",
         patience                = "${training.optimizer.early_stopping_patience}",
         populate_full_signature = True
+    ),
+
+    "hashable": builds(
+        dict,
+        controller              = "${controller}",
+        demonstrations          = "${training.demonstrations}",
+        simulation              = "${simulation}"
     ),
 
     "logger": builds(
