@@ -111,6 +111,16 @@ class DemonstrationsModel(BaseModel, extra="forbid"):
             "Determines the size of the offline dataset for training."
         )
     )
+    sample_url: str = Field(
+        default     = (
+            "https://huggingface.co/datasets/Jybbs/sfire-samples/"
+            "resolve/main/samples.tar.gz"
+        ),
+        description = (
+            "URL for downloading sample WRF-SFIRE dataset when no local data exists. "
+            "Points to a curated 1.5GB sample containing moderate intensity scenarios."
+        )
+    )
     train_split: float = Field(
         default     = 0.8,
         ge          = 0.5,

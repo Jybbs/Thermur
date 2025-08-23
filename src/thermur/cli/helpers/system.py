@@ -34,7 +34,6 @@ class SystemInspector:
         Args:
             cfg: The CLI configuration object containing all settings.
         """
-        self.download = cfg.download
         self._torch_cache: dict[str, Any] | None = None
 
     def _get_cuda_info(self) -> SystemInfo:
@@ -66,24 +65,27 @@ class SystemInspector:
 
     def _get_dataset_info(self) -> SystemInfo:
         """
-        Gather information about downloaded dataset files.
+        Gather information about available NetCDF dataset files.
 
         Returns:
-            Dictionary with dataset_size in GB, dataset_count, and has_sample.
+            Dictionary with dataset_size in GB and dataset_count.
         """
-        with suppress(Exception):
-            all_files   = self._get_wrf_files()
-            sample_path = Path(self.download.sample_data_path)
-
-            if sample_path.exists():
-                all_files.append(sample_path)
-
+        from thermur.imitation.training import DemonstrationsDataset
+        
+        relative_paths = DemonstrationsDataset._find_netcdf_files()
+        
+        if relative_paths:
+            total_size = sum(
+                (Path("data/raw") / p).stat().st_size 
+                for p in relative_paths
+            ) / 1e9
+            
             return {
-                "dataset_count" : len(all_files),
-                "dataset_size"  : sum(f.stat().st_size for f in all_files) / 1e9,
-                "has_sample"    : sample_path.exists(),
+                "dataset_count" : len(relative_paths),
+                "dataset_size"  : total_size,
             }
-        return {"dataset_count": 0, "dataset_size": 0.0, "has_sample": False}
+        
+        return {"dataset_count": 0, "dataset_size": 0.0}
 
     def _get_disk_info(self) -> SystemInfo:
         """
@@ -161,25 +163,6 @@ class SystemInspector:
                 }
         return self._torch_cache
 
-    def _get_wrf_files(self) -> list[Path]:
-        """
-        Get list of WRF NetCDF files following project's discovery pattern.
-        
-        Checks wrf-sfire first for full dataset, then falls back to sample.
-
-        Returns:
-            List of Path objects for WRF files, empty list if none found.
-        """
-        wrf_sfire = Path(self.download.wrf_sfire_dir)
-        sample    = Path(self.download.sample_data_path)
-        
-        if wrf_sfire.exists():
-            files = [f for f in wrf_sfire.glob("*.nc") if f.is_file()]
-            if files:
-                return sorted(files)
-        
-        return [sample] if sample.exists() else []
-
     def create_status_marker(self, status: str, output_dir: Path | None = None):
         """
         Create a status marker file in the output directory.
@@ -239,44 +222,6 @@ class SystemInspector:
             | self._get_disk_info()
             | self._get_dataset_info()
         )
-
-    def resolve_data_path(self, use_sample: bool = False) -> tuple[Path, str]:
-        """
-        Resolves the appropriate data path based on availability and user preference.
-
-        This method implements a fallback strategy for data selection:
-        1. If sample explicitly requested and exists          -> use sample
-        2. If WRF-SFIRE data exists and not requesting sample -> use first WRF file
-        3. If no WRF data but sample exists                   -> fallback to sample
-        4. Otherwise                                          -> no data available
-
-        Args:
-            use_sample : Whether the user explicitly requested sample data
-
-        Returns:
-            Tuple of (data_path, status_message)
-
-        Raises:
-            FileNotFoundError: If no data is available for training
-        """
-        if not hasattr(self, 'download'):
-            raise ValueError("SystemInspector missing download configuration")
-
-        sample_path = Path(self.download.sample_data_path)
-        wrf_files   = [] if use_sample else self._get_wrf_files()
-
-        match (use_sample, bool(wrf_files), sample_path.exists()):
-            case (True, _, True):
-                return sample_path, "Using sample dataset as requested."
-            case (False, True, _):
-                return wrf_files[0], f"Using WRF-SFIRE data: {wrf_files[0].name}"
-            case (False, False, True):
-                return sample_path, "No WRF-SFIRE data found. Using sample data."
-            case _:
-                raise FileNotFoundError(
-                    "No training data available. "
-                    "Run 'thermur download' to get sample data."
-                )
 
     def validate_overrides(self, overrides: list[str] | None) -> list[str]:
         """

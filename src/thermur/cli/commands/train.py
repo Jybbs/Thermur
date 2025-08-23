@@ -124,30 +124,6 @@ class TrainCommand:
             title        = "Configuration Source"
         )
 
-    def _ensure_data_available(self) -> str:
-        """
-        Ensure training data is available.
-
-        Returns:
-            Path to data directory.
-
-        Raises:
-            Exit: If data not found and user declines download.
-        """
-        try:
-            data_path, msg = self.system.resolve_data_path(self.sample)
-            if msg:
-                self.ui.print_message(msg, "info")
-            return str(data_path)
-
-        except FileNotFoundError:
-            if self.prompts.confirm("No data found. Download sample dataset?"):
-                subrun(["thermur", "download", "--sample"])
-
-                return Path(self.cfg.download.sample_data_path).as_posix()
-
-            raise Exit(1)
-
     def _find_last_checkpoint(self) -> Path | None:
         """
         Find the most recent checkpoint file.
@@ -248,8 +224,7 @@ class TrainCommand:
 
                 extras = {
                     "datamodule": {
-                        "download_paths" : self.cfg.download,
-                        "ui"             : self.ui
+                        "ui" : self.ui
                     }
                 }.get(key, {})
                 components[key] = instantiate(obj, **extras)
@@ -543,8 +518,7 @@ class TrainCommand:
         interactive : bool,
         name        : str       | None,
         overrides   : list[str] | None,
-        resume      : Path      | None,
-        sample      : bool
+        resume      : Path      | None
     ):
         """
         Executes the main training workflow from start to finish.
@@ -560,13 +534,11 @@ class TrainCommand:
             name        : Optional name for the training run.
             overrides   : A list of Hydra configuration overrides.
             resume      : Optional checkpoint path to resume training from.
-            sample      : If True, use sample data.
         """
         self.dry_run     = dry_run
         self.force       = force
         self.interactive = interactive
         self.name        = name
-        self.sample      = sample
 
         self.resume = self._resolve_resume_path(resume)
 
@@ -585,8 +557,6 @@ class TrainCommand:
 
         if self.interactive:
             self.overrides.extend(self.prompts.ask_for_overrides())
-
-        self.data_path = self._ensure_data_available()
 
         if not self.force and (
             issues := self.system.validate_overrides(self.overrides)

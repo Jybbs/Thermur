@@ -6,11 +6,12 @@ Automatically regenerates when configuration changes via hash-based filenames.
 """
 from __future__                     import annotations
 from hashlib                        import sha256
-from omegaconf                      import OmegaConf
 from pathlib                        import Path
+from tarfile                        import open as tf_open
 from torch_geometric.data           import InMemoryDataset
 from torch_geometric.data.lightning import LightningDataset
 from typing                         import TYPE_CHECKING
+from urllib.request                 import urlretrieve
 
 import pickle as pk
 import torch  as th
@@ -19,7 +20,6 @@ if TYPE_CHECKING:
     from ..controller              import MurmurationController
     from ..simulation              import SimulationEnv
     from config.imitation.training import DemonstrationsModel, HardwareModel
-    from omegaconf                 import DictConfig
     from thermur.cli.helpers       import ThermurUI
 
 
@@ -56,59 +56,51 @@ class DemonstrationsDataset(InMemoryDataset):
         self.ui             = ui
         self.config_hash    = self._compute_hash()
         
-        super().__init__(self._get_processed_root())
+        super().__init__("data")
         self.data, self.slices = th.load(self.processed_paths[0])
     
     def _compute_hash(self) -> str:
         """
         Generate hash of configuration parameters affecting demonstrations.
         
-        Uses hashable dict plus WRF data sources for cache invalidation.
+        Uses hashable dict plus count of loaded WRF datasets for cache invalidation.
         """
         container = dict(self.hashable)
-        container["data_source"] = [f.name for f in self._find_wrf_files()]
+        container["num_datasets"] = len(self.env.wrf.datasets)
         
         return sha256(pk.dumps(container)).hexdigest()[:16]
     
-    def _find_wrf_files(self) -> list[Path]:
+    @staticmethod
+    def _find_netcdf_files() -> list[str]:
         """
-        Find WRF data following project's discovery pattern.
+        Find NetCDF files by checking magic numbers.
         
-        Checks wrf-sfire first for full dataset, then falls back to sample.
+        NetCDF files start with 'CDF' or '\x89HDF' magic bytes.
         """
-        wrf_sfire = Path(self.download_paths.wrf_sfire_dir)
-        sample    = Path(self.download_paths.sample_data_path)
+        netcdf_files = []
+        raw_dir      = Path("data/raw")
         
-        if wrf_sfire.exists():
-            files = sorted(wrf_sfire.glob("*.nc"))
-            if files:
-                return files
+        if not raw_dir.exists():
+            return []
         
-        return [sample] if sample.exists() else []
-    
-    def _get_processed_root(self) -> str:
-        """
-        Determine the processed data root directory based on available WRF files.
+        for file_path in raw_dir.rglob("*"):
+            if file_path.is_file():
+                try:
+                    with open(file_path, 'rb') as f:
+                        magic = f.read(4)
+                        if magic[:3] == b'CDF' or magic == b'\x89HDF':
+                            relative = file_path.relative_to(raw_dir)
+                            netcdf_files.append(relative.as_posix())
+                except Exception:
+                    continue
         
-        Returns:
-            Path to processed data directory
-            
-        Raises:
-            FileNotFoundError: If no WRF data files are found
-        """
-        if not (wrf_files := self._find_wrf_files()):
-            raise FileNotFoundError(
-                "No WRF data files found. Run 'thermur download -s' "
-                "to get started with sample data."
-            )
-        return str(wrf_files[0].parent).replace("/raw/", "/processed/")
+        return netcdf_files
     
     @classmethod
     def as_lightning_datamodule(
         cls,
         controller     : MurmurationController,
         demonstrations : DemonstrationsModel,
-        download_paths : DownloadModel,
         env            : SimulationEnv,
         hardware       : HardwareModel,
         hashable       : dict,
@@ -123,7 +115,6 @@ class DemonstrationsDataset(InMemoryDataset):
         Args:
             controller     : Expert controller for trajectory generation
             demonstrations : Demonstrations configuration with train_split
-            download_paths : Download paths for WRF data discovery
             env            : Simulation environment
             hardware       : Hardware configuration for dataloader settings
             hashable       : Configuration dict for cache invalidation
@@ -135,7 +126,6 @@ class DemonstrationsDataset(InMemoryDataset):
         dataset = cls(
             controller     = controller,
             demonstrations = demonstrations,
-            download_paths = download_paths,
             env            = env,
             hashable       = hashable,
             ui             = ui
@@ -159,16 +149,59 @@ class DemonstrationsDataset(InMemoryDataset):
             val_dataset   = dataset.index_select(indices[train_size:]),
         )
     
+    def download(self):
+        """
+        Auto-download sample dataset if no NetCDF files found.
+        
+        Called by PyG when files in raw_file_names don't exist.
+        """
+        self.ui.print_message(
+            "No WRF data found. Downloading sample dataset...", "info"
+        )
+        
+        sample_url = self.demonstrations.sample_url
+        sample_tar = Path(self.raw_dir) / "samples.tar.gz"
+        sample_tar.parent.mkdir(parents=True, exist_ok=True)
+        
+        with self.ui.create_thermal_progress() as progress:
+            task = progress.add_task(
+                description = "Downloading sample WRF data",
+                total       = 100
+            )
+            
+            def download_callback(block_num, block_size, total_size):
+                downloaded = block_num * block_size
+                percent    = min(100, (downloaded / total_size) * 100)
+                progress.update(task, completed=percent)
+            
+            try:
+                urlretrieve(sample_url, sample_tar, download_callback)
+                
+                progress.update(task, description="Extracting sample data...")
+                with tf_open(sample_tar, 'r:gz') as tar:
+                    tar.extractall(self.raw_dir)
+                
+                sample_tar.unlink()
+                progress.update(
+                    completed   = 100, 
+                    description = "Sample dataset ready!",
+                    task_id     = task)
+                
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"Failed to download sample dataset: {e}\n"
+                    "Please manually download WRF data to data/raw/"
+                )
+
+    
     def process(self):
         """
         Generate demonstrations and save to cache.
         
         Called automatically by PyG when processed file doesn't exist.
-        Generates expert trajectories across WRF scenarios until total_frames reached.
+        Generates expert trajectories across WRF scenarios until
+        total_frames reached.
         """
-        # TODO: Phase 4 - Use wrf_files to vary environments
-        # wrf_files = self._find_wrf_files()
-        # Could use itertools slice/cycle
         
         frames_per_ep  = self.demonstrations.frames_per_episode
         total_episodes = self.demonstrations.total_frames // frames_per_ep
@@ -191,10 +224,20 @@ class DemonstrationsDataset(InMemoryDataset):
         
         self.ui.print_message("Saving demonstrations to cache...", "info")
         th.save(self.collate(data_list), self.processed_paths[0])
-
+    
     @property
     def processed_file_names(self):
         """
         Dynamic filename based on config hash for automatic cache invalidation.
         """
         return [f"data_{self.config_hash}.pt"]
+    
+    @property
+    def raw_file_names(self):
+        """
+        Return list of NetCDF files found in raw directory.
+        
+        PyG checks if these exist before calling download().
+        """
+        files = self._find_netcdf_files()
+        return files if files else ["samples/wrf_sample.nc"]

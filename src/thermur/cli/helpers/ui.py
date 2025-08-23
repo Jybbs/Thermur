@@ -6,7 +6,6 @@ built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
 from __future__   import annotations
-from collections  import Counter
 from config.cli   import DisplayModel
 from config.types import TableColumn
 from pathlib      import Path
@@ -19,11 +18,11 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
-from typing       import Any, Literal, Sequence, TYPE_CHECKING
+from typing       import Any, Literal, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .system      import SystemInspector
-    from config.types import FileInfo, SystemInfo
+    from config.types import SystemInfo
 
 
 class ThermurUI:
@@ -456,94 +455,6 @@ class ThermurUI:
                 "\n".join(f"• {i}" for i in issues)
             )
         )
-
-    def display_download_summary(
-        self,
-        available_files : Sequence[FileInfo],
-        file_status     : dict[str, str]
-    ):
-        """
-        Display summary statistics for dataset download status.
-
-        Shows total dataset size, downloaded size, and file counts
-        broken down by status.
-
-        Args:
-            available_files : List of all available files with size info
-            file_status     : Dict mapping filename to status
-        """
-        statuses       = Counter(file_status.values())
-        size_by_status = {
-            status: sum(
-                f['size'] for f in available_files
-                if file_status.get(f['name']) == status
-            )
-            for status in ['downloaded', 'incomplete', 'missing']
-        }
-
-        total_size = sum(f['size'] for f in available_files)
-
-        total_gb = total_size / 1e9
-        self.print_message(
-            message  = f"Total: {len(available_files)} files ({total_gb:.1f} GB)",
-            msg_type = "info"
-        )
-
-        status_info = [
-            ('downloaded', "Downloaded: {} files ({:.1f} GB)",     "success"),
-            ('incomplete', "Incomplete: {} files ({:.1f} GB)",     "warning"),
-            ('missing',    "Not downloaded: {} files ({:.1f} GB)", "info")
-        ]
-
-        for status_type, template, msg_type in status_info:
-            if count := statuses[status_type]:
-                size_gb = size_by_status[status_type] / 1e9
-                self.print_message(f"{template.format(count, size_gb)}", msg_type)
-
-    def display_download_table(
-        self,
-        available_files : list[FileInfo],
-        file_status     : dict[str, str],
-        title           : str  = "Available Files"
-    ):
-        """
-        Display a paginated table of files with their download status.
-
-        Shows up to 10 files with status indicators and selection numbers (0-9).
-
-        Args:
-            available_files : List of file info dictionaries with 'name' and 'size'
-            file_status     : Dict mapping filename to download status
-                              ('downloaded', 'incomplete', or 'missing')
-            title           : Table title
-        """
-        status_symbols = {
-            'downloaded' : Text("✅", "green"),
-            'incomplete' : Text("⚠️", "yellow"),
-            'missing'    : Text(" ",  "dim")
-        }
-
-        columns = [
-            TableColumn("right",  "bright_cyan", "#",      4),
-            TableColumn("center", "green",       "Status", 8),
-            TableColumn("left",   "cyan",        "File",   50),
-            TableColumn("right",  "yellow",      "Size",   10)
-        ]
-
-        table = self.create_aligned_table(columns, title=title)
-
-        for i, file_info in enumerate(available_files):
-            name           = file_info['name']
-            size           = file_info['size']
-            status         = file_status.get(name, 'missing')
-            row: list[Any] = [
-                str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB"
-            ]
-
-            table.add_row(*row)
-
-        self.console.print()
-        self.console.print(table)
 
     def display_panel(
         self,

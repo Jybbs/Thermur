@@ -6,7 +6,7 @@ wandb configuration, override collection, and training confirmation. It uses
 the ThermurUI class to render complex components and structured configuration 
 objects for all static text and configuration.
 """
-from __future__ import annotations
+from __future__   import annotations
 from config.types import TableColumn
 from itertools    import islice
 from typing       import Any, Callable, Sequence, TYPE_CHECKING
@@ -15,7 +15,6 @@ import questionary
 
 if TYPE_CHECKING:
     from config.cli.builds import CLIConfiguration
-    from config.types      import FileInfo
     from .ui               import ThermurUI
 
 
@@ -167,32 +166,6 @@ class CLIPrompts:
 
         return self.confirm(f"Delete {count} {items}?")
 
-    def confirm_download(self, file_info: FileInfo) -> bool:
-        """
-        Prompts user to confirm file download operation.
-
-        Args:
-            file_info: File information dictionary with name and size
-
-        Returns:
-            True if user confirms download, False otherwise
-        """
-        size_gb = file_info['size'] / 1e9
-
-        self.ui.console.print()
-        self.ui.print_message(
-            f"Ready to download: {file_info['name']}",
-            "info"
-        )
-        self.ui.console.print(f"[yellow]File size: {size_gb:.1f} GB[/yellow]")
-        self.ui.console.print(
-            "[grey70]This download may take several hours depending on your "
-            "internet connection[/grey70]"
-        )
-        self.ui.console.print()
-
-        return self.confirm(message = "Proceed with download?")
-
     def confirm_system_override(self, issues: list[str]) -> bool:
         """
         Displays detected system issues and asks the user for confirmation to proceed.
@@ -317,51 +290,6 @@ class CLIPrompts:
                     return page_items[int(n)]
                 case _:
                     pass
-
-    def select_file_from_pages(
-        self,
-        available_files : Sequence[FileInfo],
-        file_status     : dict[str, str],
-        page_size       : int = 10,
-        title_prefix    : str = "Available Files"
-    ) -> FileInfo | None:
-        """
-        Display files in paginated table format and allow selection.
-
-        Presents a paginated view of available files with their download status,
-        allowing users to navigate between pages and select files using keyboard
-        commands. Uses Rich tables for display and questionary for input handling.
-
-        Args:
-            available_files : List of file dictionaries with 'name' and 'size' keys
-            file_status     : Dict mapping filename to status
-            page_size       : Number of files to display per page
-            title_prefix    : Prefix for the page title display
-
-        Returns:
-            Selected file dictionary or None if cancelled
-        """
-        def render_file_page(
-            page_files  : list[FileInfo],
-            page_num    : int,
-            total_pages : int
-        ):
-            """
-            Render a page of files with download status table.
-            """
-            self.ui.display_download_table(
-                available_files = page_files,
-                file_status     = file_status,
-                title           = f"{title_prefix} (Page {page_num}/{total_pages})"
-            )
-            self.ui.console.print()
-
-        return self.paginate(
-            allow_row_select = True,
-            items            = available_files,
-            page_size        = page_size,
-            render_page      = render_file_page
-        )
 
     def select_from_list(
         self,

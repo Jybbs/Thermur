@@ -23,8 +23,8 @@ Get Thermur running in under a minute:
 # Install from PyPI
 pip install thermur
 
-# Start training with sample data
-thermur train --sample
+# Start training (auto-downloads sample data on first run)
+thermur train
 
 # Monitor training progress in real-time
 thermur monitor  # Opens WandB dashboard
@@ -33,10 +33,8 @@ thermur monitor  # Opens WandB dashboard
 For the full wildfire dataset experience:
 
 ```bash
-# Download WRF-SFIRE simulations (requires Globus)
-thermur download
-
-# Train with custom configuration
+# Place WRF-SFIRE NetCDF files in data/raw/
+# Then train with custom configuration
 thermur train controller.flock.agent_count=50 \
               training.optimizer.learning_rate=0.001
 ```
@@ -80,7 +78,6 @@ Thermur orchestrates biomimetic flocking through a sophisticated machine learnin
 | **Safety System** | [QPTh](https://github.com/locuslab/qpth) + CBF | Control Barrier Functions with differentiable QP solvers |
 | **CLI** | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) | Beautiful terminal interface with fire gradient effects |
 | **Monitoring** | [Weights & Biases](https://wandb.ai/) | Real-time metrics ([view project](https://wandb.ai/Thermur/thermur-imitation/workspace)) |
-| **Data Transfer** | [Globus SDK](https://www.globus.org/) | High-performance scientific data transfer |
 
 ### System Architecture
 
@@ -221,12 +218,11 @@ thermur --help  # Shows all available commands with emoji icons
 
 | Command | Description | Key Options |
 |---------|-------------|-------------|
-| `train` | 🚀 Train the thermal drone flock using imitation learning | `--sample`, `--resume`, `--name` |
-| `download` | 📥 Download simulation data for training | `--sample`, `--wrf-sfire` |
+| `info` | 📋 Display system and configuration information | - |
 | `monitor` | 🎨 Open [WandB dashboard](https://wandb.ai/Thermur/thermur-imitation) in browser | - |
 | `runs` | 🏃 Explore training runs and configurations | `list`, `show`, `compare`, `clean` |
+| `train` | 🚀 Train the thermal drone flock using imitation learning | `--dry-run`, `--force`, `--name`, `--resume` |
 | `validate` | ✅ Validate system setup and configuration | `--config` |
-| `info` | 📋 Display system and configuration information | - |
 
 ### Training Workflow
 
@@ -236,8 +232,8 @@ The `train` command supports both interactive and non-interactive modes:
 # Interactive mode (default) - prompts for configuration
 thermur train
 
-# Named training run with sample data
-thermur train --name my-experiment --sample
+# Named training run (auto-downloads sample if needed)
+thermur train --name my-experiment
 
 # Resume from last checkpoint
 thermur train --resume last
@@ -267,25 +263,9 @@ thermur train ++model.force_param=true      # Force add/override
 thermur train ~model.remove_param           # Remove parameter
 
 # Combining multiple overrides
-thermur train --sample \
-              controller.flock.agent_count=50 \
+thermur train controller.flock.agent_count=50 \
               training.hardware.accelerator=gpu \
               training.optimizer.max_epochs=100
-```
-
-### Data Management
-
-Download and manage training data with the `download` command:
-
-```bash
-# Interactive mode - choose between sample and full dataset
-thermur download
-
-# Download curated sample (468MB compressed, 1.5GB extracted)
-thermur download --sample
-
-# Browse full WRF-SFIRE dataset (5.3TB, 147 simulations)
-thermur download --wrf-sfire
 ```
 
 ### Run Management
@@ -344,24 +324,21 @@ The training data comes from 147 high-resolution wildfire simulations (5.33 TB t
 | **Duration** | 20-30 minutes | Full plume development |
 | **Temperature** | Up to 600K | Includes extreme heating |
 
-### Data Acquisition
+### Data Management
+
+Thermur automatically manages training data:
 
 ```bash
-# Option 1: Quick start with curated sample (1.5 GB)
-thermur train --sample
+# Sample data (1.5GB) downloads automatically on first run
+thermur train
 
-# Option 2: Download specific simulations via Globus
-thermur download
-# Interactive selection of files like:
-#   - wrfout_W5F7R4 (moderate, balanced scenario)
-#   - wrfout_W3F1R0 (gentle training conditions)
-#   - wrfout_W12F4R8 (extreme stress testing)
-
-# Option 3: Full dataset for research (5.33 TB)
-thermur download --all  # Requires HPC storage
+# For full WRF-SFIRE dataset (5.3TB, 147 simulations):
+# 1. Download NetCDF files from the Globus endpoint
+# 2. Place them in data/raw/
+# 3. Training will automatically discover and use them
 ```
 
-Details on the data procurement process are in [`docs/data-procurement.md`](docs/data-procurement.md).
+For details on the WRF-SFIRE dataset and data procurement, see [`docs/data-procurement.md`](docs/data-procurement.md).
 
 ### Training Workflow
 
@@ -534,8 +511,8 @@ wandb login
 thermur validate
 thermur info
 
-# Download sample data (468MB compressed, 1.5GB extracted)
-thermur download --sample
+# Start training (sample data downloads automatically if needed)
+thermur train
 ```
 
 ---
@@ -568,13 +545,11 @@ thermur/
 │       │   ├── cli.py             # Main entry point
 │       │   ├── commands/
 │       │   │   ├── train.py       # Training orchestration
-│       │   │   ├── download.py    # Data acquisition
 │       │   │   ├── monitor.py     # WandB dashboard
 │       │   │   └── validate.py    # System verification
 │       │   └── helpers/
 │       │       ├── ui.py          # Rich console formatting
-│       │       ├── prompts.py     # Interactive configuration
-│       │       └── globus.py      # Data transfer client
+│       │       └── prompts.py     # Interactive configuration
 │       │
 │       └── imitation/
 │           ├── controller/

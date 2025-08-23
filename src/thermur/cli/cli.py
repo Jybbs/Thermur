@@ -20,7 +20,6 @@ cli = Typer(
     rich_markup_mode = "rich"
 )
 
-cli.command()(download)
 cli.command()(info)
 cli.command()(monitor)
 cli.command()(train)

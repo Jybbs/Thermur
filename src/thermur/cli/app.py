@@ -10,12 +10,3 @@ from .helpers          import *
 ui      = ThermurUI(cfg.display)
 prompts = CLIPrompts(cfg, ui)
 system  = SystemInspector(cfg)
-
-def get_globus() -> GlobusManager:
-    """
-    Lazy-loaded GlobusManager to avoid secrets directory warning.
-
-    Returns:
-        GlobusManager instance, created on first access.
-    """
-    return GlobusManager(cfg.download)

@@ -144,28 +144,24 @@ class WRFDataSource:
             FileNotFoundError: If no valid NetCDF files are found
         """
         data_dir = Path("data/raw")
-        if not data_dir.exists():
-            raise FileNotFoundError(
-                "No data directory found. Run 'thermur download -s' "
-                "to get started with sample data."
-            )
         
-        for file_path in sorted(data_dir.rglob("*")):
-            if file_path.is_file():
-                try:
-                    dataset = open_dataset(
-                        cache           = True,
-                        engine          = 'netcdf4',
-                        filename_or_obj = str(file_path)
-                    )
-                    self.datasets.append(dataset)
-                except Exception:
-                    continue
+        if data_dir.exists():
+            for file_path in sorted(data_dir.rglob("*")):
+                if file_path.is_file():
+                    try:
+                        dataset = open_dataset(
+                            cache           = True,
+                            engine          = 'netcdf4',
+                            filename_or_obj = str(file_path)
+                        )
+                        self.datasets.append(dataset)
+                    except Exception:
+                        continue
         
         if not self.datasets:
             raise FileNotFoundError(
-                "No valid NetCDF files found in data/raw/. "
-                "Run 'thermur download -s' to get started with sample data."
+                "No valid NetCDF files found. "
+                "Training will download sample data automatically on first run."
             )
         
         self.dataset = self.datasets[0]
