@@ -6,7 +6,6 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from __future__  import annotations
-from functools   import partial
 from itertools   import chain
 from omegaconf   import OmegaConf
 from pathlib     import Path
@@ -99,7 +98,6 @@ class TrainCommand:
         self.force       = False
         self.interactive = True
         self.name        = None
-        self.output_dir  = None
         self.overrides   = []
         self.resume      = None
 
@@ -238,6 +236,10 @@ class TrainCommand:
                 components['visualizer'] = instantiate(c)
             else:
                 components['visualizer'] = None
+            
+            components["trainer"].logger.log_hyperparams(
+                {"hydra_config": OmegaConf.to_container(cfg, resolve=True)}
+            )
 
         return components
 
@@ -260,8 +262,8 @@ class TrainCommand:
         self.ui.console.print()
 
         task_function = (
-            self._task if self.dry_run
-            else partial(self._task, imports=imports)
+            self._task if self.dry_run 
+            else lambda cfg = None: self._task(cfg, imports)
         )
 
         job = imports["launch"](
@@ -331,16 +333,11 @@ class TrainCommand:
         """
         Offers to view configuration via the runs command.
         """
-        if self.output_dir is None:
-            return
-
-        relative_path = self.output_dir.relative_to(Path.cwd())
-
         self.ui.console.print()
         self.ui.print_message(
             message  = (
                 f"View configuration with: "
-                f"[bold]thermur runs show {relative_path}[/bold]"
+                f"[bold]thermur runs show[/bold]"
             ),
             msg_type = "info"
         )
@@ -348,7 +345,7 @@ class TrainCommand:
         if self.interactive:
             view_msg = "Would you like to view the configuration now?"
             if self.prompts.confirm(view_msg):
-                subrun(['thermur', 'runs', 'show', str(relative_path)])
+                subrun(['thermur', 'runs', 'show'])
 
     def _request_confirmation(self):
         """
@@ -422,8 +419,6 @@ class TrainCommand:
         Returns:
             Status dictionary indicating completion.
         """
-        self.output_dir = self.system.get_hydra_output_dir()
-
         if self.dry_run:
             self.ui.print_message(
                 message  = (
@@ -441,20 +436,9 @@ class TrainCommand:
                 message  = "Dry run complete. Configuration validated successfully.",
                 msg_type = "success"
             )
-
-            self.system.create_status_marker("dry_run")
             self._offer_config_viewing()
 
-            return {
-                "output_dir" : str(self.output_dir),
-                "status"     : "dry_run_complete"
-            }
-
-        self.ui.print_message(
-            message  = f"Training output: {self.output_dir}",
-            msg_type = "info"
-        )
-        self.ui.console.print()
+            return {"status": "dry_run_complete"}
 
         self.ui.print_section("Preparing Training Environment")
         self.ui.console.print()
@@ -502,14 +486,9 @@ class TrainCommand:
 
         self.ui.console.print()
         self.ui.print_header("Training Complete 🎉")
-
-        self.system.create_status_marker("training_complete")
         self._offer_config_viewing()
 
-        return {
-            "output_dir" : str(self.output_dir),
-            "status"     : "training_complete"
-        }
+        return {"status": "training_complete"}
 
     def run(
         self,
@@ -567,8 +546,7 @@ class TrainCommand:
             self._request_confirmation()
 
         self.ui.print_section("Initializing Training", True)
-        if self.cfg.wandb.mode != "disabled":
-            self.ui.display_wandb("train", self.cfg.wandb.project)
+        self.ui.display_wandb("train", self.cfg.wandb.project)
         self.ui.console.print()
 
         try:
@@ -641,8 +619,8 @@ class TrainCommand:
 
                 case _:
                     failure_kws = [
-                        "cannot", "dimension", "device", "metric", "indices",
-                        "range", "shape", "size", "slice"
+                        "attribute", "cannot", "dimension", "device", "indices",
+                        "metric", "range", "shape", "size", "slice"
                     ]
                     self.ui.print_message(f"Training failed: {e}", "error")
                     if any(k in str(e).lower() for k in failure_kws):

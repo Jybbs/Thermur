@@ -8,6 +8,7 @@ ThermurUI class.
 from __future__   import annotations
 from config.cli   import DisplayModel
 from config.types import TableColumn
+from json         import load
 from pathlib      import Path
 from rich         import box, progress
 from rich.align   import Align
@@ -646,22 +647,35 @@ class ThermurUI:
         """
         Determine and format the status indicator for a training run.
 
-        Checks for marker files to determine if a run completed successfully,
+        Checks WandB files to determine if a run completed successfully,
         was a dry run, or is incomplete. Returns a Rich-formatted status string.
 
         Args:
-            run_path : Path to the run directory
+            run_path : Path to the WandB run directory
 
         Returns:
             Rich-formatted status indicator: ✓ (complete), ◎ (dry run), or
             ... (incomplete)
         """
-        if (run_path / "training_complete").exists():
-            return "[bold green]✓[/]"
-        elif (run_path / "dry_run").exists():
-            return "[bold cyan]◎[/]"
-        else:
-            return "[bold yellow]...[/]"
+        if (metadata_file := run_path / "files" / "wandb-metadata.json").exists():
+            try:
+                with open(metadata_file) as f:
+                    metadata = load(f)
+                    if "--dry-run" in metadata.get("args", []):
+                        return "[bold cyan]◎[/]"
+            except:
+                pass
+        
+        if (summary_file := run_path / "files" / "wandb-summary.json").exists():
+            try:
+                with open(summary_file) as f:
+                    summary = load(f)
+                    if "_runtime" in summary:
+                        return "[bold green]✓[/]"
+            except:
+                pass
+                
+        return "[bold yellow]...[/]"
 
     def print_auth_prompt(self, auth_url: str):
         """

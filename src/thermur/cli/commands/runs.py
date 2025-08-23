@@ -1,14 +1,15 @@
 """
 Manage and explore training runs and their configurations.
 
-This module provides the 'runs' command for interacting with Hydra's output
-directories. It enables users to list training runs, compare configurations
+This module provides the 'runs' command for interacting with WandB's local
+run directories. It enables users to list training runs, compare configurations
 between runs, clean up old experiments, and inspect detailed configuration
 settings with pagination support for large configurations.
 """
 from config.types import ConfigItem, TableColumn
 from contextlib   import contextmanager, suppress
 from datetime     import datetime
+from json         import load
 from pathlib      import Path
 from yaml         import safe_load
 from shutil       import rmtree
@@ -124,10 +125,11 @@ def compare(
     You can use 'last[N]' syntax to reference the Nth most recent run.
 
     Examples:
-        thermur runs compare                                   # Compare last 2 runs
-        thermur runs compare last outputs/2025-07-29/15-30-00  # Compare most recent to specific
-        thermur runs compare last[1] last[3]                   # Compare most recent to 3rd most recent
-        thermur runs compare run1 run2 -d lightning            # Compare specific domain
+        thermur runs compare                             # Compare last 2 runs
+        thermur runs compare last abc123de               # Compare most recent to specific
+        thermur runs compare last[1] last[3]             # Compare most recent to 3rd most recent
+        thermur runs compare abc123de xyz789fg           # Compare specific runs
+        thermur runs compare last abc123de -d controller # Compare specific domain
     """
     cmd        = RunsCommand()
     cmd.domain = domain
@@ -191,12 +193,12 @@ def show(
     but can be included with the --all flag.
 
     Examples:
-        thermur runs show                                 # Show last run
-        thermur runs show last                            # Explicitly show last
-        thermur runs show last[2]                         # Show 2nd most recent run
-        thermur runs show outputs/2025-07-30/10-15-30     # Show a specific run
-        thermur runs show -d controller                   # Show only controller config
-        thermur runs show --all                           # Include system (_) configs
+        thermur runs show               # Show last run
+        thermur runs show last          # Explicitly show last
+        thermur runs show last[2]       # Show 2nd most recent run
+        thermur runs show abc456de      # Show a specific run
+        thermur runs show -d controller # Show only controller config
+        thermur runs show --all         # Include system (_) configs
     """
     cmd = RunsCommand()
     cmd.domain         = domain
@@ -222,7 +224,7 @@ class RunsCommand:
         shared application resources needed for run management operations.
         """
         self.cfg            = app.cfg
-        self.outputs_dir    = Path("outputs")
+        self.wandb_dir      = Path("wandb")
         self.prompts        = app.prompts
         self.system         = app.system
         self.ui             = app.ui
@@ -257,7 +259,7 @@ class RunsCommand:
 
         if self.run_path:
             self.ui.print_section(
-                f"Configuration: {self.run_path.relative_to(self.outputs_dir)}",
+                f"Configuration: {self.run_path.name}",
                 True
             )
             
@@ -354,7 +356,7 @@ class RunsCommand:
 
         [
             table.add_row(
-                str(run_path.relative_to(self.outputs_dir)),
+                run_path.name,
                 datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M"),
                 self.ui.format_summary_list(overrides) 
                 if (overrides := self._load_overrides(run_path)) else "-",
@@ -426,26 +428,22 @@ class RunsCommand:
         """
         Get all run directories with their timestamps, sorted by timestamp.
 
-        Scans the outputs directory for Hydra run folders (identified by the
-        presence of a .hydra subdirectory) and returns them in reverse
+        Scans the wandb directory for run folders and returns them in reverse
         chronological order. This ensures the most recent runs appear first.
 
         Returns:
             List of (Path, timestamp) tuples sorted by timestamp
         """
-        if not self.outputs_dir.exists():
+        if not self.wandb_dir.exists():
             return []
 
         return sorted(
             [
-                (run_path, timestamp)
-                for hydra_dir in self.outputs_dir.glob("**/.hydra")
-                if (run_path  := hydra_dir.parent)
-                for config_file in [run_path / ".hydra" / "config.yaml"]
-                if (timestamp := (
-                    config_file.stat().st_ctime if config_file.exists()
-                    else run_path.stat().st_ctime
-                ))
+                (run_dir, timestamp)
+                for run_dir in self.wandb_dir.glob("*run-*")
+                if run_dir.is_dir()
+                for metadata_file in [run_dir / "files" / "wandb-metadata.json"]
+                if (timestamp := self._get_run_timestamp(metadata_file, run_dir))
             ],
             key     = lambda x: x[1],
             reverse = True
@@ -470,6 +468,30 @@ class RunsCommand:
                 return []
             return [self.domain]
         return sorted(cfg.keys())
+    
+    def _get_run_timestamp(
+        self, 
+        metadata_file : Path, 
+        run_dir       : Path
+    ) -> float | None:
+        """
+        Extract timestamp from WandB metadata or fall back to directory creation time.
+        
+        Args:
+            metadata_file : Path to wandb-metadata.json
+            run_dir       : Path to run directory
+            
+        Returns:
+            Timestamp as float or None if unavailable
+        """
+        if metadata_file.exists():
+            with suppress(Exception), open(metadata_file) as f:
+                if started_at := (metadata := load(f)).get("startedAt"):
+                    return datetime.fromisoformat(
+                        started_at.replace("Z", "+00:00")
+                    ).timestamp()
+                    
+        return run_dir.stat().st_ctime if run_dir.exists() else None
     
     def _get_wandb_url(self, run_path: Path) -> str | None:
         """
@@ -510,10 +532,11 @@ class RunsCommand:
         Returns:
             List of override strings, or empty list if none found
         """
-        overrides_file = run_path / ".hydra" / "overrides.yaml"
-        if overrides_file.exists():
-            with suppress(Exception), open(overrides_file) as f:
-                return safe_load(f) or []
+        metadata_file = run_path / "files" / "wandb-metadata.json"
+        if metadata_file.exists():
+            with suppress(Exception), open(metadata_file) as f:
+                args = load(f).get("args", [])
+                return [arg for arg in args[5:] if "=" in arg]
         return []
 
     def _load_run_config(self, run_path: Path) -> dict[str, Any]:
@@ -526,7 +549,7 @@ class RunsCommand:
         Returns:
             Configuration dictionary
         """
-        with load_yaml(run_path / ".hydra" / "config.yaml") as cfg:
+        with load_yaml(run_path / "files" / "config.yaml") as cfg:
             return cfg if self.include_system else {
                 k: v for k, v in cfg.items() if not k.startswith('_')
             }
@@ -550,13 +573,17 @@ class RunsCommand:
             Exit: If no runs exist or specified run is not found
         """
         if not run_id.startswith("last"):
-            if not (run_path := Path(run_id)).exists():
+            matches = [
+                d for d in self.wandb_dir.glob("*run-*") 
+                if d.name.endswith(f"-{run_id}")
+            ]
+            if not matches:
                 self.ui.print_message(f"Run not found: {run_id}", "error")
                 raise Exit(1)
-            return run_path
+            return matches[0]
 
         if not (runs := self._get_all_runs()):
-            self.ui.print_message("No training runs found in outputs/", "error")
+            self.ui.print_message("No training runs found in wandb/", "error")
             raise Exit(1)
 
         match run_id:
@@ -706,11 +733,11 @@ class RunsCommand:
         self.ui.print_header("Training Run Management")
         self.ui.print_section("Configuration Comparison", minor=True)
         self.ui.print_message(
-            message  = f"Run 1: {run1_path.relative_to(self.outputs_dir)}",
+            message  = f"Run 1: {run1_path.name}",
             msg_type = "info"
         )
         self.ui.print_message(
-            message  = f"Run 2: {run2_path.relative_to(self.outputs_dir)}",
+            message  = f"Run 2: {run2_path.name}",
             msg_type = "info"
         )
 

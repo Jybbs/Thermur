@@ -91,7 +91,7 @@ class GNNPolicy(LightningModule):
         self._edge_offset_cache      = {}
         self._batch_assignment_cache = {}
 
-    @th.jit.ignore(drop=True)
+    @th.jit.unused
     def _batch_to_data(self, batch: TensorDictBase) -> Batch:
         """
         Convert TensorDict batch to PyTorch Geometric graph format.

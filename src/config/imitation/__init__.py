@@ -28,6 +28,12 @@ ImitationConfig = make_config(
         **CONTROLLER_SYSTEM_BUILDS,
         **SIMULATION_SYSTEM_BUILDS,
         **TRAINING_SYSTEM_BUILDS
+    },
+    hydra      = {
+        "hydra_logging" : {"level": "DISABLED"},
+        "job_logging"   : {"level": "DISABLED"},
+        "output_subdir" : None,
+        "run"           : {"dir": "."},
     }
 )
 

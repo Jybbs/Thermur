@@ -217,7 +217,6 @@ class WandbModel(BaseModel, extra="forbid"):
     The mode parameter allows flexible deployment:
     - "online": Full cloud synchronization for collaborative work
     - "offline": Local logging for air-gapped environments
-    - "disabled": No W&B integration (useful for debugging)
 
     The API key is read from an environment variable to avoid hardcoding
     credentials in configuration files.
@@ -229,11 +228,11 @@ class WandbModel(BaseModel, extra="forbid"):
             "'false' or False disables model logging to save bandwidth."
         )
     )
-    mode: Literal["online", "offline", "disabled"] = Field(
+    mode: Literal["online", "offline"] = Field(
         default     = "online",
         description = (
-            "W&B tracking mode - online syncs to cloud, offline stores locally, "
-            "disabled skips W&B integration entirely."
+            "W&B tracking mode where 'online' syncs runs to cloud dashboard and "
+            "'offline' stores all data locally for air-gapped environments."
         )
     )
     notes: str | None = Field(
