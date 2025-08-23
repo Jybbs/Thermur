@@ -77,24 +77,26 @@ class DemonstrationsDataset(InMemoryDataset):
         
         NetCDF files start with 'CDF' or '\x89HDF' magic bytes.
         """
-        netcdf_files = []
-        raw_dir      = Path("data/raw")
-        
+        raw_dir = Path("data/raw")
         if not raw_dir.exists():
             return []
         
-        for file_path in raw_dir.rglob("*"):
-            if file_path.is_file():
-                try:
-                    with open(file_path, 'rb') as f:
-                        magic = f.read(4)
-                        if magic[:3] == b'CDF' or magic == b'\x89HDF':
-                            relative = file_path.relative_to(raw_dir)
-                            netcdf_files.append(relative.as_posix())
-                except Exception:
-                    continue
+        def is_netcdf(path):
+            """
+            Check if file has NetCDF magic bytes.
+            """
+            try:
+                with open(path, 'rb') as f:
+                    magic = f.read(4)
+                    return magic[:3] == b'CDF' or magic == b'\x89HDF'
+            except Exception:
+                return False
         
-        return netcdf_files
+        return [
+            file.relative_to(raw_dir).as_posix()
+            for file in raw_dir.rglob("*")
+            if file.is_file() and is_netcdf(file)
+        ]
     
     @classmethod
     def as_lightning_datamodule(
@@ -159,9 +161,10 @@ class DemonstrationsDataset(InMemoryDataset):
             "No WRF data found. Downloading sample dataset...", "info"
         )
         
-        sample_url = self.demonstrations.sample_url
-        sample_tar = Path(self.raw_dir) / "samples.tar.gz"
-        sample_tar.parent.mkdir(parents=True, exist_ok=True)
+        (sample_tar := Path(self.raw_dir) / "samples.tar.gz").parent.mkdir(
+            exist_ok = True, 
+            parents  = True
+        )
         
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
@@ -169,13 +172,17 @@ class DemonstrationsDataset(InMemoryDataset):
                 total       = 100
             )
             
-            def download_callback(block_num, block_size, total_size):
-                downloaded = block_num * block_size
-                percent    = min(100, (downloaded / total_size) * 100)
-                progress.update(task, completed=percent)
+            reporthook = lambda block_num, block_size, total_size: progress.update(
+                completed = min(100 * block_num * block_size / total_size, 100),
+                task_id   = task 
+            )
             
             try:
-                urlretrieve(sample_url, sample_tar, download_callback)
+                urlretrieve(
+                    filename   = sample_tar, 
+                    reporthook = reporthook,
+                    url        = self.demonstrations.sample_url
+                )
                 
                 progress.update(task, description="Extracting sample data...")
                 with tf_open(sample_tar, 'r:gz') as tar:
@@ -190,8 +197,8 @@ class DemonstrationsDataset(InMemoryDataset):
             except Exception as e:
                 raise FileNotFoundError(
                     f"Failed to download sample dataset: {e}\n"
-                    "Please manually download WRF data to data/raw/"
-                )
+                    f"Please manually download WRF data to data/raw/"
+                ) from e
 
     
     def process(self):
@@ -202,10 +209,8 @@ class DemonstrationsDataset(InMemoryDataset):
         Generates expert trajectories across WRF scenarios until
         total_frames reached.
         """
-        
         frames_per_ep  = self.demonstrations.frames_per_episode
         total_episodes = self.demonstrations.total_frames // frames_per_ep
-        data_list      = []
         
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
@@ -213,13 +218,11 @@ class DemonstrationsDataset(InMemoryDataset):
                 total       = self.demonstrations.total_frames
             )
             
+            data_list = []
             for _ in range(total_episodes):
-                trajectory = self.controller.generate_trajectories(
-                    env           = self.env,
-                    num_timesteps = frames_per_ep
+                data_list.extend(
+                    self.controller.generate_trajectories(self.env, frames_per_ep)
                 )
-                
-                data_list.extend(trajectory)
                 progress.update(task, advance=frames_per_ep)
         
         self.ui.print_message("Saving demonstrations to cache...", "info")
@@ -239,5 +242,4 @@ class DemonstrationsDataset(InMemoryDataset):
         
         PyG checks if these exist before calling download().
         """
-        files = self._find_netcdf_files()
-        return files if files else ["samples/wrf_sample.nc"]
+        return self._find_netcdf_files() or ["samples/wrf_sample.nc"]
