@@ -17,8 +17,8 @@ import pickle as pk
 import torch  as th
 
 if TYPE_CHECKING:
-    from ..controller              import MurmurationController
-    from ..simulation              import SimulationEnv
+    from .murmuration              import MurmurationController
+    from ..environment             import TrajectoryGenerator
     from config.imitation.training import DemonstrationsModel, HardwareModel
     from thermur.cli.helpers       import ThermurUI
 
@@ -35,7 +35,7 @@ class DemonstrationsDataset(InMemoryDataset):
         self,
         controller     : MurmurationController,
         demonstrations : DemonstrationsModel,
-        env            : SimulationEnv,
+        generator      : TrajectoryGenerator,
         hashable       : dict,
         ui             : ThermurUI
     ):
@@ -45,13 +45,13 @@ class DemonstrationsDataset(InMemoryDataset):
         Args:
             controller     : Expert controller for trajectory generation
             demonstrations : Demonstrations configuration
-            env            : Simulation environment
+            generator      : Trajectory generator for physics simulation
             hashable       : Configuration dict for cache invalidation
             ui             : CLI UI instance for progress display
         """
         self.controller     = controller
         self.demonstrations = demonstrations
-        self.env            = env
+        self.generator      = generator
         self.hashable       = hashable
         self.ui             = ui
         self.config_hash    = self._compute_hash()
@@ -66,7 +66,7 @@ class DemonstrationsDataset(InMemoryDataset):
         Uses hashable dict plus count of loaded WRF datasets for cache invalidation.
         """
         container = dict(self.hashable)
-        container["num_datasets"] = len(self.env.wrf.datasets)
+        container["num_datasets"] = len(self.generator.wrf.datasets)
         
         return sha256(pk.dumps(container)).hexdigest()[:16]
     
@@ -103,7 +103,7 @@ class DemonstrationsDataset(InMemoryDataset):
         cls,
         controller     : MurmurationController,
         demonstrations : DemonstrationsModel,
-        env            : SimulationEnv,
+        generator      : TrajectoryGenerator,
         hardware       : HardwareModel,
         hashable       : dict,
         ui             : ThermurUI
@@ -117,7 +117,7 @@ class DemonstrationsDataset(InMemoryDataset):
         Args:
             controller     : Expert controller for trajectory generation
             demonstrations : Demonstrations configuration with train_split
-            env            : Simulation environment
+            generator      : Trajectory generator for physics simulation
             hardware       : Hardware configuration for dataloader settings
             hashable       : Configuration dict for cache invalidation
             ui             : CLI UI instance for progress display
@@ -128,7 +128,7 @@ class DemonstrationsDataset(InMemoryDataset):
         dataset = cls(
             controller     = controller,
             demonstrations = demonstrations,
-            env            = env,
+            generator      = generator,
             hashable       = hashable,
             ui             = ui
         )
@@ -221,7 +221,10 @@ class DemonstrationsDataset(InMemoryDataset):
             data_list = []
             for _ in range(total_episodes):
                 data_list.extend(
-                    self.controller.generate_trajectories(self.env, frames_per_ep)
+                    self.controller.generate_trajectories(
+                        generator     = self.generator,
+                        num_timesteps = frames_per_ep
+                    )
                 )
                 progress.update(task, advance=frames_per_ep)
         

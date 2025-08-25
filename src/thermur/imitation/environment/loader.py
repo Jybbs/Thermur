@@ -15,11 +15,11 @@ from xarray     import DataArray, open_dataset
 import torch as th
 
 if TYPE_CHECKING:
-    from config.imitation.simulation import LoaderModel, PhysicsModel
-    from numpy.typing                import NDArray
+    from config.imitation.environment import LoaderModel, PhysicsModel
+    from numpy.typing                 import NDArray
 
 
-class WRFDataSource:
+class WRFLoader:
     """
     Loader for WRF-Fire NetCDF datasets with efficient field queries.
 
@@ -55,19 +55,18 @@ class WRFDataSource:
             loader  : Data loading configuration including noise parameters
             physics : Physics simulation parameters for gradient computation
         """
-        self.bounds_max               = th.tensor(physics.bounds_max)
-        self.bounds_min               = th.tensor(physics.bounds_min)
-        self.current_time             = 0.0
-        self.domain_randomization     = loader.domain_randomization
-        self.episode_time_offset      = loader.episode_time_offset
-        self.epsilon                  = physics.epsilon
-        self.fallback_temperature     = physics.fallback_temperature
-        self.interpolate_time         = loader.interpolate_time
-        self.temperature_noise_std    = loader.temperature_noise_std
-        self.wind_noise_std           = loader.wind_noise_std
-        
-        self.current_file = 0
-        self.datasets     = []
+        self.bounds_max            = th.tensor(physics.bounds_max)
+        self.bounds_min            = th.tensor(physics.bounds_min)
+        self.current_file          = 0
+        self.current_time          = 0.0
+        self.datasets              = []
+        self.domain_randomization  = loader.domain_randomization
+        self.episode_time_offset   = loader.episode_time_offset
+        self.epsilon               = physics.epsilon
+        self.fallback_temperature  = physics.fallback_temperature
+        self.interpolate_time      = loader.interpolate_time
+        self.temperature_noise_std = loader.temperature_noise_std
+        self.wind_noise_std        = loader.wind_noise_std
         
         self._discover_and_load_datasets()
 

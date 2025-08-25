@@ -4,15 +4,14 @@ Training domain builds for hydra-zen configuration.
 This module provides pre-built components for the training infrastructure:
 
 Training Components:
-- Trainer                : PyTorch Lightning trainer with hardware configuration,
-                           gradient clipping, distributed training support, and
-                           callback management.
-- DataModule             : Handles experience replay buffer management, batch
-                           generation, and data loading for the imitation learning
-                           pipeline.
+- DemonstrationsDataset  : PyG InMemoryDataset that generates and caches expert
+                           trajectories with automatic WRF data discovery.
 - GNNPolicy              : Graph Neural Network policy that processes agent
                            observations and produces control actions using attention
                            mechanisms.
+- Trainer                : PyTorch Lightning trainer with hardware configuration,
+                           gradient clipping, distributed training support, and
+                           callback management.
 
 Optimization:
 - AdamW                  : Adaptive optimizer with weight decay for training the
@@ -33,17 +32,18 @@ Logging:
 - WandbLogger            : Weights & Biases integration for experiment tracking and
                            metric visualization.
 """
-from __future__                  import annotations
-from .schemas                    import *
-from config.cli.schemas          import WandbModel
-from hydra_zen                   import builds, make_config
-from pytorch_lightning           import Trainer
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.loggers   import WandbLogger
-from thermur.imitation.training  import DemonstrationsDataset, GNNPolicy, MetricsCollector, MonitoringCallback
-from torch.optim                 import AdamW
-from torch.optim.lr_scheduler    import ReduceLROnPlateau
-from typing                      import Any, TYPE_CHECKING
+from __future__                   import annotations
+from .schemas                     import *
+from config.cli.schemas           import WandbModel
+from hydra_zen                    import builds, make_config
+from pytorch_lightning            import Trainer
+from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers    import WandbLogger
+from thermur.imitation.controller import DemonstrationsDataset
+from thermur.imitation.training   import GNNPolicy, MetricsCollector, MonitoringCallback
+from torch.optim                  import AdamW
+from torch.optim.lr_scheduler     import ReduceLROnPlateau
+from typing                       import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hydra_zen.typing import Builds
@@ -89,8 +89,11 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         demonstrations          = "${training.demonstrations}",
         env                     = "${_system.env}",
         hardware                = "${training.hardware}",
-        hashable                = "${_system.hashable}",
-        zen_partial             = True,
+        hashable                = {
+            "controller"     : "${controller}",
+            "demonstrations" : "${training.demonstrations}",
+            "simulation"     : "${simulation}"
+        },
         populate_full_signature = True
     ),
 
@@ -100,13 +103,6 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         mode                    = "${training.optimizer.mode}",
         patience                = "${training.optimizer.early_stopping_patience}",
         populate_full_signature = True
-    ),
-
-    "hashable": builds(
-        dict,
-        controller              = "${controller}",
-        demonstrations          = "${training.demonstrations}",
-        simulation              = "${simulation}"
     ),
 
     "logger": builds(

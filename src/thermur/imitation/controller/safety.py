@@ -7,16 +7,16 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
 from __future__ import annotations
-from qpth.qp    import QPFunction
-from typing     import TYPE_CHECKING
+from qpth.qp import QPFunction
+from typing  import TYPE_CHECKING
 
 import torch as th
 
 
 if TYPE_CHECKING:
     from config.imitation.controller import FlockModel, SafetyModel
-    from tensordict                  import TensorDictBase
     from torch                       import Tensor
+    from torch_geometric.data        import Data
 
 
 class CBFSafetyFilter:
@@ -68,7 +68,7 @@ class CBFSafetyFilter:
 
     def filter(
         self,
-        flock     : TensorDictBase,
+        flock     : Data,
         u_nominal : Tensor
     ) -> Tensor:
         """
@@ -92,8 +92,8 @@ class CBFSafetyFilter:
         """
         agent_count = self.agent_count
         device      = u_nominal.device
-        h_grads     = -flock["gradient"]
-        h_values    = self.max_temperature - flock["temperature"]
+        h_grads     = -flock.gradient
+        h_values    = self.max_temperature - flock.temperature
         solver      = QPFunction(
             eps     = self.safety.qp_eps,
             maxIter = self.safety.qp_max_iter,
@@ -101,8 +101,6 @@ class CBFSafetyFilter:
         )
 
         try:
-            if h_values.dim() == 2 and h_values.shape[1] == 1:
-                h_values = h_values.squeeze(-1)  # [N, 1] -> [N]
             
             Q = self.Q.to(device).expand(agent_count, -1, -1)     # [N, 3, 3]
             p = -u_nominal                                        # [N, 3]

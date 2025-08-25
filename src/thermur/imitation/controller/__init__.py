@@ -1,5 +1,5 @@
 """
-Control algorithms for thermally-aware drone flocks.
+Control algorithms for thermally-aware drone flocks and offline demonstrations.
 
 This package implements murmuration dynamics based on starling flocks that
 generates demonstrations for imitation learning. The core algorithm uses
@@ -16,8 +16,15 @@ The flock exhibits two distinct modes:
 - Cruise : Standard murmuration dynamics with susceptibility-modulated alignment
 - Alert  : Enhanced correlation and density for rapid threat response
 
-The CBFSafetyFilter ensures all control actions respect physical constraints and
-maintain safe distances from thermal hazards using Control Barrier Functions.
+Key components:
+- DemonstrationsDataset : PyG InMemoryDataset for offline expert trajectories
+- MurmurationController : Expert controller implementing murmuration dynamics
+- CBFSafetyFilter       : Control Barrier Functions for safety constraints
+
+The demonstrations dataset generates and caches expert trajectories for
+behavioral cloning, providing a PyTorch Lightning datamodule interface for
+efficient batched training.
 """
-from .murmuration import *
-from .safety      import *
+from .demonstrations import *
+from .murmuration    import *
+from .safety         import *

@@ -145,3 +145,11 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "balancing accuracy with real-time computational constraints."
         )
     )
+    wind_coupling_coefficient: NonNegativeFloat = Field(
+        default     = 0.05,
+        description = (
+            "Wind coupling coefficient Cw for aerodynamic force from relative wind, "
+            "where F_wind = Cw * (v_wind - v_agent). Reduced from drag coefficient "
+            "to model partial sheltering effects within the flock formation."
+        )
+    )

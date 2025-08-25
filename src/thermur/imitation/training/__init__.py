@@ -37,6 +37,5 @@ This design allows researchers to focus on the algorithmic aspects of
 imitation learning while the framework manages engineering complexity.
 """
 from .callbacks      import *
-from .demonstrations import *
 from .metrics        import *
 from .policy         import *
