@@ -52,7 +52,6 @@ if TYPE_CHECKING:
 TRAINING_USER_CONFIG = make_config(
     architecture    = ArchitectureModel(),
     checkpoint      = CheckpointModel(),
-    demonstrations  = DemonstrationsModel(),
     hardware        = HardwareModel(),
     metrics         = MetricsModel(),
     optimizer       = OptimizerModel(),

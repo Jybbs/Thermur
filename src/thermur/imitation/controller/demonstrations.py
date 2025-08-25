@@ -17,10 +17,11 @@ import pickle as pk
 import torch  as th
 
 if TYPE_CHECKING:
-    from .murmuration              import MurmurationController
-    from ..environment             import TrajectoryGenerator
-    from config.imitation.training import DemonstrationsModel, HardwareModel
-    from thermur.cli.helpers       import ThermurUI
+    from .murmuration                import MurmurationController
+    from ..environment               import TrajectoryGenerator
+    from config.imitation.controller import DemonstrationsModel
+    from config.imitation.training   import HardwareModel
+    from thermur.cli.helpers         import ThermurUI
 
 
 class DemonstrationsDataset(InMemoryDataset):

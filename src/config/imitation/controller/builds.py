@@ -23,9 +23,10 @@ if TYPE_CHECKING:
 
 
 CONTROLLER_USER_CONFIG = make_config(
-    flock  = FlockModel(),
-    mmm    = MurmurationModel(),
-    safety = SafetyModel()
+    demonstrations = DemonstrationsModel()
+    flock          = FlockModel(),
+    mmm            = MurmurationModel(),
+    safety         = SafetyModel()
 )
 
 CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
