@@ -89,6 +89,9 @@ class GNNPolicy(LightningModule):
         
         self._edge_offset_cache      = {}
         self._batch_assignment_cache = {}
+        
+        if architecture.compile:
+            self.forward = th.compile(self.forward, mode="default")
 
     @th.jit.unused
     def _batch_to_data(self, batch: Batch) -> Batch:
