@@ -9,7 +9,7 @@ with PyTorch Lightning's logging system and Weights & Biases.
 from __future__         import annotations
 from collections        import Counter
 from itertools          import pairwise
-from tensordict         import TensorDictBase
+from torch_geometric.data import Batch
 from torchmetrics       import MeanAbsoluteError, MeanSquaredError
 from torchmetrics       import Metric, MetricCollection, R2Score
 from torchmetrics.image import StructuralSimilarityIndexMeasure
@@ -217,12 +217,12 @@ class DynamicBalanceMetric(AveragingMetric):
         super().__init__()
         self.threat_temperature = safety.max_temperature * safety.threat_ratio
     
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Update metric with density ratio when under thermal threat.
 
         Args:
-            batch: TensorDict containing position and temperature
+            batch: PyG Batch containing position and temperature
         """
             
         if batch["temperature"].max() <= self.threat_temperature:
@@ -307,7 +307,7 @@ class HamiltonianEnergyMetric(AveragingMetric):
         self.coupling_decay        = mmm.coupling_decay
         self.alert_coupling_factor = mmm.alert_coupling_factor
 
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Compute Hamiltonian energy matching controller implementation.
         
@@ -320,7 +320,7 @@ class HamiltonianEnergyMetric(AveragingMetric):
         - Only includes edges that exist in the controller's graph
 
         Args:
-            batch: TensorDict containing velocity, alert_states, edge indices, 
+            batch: PyG Batch containing velocity, alert_states, edge indices, 
                    and topo_distances from controller
         """
         spins = th.nn.functional.normalize(batch["velocity"], dim=-1)
@@ -407,12 +407,12 @@ class InformationPropagationMetric(AveragingMetric):
         self.target_min = metrics.info_propagation_min_speed
         self.time_step  = metrics.info_propagation_time_step
     
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Estimate propagation speed from velocity correlation decay.
         
         Args:
-            batch: TensorDict containing position and velocity tensors
+            batch: PyG Batch containing position and velocity tensors
         """
         position = (
             batch["position"] if batch["position"].dim() == 3 
@@ -689,7 +689,7 @@ class StateMetrics(Metric):
             "avg_velocity"     : self.velocity_sum     / count,
         }
     
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Update running sums with batch statistics.
         
@@ -698,7 +698,7 @@ class StateMetrics(Metric):
         Only tracks states when control actions are present.
         
         Args:
-            batch: TensorDict containing velocity, temperature, and optionally action
+            batch: PyG Batch containing velocity, temperature, and optionally action
         """
         if "action" not in batch:
             return
@@ -779,7 +779,7 @@ class ConnectivityMetrics(Metric):
             "isolated_agents"    : self.isolated_sum / count,
         }
     
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Update connectivity statistics from graph topology.
         
@@ -787,7 +787,7 @@ class ConnectivityMetrics(Metric):
         the k-NN structure is maintained under dynamics.
         
         Args:
-            batch: TensorDict containing edge_index and position tensors
+            batch: PyG Batch containing edge_index and position tensors
         """
         if "edge_index" not in batch or "position" not in batch:
             return
@@ -889,7 +889,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         
         return float(-(X @ Y) / (X @ X)) if (X @ X) > 0 else 0.0
 
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Update metric with scale-free correlation measurement.
         
@@ -903,7 +903,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         (insufficient data for power law fitting).
         
         Args:
-            batch: TensorDict containing position and velocity
+            batch: PyG Batch containing position and velocity
         """
         corr_mat, distances = self._compute_velocity_correlations(
             batch["position"], batch["velocity"]
@@ -985,12 +985,12 @@ class SusceptibilityMetric(AveragingMetric):
         self.target_min = metrics.susceptibility_min
         self.target_max = metrics.susceptibility_max
     
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Compute susceptibility from velocity fluctuations.
         
         Args:
-            batch: TensorDict containing velocity tensor [n_agents, 3]
+            batch: PyG Batch containing velocity tensor [n_agents, 3]
         """
         velocity = (
             batch["velocity"] if batch["velocity"].dim() == 3
@@ -1042,12 +1042,12 @@ class TopologicalFidelityMetric(AveragingMetric):
         super().__init__()
         self.previous_edges: th.Tensor | None = None
     
-    def update(self, batch: TensorDictBase):
+    def update(self, batch: Batch):
         """
         Compute Jaccard similarity between consecutive edge sets.
         
         Args:
-            batch: TensorDict containing edge_index [2, E] and trajectory_id
+            batch: PyG Batch containing edge_index [2, E] and trajectory_id
         """
         if "edge_index" not in batch:
             return
@@ -1336,7 +1336,7 @@ class MetricsCollector(th.nn.Module):
 
     def update_evaluation_metrics(
         self,
-        batch       : TensorDictBase,
+        batch       : Batch,
         is_training : bool
     ):
         """
@@ -1353,7 +1353,7 @@ class MetricsCollector(th.nn.Module):
         - Energy          : u_safe or action (control inputs)
 
         Args:
-            batch       : TensorDict containing simulation state and actions
+            batch       : PyG Batch containing simulation state and actions
             is_training : Whether this is training (True) or validation (False)
         """
         metrics = self._get_metrics(is_training, "evaluation")
@@ -1377,13 +1377,13 @@ class MetricsCollector(th.nn.Module):
                 num_agents = num_agents
             )
 
-        u_control = batch.get("u_safe") if "u_safe" in batch else batch.get("action")
+        u_control = batch["u_safe"] if "u_safe" in batch else batch["action"] if "action" in batch else None
         if u_control is not None:
             metrics["avg_power"].update(u_safe=u_control)
 
     def update_imitation_metrics(
         self,
-        batch       : TensorDictBase | None,
+        batch       : Batch | None,
         is_training : bool,
         predictions : Tensor,
         targets     : Tensor
@@ -1395,7 +1395,7 @@ class MetricsCollector(th.nn.Module):
         that don't require temporal continuity.
 
         Args:
-            batch       : Optional TensorDict with position, velocity, temperature
+            batch       : Optional PyG Batch with position, velocity, temperature
             is_training : Whether this is training (True) or validation (False)
             predictions : Model velocity outputs [batch_size, 3] in m/s
             targets     : Expert velocity commands [batch_size, 3] in m/s

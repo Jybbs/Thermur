@@ -30,15 +30,6 @@ thermur train
 thermur monitor  # Opens WandB dashboard
 ```
 
-For the full wildfire dataset experience:
-
-```bash
-# Place WRF-SFIRE NetCDF files in data/raw/
-# Then train with custom configuration
-thermur train controller.flock.agent_count=50 \
-              training.optimizer.learning_rate=0.001
-```
-
 ---
 
 ## 🐦‍⬛ The Biological Inspiration
@@ -73,7 +64,7 @@ Thermur orchestrates biomimetic flocking through a sophisticated machine learnin
 |-----------|------------|---------|
 | **Configuration** | [Hydra-zen](https://github.com/mit-ll-responsible-ai/hydra-zen) + [Pydantic](https://pydantic.dev/) | Composable configs with runtime validation and type safety |
 | **Training** | [PyTorch Lightning](https://lightning.ai/) | Distributed training orchestration with automatic mixed precision |
-| **Environment** | [TorchRL](https://pytorch.org/rl/) | Multi-agent simulation interfacing with WRF-Fire data |
+| **Environment** | [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) | Offline trajectory generation with WRF-Fire data |
 | **Policy Network** | [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) | Graph Neural Networks for topological neighbor interactions |
 | **Safety System** | [QPTh](https://github.com/locuslab/qpth) + CBF | Control Barrier Functions with differentiable QP solvers |
 | **CLI** | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) | Beautiful terminal interface with fire gradient effects |
@@ -342,7 +333,7 @@ For details on the WRF-SFIRE dataset and data procurement, see [`docs/data-procu
 
 ### Training Workflow
 
-The imitation learning pipeline leverages [PyTorch Lightning](https://lightning.ai/) for training orchestration and [TorchRL](https://pytorch.org/rl/) for experience collection:
+The imitation learning pipeline leverages [PyTorch Lightning](https://lightning.ai/) for training orchestration and [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) for graph-based learning:
 
 #### 1. Expert Demonstration Generation
 
@@ -403,28 +394,61 @@ class GNNPolicy(LightningModule):
         return loss
 ```
 
-#### 3. Experience Collection
+#### 3. Demonstration Generation
 
-[TorchRL](https://pytorch.org/rl/) manages the replay buffer and trajectory collection:
+Using [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) for efficient graph-based learning from offline trajectories:
 
 ```python
-from torchrl.data                import TensorDictReplayBuffer
-from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
+from torch_geometric.data           import Data, InMemoryDataset
+from torch_geometric.data.lightning import LightningDataset
 
-class DataModule(LightningDataModule):
-    def setup(self, stage):
-        self.buffer = TensorDictReplayBuffer(
-            batch_size = self.experience.batch_size,
-            prefetch   = self.experience.prefetch,
-            sampler    = SamplerWithoutReplacement(),
-            storage    = LazyTensorStorage(self.experience.buffer_size)
+class DemonstrationsDataset(InMemoryDataset):
+    def process(self):
+        # Components are injected via Hydra configuration
+        controller = self.config.controller
+        generator  = self.config.generator
+        
+        data_list = []
+        for episode in range(self.num_episodes):
+            # Each trajectory contains graph-structured states and expert actions
+            trajectory = controller.generate_trajectories(
+                generator     = generator,
+                num_timesteps = self.frames_per_episode
+            )
+            # Each trajectory is list of Data(x=[N,13], y=[N,3], edge_index=[2,E])
+            data_list.extend(trajectory)
+        
+        self.save(self.collate(data_list), self.processed_paths[0])
+    
+    @classmethod
+    def as_lightning_datamodule(
+        cls,
+        controller     : MurmurationController,
+        demonstrations : DemonstrationsModel,
+        generator      : TrajectoryGenerator,
+        hardware       : HardwareModel,
+        hashable       : dict,
+        ui             : ThermurUI
+    ) -> LightningDataset:
+        # Create dataset with all necessary components for generation
+        dataset = cls(
+            controller     = controller,
+            demonstrations = demonstrations,
+            generator      = generator,
+            hashable       = hashable,  # Config dict for cache invalidation
+            ui             = ui
         )
         
-        self.collector = ExperienceCollector(
-            env                 = self.env,
-            expert              = self.expert,
-            frames_per_batch    = self.experience.frames_per_batch,
-            max_frames_per_traj = self.experience.max_frames_per_traj
+        # Random train/val split with PyG's index_select
+        train_size = int(len(dataset) * demonstrations.train_split)
+        indices    = torch.randperm(len(dataset))
+        
+        return LightningDataset(
+            batch_size    = demonstrations.batch_size,
+            num_workers   = hardware.num_workers,
+            pin_memory    = hardware.pin_memory,
+            train_dataset = dataset.index_select(indices[:train_size]),
+            val_dataset   = dataset.index_select(indices[train_size:]),
         )
 ```
 
@@ -524,63 +548,60 @@ The codebase uses a deliberate two-pronged architecture separating configuration
 ```
 thermur/
 ├── src/
-│   ├── config/                    # Lightweight configuration layer (fast imports)
+│   ├── config/                       # Lightweight configuration layer (fast imports)
 │   │   ├── cli/
-│   │   │   ├── schemas.py         # Pydantic models for CLI
-│   │   │   └── builds.py          # Hydra-zen builds
+│   │   │   ├── builds.py             # Hydra-zen builds
+│   │   │   └── schemas.py            # Pydantic models for CLI
 │   │   └── imitation/
 │   │       ├── controller/
-│   │       │   ├── schemas.py     # FlockModel, MurmurationModel, SafetyModel
-│   │       │   └── builds.py      # Controller component builds
-│   │       ├── lightning/
-│   │       │   ├── schemas.py     # Training hyperparameters
-│   │       │   └── builds.py      # Trainer, callbacks, loggers
-│   │       └── simulation/
-│   │           ├── schemas.py     # Physics and world models
-│   │           └── builds.py      # Environment builds
+│   │       │   ├── builds.py         # Controller component builds
+│   │       │   └── schemas.py        # FlockModel, MurmurationModel, SafetyModel
+│   │       ├── environment/
+│   │       │   ├── builds.py         # Environment builds
+│   │       │   └── schemas.py        # Physics and world models
+│   │       └── training/
+│   │           ├── builds.py         # Trainer, callbacks, loggers
+│   │           └── schemas.py        # Training hyperparameters
 │   │
-│   └── thermur/                   # Core implementation (heavy dependencies)
+│   └── thermur/                      # Core implementation (heavy dependencies)
 │       ├── cli/
-│       │   ├── app.py             # Application context
-│       │   ├── cli.py             # Main entry point
+│       │   ├── app.py                # Application context
+│       │   ├── cli.py                # Main entry point
 │       │   ├── commands/
-│       │   │   ├── train.py       # Training orchestration
-│       │   │   ├── monitor.py     # WandB dashboard
-│       │   │   └── validate.py    # System verification
+│       │   │   ├── info.py           # System information
+│       │   │   ├── monitor.py        # WandB dashboard
+│       │   │   ├── runs.py           # Run history management
+│       │   │   ├── train.py          # Training orchestration
+│       │   │   └── validate.py       # System verification
 │       │   └── helpers/
-│       │       ├── ui.py          # Rich console formatting
-│       │       └── prompts.py     # Interactive configuration
+│       │       ├── prompts.py        # Interactive configuration
+│       │       ├── system.py         # System utilities
+│       │       └── ui.py             # Rich console formatting
 │       │
 │       └── imitation/
 │           ├── controller/
-│           │   ├── murmuration.py # Biomimetic flocking (critical state)
-│           │   └── safety.py      # CBF safety filter (QP solver)
-│           ├── lightning/
-│           │   ├── policy.py      # GNN architecture (PyG)
-│           │   ├── experience.py  # Experience replay buffer
-│           │   └── callbacks.py   # Training callbacks
-│           ├── monitoring/
-│           │   ├── metrics.py     # Susceptibility, cohesion, SSIM
-│           │   └── events.py      # Event tracking system
-│           └── simulation/
-│               ├── environment.py # Multi-agent simulation
-│               └── loader.py      # WRF-SFIRE data interface
+│           │   ├── demonstrations.py # Offline trajectory generation
+│           │   ├── murmuration.py    # Biomimetic flocking (critical state)
+│           │   └── safety.py         # CBF safety filter (QP solver)
+│           ├── environment/
+│           │   ├── loader.py         # WRF-SFIRE data interface
+│           │   └── trajectories.py   # Physics simulation for offline data
+│           └── training/
+│               ├── callbacks.py      # Training callbacks
+│               ├── metrics.py        # Comprehensive metrics collection
+│               └── policy.py         # GNN architecture (PyG)
 │
 ├── data/
-│   ├── samples/                   # 1.5GB sample data
-│   └── wrf-sfire/                 # Full dataset storage
+│   ├── processed/                    # Cached PyG demonstrations
+│   └── raw/                          # NetCDF files from WRF-SFIRE
 │
 ├── docs/
-│   ├── data-procurement.md        # Dataset acquisition guide
-│   └── mathematical-framework.md  # Complete mathematical formulation
+│   ├── data-procurement.md          # Dataset acquisition guide
+│   └── mathematical-framework.md    # Complete mathematical formulation
 │
-├── outputs/                       # Training run artifacts
-│   └── IM001/                     # Example run directory
-│
-├── wandb/                         # Experiment tracking
-├── pyproject.toml                 # Package configuration
-├── uv.lock                        # Locked dependencies
-└── README.md
+├── wandb/                            # Experiment tracking
+├── pyproject.toml                    # Package configuration
+└── uv.lock                           # Locked dependencies
 ```
 
 ---

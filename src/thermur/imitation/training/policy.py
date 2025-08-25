@@ -8,7 +8,7 @@ output a nominal velocity command, 𝐮_nom, for each agent.
 
 The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
-`TensorDict` observations.
+PyG Batch observations.
 """
 from __future__            import annotations
 from pytorch_lightning     import LightningModule
@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from .metrics                          import MetricsCollector
     from config.imitation.training         import ArchitectureModel
     from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig, STEP_OUTPUT
-    from tensordict                        import TensorDictBase
     from torch                             import Tensor
     from torch.nn                          import Module
     from torch.optim                       import Optimizer
@@ -92,9 +91,9 @@ class GNNPolicy(LightningModule):
         self._batch_assignment_cache = {}
 
     @th.jit.unused
-    def _batch_to_data(self, batch: TensorDictBase) -> Batch:
+    def _batch_to_data(self, batch: Batch) -> Batch:
         """
-        Convert TensorDict batch to PyTorch Geometric graph format.
+        Convert batched data to PyTorch Geometric graph format.
 
         Transforms agent-based observations into graph representations suitable for
         GNN processing. Creates a disjoint union of graphs with proper node indexing
@@ -111,7 +110,7 @@ class GNNPolicy(LightningModule):
             - 𝐰ᵢ ∈ ℝ³  : Wind velocity
 
         Args:
-            batch: TensorDict containing flock observations with shapes [B, N, d]
+            batch: PyG Batch containing flock observations with shapes [B*N, d]
                    where B is batch size, N is number of agents, d is feature dimension
 
         Returns:
@@ -173,7 +172,7 @@ class GNNPolicy(LightningModule):
 
     def _compute_loss_and_log(
         self,
-        batch       : TensorDictBase,
+        batch       : Batch,
         is_training : bool
     ) -> Tensor:
         """
@@ -189,7 +188,7 @@ class GNNPolicy(LightningModule):
         concatenated node format.
 
         Args:
-            batch       : TensorDict containing graph observations and expert actions
+            batch       : PyG Batch containing graph observations and expert actions
             is_training : Whether this is training (True) or validation (False)
 
         Returns:
@@ -224,8 +223,8 @@ class GNNPolicy(LightningModule):
         Flatten hierarchical agent batches for node-level processing.
         
         Transforms multi-agent batch tensors from [batch, agents, features]
-        format used by replay buffers to [batch*agents, features] format
-        required by graph neural networks.
+        format to [batch*agents, features] format required by graph neural 
+        networks.
         
         Args:
             tensor: Input with shape [batch, agents, features] for batched
@@ -326,7 +325,7 @@ class GNNPolicy(LightningModule):
                 )
             setattr(self.collector, metric_name, metrics.to(self.device))
 
-    def training_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
+    def training_step(self, batch: Batch, batch_idx: int) -> STEP_OUTPUT:
         """
         Executes a single training step using behavioral cloning loss.
 
@@ -335,7 +334,7 @@ class GNNPolicy(LightningModule):
         eliminating the need for external training loops.
 
         Args:
-            batch     : TensorDict containing graph observations and expert actions
+            batch     : PyG Batch containing graph observations and expert actions
             batch_idx : Current batch index (automatically provided by Lightning)
 
         Returns:
@@ -343,7 +342,7 @@ class GNNPolicy(LightningModule):
         """
         return self._compute_loss_and_log(batch, True)
 
-    def validation_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
+    def validation_step(self, batch: Batch, batch_idx: int) -> STEP_OUTPUT:
         """
         Executes validation step for model evaluation.
 
@@ -352,7 +351,7 @@ class GNNPolicy(LightningModule):
         detect overfitting during training.
 
         Args:
-            batch     : TensorDict containing validation observations and actions
+            batch     : PyG Batch containing validation observations and actions
             batch_idx : Current batch index (automatically provided by Lightning)
 
         Returns:

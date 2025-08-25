@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .metrics                          import MetricsCollector
     from pytorch_lightning                 import LightningModule, Trainer
     from pytorch_lightning.utilities.types import STEP_OUTPUT
-    from tensordict                        import TensorDictBase
+    from torch_geometric.data              import Batch
 
 
 class MonitoringCallback(Callback):
@@ -58,7 +58,7 @@ class MonitoringCallback(Callback):
         trainer   : Trainer,
         pl_module : LightningModule,
         outputs   : STEP_OUTPUT,
-        batch     : TensorDictBase,
+        batch     : Batch,
         batch_idx : int
     ):
         """
@@ -70,7 +70,7 @@ class MonitoringCallback(Callback):
             trainer   : PyTorch Lightning trainer managing the training loop
             pl_module : Lightning module containing the policy network
             outputs   : Model outputs from the training step
-            batch     : TensorDict containing agent states and environment data
+            batch     : PyG Batch containing agent states and environment data
             batch_idx : Index of the current batch within the epoch
         """
         if self.collector:
@@ -103,7 +103,7 @@ class MonitoringCallback(Callback):
         trainer        : Trainer,
         pl_module      : LightningModule,
         outputs        : STEP_OUTPUT,
-        batch          : TensorDictBase,
+        batch          : Batch,
         batch_idx      : int,
         dataloader_idx : int = 0
     ):
@@ -117,7 +117,7 @@ class MonitoringCallback(Callback):
             trainer        : PyTorch Lightning trainer instance
             pl_module      : Lightning module being validated
             outputs        : Model outputs from the validation step
-            batch          : TensorDict containing validation batch data
+            batch          : PyG Batch containing validation batch data
             batch_idx      : Index of the current validation batch
             dataloader_idx : Index of the dataloader for multi-dataloader setups
         """

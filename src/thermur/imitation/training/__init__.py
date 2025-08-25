@@ -11,11 +11,6 @@ callbacks:
 - MonitoringCallback: Lightning callback for metrics collection that
   integrates seamlessly with the training loop
 
-experience:
-- DataModule: A LightningDataModule that manages trajectory collection
-  from expert demonstrations and maintains a replay buffer for efficient
-  batch sampling during training
-
 metrics:
 - MetricsCollector: Comprehensive metrics tracking for training and evaluation,
   including imitation accuracy, emergent behaviors, and murmuration dynamics
