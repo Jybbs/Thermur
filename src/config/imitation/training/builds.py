@@ -75,8 +75,8 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "collector": builds(
         MetricsCollector,
-        bounds_max              = "${simulation.physics.bounds_max}",
-        gravity                 = "${simulation.physics.gravity}",
+        bounds_max              = "${environment.physics.bounds_max}",
+        gravity                 = "${environment.physics.gravity}",
         metrics                 = "${training.metrics}",
         mmm                     = "${controller.mmm}",
         safety                  = "${controller.safety}",
@@ -87,12 +87,12 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         DemonstrationsDataset.as_lightning_datamodule,
         controller              = "${_system.controller}",
         demonstrations          = "${training.demonstrations}",
-        env                     = "${_system.env}",
+        generator               = "${_system.trajectory_generator}",
         hardware                = "${training.hardware}",
         hashable                = {
             "controller"     : "${controller}",
             "demonstrations" : "${training.demonstrations}",
-            "simulation"     : "${simulation}"
+            "environment"    : "${environment}"
         },
         populate_full_signature = True
     ),
