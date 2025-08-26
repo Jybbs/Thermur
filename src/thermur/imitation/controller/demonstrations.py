@@ -5,16 +5,17 @@ Provides a PyG InMemoryDataset that generates and caches expert demonstrations.
 Automatically regenerates when configuration changes via hash-based filenames.
 """
 from __future__                     import annotations
-from hashlib                        import sha256
+from hashlib                        import file_digest, sha256
 from pathlib                        import Path
 from tarfile                        import open as tf_open
 from torch_geometric.data           import InMemoryDataset
+from json                           import dumps
+from omegaconf                      import OmegaConf
 from torch_geometric.data.lightning import LightningDataset
 from typing                         import TYPE_CHECKING
 from urllib.request                 import urlretrieve
 
-import pickle as pk
-import torch  as th
+import torch as th
 
 if TYPE_CHECKING:
     from ..environment             import TrajectoryGenerator
@@ -71,17 +72,38 @@ class DemonstrationsDataset(InMemoryDataset):
     
     def _compute_hash(self) -> str:
         """
-        Generate hash of configuration parameters affecting demonstrations.
+        Generate deterministic hash of configuration parameters.
         
-        Uses controller and environment configs plus count of loaded WRF datasets.
+        Converts DictConfigs to primitive containers with resolved values,
+        adds WRF file checksums, then uses JSON serialization with sorted
+        keys to ensure deterministic output before hashing.
         """
         container = {
-            "controller"   : self.controller,
-            "environment"  : self.environment,
-            "num_datasets" : len(self.generator.wrf.datasets)
+            "controller"    : OmegaConf.to_container(self.controller,  resolve=True),
+            "environment"   : OmegaConf.to_container(self.environment, resolve=True),
+            "wrf_checksums" : self._compute_wrf_checksums()
         }
         
-        return sha256(pk.dumps(container)).hexdigest()[:16]
+        serialized = dumps(container, sort_keys=True)
+        return sha256(serialized.encode()).hexdigest()[:16]
+    
+    def _compute_wrf_checksums(self) -> dict[str, str]:
+        """
+        Compute SHA256 checksums of WRF NetCDF files.
+        
+        Generates abbreviated checksums for each loaded WRF dataset to detect
+        file content changes. Returns empty dict if no WRF data is available.
+        """
+        return {
+            f"wrf_{i}": digest[:8]
+            for i, dataset in enumerate(
+                getattr(self.generator.wrf, 'datasets', [])
+            )
+            if (path := dataset.encoding.get("source")) and Path(path).exists()
+            for digest in [
+                file_digest(open(path, 'rb'), 'sha256').hexdigest()
+            ]
+        }
     
     @staticmethod
     def _find_netcdf_files() -> list[str]:
