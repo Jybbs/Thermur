@@ -17,11 +17,11 @@ import pickle as pk
 import torch  as th
 
 if TYPE_CHECKING:
-    from .murmuration                import MurmurationController
-    from ..environment               import TrajectoryGenerator
-    from config.imitation.controller import DemonstrationsModel
-    from config.imitation.training   import HardwareModel
-    from thermur.cli.helpers         import ThermurUI
+    from ..environment             import TrajectoryGenerator
+    from .murmuration              import MurmurationController
+    from config.imitation.training import HardwareModel
+    from omegaconf                 import DictConfig
+    from thermur.cli.helpers       import ThermurUI
 
 
 class DemonstrationsDataset(InMemoryDataset):
@@ -34,28 +34,37 @@ class DemonstrationsDataset(InMemoryDataset):
     
     def __init__(
         self,
-        controller     : MurmurationController,
-        demonstrations : DemonstrationsModel,
-        generator      : TrajectoryGenerator,
-        hashable       : dict,
-        ui             : ThermurUI
+        controller         : DictConfig,
+        environment        : DictConfig,
+        frames_per_episode : int,
+        generator          : TrajectoryGenerator,
+        murmuration        : MurmurationController,
+        sample_url         : str,
+        total_frames       : int,
+        ui                 : ThermurUI
     ):
         """
         Initialize the demonstrations dataset.
         
         Args:
-            controller     : Expert controller for trajectory generation
-            demonstrations : Demonstrations configuration
-            generator      : Trajectory generator for physics simulation
-            hashable       : Configuration dict for cache invalidation
-            ui             : CLI UI instance for progress display
+            controller         : Controller configuration for cache invalidation
+            environment        : Environment configuration for cache invalidation
+            frames_per_episode : Number of timesteps per demonstration episode
+            generator          : Trajectory generator for physics simulation
+            murmuration        : Expert controller for trajectory generation
+            sample_url         : URL for downloading sample WRF dataset
+            total_frames       : Total demonstration frames to generate
+            ui                 : CLI UI instance for progress display
         """
-        self.controller     = controller
-        self.demonstrations = demonstrations
-        self.generator      = generator
-        self.hashable       = hashable
-        self.ui             = ui
-        self.config_hash    = self._compute_hash()
+        self.controller         = controller
+        self.environment        = environment
+        self.frames_per_episode = frames_per_episode
+        self.generator          = generator
+        self.murmuration        = murmuration
+        self.sample_url         = sample_url
+        self.total_frames       = total_frames
+        self.ui                 = ui
+        self.config_hash        = self._compute_hash()
         
         super().__init__("data")
         self.data, self.slices = th.load(self.processed_paths[0])
@@ -64,10 +73,13 @@ class DemonstrationsDataset(InMemoryDataset):
         """
         Generate hash of configuration parameters affecting demonstrations.
         
-        Uses hashable dict plus count of loaded WRF datasets for cache invalidation.
+        Uses controller and environment configs plus count of loaded WRF datasets.
         """
-        container = dict(self.hashable)
-        container["num_datasets"] = len(self.generator.wrf.datasets)
+        container = {
+            "controller"   : self.controller,
+            "environment"  : self.environment,
+            "num_datasets" : len(self.generator.wrf.datasets)
+        }
         
         return sha256(pk.dumps(container)).hexdigest()[:16]
     
@@ -102,12 +114,14 @@ class DemonstrationsDataset(InMemoryDataset):
     @classmethod
     def as_lightning_datamodule(
         cls,
-        controller     : MurmurationController,
-        demonstrations : DemonstrationsModel,
-        generator      : TrajectoryGenerator,
-        hardware       : HardwareModel,
-        hashable       : dict,
-        ui             : ThermurUI
+        batch_size  : int,
+        controller  : DictConfig,
+        environment : DictConfig,
+        generator   : TrajectoryGenerator,
+        hardware    : HardwareModel,
+        murmuration : MurmurationController,
+        train_split : float,
+        ui          : ThermurUI
     ) -> LightningDataset:
         """
         Factory method that creates a PyTorch Lightning DataModule with automatic
@@ -116,22 +130,27 @@ class DemonstrationsDataset(InMemoryDataset):
         shuffling, and multi-GPU distribution automatically.
         
         Args:
-            controller     : Expert controller for trajectory generation
-            demonstrations : Demonstrations configuration with train_split
-            generator      : Trajectory generator for physics simulation
-            hardware       : Hardware configuration for dataloader settings
-            hashable       : Configuration dict for cache invalidation
-            ui             : CLI UI instance for progress display
+            batch_size  : Number of graph snapshots per training batch
+            controller  : Controller configuration
+            environment : Environment configuration
+            generator   : Trajectory generator for physics simulation
+            hardware    : Hardware configuration for dataloader settings
+            murmuration : Expert controller for trajectory generation
+            train_split : Fraction of data reserved for training
+            ui          : CLI UI instance for progress display
         
         Returns:
             LightningDataset configured with train/val splits
-        """
+        """        
         dataset = cls(
-            controller     = controller,
-            demonstrations = demonstrations,
-            generator      = generator,
-            hashable       = hashable,
-            ui             = ui
+            controller         = controller,
+            environment        = environment,
+            frames_per_episode = environment.physics.frames_per_episode,
+            generator          = generator,
+            murmuration        = murmuration,
+            sample_url         = environment.loader.sample_url,
+            total_frames       = controller.mmm.total_frames,
+            ui                 = ui
         )
         
         if not Path(dataset.processed_paths[0]).exists():
@@ -141,11 +160,11 @@ class DemonstrationsDataset(InMemoryDataset):
                 "info"
             )
         
-        train_size = int(len(dataset) * demonstrations.train_split)
+        train_size = int(len(dataset) * train_split)
         indices    = th.randperm(len(dataset))
         
         return LightningDataset(
-            batch_size    = demonstrations.batch_size,
+            batch_size    = batch_size,
             num_workers   = hardware.num_workers,
             pin_memory    = hardware.pin_memory,
             train_dataset = dataset.index_select(indices[:train_size]),
@@ -182,7 +201,7 @@ class DemonstrationsDataset(InMemoryDataset):
                 urlretrieve(
                     filename   = sample_tar, 
                     reporthook = reporthook,
-                    url        = self.demonstrations.sample_url
+                    url        = self.sample_url
                 )
                 
                 progress.update(task, description="Extracting sample data...")
@@ -210,19 +229,19 @@ class DemonstrationsDataset(InMemoryDataset):
         Generates expert trajectories across WRF scenarios until
         total_frames reached.
         """
-        frames_per_ep  = self.demonstrations.frames_per_episode
-        total_episodes = self.demonstrations.total_frames // frames_per_ep
+        frames_per_ep  = self.frames_per_episode
+        total_episodes = self.total_frames // frames_per_ep
         
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
                 description = "Generating expert demonstrations", 
-                total       = self.demonstrations.total_frames
+                total       = self.total_frames
             )
             
             data_list = []
             for _ in range(total_episodes):
                 data_list.extend(
-                    self.controller.generate_trajectories(
+                    self.murmuration.generate_trajectories(
                         generator     = self.generator,
                         num_timesteps = frames_per_ep
                     )
@@ -237,7 +256,7 @@ class DemonstrationsDataset(InMemoryDataset):
         """
         Dynamic filename based on config hash for automatic cache invalidation.
         """
-        return [f"data_{self.config_hash}.pt"]
+        return [f"{self.config_hash}.pt"]
     
     @property
     def raw_file_names(self):

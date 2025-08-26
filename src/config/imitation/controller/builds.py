@@ -23,10 +23,9 @@ if TYPE_CHECKING:
 
 
 CONTROLLER_USER_CONFIG = make_config(
-    demonstrations = DemonstrationsModel()
-    flock          = FlockModel(),
-    mmm            = MurmurationModel(),
-    safety         = SafetyModel()
+    flock  = FlockModel(),
+    mmm    = MurmurationModel(),
+    safety = SafetyModel()
 )
 
 CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
@@ -38,7 +37,7 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
     
-    "controller": builds(
+    "murmuration": builds(
         MurmurationController,
         cbf                     = "${_system.cbf}",
         flock                   = "${controller.flock}",

@@ -84,15 +84,13 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "datamodule": builds(
         DemonstrationsDataset.as_lightning_datamodule,
-        controller              = "${_system.controller}",
-        demonstrations          = "${training.demonstrations}",
+        batch_size              = "${training.optimizer.batch_size}",
+        controller              = "${controller}",
+        environment             = "${environment}",
         generator               = "${_system.trajectory_generator}",
         hardware                = "${training.hardware}",
-        hashable                = {
-            "controller"     : "${controller}",
-            "demonstrations" : "${training.demonstrations}",
-            "environment"    : "${environment}"
-        },
+        murmuration             = "${_system.murmuration}",
+        train_split             = "${training.optimizer.train_split}",
         populate_full_signature = True
     ),
 

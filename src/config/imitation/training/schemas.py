@@ -169,6 +169,15 @@ class OptimizerModel(BaseModel, extra="forbid"):
 
     where π_θ is the learned GNN policy and π* is the murmuration controller.
     """
+    batch_size: PositiveInt = Field(
+        default     = 256,
+        ge          = 16,
+        description = (
+            "Number of graph snapshots per training batch. Each snapshot contains "
+            "the full flock state at a single timestep. Larger batches improve "
+            "gradient stability but require more memory."
+        )
+    )
     early_stopping_patience: PositiveInt = Field(
         default     = 10,
         description = (
@@ -218,13 +227,6 @@ class OptimizerModel(BaseModel, extra="forbid"):
             "upper bound on training time even if convergence isn't reached."
         )
     )
-    training_metric: str = Field(
-        default     = "training/loss",
-        description = (
-            "Primary metric monitored during training for logging and model "
-            "selection. Also used by early stopping callback."
-        )
-    )
     mode: Literal["min", "max"] = Field(
         default     = "min",
         description = (
@@ -243,6 +245,22 @@ class OptimizerModel(BaseModel, extra="forbid"):
         description = (
             "Random seed for reproducible training runs. Set to None for "
             "non-deterministic behavior."
+        )
+    )
+    train_split: float = Field(
+        default     = 0.8,
+        ge          = 0.5,
+        le          = 0.95,
+        description = (
+            "Fraction of data reserved for training, with remainder for validation. "
+            "Split occurs randomly across all timesteps to ensure diverse validation."
+        )
+    )
+    training_metric: str = Field(
+        default     = "training/loss",
+        description = (
+            "Primary metric monitored during training for logging and model "
+            "selection. Also used by early stopping callback."
         )
     )
     val_check_interval: float = Field(

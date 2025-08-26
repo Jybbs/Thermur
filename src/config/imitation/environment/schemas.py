@@ -5,7 +5,7 @@ This module consolidates all simulation configuration models including
 physics settings, data loading, and environment parameters.
 """
 from pydantic import BaseModel, Field
-from pydantic import NonNegativeFloat, PositiveFloat
+from pydantic import NonNegativeFloat, PositiveFloat, PositiveInt
 
 
 class LoaderModel(BaseModel, extra="forbid"):
@@ -39,6 +39,16 @@ class LoaderModel(BaseModel, extra="forbid"):
             "Enable smooth temporal interpolation between WRF time steps. When False, "
             "uses nearest time step (discrete jumps). When True, linearly interpolates "
             "between adjacent time steps for continuous evolution."
+        )
+    )
+    sample_url: str = Field(
+        default     = (
+            "https://huggingface.co/datasets/Jybbs/sfire-samples/"
+            "resolve/main/samples.tar.gz"
+        ),
+        description = (
+            "URL for downloading sample WRF-SFIRE dataset when no local data exists. "
+            "Points to a curated 1.5GB sample containing moderate intensity scenarios."
         )
     )
     temperature_noise_std: NonNegativeFloat = Field(
@@ -89,6 +99,13 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "workspace origin, typically [0, 0, 0] for simplicity."
         )
     )
+    drag_coefficient: NonNegativeFloat = Field(
+        default     = 0.1,
+        description = (
+            "Quadratic drag coefficient Cd for aerodynamic resistance modeling, "
+            "where F_drag = -Cd * v * |v| simulates air resistance effects."
+        )
+    )
     epsilon: PositiveFloat = Field(
         default     = 1e-6,
         description = (
@@ -103,11 +120,11 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "fails outside data bounds or during initialization."
         )
     )
-    drag_coefficient: NonNegativeFloat = Field(
-        default     = 0.1,
+    frames_per_episode: PositiveInt = Field(
+        default     = 1000,
         description = (
-            "Quadratic drag coefficient Cd for aerodynamic resistance modeling, "
-            "where F_drag = -Cd * v * |v| simulates air resistance effects."
+            "Number of timesteps per demonstration episode. Longer episodes "
+            "capture extended temporal dependencies in flocking behavior."
         )
     )
     gravity: PositiveFloat = Field(

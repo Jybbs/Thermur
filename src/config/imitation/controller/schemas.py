@@ -8,57 +8,6 @@ from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
-class DemonstrationsModel(BaseModel, extra="forbid"):
-    """
-    Demonstrations configuration for offline imitation learning.
-    
-    Configures the generation and loading of expert demonstrations via
-    the DemonstrationsDataset and PyG's LightningDataset wrapper.
-    """
-    batch_size: PositiveInt = Field(
-        default     = 256,
-        ge          = 16,
-        description = (
-            "Number of graph snapshots per training batch. Each snapshot contains "
-            "the full flock state at a single timestep. Larger batches improve "
-            "gradient stability but require more memory."
-        )
-    )
-    frames_per_episode: PositiveInt = Field(
-        default     = 1000,
-        description = (
-            "Number of timesteps per demonstration episode. Longer episodes "
-            "capture extended temporal dependencies in flocking behavior."
-        )
-    )
-    total_frames: PositiveInt = Field(
-        default     = 200_000,
-        description = (
-            "Total demonstration frames to generate across all scenarios. "
-            "Determines the size of the offline dataset for training."
-        )
-    )
-    sample_url: str = Field(
-        default     = (
-            "https://huggingface.co/datasets/Jybbs/sfire-samples/"
-            "resolve/main/samples.tar.gz"
-        ),
-        description = (
-            "URL for downloading sample WRF-SFIRE dataset when no local data exists. "
-            "Points to a curated 1.5GB sample containing moderate intensity scenarios."
-        )
-    )
-    train_split: float = Field(
-        default     = 0.8,
-        ge          = 0.5,
-        le          = 0.95,
-        description = (
-            "Fraction of data reserved for training, with remainder for validation. "
-            "Split occurs randomly across all timesteps to ensure diverse validation."
-        )
-    )
-
-
 class FlockModel(BaseModel, extra="forbid"):
     """
     Unified configuration for the thermal drone flock.
@@ -226,6 +175,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Multiplicative factor λ_thermal adjusting thermal avoidance strength "
             "relative to murmuration forces, balancing safety versus cohesive behavior."
+        )
+    )
+    total_frames: PositiveInt = Field(
+        default     = 200_000,
+        description = (
+            "Total demonstration frames to generate across all scenarios. "
+            "Determines the size of the offline dataset for expert trajectory collection."
         )
     )
     velocity_noise_scale: PositiveFloat = Field(
