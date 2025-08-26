@@ -608,8 +608,6 @@ class TrainCommand:
                                 f"  - {'.'.join(str(x) for x in error['loc'])}: "
                                 f"{error['msg']}"
                             )
-                    self.ui.console.print("\n[DEBUG] Full stack trace:")
-                    self.ui.console.print(format_exc())
 
                 case ValidationError():
                     self.ui.print_message("Configuration validation failed:", "error")

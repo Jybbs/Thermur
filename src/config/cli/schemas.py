@@ -25,7 +25,7 @@ class DisplayModel(BaseModel, extra="forbid"):
             },
             {
                 "desc" : "Monitor training progress and resources",
-                "icon" : "✨",
+                "icon" : "🎨",
                 "name" : "monitor",
             },
             {
@@ -172,8 +172,8 @@ class DisplayModel(BaseModel, extra="forbid"):
             'memory'   : '💾 Memory',
             'platform' : '🖥️  Platform',
             'python'   : '🐍 Python',
+            'torch'    : '✨ PyTorch',
             'thermur'  : '🔥 Thermur',
-            'torch'    : '⚡ PyTorch',
         },
         description = "Display names with emoji icons for system components shown in info command."
     )
@@ -196,7 +196,7 @@ class DisplayModel(BaseModel, extra="forbid"):
         default = [
             ("datamodule", "_system.datamodule", "📦 Data Module"),
             ("policy",     "_system.policy",     "🧠 Learning Policy"),
-            ("trainer",    "_system.trainer",    "⚡ Lightning Trainer"),
+            ("trainer",    "_system.trainer",    "🌩️  Lightning Trainer"),
         ],
         description = (
             "Component initialization tuples containing configuration key, hydra path, "

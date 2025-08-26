@@ -68,7 +68,7 @@ class DemonstrationsDataset(InMemoryDataset):
         self.config_hash        = self._compute_hash()
         
         super().__init__("data")
-        self.data, self.slices = th.load(self.processed_paths[0])
+        self.load(self.processed_paths[0])
     
     def _compute_hash(self) -> str:
         """
@@ -78,13 +78,15 @@ class DemonstrationsDataset(InMemoryDataset):
         adds WRF file checksums, then uses JSON serialization with sorted
         keys to ensure deterministic output before hashing.
         """
-        container = {
-            "controller"    : OmegaConf.to_container(self.controller,  resolve=True),
-            "environment"   : OmegaConf.to_container(self.environment, resolve=True),
-            "wrf_checksums" : self._compute_wrf_checksums()
-        }
-        
-        serialized = dumps(container, sort_keys=True)
+        serialized = dumps(
+            {
+                "controller"  : OmegaConf.to_container(self.controller,  resolve=True),
+                "environment" : OmegaConf.to_container(self.environment, resolve=True),
+                "checksums"   : self._compute_wrf_checksums()
+            },
+            default   = lambda o: o.model_dump(),
+            sort_keys = True
+        )
         return sha256(serialized.encode()).hexdigest()[:16]
     
     def _compute_wrf_checksums(self) -> dict[str, str]:
@@ -175,13 +177,6 @@ class DemonstrationsDataset(InMemoryDataset):
             ui                 = ui
         )
         
-        if not Path(dataset.processed_paths[0]).exists():
-            ui.print_message(
-                "Generating expert demonstrations for the first time. "
-                "This will be cached for future runs.",
-                "info"
-            )
-        
         train_size = int(len(dataset) * train_split)
         indices    = th.randperm(len(dataset))
         
@@ -271,14 +266,14 @@ class DemonstrationsDataset(InMemoryDataset):
                 progress.update(task, advance=frames_per_ep)
         
         self.ui.print_message("Saving demonstrations to cache...", "info")
-        th.save(self.collate(data_list), self.processed_paths[0])
+        self.save(data_list, self.processed_paths[0])
     
     @property
     def processed_file_names(self):
         """
         Dynamic filename based on config hash for automatic cache invalidation.
         """
-        return [f"{self.config_hash}.pt"]
+        return [f"{self.config_hash}/data.pt"]
     
     @property
     def raw_file_names(self):

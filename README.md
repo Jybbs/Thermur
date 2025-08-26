@@ -103,7 +103,7 @@ flowchart TB
         H -.-> C
     end
     
-    subgraph Monitor["🪄 <b>Monitoring</b>"]
+    subgraph Monitor["🎨 <b>Monitoring</b>"]
         I["<b>Metrics:</b> χ ≥ 5, λ₂, SSIM"]
         J["<b>WandB Logger</b>"]
         K["<b>Live Dashboard</b>"]
