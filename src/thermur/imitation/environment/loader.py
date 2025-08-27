@@ -491,7 +491,7 @@ class WRFLoader:
         
         return self._add_domain_noise(wind_values, self.wind_noise_std)
     
-    def reset(self, seed: int | None = None) -> None:
+    def reset(self, seed: int | None = None):
         """
         Reset WRF data source, optionally selecting a new scenario.
         

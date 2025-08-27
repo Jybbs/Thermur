@@ -479,10 +479,15 @@ class MurmurationController(th.nn.Module):
         
         Returns:
             List of PyG Data objects, one per timestep, containing:
-                - edge_index : Topological connectivity [2, E]
-                - timestep   : Temporal index
-                - x          : Node features  [N, 13]
-                - y          : Expert actions [N, 3]
+                - action      : Expert control actions     [N, 3]
+                - edge_index  : Topological connectivity   [2, E]
+                - gradient    : Temperature gradient       [N, 3]
+                - position    : Agent positions            [N, 3]
+                - temperature : Temperature values         [N, 1]
+                - timestep    : Temporal index
+                - velocity    : Agent velocities           [N, 3]
+                - wind        : Wind field                 [N, 3]
+                - x           : Concatenated node features [N, 13]
         """
         self.alert_states_memory.clear()
         state      = generator.reset()
@@ -504,10 +509,15 @@ class MurmurationController(th.nn.Module):
             
             trajectory.append(
                 Data(
-                    edge_index = state.edge_index,
-                    timestep   = t,
-                    x          = features,
-                    y          = action
+                    action      = action,
+                    edge_index  = state.edge_index,
+                    gradient    = state.gradient,
+                    position    = state.position,
+                    temperature = state.temperature,
+                    timestep    = t,
+                    velocity    = state.velocity,
+                    wind        = state.wind,
+                    x           = features
                 )
             )
             

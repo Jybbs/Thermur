@@ -69,6 +69,7 @@ class DemonstrationsDataset(InMemoryDataset):
         
         super().__init__("data")
         self.load(self.processed_paths[0])
+        self._make_picklable()
     
     def _compute_hash(self) -> str:
         """
@@ -133,6 +134,23 @@ class DemonstrationsDataset(InMemoryDataset):
             file.relative_to(raw_dir).as_posix()
             for file in raw_dir.rglob("*")
             if file.is_file() and is_netcdf(file)
+        ]
+    
+    def _make_picklable(self):
+        """
+        Remove unpicklable attributes after successful data load.
+        
+        Removes known unpicklable types by checking class names.
+        This ensures the dataset can be used with multiprocessing after
+        cache loading, while preserving all picklable configuration.
+        """
+        [
+            delattr(self, attr) for attr in list(self.__dict__)
+            if type(getattr(self, attr)).__name__ in 
+            {
+                'DictConfig', 
+                'MurmurationController', 'ThermurUI', 'TrajectoryGenerator'
+            }
         ]
     
     @classmethod

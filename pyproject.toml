@@ -10,8 +10,7 @@ authors         = [{ name = "James Parkington", email = "pongs.acreage.0o@icloud
 readme          = "README.md"
 requires-python = ">=3.13"
 license         = { text = "MIT" }
-dependencies    = [ 
-    "gymnasium",
+dependencies    = [
     "hydra-zen",
     "lightning",
     "netcdf4",
