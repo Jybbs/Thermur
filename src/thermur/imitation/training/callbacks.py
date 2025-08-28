@@ -74,13 +74,17 @@ class MonitoringCallback(Callback):
             batch_idx : Index of the current batch within the epoch
         """
         if self.collector:
-
             if not hasattr(self, '_metrics_synced'):
-                for name in ['train_evaluation', 'val_evaluation', 'train_imitation', 'val_imitation']:
-                    metrics = getattr(self.collector, name)
-                    setattr(self.collector, name, metrics.to(pl_module.device))
+                for name in ['train_metrics', 'val_metrics']:
+                    metrics = getattr(self.collector, name, None)
+                    if metrics is not None:
+                        setattr(self.collector, name, metrics.to(pl_module.device))
                 self._metrics_synced = True
-            self.collector.update_evaluation_metrics(batch,  True)
+            
+            self.collector.update_metrics(
+                batch       = batch,
+                is_training = True
+            )
 
     def on_train_epoch_end(
         self,
@@ -122,7 +126,10 @@ class MonitoringCallback(Callback):
             dataloader_idx : Index of the dataloader for multi-dataloader setups
         """
         if self.collector:
-            self.collector.update_evaluation_metrics(batch, False)
+            self.collector.update_metrics(
+                batch       = batch,
+                is_training = False
+            )
 
     def on_validation_epoch_end(
         self,
