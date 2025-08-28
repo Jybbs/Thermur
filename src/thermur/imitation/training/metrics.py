@@ -1261,7 +1261,6 @@ class MetricsCollector(th.nn.Module):
         self.train_imitation = create_imitation_metrics()
         self.val_imitation   = create_imitation_metrics()
     
-
     def log_all_metrics(
         self,
         is_training : bool,

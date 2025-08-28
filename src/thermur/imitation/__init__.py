@@ -6,9 +6,9 @@ imitation learning of murmuration dynamics. The pipeline uses PyTorch Geometric
 for efficient graph-based learning from offline trajectories.
 
 Key components:
-- controller/    : Expert murmuration controller with topological interactions
-- environment/   : Trajectory generation and WRF environmental data loading  
-- training/      : PyTorch Lightning modules for behavioral cloning
+- controller/  : Expert murmuration controller with topological interactions
+- environment/ : Trajectory generation and WRF environmental data loading  
+- training/    : PyTorch Lightning modules for behavioral cloning
 
 The training process:
 1. Generate offline trajectories using the expert controller
