@@ -74,6 +74,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "collector": builds(
         MetricsCollector,
+        agent_count             = "${controller.flock.agent_count}",
         bounds_max              = "${environment.physics.bounds_max}",
         gravity                 = "${environment.physics.gravity}",
         metrics                 = "${training.metrics}",
