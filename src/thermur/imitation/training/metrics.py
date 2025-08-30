@@ -940,8 +940,6 @@ class MetricsFactory:
     
     def create_validation_metrics(self) -> MetricCollection:
         """
-        Create validation metric collection.
-        
         Uses clone() to create a separate set of metrics for validation.
         
         Returns:
