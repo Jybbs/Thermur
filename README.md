@@ -357,9 +357,9 @@ expert = MurmurationController(
         velocity_noise_scale  = 0.2    # Active matter noise
     ),
     safety = SafetyModel(
-        max_temperature = 475.0,
-        threat_ratio    = 0.7,
-        cbf_alpha       = 2.5
+        cbf_alpha          = 2.5,
+        max_temperature    = 475.0,
+        threat_onset_ratio = 0.7
     )
 )
 ```

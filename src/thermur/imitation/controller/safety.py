@@ -12,7 +12,6 @@ from typing  import TYPE_CHECKING
 
 import torch as th
 
-
 if TYPE_CHECKING:
     from config.imitation.controller import FlockModel, SafetyModel
     from torch                       import Tensor

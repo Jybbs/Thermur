@@ -293,6 +293,20 @@ class MetricsModel(BaseModel, extra="forbid"):
             "in natural murmurations, per Cavagna et al. (2010)."
         )
     )
+    epsilon: PositiveFloat = Field(
+        default     = 1e-6,
+        description = (
+            "Small positive constant for numerical stability in division operations "
+            "and distance calculations to prevent division by zero."
+        )
+    )
+    fiedler_shift: PositiveFloat = Field(
+        default     = 0.001,
+        description = (
+            "Diagonal shift λ for computing Fiedler eigenvalue of graph Laplacian "
+            "through power iteration, ensures positive definiteness."
+        )
+    )
     info_propagation_max_speed: PositiveFloat = Field(
         default     = 45.0,
         description = (
@@ -342,6 +356,13 @@ class MetricsModel(BaseModel, extra="forbid"):
             "typically 1.5 for quadrotors based on momentum theory analysis."
         )
     )
+    power_iterations: PositiveInt = Field(
+        default     = 30,
+        description = (
+            "Number of power method iterations for approximating second smallest "
+            "eigenvalue (Fiedler value) of the graph Laplacian matrix."
+        )
+    )
     profiler: bool | Literal["simple", "advanced", "pytorch"] = Field(
         default     = False,
         description = (
@@ -362,5 +383,12 @@ class MetricsModel(BaseModel, extra="forbid"):
         description = (
             "Minimum expected susceptibility χ = N·Var[Φ] for maintaining critical "
             "state dynamics, lower values indicate insufficient system responsiveness."
+        )
+    )
+    velocity_threshold: PositiveFloat = Field(
+        default     = 1e-3,
+        description = (
+            "Minimum velocity magnitude in m/s below which agents are considered "
+            "stationary for orientation wave and heading computations."
         )
     )

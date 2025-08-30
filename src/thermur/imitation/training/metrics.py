@@ -1,92 +1,66 @@
 """
-Unified metrics collection for imitation learning training and evaluation.
+Unified metrics for imitation learning training and evaluation.
 
-This module provides a centralized MetricsCollector that manages all metrics
-for the training pipeline, including imitation learning losses, core evaluation
-metrics, and runtime performance tracking. The collector integrates seamlessly
-with PyTorch Lightning's logging system and Weights & Biases.
+This module provides TorchMetrics-based metrics that work with PyTorch 
+Geometric's batch format where features are flattened as [B*N, F] tensors 
+(B=batch_size, N=agents, F=features). The BaseMetric base class extends
+MeanMetric to provide automatic averaging and PyG batch utilities.
+
+All metrics integrate seamlessly with PyTorch Lightning's logging system
+and can be used directly in LightningModules without a separate collector.
 """
 from __future__           import annotations
 from collections          import Counter
 from itertools            import pairwise
 from torch_geometric.data import Batch
-from torchmetrics         import MeanAbsoluteError, MeanSquaredError
+from torchmetrics         import MeanAbsoluteError, MeanMetric, MeanSquaredError
 from torchmetrics         import Metric, MetricCollection, R2Score
 from typing               import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config.imitation.controller import MurmurationModel, SafetyModel
-    from config.imitation.training   import MetricsModel
-    from config.types                import StepMetrics
-    from pytorch_lightning           import LightningModule
-    from torch                       import Tensor
+    from config.imitation.controller  import MurmurationModel, SafetyModel
+    from config.imitation.environment import EnvironmentModel
+    from config.imitation.training    import MetricsModel
+    from config.types                 import StepMetrics
+    from pytorch_lightning            import LightningModule
+    from torch                        import Tensor
 
 import torch as th
 
 
-class AveragingMetric(Metric):
+class BaseMetric(MeanMetric):
     """
-    Base class for metrics that compute running averages.
-
-    Provides common functionality for all averaging metrics including:
-    - State management (sum/count) for distributed training
-    - PyG batch operations (reshaping, batch size extraction)
-    - Common configuration storage (agent_count, mmm, metrics, etc.)
-    - Helper methods for tensor operations
+    Base class extending MeanMetric with PyG batch support.
+    
+    Provides automatic averaging from MeanMetric and PyG batch reshaping helpers.
+    Metrics needing state history should use add_state() themselves.
     """
-    agent_count : int | None
-    count       : Tensor
-    sum         : Tensor
 
-    def __init__(
-        self,
-        agent_count : int | None = None,
-        gravity     : float | None = None,
-        metrics     : MetricsModel | None = None,
-        mmm         : MurmurationModel | None = None,
-        safety      : SafetyModel | None = None,
-        **kwargs
-    ):
+    def __init__(self, agent_count: int, **kwargs):
         """
-        Initialize state variables and common configuration.
-
-        Creates sum/count states for averaging and stores common configs
-        that child metrics need. Child classes can access any of these
-        via self attributes.
+        Initialize the base metric.
         
         Args:
-            agent_count : Number of agents in flock for tensor reshaping
-            gravity     : Gravitational acceleration for physics calculations
-            metrics     : Metrics configuration model
-            mmm         : Murmuration dynamics configuration  
-            safety      : Safety configuration with thresholds
-            **kwargs    : Additional parameters for child classes
+            agent_count : Number of agents for reshaping
+            **kwargs    : Additional config passed to child classes
         """
-        super().__init__()
+        super().__init__(nan_strategy='ignore')
         self.agent_count = agent_count
-        self.gravity     = gravity
-        self.metrics     = metrics
-        self.mmm         = mmm
-        self.safety      = safety
         
-        # Store any additional kwargs for child classes
-        for key, value in kwargs.items():
+        for key, value in sorted(kwargs.items()):
             setattr(self, key, value)
-        
-        self.add_state("count", th.tensor(0),   "sum")
-        self.add_state("sum",   th.tensor(0.0), "sum")
     
     def _get_batch_info(self, batch: Batch) -> tuple[int, int]:
         """
         Extract batch size and agent count from PyG batch.
         
         Args:
-            batch : PyG Batch object
+            batch: PyG Batch object
             
         Returns:
             Tuple of (batch_size, agent_count)
         """
-        batch_size = getattr(batch, 'num_graphs', 1)
+        batch_size  = getattr(batch, 'num_graphs', 1)
         agent_count = self.agent_count or (
             batch["position"].shape[0] // batch_size 
             if "position" in batch else None
@@ -95,8 +69,8 @@ class AveragingMetric(Metric):
     
     def _reshape_features(
         self, 
-        batch      : Batch,
-        *features  : str
+        batch     : Batch,
+        *features : str
     ) -> tuple[Tensor, ...]:
         """
         Reshape flattened PyG features to [B, N, F] format.
@@ -113,23 +87,11 @@ class AveragingMetric(Metric):
         return tuple(
             batch[feat].view(batch_size, agent_count, -1)
             for feat in features
-            if feat in batch
-        )
-    
-    def compute(self) -> Tensor:
-        """
-        Compute the average of accumulated values.
-
-        Returns the mean of all values accumulated via the update method,
-        or zero if no values have been recorded yet.
-        """
-        return (
-            self.sum / self.count if self.count > 0 
-            else th.zeros_like(self.sum)
+            if  feat in batch
         )
 
 
-class CohesionMetric(AveragingMetric):
+class FiedlerValueMetric(BaseMetric):
     """
     Measure graph connectivity via the Fiedler value λ₂.
 
@@ -144,24 +106,15 @@ class CohesionMetric(AveragingMetric):
     where D is the degree matrix and A is the adjacency matrix.
     
     Expected values:
-        - Disconnected     : λ₂ = 0
-        - Weakly connected : λ₂ ∈ (0, 0.1]
-        - Well connected   : λ₂ ∈ (0.1, 0.5]
-        - Strongly connected: λ₂ > 0.5
+        - Disconnected       : λ₂ = 0
+        - Weakly connected   : λ₂ ∈ (0, 0.1]
+        - Well connected     : λ₂ ∈ (0.1, 0.5]
+        - Strongly connected : λ₂ > 0.5
     """
-    
-    def __init__(self, **kwargs):
-        """
-        Initialize with flock configuration.
-        
-        All configuration passed from MetricsCollector via kwargs.
-        """
-        super().__init__(**kwargs)
 
     def _compute_fiedler_power_iteration(
         self,
-        laplacian  : Tensor,
-        iterations : int = 30
+        laplacian : Tensor
     ) -> Tensor:
         """
         Compute Fiedler value using power iteration method.
@@ -170,8 +123,7 @@ class CohesionMetric(AveragingMetric):
         Uses inverse power iteration with shift to find second smallest eigenvalue.
         
         Args:
-            laplacian  : Graph Laplacian matrix [n, n]
-            iterations : Number of power iterations
+            laplacian: Graph Laplacian matrix [n, n]
             
         Returns:
             Approximation of second smallest eigenvalue (Fiedler value)
@@ -186,10 +138,9 @@ class CohesionMetric(AveragingMetric):
         orthogonal_vector = random_vector - random_vector.mean()
         v                 = orthogonal_vector / orthogonal_vector.norm()
         
-        shift = 0.001
-        shifted_laplacian = laplacian + shift * th.eye(n, device=device)
+        shifted_laplacian = laplacian + self.fiedler_shift * th.eye(n, device=device)
         
-        for _ in range(iterations):
+        for _ in range(self.power_iterations):
             v_new          = th.linalg.solve(shifted_laplacian, v)
             orthogonalized = v_new - v_new.mean()
             
@@ -246,8 +197,7 @@ class CohesionMetric(AveragingMetric):
             batch : PyG Batch containing edge_index [2, E] in COO format
         """
         if not (edge_index := batch.get("edge_index")) or edge_index.numel() == 0:
-            self.sum   += 0.0
-            self.count += 1
+            super().update(0.0)
             return
 
         if edge_index.dim() == 3:
@@ -261,64 +211,17 @@ class CohesionMetric(AveragingMetric):
                     )
                     fiedler_values[i] = self._compute_fiedler_power_iteration(laplacian)
             
-            self.sum   += fiedler_values.sum()
-            self.count += batch_size
+            for value in fiedler_values:
+                super().update(value)
             return
 
         laplacian = self._compute_graph_laplacian(edge_index, self.agent_count)
         fiedler_value = self._compute_fiedler_power_iteration(laplacian)
         
-        self.sum   += fiedler_value
-        self.count += 1
+        super().update(fiedler_value)
 
 
-class EnergyConsumptionMetric(AveragingMetric):
-    """
-    Estimates average power consumption based on control inputs.
-
-    Uses a simplified quadrotor power model from Hoffmann et al. (2011):
-        P ∝ ||u - g||^k
-
-    where:
-        - u : control acceleration vector (m/s²)
-        - g : gravity vector pointing downward
-        - k : power exponent (typically 1.5 for quadrotors)
-    """
-    gravity: Tensor
-
-    def __init__(
-        self,
-        gravity : float,
-        metrics : MetricsModel
-    ):
-        """
-        Initialize the energy metric with physics parameters.
-
-        Args:
-            gravity : Gravitational acceleration (m/s²)
-            metrics : Metrics configuration containing power exponent k
-        """
-        super().__init__(gravity=gravity, metrics=metrics)
-        self.register_buffer("gravity_tensor", th.tensor(gravity))
-        self.power_exponent = metrics.power_exponent
-
-    def update(self, u_safe: Tensor):
-        """
-        Computes instantaneous power from thrust vector magnitude.
-
-        Args:
-            u_safe : Safety-filtered control actions [N, 3] (m/s²)
-        """
-        gravity_vector         = th.zeros_like(u_safe)
-        gravity_vector[..., 2] = -self.gravity_tensor
-        thrust_magnitude       = (u_safe - gravity_vector).norm(dim=-1)
-
-        power_sum = thrust_magnitude.pow(self.power_exponent).sum()
-        self.sum   += power_sum
-        self.count += u_safe.shape[0]
-
-
-class HamiltonianEnergyMetric(AveragingMetric):
+class HamiltonianEnergyMetric(BaseMetric):
     """
     Track Hamiltonian energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per timestep.
 
@@ -336,23 +239,6 @@ class HamiltonianEnergyMetric(AveragingMetric):
     (alert states) increase disorder, creating rich phase transitions.
     """
 
-    def __init__(
-        self,
-        agent_count : int,
-        mmm         : MurmurationModel
-    ):
-        """
-        Initialize with murmuration model parameters.
-
-        Args:
-            agent_count : Number of agents for tensor reshaping
-            mmm         : Murmuration model with coupling parameters
-        """
-        super().__init__(agent_count=agent_count, mmm=mmm)
-        self.j_base                = mmm.j_base
-        self.coupling_decay        = mmm.coupling_decay
-        self.alert_coupling_factor = mmm.alert_coupling_factor
-
     def update(self, batch: Batch):
         """
         Compute Hamiltonian energy with vectorized operations.
@@ -364,17 +250,17 @@ class HamiltonianEnergyMetric(AveragingMetric):
             batch: PyG Batch with velocity, position, optional alert_states
         """
         batch_size, _ = self._get_batch_info(batch)
-        velocities, = self._reshape_features(batch, "velocity")
-        spins = th.nn.functional.normalize(velocities, dim=-1)
+        velocities,   = self._reshape_features(batch, "velocity")
+        spins         = th.nn.functional.normalize(velocities, dim=-1)
         
         if "topo_distances" in batch and "edge_source" in batch:
             coupling = th.zeros(
                 batch_size, self.agent_count, self.agent_count, 
-                device=spins.device
+                device = spins.device
             )
             
             if (n_edges := batch.get("edge_source", th.empty(0)).shape[-1]) > 0:
-                batch_idx = (
+                idx = (
                     th.arange(batch_size, device=spins.device)
                     .unsqueeze(1).expand(-1, n_edges)
                 )
@@ -382,18 +268,18 @@ class HamiltonianEnergyMetric(AveragingMetric):
                 alert_factor = (
                     self.alert_coupling_factor 
                     if "alert_states" in batch and (
-                        batch["alert_states"][batch_idx, batch["edge_source"]] > 0.5
+                        batch["alert_states"][idx, batch["edge_source"]] > 0.5
                     ).any() else 1.0
                 )
                 
                 j_edges = self.j_base * alert_factor * th.exp(
                     -batch["topo_distances"][
-                        batch_idx, batch["edge_source"], batch["edge_target"]
+                        idx, batch["edge_source"], batch["edge_target"]
                     ] / self.coupling_decay
                 )
                 
-                coupling[batch_idx, batch["edge_source"], batch["edge_target"]] = j_edges
-                coupling[batch_idx, batch["edge_target"], batch["edge_source"]] = j_edges
+                coupling[idx, batch["edge_source"], batch["edge_target"]] = j_edges
+                coupling[idx, batch["edge_target"], batch["edge_source"]] = j_edges
         else:
             positions, = self._reshape_features(batch, "position")
             distances = th.cdist(positions, positions)
@@ -402,11 +288,11 @@ class HamiltonianEnergyMetric(AveragingMetric):
 
         energies = -(coupling * th.bmm(spins, spins.mT)).sum(dim=(1, 2)) / 2
         
-        self.sum   += energies.sum()
-        self.count += batch_size
+        for energy in energies:
+            super().update(energy)
 
 
-class NeighborStabilityMetric(AveragingMetric):
+class NeighborStabilityMetric(BaseMetric):
     """
     Quantify topological stability of the communication graph.
     
@@ -428,15 +314,14 @@ class NeighborStabilityMetric(AveragingMetric):
         - Murmuration      : Δ_topo ∈ [0.4, 0.8]
     """
     
-    def __init__(self, agent_count : int):
+    def __init__(self, **kwargs):
         """
-        Initialize with flock configuration.
+        Initialize neighbor stability metric.
         
-        Args:
-            agent_count: Number of agents for edge normalization
+        Stores last edges for computing Jaccard distance.
         """
-        super().__init__(agent_count=agent_count)
-        self.last_edges = None
+        super().__init__(**kwargs)
+        self.add_state("last_edges", None, None, persistent=False)
     
     def update(self, batch: Batch):
         """
@@ -457,19 +342,18 @@ class NeighborStabilityMetric(AveragingMetric):
         if self.last_edges is not None and self.last_edges.numel() > 0:
             unique_edges, counts = th.unique(
                 th.cat([current_edges, self.last_edges]), 
-                dim=0, 
-                return_counts=True
+                dim           = 0, 
+                return_counts = True
             )
             
             if union_size := unique_edges.shape[0]:
                 jaccard_distance = 1.0 - (counts == 2).sum().item() / union_size
-                self.sum   += jaccard_distance
-                self.count += 1
+                super().update(jaccard_distance)
         
         self.last_edges = current_edges
 
 
-class OrientationCoherenceMetric(AveragingMetric):
+class OrientationCoherenceMetric(BaseMetric):
     """
     Quantify directional alignment coherence via order parameter Φ.
     
@@ -492,16 +376,7 @@ class OrientationCoherenceMetric(AveragingMetric):
         - Coordinated turn  : Φ ∈ [0.5, 0.8], C ∈ [0.3, 0.6]
         - Aligned cruise    : Φ ∈ [0.8, 1.0], C ∈ [0.6, 1.0]
     """
-    
-    def __init__(self, agent_count : int):
-        """
-        Initialize with flock configuration.
-        
-        Args:
-            agent_count: Number of agents for tensor reshaping
-        """
-        super().__init__(agent_count=agent_count)
-    
+
     def update(self, batch: Batch):
         """
         Update metric with polarization measurement.
@@ -516,19 +391,19 @@ class OrientationCoherenceMetric(AveragingMetric):
             return
         
         batch_size, _ = self._get_batch_info(batch)
-        velocities, = self._reshape_features(batch, "velocity")
-        headings = th.nn.functional.normalize(velocities[:, :, :2], dim=-1)
+        velocities,   = self._reshape_features(batch, "velocity")
+        headings      = th.nn.functional.normalize(velocities[:, :, :2], dim=-1)
         
         alignment = th.bmm(headings, headings.mT)
         coherence = (
             alignment.sum(dim=(1, 2)) - batch_size * self.agent_count
         ) / (self.agent_count * (self.agent_count - 1))
         
-        self.sum   += coherence.sum()
-        self.count += batch_size
+        for c in coherence:
+            super().update(c)
 
 
-class OrientationWaveMetric(AveragingMetric):
+class OrientationWaveMetric(BaseMetric):
     """
     Detect traveling waves in the orientation field ∇θ(𝐫, t).
     
@@ -550,22 +425,7 @@ class OrientationWaveMetric(AveragingMetric):
         - Density wave     : W ∈ [0.15, 0.40] rad/m
         - Full murmuration : W ∈ [0.30, 0.60] rad/m
     """
-    
-    def __init__(
-        self,
-        agent_count : int,
-        mmm         : MurmurationModel
-    ):
-        """
-        Initialize with murmuration configuration.
-        
-        Args:
-            agent_count : Number of agents in flock
-            mmm         : Murmuration model with wave detection radius
-        """
-        super().__init__(agent_count=agent_count, mmm=mmm)
-        self.wave_radius = getattr(mmm, 'wave_radius', 10.0)
-    
+
     def update(self, batch: Batch):
         """
         Update metric with wave amplitude measurement.
@@ -592,14 +452,13 @@ class OrientationWaveMetric(AveragingMetric):
         )(headings.unsqueeze(-1) - headings.unsqueeze(-2))
         
         gradients = (
-            heading_diffs.abs() / distances.clamp_min(1e-6)
+            heading_diffs.abs() / distances.clamp_min(self.epsilon)
         ).masked_fill(~mask, 0)
         
-        self.sum   += gradients.sum(dim=(1, 2)).mean(dim=0)
-        self.count += batch_size
+        super().update(gradients.sum(dim=(1, 2)).mean(dim=0))
 
 
-class PerturbationResponseMetric(AveragingMetric):
+class PerturbationResponseMetric(BaseMetric):
     """
     Quantify collective response to thermal perturbations χ_thermal.
     
@@ -620,23 +479,16 @@ class PerturbationResponseMetric(AveragingMetric):
         - Critical regime      : χ ∈ [0.3, 0.7]
         - Strong amplification : χ ∈ [0.7, 1.5]
     """
-    
-    def __init__(
-        self, 
-        agent_count : int,
-        safety      : SafetyModel
-    ):
+
+    def __init__(self, **kwargs):
         """
-        Initialize with threat detection parameters.
+        Initialize perturbation response metric.
         
-        Args:
-            agent_count : Number of agents for normalization
-            safety      : Safety model with temperature thresholds
+        Stores last velocity for computing response ratios.
         """
-        super().__init__(agent_count=agent_count, safety=safety)
-        self.threat_threshold = safety.max_temperature
-        self.last_velocity   = None
-    
+        super().__init__(**kwargs)
+        self.add_state("last_velocity", None, None, persistent=False)
+
     def update(self, batch: Batch):
         """
         Update metric with threat response measurement.
@@ -654,21 +506,21 @@ class PerturbationResponseMetric(AveragingMetric):
             return
         
         if (
-            self.last_velocity is not None and 
-            velocity.shape == self.last_velocity.shape and
-            (threat_mask := temperature.squeeze(-1) > self.threat_threshold).any() and
-            (~threat_mask).any()
+            self.last_velocity is not None 
+            and velocity.shape == self.last_velocity.shape 
+            and (threat_mask := temperature.squeeze(-1) > self.max_temperature).any() 
+            and (~threat_mask).any()
         ):
             vel_changes = (velocity - self.last_velocity).norm(dim=-1)
             
-            if (threat_response := vel_changes[threat_mask].mean()) > 1e-6:
-                self.sum   += vel_changes[~threat_mask].mean() / threat_response
-                self.count += 1
+            if (threat_response := vel_changes[threat_mask].mean()) > self.epsilon:
+                non_threat_response = vel_changes[~threat_mask].mean()
+                super().update(non_threat_response / threat_response)
         
         self.last_velocity = velocity.detach().clone()
 
 
-class PowerComponentsMetric(Metric):
+class PowerComponents(BaseMetric):
     """
     Decompose power P = Σᵢ ||𝐮ᵢ||^k into physical flight components.
     
@@ -690,52 +542,18 @@ class PowerComponentsMetric(Metric):
         - Maneuvering : P_h ≈ 50%, P_f ≈ 20%, P_l ≈ 30%
         - Murmuration : P_h ≈ 45%, P_f ≈ 25%, P_l ≈ 30%
     """
-    
-    def __init__(
-        self,
-        agent_count : int,
-        gravity     : float,
-        metrics     : MetricsModel
-    ):
+
+    def __init__(self, **kwargs):
         """
-        Initialize with physics and power model parameters.
+        Initialize power components metric.
         
-        Args:
-            agent_count : Number of agents for normalization
-            gravity     : Gravitational acceleration [m/s²]
-            metrics     : Metrics config with power exponent k
+        Stores all config via BaseMetric and creates component metrics.
         """
-        super().__init__()
-        self.agent_count    = agent_count
-        self.gravity        = gravity
-        self.power_exponent = metrics.power_exponent
+        super().__init__(**kwargs)
         
-        self.add_state("count",         th.tensor(0),   "sum")
-        self.add_state("power_forward", th.tensor(0.0), "sum")
-        self.add_state("power_hover",   th.tensor(0.0), "sum")
-        self.add_state("power_lateral", th.tensor(0.0), "sum")
-    
-    def compute(self) -> dict[str, Tensor]:
-        """
-        Compute normalized power component averages.
-        
-        Returns:
-            Dictionary with hover, forward, and lateral power fractions
-        """
-        if self.count == 0:
-            zero = th.tensor(0.0)
-            return {
-                "power_forward" : zero,
-                "power_hover"   : zero,
-                "power_lateral" : zero,
-            }
-        
-        count = self.count.float()
-        return {
-            "power_forward" : self.power_forward / count,
-            "power_hover"   : self.power_hover   / count,
-            "power_lateral" : self.power_lateral / count,
-        }
+        self.forward = MeanMetric(nan_strategy='ignore')
+        self.hover   = MeanMetric(nan_strategy='ignore')
+        self.lateral = MeanMetric(nan_strategy='ignore')
     
     def update(self, batch: Batch):
         """
@@ -753,136 +571,55 @@ class PowerComponentsMetric(Metric):
         ):
             return
         
-        self.power_hover += (
-            u_control[:, 2] + self.gravity
-        ).abs().pow(self.power_exponent).sum()
+        hover_power = (u_control[:, 2] + self.gravity).abs().pow(self.power_exponent)
+        self.hover.update(hover_power)
         
-        if (mask := velocity.norm(dim=-1) > 1e-3).any():
+        mask = velocity.norm(dim=-1) > self.velocity_threshold
+        if mask.any():
             v_hat     = th.nn.functional.normalize(velocity[mask], dim=-1)
             u_masked  = u_control[mask]
             forward   = (u_masked * v_hat).sum(dim=-1).clamp_min(0)
             
-            self.power_forward += forward.pow(self.power_exponent).sum()
-            self.power_lateral += (
-                u_masked - forward.unsqueeze(-1) * v_hat
-            ).norm(dim=-1).pow(self.power_exponent).sum()
-        
-        self.count += u_control.shape[0]
-
-
-class StateMetrics(Metric):
-    """
-    Tracks average physical state properties of the flock.
-    
-    Monitors key physical quantities including velocity magnitude |𝐯|,
-    temperature θ, and acceleration magnitude |𝐚| across all agents.
-    These reveal whether the learned policy maintains realistic flight
-    dynamics matching both the expert controller and empirical observations
-    from Cavagna et al. (2010) and Attanasi et al. (2014).
-    
-    The metrics track:
-        - |𝐯|_avg : Mean velocity magnitude, expected 10-20 m/s in cruise
-                    (starlings typically fly at 15 m/s per Cavagna et al.)
-        - θ_avg   : Mean sensed temperature across flock, critical for
-                    thermal safety constraints
-        - |𝐚|_avg : Mean acceleration magnitude, indicating control effort
-                    and energy expenditure (typical range 5-15 m/s²)
-    
-    These quantities help diagnose whether the learned policy captures the
-    active matter dynamics of self-propelled particles maintaining constant
-    speed while adapting to environmental gradients.
-    """
-    acceleration_sum : Tensor
-    count            : Tensor
-    temperature_sum  : Tensor
-    velocity_sum     : Tensor
-    
-    def __init__(self):
-        """
-        Initialize state tracking for physical quantities.
-        """
-        super().__init__()
-        self.add_state("acceleration_sum", th.tensor(0.0), "sum")
-        self.add_state("count",            th.tensor(0),   "sum")
-        self.add_state("temperature_sum",  th.tensor(0.0), "sum")
-        self.add_state("velocity_sum",     th.tensor(0.0), "sum")
-    
-    def _flatten_agent_batch(self, tensor: Tensor) -> tuple[Tensor, int]:
-        """
-        Flatten hierarchical agent batches for statistical computation.
-        
-        Transforms multi-agent batch tensors from [batch, agents, features]
-        format to [batch*agents, features] format for computing per-agent
-        statistics across the entire flock.
-        
-        Args:
-            tensor: Input with shape [batch, agents, features] for batched
-                    trajectories, [agents, features] for single timesteps,
-                    or [features] for single agents
-        
-        Returns:
-            Tuple of (flattened_tensor, n_samples) where flattened has shape
-            [total_samples, features] and n_samples counts individual agents
-        """
-        if tensor.dim() == 3:
-            shape = tensor.shape
-            return tensor.reshape(-1, shape[2]), shape[0] * shape[1]
-        
-        elif tensor.dim() == 2:
-            return tensor, tensor.shape[0]
-        
+            forward_power = forward.pow(self.power_exponent)
+            lateral_power = (
+                u_masked - forward.unsqueeze(-1) * 
+                v_hat
+            ).norm(dim=-1).pow(self.power_exponent)
+            
+            full_forward       = th.zeros_like(hover_power)
+            full_lateral       = th.zeros_like(hover_power)
+            full_forward[mask] = forward_power
+            full_lateral[mask] = lateral_power
+            
+            self.forward.update(full_forward)
+            self.lateral.update(full_lateral)
         else:
-            return tensor.unsqueeze(0), 1
+            self.forward.update(th.tensor(0.0))
+            self.lateral.update(th.tensor(0.0))
     
     def compute(self) -> dict[str, Tensor]:
         """
-        Compute averages from accumulated sums.
+        Compute power component fractions.
         
         Returns:
-            Dictionary containing avg_acceleration, avg_temperature, avg_velocity
+            Dictionary with hover, forward, and lateral power components
         """
-        if self.count == 0:
-            zero = th.tensor(0.0)
-            return {
-                "avg_acceleration" : zero,
-                "avg_temperature"  : zero,
-                "avg_velocity"     : zero,
-            }
-        
-        count = self.count.float()
         return {
-            "avg_acceleration" : self.acceleration_sum / count,
-            "avg_temperature"  : self.temperature_sum  / count,
-            "avg_velocity"     : self.velocity_sum     / count,
+            "power_forward" : self.forward.compute(),
+            "power_hover"   : self.hover.compute(),
+            "power_lateral" : self.lateral.compute(),
         }
     
-    def update(self, batch: Batch):
+    def reset(self):
         """
-        Update running sums with batch statistics.
-        
-        Extracts physical quantities from the batch and accumulates their
-        magnitudes for computing running averages across all agents.
-        Only tracks states when control actions are present.
-        
-        Args:
-            batch: PyG Batch containing velocity, temperature, and optionally action
+        Reset all component metrics.
         """
-        if "action" not in batch:
-            return
-        
-        flattened_action, n_samples = self._flatten_agent_batch(batch["action"])
-        self.acceleration_sum      += flattened_action.norm(dim=-1).sum()
-        self.count                 += n_samples
-        
-        if "temperature" in batch and batch["temperature"].numel() > 0:
-            self.temperature_sum += batch["temperature"].sum()
-        
-        if "velocity" in batch:
-            flattened_velocity, _ = self._flatten_agent_batch(batch["velocity"])
-            self.velocity_sum    += flattened_velocity.norm(dim=-1).sum()
+        self.forward.reset()
+        self.hover.reset()
+        self.lateral.reset()
 
 
-class ScaleFreeCorrelationMetric(AveragingMetric):
+class ScaleFreeCorrelationMetric(BaseMetric):
     """
     Measure deviation from scale-free velocity correlations.
     
@@ -894,22 +631,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
 
     where γ ≈ 1/3 for natural murmurations (Cavagna et al. 2010).
     """
-    
-    def __init__(
-        self,
-        agent_count : int,
-        metrics     : MetricsModel
-    ):
-        """
-        Initialize with target correlation exponent.
-        
-        Args:
-            agent_count : Number of agents for tensor reshaping
-            metrics     : Metrics model with expected exponent γ
-        """
-        super().__init__(agent_count=agent_count, metrics=metrics)
-        self.target_exponent = self.metrics.correlation_exponent
-    
+
     def _compute_velocity_correlations(
         self,
         positions  : Tensor,
@@ -922,7 +644,7 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
         pairs of agents, where δ𝐯 = 𝐯 - ⟨𝐯⟩ are velocity fluctuations.
 
         Args:
-            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
+            positions  : Agent positions  𝐱 ∈ ℝ^(n×3)
             velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
 
         Returns:
@@ -1018,11 +740,88 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
                     bin_distances    = bin_data[:, 1]
                 )
                 
-                self.count += 1
-                self.sum   += abs(fitted_exponent - self.target_exponent)
+                super().update(abs(fitted_exponent - self.correlation_exponent))
 
 
-class SusceptibilityMetric(AveragingMetric):
+class States(BaseMetric):
+    """
+    Tracks average physical state properties of the flock.
+    
+    Monitors key physical quantities including velocity magnitude |𝐯|,
+    temperature θ, and acceleration magnitude |𝐚| across all agents.
+    These reveal whether the learned policy maintains realistic flight
+    dynamics matching both the expert controller and empirical observations
+    from Cavagna et al. (2010) and Attanasi et al. (2014).
+    
+    The metrics track:
+        - |𝐯|_avg : Mean velocity magnitude, expected 10-20 m/s in cruise
+                    (starlings typically fly at 15 m/s per Cavagna et al.)
+        - θ_avg   : Mean sensed temperature across flock, critical for
+                    thermal safety constraints
+        - |𝐚|_avg : Mean acceleration magnitude, indicating control effort
+                    and energy expenditure (typical range 5-15 m/s²)
+    
+    These quantities help diagnose whether the learned policy captures the
+    active matter dynamics of self-propelled particles maintaining constant
+    speed while adapting to environmental gradients.
+    """
+    def __init__(self, **kwargs):
+        """
+        Initialize state tracking for physical quantities.
+        
+        Composes multiple MeanMetrics for different state variables.
+        """
+        super().__init__(**kwargs)
+        self.acceleration = MeanMetric(nan_strategy='ignore')
+        self.temperature  = MeanMetric(nan_strategy='ignore')
+        self.velocity     = MeanMetric(nan_strategy='ignore')
+
+    def update(self, batch: Batch):
+        """
+        Update running sums with batch statistics.
+        
+        Extracts physical quantities from the batch and accumulates their
+        magnitudes for computing running averages across all agents.
+        Only tracks states when control actions are present.
+        
+        Args:
+            batch: PyG Batch containing velocity, temperature, and optionally action
+        """
+        if "action" not in batch:
+            return
+        
+        action = batch["action"]
+        self.acceleration.update(action.norm(dim=-1))
+        
+        if "temperature" in batch and batch["temperature"].numel() > 0:
+            self.temperature.update(batch["temperature"])
+        
+        if "velocity" in batch:
+            self.velocity.update(batch["velocity"].norm(dim=-1))
+    
+    def compute(self) -> dict[str, Tensor]:
+        """
+        Compute state averages.
+        
+        Returns:
+            Dictionary with average acceleration, temperature, and velocity
+        """
+        return {
+            "avg_acceleration" : self.acceleration.compute(),
+            "avg_temperature"  : self.temperature.compute(),
+            "avg_velocity"     : self.velocity.compute(),
+        }
+    
+    def reset(self):
+        """
+        Reset all state metrics.
+        """
+        self.acceleration.reset()
+        self.temperature.reset()
+        self.velocity.reset()
+
+
+class SusceptibilityMetric(BaseMetric):
     """
     Measures flock susceptibility to directional perturbations.
     
@@ -1049,23 +848,7 @@ class SusceptibilityMetric(AveragingMetric):
     instability. The critical regime χ ∈ [5, 15] balances individual
     freedom with collective coordination.
     """
-    
-    def __init__(
-        self,
-        agent_count : int,
-        metrics     : MetricsModel
-    ):
-        """
-        Initialize with susceptibility configuration.
-        
-        Args:
-            agent_count : Number of agents for tensor reshaping
-            metrics     : Metrics configuration with susceptibility range
-        """
-        super().__init__(agent_count=agent_count, metrics=metrics)
-        self.target_min = self.metrics.susceptibility_min
-        self.target_max = self.metrics.susceptibility_max
-    
+
     def update(self, batch: Batch):
         """
         Compute susceptibility from velocity fluctuations.
@@ -1077,315 +860,91 @@ class SusceptibilityMetric(AveragingMetric):
             return
         
         batch_size, _ = self._get_batch_info(batch)
-        velocity, = self._reshape_features(batch, "velocity")
-        spins      = th.nn.functional.normalize(velocity, dim=-1)
-        mean_spin  = spins.mean(dim=-2, keepdim=True)
+        velocity,     = self._reshape_features(batch, "velocity")
+        spins         = th.nn.functional.normalize(velocity, dim=-1)
+        mean_spin     = spins.mean(dim=-2, keepdim=True)
         
         polarizations    = (spins * mean_spin).sum(dim=-1)
         susceptibilities = self.agent_count * polarizations.var(dim=-1)
         
-        self.sum   += susceptibilities.sum()
-        self.count += susceptibilities.numel()
+        super().update(susceptibilities)
 
 
-class MetricsCollector(th.nn.Module):
+class MetricsFactory:
     """
-    Centralized metric collection and management for training and evaluation.
-
-    This class manages all TorchMetrics instances for the training pipeline,
-    working with PyG's flattened batch format where graphs are concatenated
-    as [B*N, F] tensors instead of hierarchical [B, N, F] format.
-
-    Integrates with PyTorch Lightning's logging system and Weights & Biases.
+    Factory for creating training and validation metric collections.
+    
+    Centralizes metric instantiation with proper configuration from domain
+    models. Creates both training and validation metrics with appropriate
+    prefixes for PyTorch Lightning integration.
     """
+    
     def __init__(
         self,
         agent_count : int,
-        bounds_max  : list[float],
-        gravity     : float,
+        environment : EnvironmentModel,
         metrics     : MetricsModel,
-        mmm         : MurmurationModel,
+        murmuration : MurmurationModel,
         safety      : SafetyModel
     ):
         """
-        Initialize metrics collector with configuration parameters.
-
-        Creates all metric instances for tracking imitation learning,
-        evaluation, and murmuration-specific measurements.
-
+        Initialize factory with configuration models.
+        
         Args:
             agent_count : Number of agents in the flock
-            bounds_max  : Maximum workspace bounds [x_max, y_max, z_max]
-            gravity     : Gravitational acceleration [m/s²]
-            metrics     : Metrics configuration model
-            mmm         : Murmuration dynamics configuration
-            safety      : Safety configuration with temperature thresholds
+            environment : Environment configuration for physics parameters
+            metrics     : Metrics configuration for thresholds and parameters
+            murmuration : Murmuration dynamics configuration
+            safety      : Safety configuration for temperature limits
         """
-        super().__init__()
-        self.agent_count = agent_count
-        self.bounds_max  = bounds_max
-        self.gravity     = gravity
-        self.metrics     = metrics
-        self.mmm         = mmm
-        self.safety      = safety
-
-        self._init_metrics()
-
-    def _compute_ready_metrics(
-        self, 
-        metrics: MetricCollection
-    ) -> dict[str, Tensor] | None:
-        """
-        Compute metrics that have received sufficient data.
-        
-        Returns computed metrics only when all have been properly updated.
-        This prevents warnings during sanity checks when compute() is called
-        before update() methods.
-        
-        Readiness criteria by metric type:
-        - Custom metrics (AveragingMetric, StateMetrics, etc.): count > 0
-        - R2Score: Requires at least 2 updates to compute correlation
-        - Standard metrics (MAE, MSE): At least 1 update required
-        - Unknown types: Check for _update_count attribute > 0
-        
-        Args:
-            metrics: Collection of metrics to potentially compute
-            
-        Returns:
-            Dictionary of computed values or None if any metric lacks data
-        """
-        readiness = Counter()
-        
-        for metric in metrics.values():
-            if isinstance(metric, (AveragingMetric, StateMetrics)):
-                is_ready = hasattr(metric, 'count') and metric.count > 0
-            elif isinstance(metric, R2Score):
-                is_ready = getattr(metric, '_update_count', 0) >= 2
-            elif isinstance(metric, (MeanAbsoluteError, MeanSquaredError)):
-                is_ready = getattr(metric, '_update_count', 0) > 0
-            else:
-                is_ready = getattr(metric, '_update_count', 0) > 0
-            
-            readiness[is_ready] += 1
-        
-        if readiness[True] == 0:
-            return None
-        
-        try:
-            computed = metrics.compute()
-            return {
-                k: v for k, v in computed.items()
-                if v is not None and not th.isnan(v).any()
-            }
-        except Exception:
-            return None
-
-    def _get_graph_view(
-        self,
-        feature    : Tensor,
-        batch_size : int | None = None
-    ) -> Tensor:
-        """
-        Convert flattened PyG tensor to [batch_size, n_agents, features].
-        
-        PyG provides flattened tensors where all graphs in a batch are
-        concatenated. This method reshapes them back to the standard
-        [batch, agents, features] format that many metrics expect, using
-        zero-cost view operations.
-        
-        Args:
-            feature    : Flattened tensor from PyG batch [B*N, F]
-            batch_size : Number of graphs in batch, inferred if None
-            
-        Returns:
-            Reshaped tensor [B, N, F] as a zero-cost view
-        """
-        return (
-            feature if feature.dim() == 3
-            else feature.view(
-                batch_size or feature.shape[0] // self.agent_count,
-                self.agent_count,
-                -1
-            )
-        )
-
-    def _get_metrics(self, is_training : bool) -> MetricCollection:
-        """
-        Get appropriate metrics collection for current phase.
-
-        Returns the unified metrics collection for either training or
-        validation phase.
-
-        Args:
-            is_training: Whether in training (True) or validation (False) phase
-
-        Returns:
-            MetricCollection for the specified phase
-        """
-        return self.train_metrics if is_training else self.val_metrics
-
-    def _init_metrics(self):
-        """
-        Initialize unified metrics collection for training and evaluation.
-        
-        Creates a single collection containing all metrics that are logged
-        step-wise during training. All metrics work with PyG's flattened
-        batch format where agent features are concatenated as [B*N, F].
-        
-        Metrics include:
-        - Regression        : MSE, RMSE, MAE, R² for velocity prediction
-        - Graph topology    : Fiedler value for cohesion, edge stability
-        - Emergent dynamics : Scale-free correlations, susceptibility
-        - Energy            : Hamiltonian energy, power component breakdown
-        - Murmuration       : Orientation coherence, density wave detection
-        - Threat response   : Perturbation propagation metrics
-        - Physical states   : Velocity, temperature, acceleration averages
-        """
-        cfg = {
-            'agent_count' : self.agent_count,
-            'gravity'     : self.gravity,
-            'metrics'     : self.metrics,
-            'mmm'         : self.mmm,
-            'safety'      : self.safety,
+        self.cfg = {
+            "agent_count"           : agent_count,
+            "alert_coupling_factor" : murmuration.alert_coupling_factor,
+            "correlation_exponent"  : metrics.correlation_exponent,
+            "coupling_decay"        : murmuration.coupling_decay,
+            "epsilon"               : metrics.epsilon,
+            "fiedler_shift"         : metrics.fiedler_shift,
+            "gravity"               : environment.physics.gravity,
+            "j_base"                : murmuration.j_base,
+            "max_temperature"       : safety.max_temperature,
+            "power_exponent"        : metrics.power_exponent,
+            "power_iterations"      : metrics.power_iterations,
+            "velocity_threshold"    : metrics.velocity_threshold,
         }
+    
+    def create_training_metrics(self) -> MetricCollection:
+        """
+        Create training metric collection.
         
-        self.train_metrics = MetricCollection({
-            "cohesion_fiedler_value" : CohesionMetric(**cfg),
-            "hamiltonian_energy"     : HamiltonianEnergyMetric(**cfg),
+        Returns:
+            MetricCollection with all configured metrics for training
+        """
+        make = lambda cls: cls(**self.cfg)
+        
+        return MetricCollection({
+            "fiedler_value"          : make(FiedlerValueMetric),
+            "hamiltonian_energy"     : make(HamiltonianEnergyMetric),
             "mae"                    : MeanAbsoluteError(),
             "mse"                    : MeanSquaredError(),
-            "neighbor_stability"     : NeighborStabilityMetric(**cfg),
-            "orientation_coherence"  : OrientationCoherenceMetric(**cfg),
-            "orientation_wave"       : OrientationWaveMetric(**cfg),
-            "perturbation_response"  : PerturbationResponseMetric(**cfg),
-            "power_components"       : PowerComponentsMetric(**cfg),
-            "r2"                     : R2Score(multioutput='uniform_average'),
+            "neighbor_stability"     : make(NeighborStabilityMetric),
+            "orientation_coherence"  : make(OrientationCoherenceMetric),
+            "orientation_wave"       : make(OrientationWaveMetric),
+            "perturbation_response"  : make(PerturbationResponseMetric),
+            "power_components"       : make(PowerComponents),
+            "r2"                     : R2Score(num_outputs=3),
             "rmse"                   : MeanSquaredError(squared=False),
-            "scale_free"             : ScaleFreeCorrelationMetric(**cfg),
-            "state"                  : StateMetrics(),
-            "susceptibility"         : SusceptibilityMetric(**cfg),
+            "scale_free_correlation" : make(ScaleFreeCorrelationMetric),
+            "states"                 : make(States),
+            "susceptibility"         : make(SusceptibilityMetric),
         })
-        self.val_metrics = self.train_metrics.clone()
     
-    def log_all_metrics(
-        self,
-        is_training : bool,
-        module      : LightningModule,
-        step_data   : StepMetrics | None = None
-    ):
+    def create_validation_metrics(self) -> MetricCollection:
         """
-        Log all metrics to PyTorch Lightning and external loggers.
-
-        Uses a simplified logging strategy where training metrics are logged
-        step-wise and validation metrics are logged epoch-wise. This eliminates
-        the need for _step/_epoch suffixes since each metric logs at only one
-        granularity.
-
-        Special handling includes:
-        - Loss displayed in progress bar for immediate feedback
-        - Per-dimension velocity MSE for debugging specific axes
-        - Automatic train/val prefixing for metric organization
-
-        Args:
-            is_training : Whether in training (True) or validation (False) phase
-            module      : Lightning module providing the logger interface
-            step_data   : Optional step metrics (loss, predictions, targets) for
-                          step-level logging. When None, only logs aggregated metrics.
+        Create validation metric collection.
+        
+        Uses clone() to create a separate set of metrics for validation.
+        
+        Returns:
+            MetricCollection with all configured metrics for validation
         """
-        phase        = "training" if is_training else "validation"
-        log_on_step  = is_training
-        log_on_epoch = not is_training
-        
-        if step_data is not None:
-            module.log(
-                name      = f"{phase}/loss",
-                on_epoch  = log_on_epoch,
-                on_step   = log_on_step,
-                prog_bar  = True,
-                sync_dist = True,
-                value     = step_data["loss"]
-            )
-
-            for i, dim in enumerate(["x", "y", "z"]):
-                module.log(
-                    name      = f"{phase}/velocity_{dim}_mse",
-                    on_epoch  = log_on_epoch,
-                    on_step   = log_on_step,
-                    sync_dist = True,
-                    value     = (step_data["predictions"][..., i] - 
-                                step_data["targets"][..., i]).pow(2).mean()
-                )
-        
-        metrics = self.train_metrics if is_training else self.val_metrics
-        if computed := self._compute_ready_metrics(metrics):
-            prefixed = {f"{phase}/{k}": v for k, v in computed.items()}
-            module.log_dict(
-                dictionary = prefixed,
-                on_epoch   = log_on_epoch,
-                on_step    = log_on_step,
-                sync_dist  = True
-            )
-
-    def update_metrics(
-        self,
-        batch       : Batch | None,
-        is_training : bool,
-        predictions : Tensor | None = None,
-        targets     : Tensor | None = None
-    ):
-        """
-        Update all metrics from batch data and predictions.
-        
-        Unified method that updates both regression metrics (when predictions
-        are provided) and state/dynamics metrics (when batch data is available).
-        This eliminates the artificial distinction between metric types and
-        ensures all metrics are updated consistently.
-        
-        Args:
-            batch       : PyG Batch containing state, actions, and graph structure
-            is_training : Whether in training (True) or validation (False) phase
-            predictions : Model outputs for regression metrics [B*N, 3]
-            targets     : Expert actions for regression metrics [B*N, 3]
-        """
-        if batch is None and predictions is None:
-            return
-        
-        metrics = self.train_metrics if is_training else self.val_metrics
-        
-        if predictions is not None and targets is not None:
-            for name in ["mae", "mse", "r2", "rmse"]:
-                if name in metrics:
-                    try:
-                        metrics[name].update(predictions, targets)
-                    except Exception:
-                        pass
-        
-        if batch is not None:
-            if all(hasattr(batch, k) for k in ["position", "velocity"]):
-                try:
-                    metrics["hamiltonian_energy"].update(batch)
-                except Exception:
-                    pass
-            
-            if hasattr(batch, "edge_index"):
-                try:
-                    metrics["cohesion_fiedler_value"].update(batch)
-                except Exception:
-                    pass
-            
-            for name in [
-                "neighbor_stability",
-                "orientation_coherence", 
-                "orientation_wave",
-                "perturbation_response",
-                "power_components",
-                "scale_free",
-                "state",
-                "susceptibility"
-            ]:
-                if name in metrics:
-                    try:
-                        metrics[name].update(batch)
-                    except Exception:
-                        pass
-    
+        return self.create_training_metrics().clone()

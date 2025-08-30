@@ -340,9 +340,9 @@ class MurmurationController(th.nn.Module):
         flock.threats = (
             (
                 flock.temperature 
-                - self.safety.max_temperature * self.safety.threat_ratio
+                - self.safety.max_temperature * self.safety.threat_onset_ratio
             ) /
-            (self.safety.max_temperature * self.safety.threat_range_ratio)
+            (self.safety.max_temperature * self.safety.threat_transition_width)
         ).clamp(0, 1)
     
     def _compute_topological_distances(self, flock: Data):

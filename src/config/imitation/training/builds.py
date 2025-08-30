@@ -40,7 +40,7 @@ from pytorch_lightning            import Trainer
 from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers    import WandbLogger
 from thermur.imitation.controller import DemonstrationsDataset
-from thermur.imitation.training   import GNNPolicy, MetricsCollector, MonitoringCallback
+from thermur.imitation.training   import GNNPolicy, MetricsFactory, MonitoringCallback
 from torch.optim                  import AdamW
 from torch.optim.lr_scheduler     import ReduceLROnPlateau
 from typing                       import Any, TYPE_CHECKING
@@ -69,17 +69,6 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         mode                    = "${training.optimizer.mode}",
         save_last               = "${training.checkpoint.save_last}",
         save_top_k              = "${training.checkpoint.save_top_k}",
-        populate_full_signature = True
-    ),
-
-    "collector": builds(
-        MetricsCollector,
-        agent_count             = "${controller.flock.agent_count}",
-        bounds_max              = "${environment.physics.bounds_max}",
-        gravity                 = "${environment.physics.gravity}",
-        metrics                 = "${training.metrics}",
-        mmm                     = "${controller.mmm}",
-        safety                  = "${controller.safety}",
         populate_full_signature = True
     ),
 
@@ -118,9 +107,19 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
 
+    "metrics_factory": builds(
+        MetricsFactory,
+        agent_count             = "${controller.flock.agent_count}",
+        environment             = "${environment}",
+        metrics                 = "${training.metrics}",
+        murmuration             = "${controller.mmm}",
+        safety                  = "${controller.safety}",
+        populate_full_signature = True
+    ),
+
     "monitoring_callback": builds(
         MonitoringCallback,
-        collector               = "${_system.collector}",
+        metrics_factory         = "${_system.metrics_factory}",
         populate_full_signature = True
     ),
 
@@ -135,7 +134,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "policy": builds(
         GNNPolicy,
         architecture            = "${training.architecture}",
-        collector               = "${_system.collector}",
+        metrics_factory         = "${_system.metrics_factory}",
         optimizer               = "${_system.optimizer}",
         scheduler               = "${_system.scheduler}",
         scheduler_metric        = "${training.optimizer.scheduler_metric}",

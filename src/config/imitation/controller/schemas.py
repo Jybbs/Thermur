@@ -257,15 +257,7 @@ class SafetyModel(BaseModel, extra="forbid"):
             "debugging."
         )
     )
-    threat_range_ratio: PositiveFloat = Field(
-        default     = 0.3,
-        le          = 1.0,
-        description = (
-            "Fraction of T_max over which threat level scales from 0 to 1, controlling "
-            "the temperature range for gradual alert mode transition."
-        )
-    )
-    threat_ratio: PositiveFloat = Field(
+    threat_onset_ratio: PositiveFloat = Field(
         default     = 0.7,
         le          = 1.0,
         description = (
@@ -273,5 +265,11 @@ class SafetyModel(BaseModel, extra="forbid"):
             "at which the flock starts transitioning toward alert readiness."
         )
     )
-
-
+    threat_transition_width: PositiveFloat = Field(
+        default     = 0.3,
+        le          = 1.0,
+        description = (
+            "Fraction of T_max over which threat level scales from 0 to 1, controlling "
+            "the temperature range for gradual alert mode transition."
+        )
+    )
