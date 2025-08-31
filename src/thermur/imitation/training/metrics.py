@@ -10,7 +10,6 @@ All metrics integrate seamlessly with PyTorch Lightning's logging system
 and can be used directly in LightningModules without a separate collector.
 """
 from __future__           import annotations
-from collections          import defaultdict
 from itertools            import pairwise
 from torch_geometric.data import Batch
 from torchmetrics         import MeanAbsoluteError, MeanMetric, MeanSquaredError
@@ -34,19 +33,28 @@ class BaseMetric(MeanMetric):
     Metrics needing state history should use add_state() themselves.
     """
 
-    def __init__(self, agent_count: int, **kwargs):
+    def __init__(self, **kwargs):
         """
         Initialize the base metric.
         
         Args:
-            agent_count : Number of agents for reshaping
-            **kwargs    : Additional config passed to child classes
+            **kwargs: Configuration including agent_count and metric-specific params
         """
         super().__init__(nan_strategy='ignore')
-        self.agent_count = agent_count
+        self.kwargs = kwargs
+    
+    def __getattr__(self, name: str):
+        """
+        Dynamically access config attributes.
         
-        for key, value in sorted(kwargs.items()):
-            setattr(self, key, value)
+        Provides access to configuration values passed via kwargs without
+        needing to explicitly define each attribute.
+        """
+        if name in self.kwargs:
+            return self.kwargs[name]
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
     
     def _get_batch_info(self, batch: Batch) -> tuple[int, int | None]:
         """
@@ -442,7 +450,7 @@ class OrientationWaveMetric(BaseMetric):
         
         headings  = th.atan2(velocities[..., 1], velocities[..., 0])
         distances = th.cdist(positions, positions)
-        mask      = (distances > 0) & (distances < self.wave_radius)
+        mask      = (distances > 0) & (distances < self.orientation_wave_radius)
         
         heading_diffs = (
             lambda h: th.remainder(h + th.pi, 2 * th.pi) - th.pi
@@ -895,19 +903,19 @@ class MetricsFactory:
             safety      : Safety configuration for temperature limits
         """
         self.cfg = {
-            "agent_count"           : agent_count,
-            "alert_coupling_factor" : murmuration.alert_coupling_factor,
-            "correlation_exponent"  : metrics.correlation_exponent,
-            "coupling_decay"        : murmuration.coupling_decay,
-            "epsilon"               : metrics.epsilon,
-            "fiedler_shift"         : metrics.fiedler_shift,
-            "gravity"               : physics.gravity,
-            "j_base"                : murmuration.j_base,
-            "max_temperature"       : safety.max_temperature,
-            "power_exponent"        : metrics.power_exponent,
-            "power_iterations"      : metrics.power_iterations,
-            "velocity_threshold"    : metrics.velocity_threshold,
-            "wave_radius"           : metrics.wave_radius,
+            "agent_count"             : agent_count,
+            "alert_coupling_factor"   : murmuration.alert_coupling_factor,
+            "correlation_exponent"    : metrics.correlation_exponent,
+            "coupling_decay"          : murmuration.coupling_decay,
+            "epsilon"                 : metrics.epsilon,
+            "fiedler_shift"           : metrics.fiedler_shift,
+            "gravity"                 : physics.gravity,
+            "j_base"                  : murmuration.j_base,
+            "max_temperature"         : safety.max_temperature,
+            "orientation_wave_radius" : metrics.orientation_wave_radius,
+            "power_exponent"          : metrics.power_exponent,
+            "power_iterations"        : metrics.power_iterations,
+            "velocity_threshold"      : metrics.velocity_threshold,
         }
     
     def create_training_metrics(self) -> MetricCollection:

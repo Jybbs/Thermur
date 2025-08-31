@@ -21,7 +21,7 @@ from typing                import Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from .metrics                          import MetricsFactory
     from config.imitation.training         import ArchitectureModel
-    from config.types                      import ThermurBatch
+    from config.types                      import FlockBatch
     from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig, STEP_OUTPUT
     from torch                             import Tensor
     from torch.optim                       import Optimizer
@@ -106,7 +106,7 @@ class GNNPolicy(LightningModule):
             }
         }
 
-    def forward(self, batch: ThermurBatch) -> Tensor:
+    def forward(self, batch: FlockBatch) -> Tensor:
         """
         Performs the forward pass through the GNN.
 
@@ -134,7 +134,7 @@ class GNNPolicy(LightningModule):
 
         return self.decoder(h)
 
-    def training_step(self, batch: ThermurBatch, idx: int) -> STEP_OUTPUT:
+    def training_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """
         Executes a single training step using behavioral cloning loss.
 
@@ -158,7 +158,7 @@ class GNNPolicy(LightningModule):
         
         return loss
 
-    def validation_step(self, batch: ThermurBatch, idx: int) -> STEP_OUTPUT:
+    def validation_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """
         Executes validation step for model evaluation.
 

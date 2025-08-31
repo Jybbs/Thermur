@@ -335,6 +335,13 @@ class MetricsModel(BaseModel, extra="forbid"):
             "controls smoothness of the rendered velocity field representation."
         )
     )
+    orientation_wave_radius: PositiveFloat = Field(
+        default     = 10.0,
+        description = (
+            "Radius R_wave for computing local orientation gradients ∇θ(𝐫) in "
+            "murmuration wave detection, where θ = atan2(v_y, v_x)."
+        )
+    )
     power_exponent: PositiveFloat = Field(
         default     = 1.5,
         description = (
