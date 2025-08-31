@@ -327,7 +327,7 @@ class NeighborStabilityMetric(BaseMetric):
         Stores last edges for computing Jaccard distance.
         """
         super().__init__(**kwargs)
-        self.add_state("last_edges", None, None, persistent=False)
+        self.add_state("last_edges", th.empty(0, 2, dtype=th.long))
     
     def update(self, batch: Batch):
         """
@@ -492,7 +492,7 @@ class PerturbationResponseMetric(BaseMetric):
         Stores last velocity for computing response ratios.
         """
         super().__init__(**kwargs)
-        self.add_state("last_velocity", None, None, persistent=False)
+        self.add_state("last_velocity", th.empty(0))
 
     def update(self, batch: Batch):
         """
@@ -556,9 +556,9 @@ class PowerComponents(BaseMetric):
         """
         super().__init__(**kwargs)
         
-        self.forward = MeanMetric(nan_strategy='ignore')
-        self.hover   = MeanMetric(nan_strategy='ignore')
-        self.lateral = MeanMetric(nan_strategy='ignore')
+        self.forward : MeanMetric = MeanMetric(nan_strategy='ignore')
+        self.hover   : MeanMetric = MeanMetric(nan_strategy='ignore')
+        self.lateral : MeanMetric = MeanMetric(nan_strategy='ignore')
     
     def compute(self) -> dict[str, Tensor]:
         """
@@ -777,9 +777,9 @@ class States(BaseMetric):
         Composes multiple MeanMetrics for different state variables.
         """
         super().__init__(**kwargs)
-        self.acceleration = MeanMetric(nan_strategy='ignore')
-        self.temperature  = MeanMetric(nan_strategy='ignore')
-        self.velocity     = MeanMetric(nan_strategy='ignore')
+        self.acceleration : MeanMetric = MeanMetric(nan_strategy='ignore')
+        self.temperature  : MeanMetric = MeanMetric(nan_strategy='ignore')
+        self.velocity     : MeanMetric = MeanMetric(nan_strategy='ignore')
     
     def compute(self) -> dict[str, Tensor]:
         """

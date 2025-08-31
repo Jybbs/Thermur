@@ -105,7 +105,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
 
-    "metrics_factory": builds(
+    "metrics": builds(
         MetricsFactory,
         agent_count             = "${controller.flock.agent_count}",
         metrics                 = "${training.metrics}",
@@ -127,7 +127,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "policy": builds(
         GNNPolicy,
         architecture            = "${training.architecture}",
-        metrics_factory         = "${_system.metrics_factory}",
+        metrics                 = "${_system.metrics}",
         optimizer               = "${_system.optimizer}",
         scheduler               = "${_system.scheduler}",
         populate_full_signature = True

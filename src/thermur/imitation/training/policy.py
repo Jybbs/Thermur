@@ -50,24 +50,24 @@ class GNNPolicy(LightningModule):
     """
     def __init__(
         self,
-        architecture     : ArchitectureModel,
-        metrics_factory  : MetricsFactory,
-        optimizer        : Callable[..., Optimizer],
-        scheduler        : Callable[..., LRScheduler]
+        architecture : ArchitectureModel,
+        metrics      : MetricsFactory,
+        optimizer    : Callable[..., Optimizer],
+        scheduler    : Callable[..., LRScheduler]
     ):
         """
         Initializes the GNN policy network.
 
         Args:
-            architecture     : Configuration for GNN architecture including hidden
-                               dimensions, number of layers, activation function, and
-                               I/O dimensions.
-            metrics_factory  : Factory for creating metric collections.
-            optimizer        : Pre-configured optimizer partial from hydra-zen.
-            scheduler        : Pre-configured scheduler partial from hydra-zen.
+            architecture : Configuration for GNN architecture including hidden
+                           dimensions, number of layers, activation function, and
+                           I/O dimensions.
+            metrics      : Factory for creating metric collections.
+            optimizer    : Pre-configured optimizer partial from hydra-zen.
+            scheduler    : Pre-configured scheduler partial from hydra-zen.
         """
         super().__init__()
-        self.save_hyperparameters(ignore=["metrics_factory"])
+        self.save_hyperparameters(ignore=["metrics"])
         
         dim, n = architecture.hidden_dim, architecture.num_layers
         layers = lambda m: ModuleList([m(dim, dim) for _ in range(n)])
@@ -79,8 +79,8 @@ class GNNPolicy(LightningModule):
         self.grus          = layers(GRUCell)
         self.optimizer     = optimizer
         self.scheduler     = scheduler
-        self.train_metrics = metrics_factory.create_training_metrics()
-        self.val_metrics   = metrics_factory.create_validation_metrics()
+        self.train_metrics = metrics.create_training_metrics()
+        self.val_metrics   = metrics.create_validation_metrics()
         
         if architecture.compile:
             self.forward = compile(self.forward, mode="default")
