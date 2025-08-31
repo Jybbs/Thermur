@@ -11,6 +11,7 @@ The architecture is explicitly designed to be configurable and to consume
 PyG Batch observations.
 """
 from __future__            import annotations
+from .metrics              import BaseMetric
 from pytorch_lightning     import LightningModule
 from torch                 import compile, nn
 from torch.nn              import GRUCell, Linear, ModuleList
@@ -133,6 +134,42 @@ class GNNPolicy(LightningModule):
             h = gru(self.activation(conv(h, batch.edge_index)), h)
 
         return self.decoder(h)
+    
+    def on_train_batch_end(
+        self,
+        outputs   : STEP_OUTPUT,
+        batch     : FlockBatch,
+        batch_idx : int
+    ):
+        """
+        Clear metric cache after each training batch.
+        
+        Prevents memory growth from cached computations in BaseMetric.
+        
+        Args:
+            outputs   : Training step outputs (loss tensor)
+            batch     : Current training batch containing graph data
+            batch_idx : Index of current batch
+        """
+        BaseMetric.clear_cache()
+    
+    def on_validation_batch_end(
+        self,
+        outputs   : STEP_OUTPUT,
+        batch     : FlockBatch,
+        batch_idx : int
+    ):
+        """
+        Clear metric cache after each validation batch.
+        
+        Prevents memory growth from cached computations in BaseMetric.
+        
+        Args:
+            outputs   : Validation step outputs (loss tensor)
+            batch     : Current validation batch containing graph data
+            batch_idx : Index of current batch
+        """
+        BaseMetric.clear_cache()
 
     def training_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """

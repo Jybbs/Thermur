@@ -3,7 +3,7 @@ Unified metrics for imitation learning training and evaluation.
 
 This module provides TorchMetrics-based metrics that work with PyTorch 
 Geometric's batch format where features are flattened as [B*N, F] tensors 
-(B=batch_size, N=agents, F=features). The BaseMetric base class extends
+(B=num_graphs, N=agents, F=features). The BaseMetric base class extends
 MeanMetric to provide automatic averaging and PyG batch utilities.
 
 All metrics integrate seamlessly with PyTorch Lightning's logging system
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from config.imitation.controller  import MurmurationModel, SafetyModel
     from config.imitation.environment import PhysicsModel
     from config.imitation.training    import MetricsModel
+    from config.types                 import FlockBatch
     from torch                        import Tensor
 
 import torch as th
@@ -32,6 +33,8 @@ class BaseMetric(MeanMetric):
     Provides automatic averaging from MeanMetric and PyG batch reshaping helpers.
     Metrics needing state history should use add_state() themselves.
     """
+    
+    _reshape_cache = {}
 
     def __init__(self, **kwargs):
         """
@@ -40,7 +43,7 @@ class BaseMetric(MeanMetric):
         Args:
             **kwargs: Configuration including agent_count and metric-specific params
         """
-        super().__init__(nan_strategy='ignore')
+        super().__init__('ignore')
         self.kwargs = kwargs
     
     def __getattr__(self, name: str):
@@ -56,45 +59,71 @@ class BaseMetric(MeanMetric):
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
     
-    def _get_batch_info(self, batch: Batch) -> tuple[int, int | None]:
-        """
-        Extract batch size and agent count from PyG batch.
-        
-        Args:
-            batch: PyG Batch object
-            
-        Returns:
-            Tuple of (batch_size, agent_count)
-        """
-        batch_size  = getattr(batch, 'num_graphs', 1)
-        agent_count = self.agent_count or (
-            batch["position"].shape[0] // batch_size 
-            if "position" in batch else None
-        )
-        return batch_size, agent_count
-    
     def _reshape_features(
         self, 
-        batch     : Batch,
+        batch     : FlockBatch,
         *features : str
     ) -> tuple[Tensor, ...]:
         """
-        Reshape flattened PyG features to [B, N, F] format.
+        Reshape flattened PyG features to [B, N, F] format with intelligent caching.
+        
+        Transforms PyTorch Geometric's flattened tensor format [B*N, F] into the more
+        intuitive [B, N, F] shape for batch processing. Features are cached per batch
+        to eliminate redundant computations across metrics.
+        
+        Computed features (lazily evaluated and cached):
+        - 'distances'       : Pairwise Euclidean distances via cdist [B, N, N]
+        - 'velocity_norm'   : Unit-normalized velocity vectors [B, N, 3]
+        - 'velocity_norm_2d': Unit-normalized 2D velocity projections [B, N, 2]
+        
+        The cache uses batch object IDs as keys, ensuring automatic invalidation when
+        processing new batches. The cache is cleared after each training step via
+        BaseMetric.clear_cache() to prevent memory growth.
         
         Args:
-            batch    : PyG Batch containing the features
-            features : Names of features to reshape
+            batch    : PyG Batch containing flattened features
+            features : Variable feature names to retrieve (order preserved)
             
         Returns:
-            Tuple of reshaped tensors matching the order of feature names
+            Tuple of reshaped tensors in requested order, excluding None values
         """
-        batch_size, agent_count = self._get_batch_info(batch)
+        batch_id  = id(batch)
+        B, N      = batch.num_graphs, self.agent_count
+        cache     = BaseMetric._reshape_cache 
+        normalize = lambda vecs: th.nn.functional.normalize(vecs, dim=-1)
+        reshape   = lambda feat: self._reshape_features(batch, feat)[0]
+        computed  = {
+            'distances'        : lambda: th.cdist(p := reshape('position'), p),
+            'velocity_norm'    : lambda: normalize(reshape('velocity')),
+            'velocity_norm_2d' : lambda: normalize(reshape('velocity')[..., :2]),
+        }
+        
+        get_or_compute = lambda feat: (
+            cache[(batch_id, feat)] if (batch_id, feat) in cache
+            else 
+                (v := (
+                    computed[feat]()                if feat in computed
+                    else batch[feat].view(B, N, -1) if feat in batch 
+                    else None
+                ), 
+                cache.update({(batch_id, feat): v}), v)[2]
+        )
         
         return tuple(
-            batch[feat].view(batch_size, agent_count, -1)
-            for feat in features
-            if  feat in batch
+            v for feat in features 
+            if (v := get_or_compute(feat)) is not None
         )
+    
+    @classmethod
+    def clear_cache(cls):
+        """
+        Clear the shared computation cache.
+        
+        Should be called after each batch to prevent memory growth.
+        This would typically be called in Lightning's on_train_batch_end
+        and on_validation_batch_end hooks.
+        """
+        cls._reshape_cache.clear()
 
 
 class FiedlerValueMetric(BaseMetric):
@@ -134,17 +163,15 @@ class FiedlerValueMetric(BaseMetric):
         Returns:
             Approximation of second smallest eigenvalue (Fiedler value)
         """
-        n      = laplacian.shape[0]
-        device = laplacian.device
-        
-        if n <= 1:
-            return th.tensor(0.0, device=device)
-        
-        random_vector     = th.randn(n, device=device)
-        orthogonal_vector = random_vector - random_vector.mean()
-        v                 = orthogonal_vector / orthogonal_vector.norm()
-        
-        shifted_laplacian = laplacian + self.fiedler_shift * th.eye(n, device=device)
+        v = th.nn.functional.normalize(
+            (v := th.randn(laplacian.shape[0], device=laplacian.device)) - v.mean(),
+            dim = 0
+        )
+
+        shifted_laplacian = (
+            laplacian + self.fiedler_shift * 
+            th.eye(laplacian.shape[0], device=laplacian.device)
+        )
         
         for _ in range(self.power_iterations):
             v_new          = th.linalg.solve(shifted_laplacian, v)
@@ -183,16 +210,15 @@ class FiedlerValueMetric(BaseMetric):
             (num_agents, num_agents), device=edge_index.device
         )
         
-        if edge_index.numel() > 0:
-            adjacency_matrix[edge_index[0], edge_index[1]] = 1.0
-            adjacency_matrix[edge_index[1], edge_index[0]] = 1.0
+        adjacency_matrix[edge_index[0], edge_index[1]] = 1.0
+        adjacency_matrix[edge_index[1], edge_index[0]] = 1.0
         
         degree_matrix = th.diag_embed(adjacency_matrix.sum(1))
         laplacian     = degree_matrix - adjacency_matrix
         
         return laplacian
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update metric with graph connectivity measurement.
 
@@ -200,29 +226,11 @@ class FiedlerValueMetric(BaseMetric):
         graph Laplacian to quantify algebraic connectivity.
 
         Args:
-            batch : PyG Batch containing edge_index [2, E] in COO format
+            batch: PyG Batch containing edge_index [2, E] in COO format
         """
-        if not (edge_index := getattr(batch, "edge_index", None)) or edge_index.numel() == 0:
-            super().update(0.0)
-            return
-
-        if edge_index.dim() == 3:
-            batch_size = edge_index.shape[0]
-            fiedler_values = th.zeros(batch_size, device=edge_index.device)
-            
-            for i in range(batch_size):
-                if edge_index[i].numel() > 0:
-                    laplacian = self._compute_graph_laplacian(
-                        edge_index[i], self.agent_count
-                    )
-                    fiedler_values[i] = self._compute_fiedler_power_iteration(laplacian)
-            
-            for value in fiedler_values:
-                super().update(value)
-            return
-
-        laplacian = self._compute_graph_laplacian(edge_index, self.agent_count)
-        fiedler_value = self._compute_fiedler_power_iteration(laplacian)
+        fiedler_value = self._compute_fiedler_power_iteration(
+            self._compute_graph_laplacian(batch.edge_index, self.agent_count)
+        )
         
         super().update(fiedler_value)
 
@@ -245,7 +253,7 @@ class HamiltonianEnergyMetric(BaseMetric):
     (alert states) increase disorder, creating rich phase transitions.
     """
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Compute Hamiltonian energy with vectorized operations.
         
@@ -255,19 +263,17 @@ class HamiltonianEnergyMetric(BaseMetric):
         Args:
             batch: PyG Batch with velocity, position, optional alert_states
         """
-        batch_size, _ = self._get_batch_info(batch)
-        velocities,   = self._reshape_features(batch, "velocity")
-        spins         = th.nn.functional.normalize(velocities, dim=-1)
+        spins, = self._reshape_features(batch, "velocity_norm")
         
         if "topo_distances" in batch and "edge_source" in batch:
             coupling = th.zeros(
-                batch_size, self.agent_count, self.agent_count, 
+                batch.num_graphs, self.agent_count, self.agent_count, 
                 device = spins.device
             )
             
-            if (n_edges := getattr(batch, "edge_source", th.empty(0)).shape[-1]) > 0:
+            if (n_edges := batch["edge_source"].shape[-1]) > 0:
                 idx = (
-                    th.arange(batch_size, device=spins.device)
+                    th.arange(batch.num_graphs, device=spins.device)
                     .unsqueeze(1).expand(-1, n_edges)
                 )
                 
@@ -287,15 +293,12 @@ class HamiltonianEnergyMetric(BaseMetric):
                 coupling[idx, batch["edge_source"], batch["edge_target"]] = j_edges
                 coupling[idx, batch["edge_target"], batch["edge_source"]] = j_edges
         else:
-            positions, = self._reshape_features(batch, "position")
-            distances = th.cdist(positions, positions)
-            coupling  = self.j_base * th.exp(-distances / self.coupling_decay)
+            distances, = self._reshape_features(batch, "distances")
+            coupling   = self.j_base * th.exp(-distances / self.coupling_decay)
             coupling.diagonal(dim1=-2, dim2=-1).fill_(0)
 
         energies = -(coupling * th.bmm(spins, spins.mT)).sum(dim=(1, 2)) / 2
-        
-        for energy in energies:
-            super().update(energy)
+        super().update(energies)
 
 
 class NeighborStabilityMetric(BaseMetric):
@@ -329,7 +332,7 @@ class NeighborStabilityMetric(BaseMetric):
         super().__init__(**kwargs)
         self.add_state("last_edges", th.empty(0, 2, dtype=th.long))
     
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update metric with topological change measurement.
         
@@ -339,7 +342,8 @@ class NeighborStabilityMetric(BaseMetric):
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
         """
-        if not (edges := getattr(batch, "edge_index", None)) or edges.numel() == 0:
+        edges = batch.edge_index
+        if edges.numel() == 0:
             self.last_edges = th.empty(0, 2, dtype=th.long)
             return
         
@@ -383,7 +387,7 @@ class OrientationCoherenceMetric(BaseMetric):
         - Aligned cruise    : Φ ∈ [0.8, 1.0], C ∈ [0.6, 1.0]
     """
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update metric with polarization measurement.
         
@@ -393,20 +397,13 @@ class OrientationCoherenceMetric(BaseMetric):
         Args:
             batch: PyG Batch containing velocity [B*N, 3] flattened
         """
-        if not (velocity := getattr(batch, "velocity", None)):
-            return
-        
-        batch_size, _ = self._get_batch_info(batch)
-        velocities,   = self._reshape_features(batch, "velocity")
-        headings      = th.nn.functional.normalize(velocities[:, :, :2], dim=-1)
+        headings = self._reshape_features(batch, "velocity_norm_2d")[0]
         
         alignment = th.bmm(headings, headings.mT)
         coherence = (
-            alignment.sum(dim=(1, 2)) - batch_size * self.agent_count
+            alignment.sum(dim=(1, 2)) - batch.num_graphs * self.agent_count
         ) / (self.agent_count * (self.agent_count - 1))
-        
-        for c in coherence:
-            super().update(c)
+        super().update(coherence)
 
 
 class OrientationWaveMetric(BaseMetric):
@@ -432,7 +429,7 @@ class OrientationWaveMetric(BaseMetric):
         - Full murmuration : W ∈ [0.30, 0.60] rad/m
     """
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update metric with wave amplitude measurement.
         
@@ -442,14 +439,8 @@ class OrientationWaveMetric(BaseMetric):
         Args:
             batch: PyG Batch with position and velocity [B*N, 3] flattened
         """
-        if not all(getattr(batch, k, None) is not None for k in ["position", "velocity"]):
-            return
-        
-        batch_size, _ = self._get_batch_info(batch)
-        positions, velocities = self._reshape_features(batch, "position", "velocity")
-        
+        velocities, distances = self._reshape_features(batch, "velocity", "distances")
         headings  = th.atan2(velocities[..., 1], velocities[..., 0])
-        distances = th.cdist(positions, positions)
         mask      = (distances > 0) & (distances < self.orientation_wave_radius)
         
         heading_diffs = (
@@ -494,7 +485,7 @@ class PerturbationResponseMetric(BaseMetric):
         super().__init__(**kwargs)
         self.add_state("last_velocity", th.empty(0))
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update metric with threat response measurement.
         
@@ -504,11 +495,8 @@ class PerturbationResponseMetric(BaseMetric):
         Args:
             batch: PyG Batch with velocity [B*N, 3] and temperature [B*N, 1]
         """
-        if not (
-            (velocity    := getattr(batch, "velocity", None)) and 
-            (temperature := getattr(batch, "temperature", None))
-        ):
-            return
+        velocity    = batch.velocity
+        temperature = batch.temperature
         
         if (
             self.last_velocity is not None 
@@ -556,9 +544,9 @@ class PowerComponents(BaseMetric):
         """
         super().__init__(**kwargs)
         
-        self.forward : MeanMetric = MeanMetric(nan_strategy='ignore')
-        self.hover   : MeanMetric = MeanMetric(nan_strategy='ignore')
-        self.lateral : MeanMetric = MeanMetric(nan_strategy='ignore')
+        self.forward : MeanMetric = MeanMetric('ignore')
+        self.hover   : MeanMetric = MeanMetric('ignore')
+        self.lateral : MeanMetric = MeanMetric('ignore')
     
     def compute(self) -> dict[str, Tensor]:
         """
@@ -581,7 +569,7 @@ class PowerComponents(BaseMetric):
         self.hover.reset()
         self.lateral.reset()
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update power component measurements with vectorized computation.
         
@@ -591,11 +579,8 @@ class PowerComponents(BaseMetric):
         Args:
             batch: PyG Batch with action [B*N, 3] and velocity [B*N, 3]
         """
-        if not (
-            (u_control := getattr(batch, "u_safe", None) or getattr(batch, "action", None)) and
-            (velocity  := getattr(batch, "velocity", None))
-        ):
-            return
+        u_control = batch.action
+        velocity  = batch.velocity
         
         hover_power = (u_control[:, 2] + self.gravity).abs().pow(self.power_exponent)
         self.hover.update(hover_power)
@@ -688,7 +673,7 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         
         return float(-(X @ Y) / (X @ X)) if (X @ X) > 0 else 0.0
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update metric with scale-free correlation measurement.
         
@@ -704,10 +689,9 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         Args:
             batch: PyG Batch containing position and velocity [B*N, 3] flattened
         """
-        batch_size, _ = self._get_batch_info(batch)
         positions, velocities = self._reshape_features(batch, "position", "velocity")
         
-        for b in range(batch_size):
+        for b in range(batch.num_graphs):
             corr_mat, distances = self._compute_velocity_correlations(
                 positions[b], velocities[b]
             )
@@ -777,9 +761,9 @@ class States(BaseMetric):
         Composes multiple MeanMetrics for different state variables.
         """
         super().__init__(**kwargs)
-        self.acceleration : MeanMetric = MeanMetric(nan_strategy='ignore')
-        self.temperature  : MeanMetric = MeanMetric(nan_strategy='ignore')
-        self.velocity     : MeanMetric = MeanMetric(nan_strategy='ignore')
+        self.acceleration : MeanMetric = MeanMetric('ignore')
+        self.temperature  : MeanMetric = MeanMetric('ignore')
+        self.velocity     : MeanMetric = MeanMetric('ignore')
     
     def compute(self) -> dict[str, Tensor]:
         """
@@ -802,28 +786,21 @@ class States(BaseMetric):
         self.temperature.reset()
         self.velocity.reset()
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Update running sums with batch statistics.
         
         Extracts physical quantities from the batch and accumulates their
         magnitudes for computing running averages across all agents.
-        Only tracks states when control actions are present.
         
         Args:
-            batch: PyG Batch containing velocity, temperature, and optionally action
+            batch: PyG Batch containing velocity, temperature, and action
         """
-        if "action" not in batch:
-            return
-        
-        action = batch["action"]
+        action = batch.action
         self.acceleration.update(action.norm(dim=-1))
         
-        if "temperature" in batch and batch["temperature"].numel() > 0:
-            self.temperature.update(batch["temperature"])
-        
-        if "velocity" in batch:
-            self.velocity.update(batch["velocity"].norm(dim=-1))
+        self.temperature.update(batch.temperature)
+        self.velocity.update(batch.velocity.norm(dim=-1))
 
 
 class SusceptibilityMetric(BaseMetric):
@@ -854,20 +831,15 @@ class SusceptibilityMetric(BaseMetric):
     freedom with collective coordination.
     """
 
-    def update(self, batch: Batch):
+    def update(self, batch: FlockBatch):
         """
         Compute susceptibility from velocity fluctuations.
         
         Args:
             batch: PyG Batch containing velocity tensor [B*N, 3] flattened
         """
-        if self.agent_count < 2:
-            return
-        
-        batch_size, _ = self._get_batch_info(batch)
-        velocity,     = self._reshape_features(batch, "velocity")
-        spins         = th.nn.functional.normalize(velocity, dim=-1)
-        mean_spin     = spins.mean(dim=-2, keepdim=True)
+        spins     = self._reshape_features(batch, "velocity_norm")[0]
+        mean_spin = spins.mean(dim=-2, keepdim=True)
         
         polarizations    = (spins * mean_spin).sum(dim=-1)
         susceptibilities = self.agent_count * polarizations.var(dim=-1)
