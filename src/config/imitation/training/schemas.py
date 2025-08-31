@@ -233,13 +233,6 @@ class OptimizerModel(BaseModel, extra="forbid"):
             "Optimization direction for monitored metric (minimize or maximize)."
         )
     )
-    scheduler_metric: str = Field(
-        default     = "validation/loss",
-        description = (
-            "Metric monitored by learning rate scheduler for reducing learning rate "
-            "on plateau. Typically a validation metric to avoid overfitting."
-        )
-    )
     seed: NonNegativeInt | None = Field(
         default     = 42,
         description = (
@@ -254,13 +247,6 @@ class OptimizerModel(BaseModel, extra="forbid"):
         description = (
             "Fraction of data reserved for training, with remainder for validation. "
             "Split occurs randomly across all timesteps to ensure diverse validation."
-        )
-    )
-    training_metric: str = Field(
-        default     = "training/loss",
-        description = (
-            "Primary metric monitored during training for logging and model "
-            "selection. Also used by early stopping callback."
         )
     )
     val_check_interval: float = Field(

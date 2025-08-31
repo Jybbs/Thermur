@@ -25,8 +25,6 @@ Callbacks:
 - EarlyStopping          : Monitors validation metrics and stops training when no
                            improvement is detected.
 - LearningRateMonitor    : Tracks and logs learning rate changes during training.
-- MonitoringCallback     : Integrates with the metrics collector for training
-                           analytics.
 
 Logging:
 - WandbLogger            : Weights & Biases integration for experiment tracking and
@@ -40,7 +38,7 @@ from pytorch_lightning            import Trainer
 from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers    import WandbLogger
 from thermur.imitation.controller import DemonstrationsDataset
-from thermur.imitation.training   import GNNPolicy, MetricsFactory, MonitoringCallback
+from thermur.imitation.training   import GNNPolicy, MetricsFactory
 from torch.optim                  import AdamW
 from torch.optim.lr_scheduler     import ReduceLROnPlateau
 from typing                       import Any, TYPE_CHECKING
@@ -65,7 +63,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         dirpath                 = "${training.checkpoint.dirpath}",
         every_n_train_steps     = "${training.checkpoint.every_n_train_steps}",
         filename                = "checkpoint-{step}",
-        monitor                 = "${training.optimizer.training_metric}",
+        monitor                 = "validation/loss",
         mode                    = "${training.optimizer.mode}",
         save_last               = "${training.checkpoint.save_last}",
         save_top_k              = "${training.checkpoint.save_top_k}",
@@ -86,7 +84,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "early_stopping_callback": builds(
         EarlyStopping,
-        monitor                 = "${training.optimizer.training_metric}",
+        monitor                 = "validation/loss",
         mode                    = "${training.optimizer.mode}",
         patience                = "${training.optimizer.early_stopping_patience}",
         populate_full_signature = True
@@ -110,18 +108,13 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "metrics_factory": builds(
         MetricsFactory,
         agent_count             = "${controller.flock.agent_count}",
-        environment             = "${environment}",
         metrics                 = "${training.metrics}",
         murmuration             = "${controller.mmm}",
+        physics                 = "${environment.physics}",
         safety                  = "${controller.safety}",
         populate_full_signature = True
     ),
 
-    "monitoring_callback": builds(
-        MonitoringCallback,
-        metrics_factory         = "${_system.metrics_factory}",
-        populate_full_signature = True
-    ),
 
     "optimizer": builds(
         AdamW,
@@ -137,8 +130,6 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         metrics_factory         = "${_system.metrics_factory}",
         optimizer               = "${_system.optimizer}",
         scheduler               = "${_system.scheduler}",
-        scheduler_metric        = "${training.optimizer.scheduler_metric}",
-        training_metric         = "${training.optimizer.training_metric}",
         populate_full_signature = True
     ),
 
@@ -157,8 +148,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         benchmark               = "${training.hardware.benchmark}",
         callbacks               = [
             "${_system.checkpoint_callback}",
-            "${_system.early_stopping_callback}",
-            "${_system.monitoring_callback}"
+            "${_system.early_stopping_callback}"
         ],
         detect_anomaly          = "${training.hardware.detect_anomaly}",
         deterministic           = "${training.hardware.deterministic}",

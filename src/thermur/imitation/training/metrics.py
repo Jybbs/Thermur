@@ -10,19 +10,17 @@ All metrics integrate seamlessly with PyTorch Lightning's logging system
 and can be used directly in LightningModules without a separate collector.
 """
 from __future__           import annotations
-from collections          import Counter
+from collections          import defaultdict
 from itertools            import pairwise
 from torch_geometric.data import Batch
 from torchmetrics         import MeanAbsoluteError, MeanMetric, MeanSquaredError
-from torchmetrics         import Metric, MetricCollection, R2Score
+from torchmetrics         import MetricCollection, R2Score
 from typing               import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.imitation.controller  import MurmurationModel, SafetyModel
-    from config.imitation.environment import EnvironmentModel
+    from config.imitation.environment import PhysicsModel
     from config.imitation.training    import MetricsModel
-    from config.types                 import StepMetrics
-    from pytorch_lightning            import LightningModule
     from torch                        import Tensor
 
 import torch as th
@@ -50,7 +48,7 @@ class BaseMetric(MeanMetric):
         for key, value in sorted(kwargs.items()):
             setattr(self, key, value)
     
-    def _get_batch_info(self, batch: Batch) -> tuple[int, int]:
+    def _get_batch_info(self, batch: Batch) -> tuple[int, int | None]:
         """
         Extract batch size and agent count from PyG batch.
         
@@ -196,7 +194,7 @@ class FiedlerValueMetric(BaseMetric):
         Args:
             batch : PyG Batch containing edge_index [2, E] in COO format
         """
-        if not (edge_index := batch.get("edge_index")) or edge_index.numel() == 0:
+        if not (edge_index := getattr(batch, "edge_index", None)) or edge_index.numel() == 0:
             super().update(0.0)
             return
 
@@ -259,7 +257,7 @@ class HamiltonianEnergyMetric(BaseMetric):
                 device = spins.device
             )
             
-            if (n_edges := batch.get("edge_source", th.empty(0)).shape[-1]) > 0:
+            if (n_edges := getattr(batch, "edge_source", th.empty(0)).shape[-1]) > 0:
                 idx = (
                     th.arange(batch_size, device=spins.device)
                     .unsqueeze(1).expand(-1, n_edges)
@@ -333,7 +331,7 @@ class NeighborStabilityMetric(BaseMetric):
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
         """
-        if not (edges := batch.get("edge_index")) or edges.numel() == 0:
+        if not (edges := getattr(batch, "edge_index", None)) or edges.numel() == 0:
             self.last_edges = th.empty(0, 2, dtype=th.long)
             return
         
@@ -387,7 +385,7 @@ class OrientationCoherenceMetric(BaseMetric):
         Args:
             batch: PyG Batch containing velocity [B*N, 3] flattened
         """
-        if not (velocity := batch.get("velocity")):
+        if not (velocity := getattr(batch, "velocity", None)):
             return
         
         batch_size, _ = self._get_batch_info(batch)
@@ -436,7 +434,7 @@ class OrientationWaveMetric(BaseMetric):
         Args:
             batch: PyG Batch with position and velocity [B*N, 3] flattened
         """
-        if not all(batch.get(k) is not None for k in ["position", "velocity"]):
+        if not all(getattr(batch, k, None) is not None for k in ["position", "velocity"]):
             return
         
         batch_size, _ = self._get_batch_info(batch)
@@ -444,8 +442,7 @@ class OrientationWaveMetric(BaseMetric):
         
         headings  = th.atan2(velocities[..., 1], velocities[..., 0])
         distances = th.cdist(positions, positions)
-        
-        mask = (distances > 0) & (distances < self.wave_radius)
+        mask      = (distances > 0) & (distances < self.wave_radius)
         
         heading_diffs = (
             lambda h: th.remainder(h + th.pi, 2 * th.pi) - th.pi
@@ -500,8 +497,8 @@ class PerturbationResponseMetric(BaseMetric):
             batch: PyG Batch with velocity [B*N, 3] and temperature [B*N, 1]
         """
         if not (
-            (velocity    := batch.get("velocity")) and 
-            (temperature := batch.get("temperature"))
+            (velocity    := getattr(batch, "velocity", None)) and 
+            (temperature := getattr(batch, "temperature", None))
         ):
             return
         
@@ -555,6 +552,27 @@ class PowerComponents(BaseMetric):
         self.hover   = MeanMetric(nan_strategy='ignore')
         self.lateral = MeanMetric(nan_strategy='ignore')
     
+    def compute(self) -> dict[str, Tensor]:
+        """
+        Compute power component fractions.
+        
+        Returns:
+            Dictionary with hover, forward, and lateral power components
+        """
+        return {
+            "power_forward" : self.forward.compute(),
+            "power_hover"   : self.hover.compute(),
+            "power_lateral" : self.lateral.compute(),
+        }
+    
+    def reset(self):
+        """
+        Reset all component metrics.
+        """
+        self.forward.reset()
+        self.hover.reset()
+        self.lateral.reset()
+
     def update(self, batch: Batch):
         """
         Update power component measurements with vectorized computation.
@@ -566,8 +584,8 @@ class PowerComponents(BaseMetric):
             batch: PyG Batch with action [B*N, 3] and velocity [B*N, 3]
         """
         if not (
-            (u_control := batch.get("u_safe") or batch.get("action")) and
-            (velocity  := batch.get("velocity"))
+            (u_control := getattr(batch, "u_safe", None) or getattr(batch, "action", None)) and
+            (velocity  := getattr(batch, "velocity", None))
         ):
             return
         
@@ -596,27 +614,6 @@ class PowerComponents(BaseMetric):
         else:
             self.forward.update(th.tensor(0.0))
             self.lateral.update(th.tensor(0.0))
-    
-    def compute(self) -> dict[str, Tensor]:
-        """
-        Compute power component fractions.
-        
-        Returns:
-            Dictionary with hover, forward, and lateral power components
-        """
-        return {
-            "power_forward" : self.forward.compute(),
-            "power_hover"   : self.hover.compute(),
-            "power_lateral" : self.lateral.compute(),
-        }
-    
-    def reset(self):
-        """
-        Reset all component metrics.
-        """
-        self.forward.reset()
-        self.hover.reset()
-        self.lateral.reset()
 
 
 class ScaleFreeCorrelationMetric(BaseMetric):
@@ -775,6 +772,27 @@ class States(BaseMetric):
         self.acceleration = MeanMetric(nan_strategy='ignore')
         self.temperature  = MeanMetric(nan_strategy='ignore')
         self.velocity     = MeanMetric(nan_strategy='ignore')
+    
+    def compute(self) -> dict[str, Tensor]:
+        """
+        Compute state averages.
+        
+        Returns:
+            Dictionary with average acceleration, temperature, and velocity
+        """
+        return {
+            "avg_acceleration" : self.acceleration.compute(),
+            "avg_temperature"  : self.temperature.compute(),
+            "avg_velocity"     : self.velocity.compute(),
+        }
+    
+    def reset(self):
+        """
+        Reset all state metrics.
+        """
+        self.acceleration.reset()
+        self.temperature.reset()
+        self.velocity.reset()
 
     def update(self, batch: Batch):
         """
@@ -798,27 +816,6 @@ class States(BaseMetric):
         
         if "velocity" in batch:
             self.velocity.update(batch["velocity"].norm(dim=-1))
-    
-    def compute(self) -> dict[str, Tensor]:
-        """
-        Compute state averages.
-        
-        Returns:
-            Dictionary with average acceleration, temperature, and velocity
-        """
-        return {
-            "avg_acceleration" : self.acceleration.compute(),
-            "avg_temperature"  : self.temperature.compute(),
-            "avg_velocity"     : self.velocity.compute(),
-        }
-    
-    def reset(self):
-        """
-        Reset all state metrics.
-        """
-        self.acceleration.reset()
-        self.temperature.reset()
-        self.velocity.reset()
 
 
 class SusceptibilityMetric(BaseMetric):
@@ -882,9 +879,9 @@ class MetricsFactory:
     def __init__(
         self,
         agent_count : int,
-        environment : EnvironmentModel,
         metrics     : MetricsModel,
         murmuration : MurmurationModel,
+        physics     : PhysicsModel,
         safety      : SafetyModel
     ):
         """
@@ -904,12 +901,13 @@ class MetricsFactory:
             "coupling_decay"        : murmuration.coupling_decay,
             "epsilon"               : metrics.epsilon,
             "fiedler_shift"         : metrics.fiedler_shift,
-            "gravity"               : environment.physics.gravity,
+            "gravity"               : physics.gravity,
             "j_base"                : murmuration.j_base,
             "max_temperature"       : safety.max_temperature,
             "power_exponent"        : metrics.power_exponent,
             "power_iterations"      : metrics.power_iterations,
             "velocity_threshold"    : metrics.velocity_threshold,
+            "wave_radius"           : metrics.wave_radius,
         }
     
     def create_training_metrics(self) -> MetricCollection:
