@@ -107,6 +107,7 @@ class GNNPolicy(LightningModule):
             }
         }
 
+    @compile(mode="reduce-overhead")
     def forward(self, batch: FlockBatch) -> Tensor:
         """
         Performs the forward pass through the GNN.

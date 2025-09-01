@@ -72,7 +72,6 @@ class MurmurationController(th.nn.Module):
         self.safety = safety
         self.alert_states_memory = {}
 
-    
     def _compute_density_wave(self, flock: Data):
         """
         Compute density wave forces from continuum density field dynamics.
@@ -106,10 +105,8 @@ class MurmurationController(th.nn.Module):
         with the effect amplified under threat conditions (high θ).
 
         Args:
-            flock: TensorDict containing:
-                - position     : Agent positions 𝐱 ∈ ℝ^(N×3) [m]
-                - threats      : Normalized threat levels θ ∈ [0,1]^(N×1)
-                - density_wave : Dispersive forces 𝐅 ∈ ℝ^(N×3) [m/s²]
+            flock: Data with position 𝐱 ∈ ℝ^(N×3), threats θ ∈ [0,1]^N,
+                   updated with density_wave forces 𝐅 ∈ ℝ^(N×3) [m/s²]
         """
         dists   = th.cdist(flock.position, flock.position, p=2)
         weights = th.exp(-dists**2 / (2 * self.mmm.density_bandwidth**2))
@@ -159,8 +156,8 @@ class MurmurationController(th.nn.Module):
         scanning birds prioritize threat detection over flock following.
 
         Args:
-            flock: TensorDict containing positions, velocities, gradient, alert_states,
-                   edge indices, and topo_distances, updated with base_forces
+            flock: Data with positions, velocities, gradient, alert_states,
+                   edge indices, and hops matrix, updated with base_forces
         """
         flock.base_forces   = th.zeros_like(flock.position) 
         alert_states_source = flock.alert_states[flock.edge_source]
@@ -172,9 +169,8 @@ class MurmurationController(th.nn.Module):
         )
         
         j_edges = self.mmm.j_base * coupling_modifier * th.exp(
-            -flock.topo_distances[
-                flock.edge_source, flock.edge_target
-            ] / self.mmm.coupling_decay
+            -flock.hops[flock.edge_source, flock.edge_target] / 
+            self.mmm.coupling_decay
         )
 
         force_contrib = j_edges.unsqueeze(1) * (
@@ -208,6 +204,38 @@ class MurmurationController(th.nn.Module):
         
         flock.base_forces -= self.mmm.temperature_scaling * flock.gradient
 
+    def _compute_hops(self, flock: Data):
+        """
+        Compute minimum hop counts between all agent pairs.
+
+        Uses Floyd-Warshall to find shortest paths through the k-NN graph,
+        capturing the topological distance d_{ij} for coupling decay:
+        
+            J_{ij} = J_0 exp(-d_{ij}/λ)
+
+        The algorithm iteratively relaxes hop counts:
+        
+            d_{ij}^{(k+1)} = min(d_{ij}^{(k)}, d_{ik}^{(k)} + d_{kj}^{(k)})
+
+        Args:
+            flock: Data with edge indices, updated with hops matrix
+        """
+        hops = th.full(
+            device     = flock.position.device,
+            dtype      = th.float32,
+            fill_value = float('inf'),
+            size       = (self.mmm.agent_count, self.mmm.agent_count)
+        )
+        hops.fill_diagonal_(0)
+
+        hops[flock.edge_source, flock.edge_target] = 1
+        hops[flock.edge_target, flock.edge_source] = 1
+
+        for k in range(self.mmm.agent_count):
+            hops = th.minimum(hops, hops[:, k:k+1] + hops[k:k+1, :])
+
+        flock.hops = hops
+
     def _compute_individual_alert_states(self, flock: Data):
         """
         Compute alert states following two-state Markov dynamics.
@@ -227,7 +255,7 @@ class MurmurationController(th.nn.Module):
         Mean relaxed duration    : E[T_relaxed] = 1/λ ≈ 47 timesteps
         
         Args:
-            flock: TensorDict updated with alert_states and alert_fraction
+            flock: Data updated with alert_states and alert_fraction
         """
         traj_id = 0
         device  = flock.position.device
@@ -275,8 +303,8 @@ class MurmurationController(th.nn.Module):
         This ensures the flock can bootstrap movement from rest states.
         
         Args:
-            flock: TensorDict containing velocities and alert_states,
-                   updated with self_propulsion forces
+            flock: Data with velocities and alert_states, updated with
+                   self_propulsion forces
         """
         speed = flock.velocity.norm(dim=-1, keepdim=True)
         wind  = getattr(flock, "wind", th.zeros_like(flock.velocity))
@@ -323,7 +351,7 @@ class MurmurationController(th.nn.Module):
         temperature is reached.
 
         Args:
-            flock: TensorDict containing temperatures, updated with threat levels
+            flock: Data with temperatures, updated with threat levels
 
         """
         flock.threats = (
@@ -334,44 +362,13 @@ class MurmurationController(th.nn.Module):
             (self.safety.max_temperature * self.safety.threat_transition_width)
         ).clamp(0, 1)
     
-    def _compute_topological_distances(self, flock: Data):
-        """
-        Compute minimum hop distances between all pairs of agents.
-
-        Uses Floyd-Warshall algorithm to find shortest paths in the k-NN graph.
-        This captures the topological distance metric d_{ij} used in the
-        coupling strength decay J_{ij} = J_0 exp(-d_{ij}/λ).
-
-        The algorithm iteratively relaxes distances:
-            d_{ij}^{(k+1)} = min(d_{ij}^{(k)}, d_{ik}^{(k)} + d_{kj}^{(k)})
-
-        Args:
-            flock: TensorDict with edge indices, updated with topo_distances
-        """
-
-        dist = th.full(
-            device     = flock.position.device,
-            dtype      = th.float32,
-            fill_value = float('inf'),
-            size       = (self.mmm.agent_count, self.mmm.agent_count)
-        )
-        dist.fill_diagonal_(0)
-
-        dist[flock.edge_source, flock.edge_target] = 1
-        dist[flock.edge_target, flock.edge_source] = 1
-
-        for k in range(self.mmm.agent_count):
-            dist = th.minimum(dist, dist[:, k:k+1] + dist[k:k+1, :])
-
-        flock.topo_distances = dist
-    
     def _design_nominal_action(self, flock: Data):
         """
         Pipeline that computes murmuration dynamics and builds final action.
 
-        Orchestrates the computation of all physics components through a 
-        series of transformations on the flock TensorDict, then combines
-        them into the final control action.
+        Orchestrates the computation of all physics components through a
+        series of transformations on the flock state, then combines them
+        into the final control action.
 
         The pipeline computes:
         1. Graph topology and temperature gradients
@@ -381,7 +378,7 @@ class MurmurationController(th.nn.Module):
         5. Final action combining all force components
 
         Args:
-            flock: TensorDict containing positions, velocities, temperatures,
+            flock: Data containing positions, velocities, temperatures,
                    updated with computed physics and final action
         """
         for compute_fn in [
@@ -408,7 +405,7 @@ class MurmurationController(th.nn.Module):
         Update graph connectivity from provided edge topology.
 
         Extracts edge_source and edge_target from the edge_index tensor
-        and computes topological distances for the Hamiltonian forces.
+        and computes hop distances for the Hamiltonian forces.
 
         Args:
             flock: Data containing edge_index from TrajectoryGenerator
@@ -417,7 +414,7 @@ class MurmurationController(th.nn.Module):
         flock.edge_source = flock.edge_index[0]
         flock.edge_target = flock.edge_index[1]
         
-        self._compute_topological_distances(flock)
+        self._compute_hops(flock)
 
     def forward(self, flock: Data) -> Tensor:
         """

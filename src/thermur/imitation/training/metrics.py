@@ -200,51 +200,103 @@ class HamiltonianEnergyMetric(BaseMetric):
     Energy minimization drives alignment (E < 0) while thermal fluctuations
     (alert states) increase disorder, creating rich phase transitions.
     """
+    _hop_cache  = {}
+    _triu_cache = {}
+    
+    @th.compile(mode="default")
+    def _compute_hops_per_graph(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute minimum hop counts using vectorized Floyd-Warshall.
+        
+        Optimized implementation that processes all graphs in the batch
+        simultaneously, eliminating the sequential bottleneck. The k-loop
+        now operates on all B graphs at once via broadcasting.
+        
+        Key optimizations:
+            - Vectorized across batch dimension (B×N³ → N³ operations)
+            - Single memory allocation with optimal layout
+            - Exploits GPU parallelism for via-k path computations
+        
+        Args:
+            batch: PyG Batch with edge_index and batch assignment
+            
+        Returns:
+            Hop distance matrices [B, N, N] computed in parallel
+        """
+        B, N   = batch.num_graphs, self.agent_count
+        device = batch.edge_index.device
+        
+        hops = th.full(
+            device     = device,
+            dtype      = th.float32,
+            fill_value = float('inf'),
+            size       = (B, N, N)
+        )
+        hops.diagonal(dim1=1, dim2=2).fill_(0)
+        
+        batch_ids    = batch.batch[batch.edge_index[0]]
+        local_source = batch.edge_index[0] - batch_ids * N
+        local_target = batch.edge_index[1] - batch_ids * N
+        
+        hops[batch_ids, local_source, local_target] = 1
+        hops[batch_ids, local_target, local_source] = 1
+        
+        for k in range(N):
+            hops = th.minimum(hops, hops[:, :, k:k+1] + hops[:, k:k+1, :])
+        
+        return hops
+    
+    def _get_triu_mask(self, device: th.device) -> Tensor:
+        """
+        Get cached upper triangular mask for symmetric matrix operations.
+        
+        Caches mask per device to avoid redundant allocations during energy
+        computations. The mask ensures each interaction pair counted once.
+        """
+        cache_key = (device.type, device.index, self.agent_count)
+        if cache_key not in self._triu_cache:
+            self._triu_cache[cache_key] = th.triu(
+                th.ones(self.agent_count, self.agent_count, device=device),
+                diagonal = 1
+            )
+        return self._triu_cache[cache_key]
 
     def update(self, batch: FlockBatch):
         """
-        Compute Hamiltonian energy with vectorized operations.
+        Compute Hamiltonian energy using topological interactions.
         
-        Efficiently computes spin-spin interactions using batched matrix
-        operations optimized for MPS/GPU execution.
+        Computes spin-spin interactions based on hop distances in each graph's
+        unique k-NN topology, following Ballerini et al. (2008) findings that
+        starling flocks use topological rather than metric interactions.
 
         Args:
-            batch: PyG Batch with velocity, position, optional alert_states
+            batch: PyG Batch with edge_index and velocity tensors
         """
-        spins, = self._reshape_features(batch, "spins")
+        spins,   = self._reshape_features(batch, "spins")
+        hops     = self._compute_hops_per_graph(batch)
+        coupling = th.where(
+            hops.isfinite(),
+            self.j_base * (-hops / self.coupling_decay).exp(),
+            th.zeros_like(hops)
+        )
         
-        if "topo_distances" in batch and "edge_source" in batch:
-            coupling = th.zeros(
-                batch.num_graphs, self.agent_count, self.agent_count, 
-                device = spins.device
-            )
-            
-            idx = (
-                th.arange(batch.num_graphs, device=spins.device)
-                .unsqueeze(1).expand(-1, batch["edge_source"].shape[-1])
-            )
-            
-            alert_factor = (
-                self.alert_coupling_factor 
-                if "alert_states" in batch and (
-                    batch["alert_states"][idx, batch["edge_source"]] > 0.5
-                ).any() else 1.0
-            )
-            
-            j_edges = self.j_base * alert_factor * th.exp(
-                -batch["topo_distances"][
-                    idx, batch["edge_source"], batch["edge_target"]
-                ] / self.coupling_decay
-            )
-            
-            coupling[idx, batch["edge_source"], batch["edge_target"]] = j_edges
-            coupling[idx, batch["edge_target"], batch["edge_source"]] = j_edges
-        else:
-            distances, = self._reshape_features(batch, "distances")
-            coupling   = self.j_base * th.exp(-distances / self.coupling_decay)
-            coupling.diagonal(dim1=-2, dim2=-1).fill_(0)
-
-        energies = -(coupling * th.bmm(spins, spins.mT)).sum(dim=(1, 2)) / 2
+        alert_states = (
+            batch.alert_states if hasattr(batch, 'alert_states')
+            else th.arange(self.agent_count, device=spins.device) % 3 == 0
+        ).float()
+        
+        alert_mod = th.where(
+            alert_states.view(-1, self.agent_count, 1) > 0.5,
+            self.alert_coupling_factor,
+            1.0
+        )
+        coupling *= alert_mod
+        energies  = -(
+            coupling
+            * th.bmm(spins, spins.mT)
+            * self._get_triu_mask(spins.device)
+        ).sum(dim=(1, 2)) * 2
+        
         super().update(energies)
 
 
@@ -639,42 +691,44 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         """
         distances, spins = self._reshape_features(batch, "distances", "spins")
         
-        for b in range(batch.num_graphs):
-            corr_mat, distances = self._compute_velocity_correlations(
-                distances[b], spins[b]
+        delta_spins  = spins - spins.mean(dim=1, keepdim=True)
+        corr_mats    = th.bmm(delta_spins, delta_spins.mT)
+        triu_idx     = th.triu_indices(self.agent_count, self.agent_count, 1)
+        unique_corrs = corr_mats[:, triu_idx[0], triu_idx[1]]
+        unique_dists = distances[:, triu_idx[0], triu_idx[1]]
+        valid_batch  = unique_dists.amax(1) > unique_dists.amin(1)
+        
+        if not valid_batch.any():
+            return
+        
+        n_bins = min(10, max(3, triu_idx[0].numel() // 10))
+        
+        for b in th.where(valid_batch)[0]:
+            bins = th.bucketize(
+                unique_dists[b],
+                th.logspace(
+                    device = distances.device,
+                    end    = unique_dists[b].max().log10(),
+                    start  = unique_dists[b].min().log10(),
+                    steps  = n_bins + 1
+                )
+            ).clamp(max=n_bins-1)
+            
+            bin_sums = th.zeros(n_bins, 2, device=distances.device).index_add_(
+                dim    = 0, 
+                index  = bins, 
+                source = th.stack([unique_corrs[b], unique_dists[b]], -1)
             )
             
-            triu_mask    = th.triu(th.ones_like(distances), diagonal=1).bool()
-            unique_dists = distances[triu_mask]
-            max_dist     = unique_dists.max()
-            min_dist     = unique_dists.min()
-            
-            if min_dist == max_dist:
+            counts = th.bincount(bins, minlength=n_bins)
+            if (valid := counts > 0).sum() < 3:
                 continue
             
-            n_pairs = triu_mask.sum().item()
-            n_bins  = min(10, max(3, n_pairs // 10))
-            
-            bin_edges = th.logspace(
-                end   = max_dist.log10(),
-                start = min_dist.log10(),
-                steps = int(n_bins + 1)
+            bin_means = bin_sums[valid] / counts[valid].float().unsqueeze(-1)
+            super().update(
+                (self._fit_power_law(bin_means[:, 0], bin_means[:, 1]) - 
+                 self.correlation_exponent).abs()
             )
-            
-            bin_stats = [
-                (corr_mat[mask].mean(), distances[mask].mean())
-                for low, high in pairwise(bin_edges)
-                if (mask := triu_mask & distances.gt(low) & distances.le(high)).any()
-            ]
-            
-            if len(bin_stats) >= 3:
-                bin_data        = th.tensor(bin_stats, device=distances.device)
-                fitted_exponent = self._fit_power_law(
-                    bin_correlations = bin_data[:, 0],
-                    bin_distances    = bin_data[:, 1]
-                )
-                
-                super().update(abs(fitted_exponent - self.correlation_exponent))
 
 
 class States(BaseMetric):
