@@ -174,7 +174,12 @@ class FiedlerValueMetric(BaseMetric):
         """
         fiedler_value = th.linalg.eigvalsh(
             th.sparse_coo_tensor(
-                *get_laplacian(batch.edge_index, None, self.agent_count),
+                *get_laplacian(
+                    batch.edge_index,
+                    edge_weight   = None,
+                    normalization = None,
+                    num_nodes     = self.agent_count
+                ),
                 device = batch.edge_index.device,
                 size   = (self.agent_count, self.agent_count)
             ).to_dense()
@@ -326,36 +331,63 @@ class NeighborStabilityMetric(BaseMetric):
         """
         Initialize neighbor stability metric.
         
-        Stores last edges for computing Jaccard distance.
+        Tracks edge set evolution via symmetric adjacency matrices to quantify
+        topological changes in the flocking graph over time.
         """
         super().__init__(**kwargs)
-        self.add_state("last_edges", th.empty(0, 2, dtype=th.long))
+        self.add_state(
+            default = th.zeros(self.agent_count, self.agent_count, dtype=th.bool),
+            name    = "last_adjacency"
+        )
     
     def update(self, batch: FlockBatch):
         """
-        Update metric with topological change measurement.
+        Measure topological stability via edge set evolution.
         
-        Efficiently computes edge set differences using vectorized operations
-        for optimal MPS/GPU performance.
+        Tracks how rapidly neighborhoods reconfigure, distinguishing stable
+        cruising (persistent edges) from dynamic maneuvers (edge churn).
+        The Jaccard distance quantifies this topological change:
+            
+            Δ_topo = 1 - |E_t ∩ E_{t-1}| / |E_t ∪ E_{t-1}|
+        
+        where:
+            - E_t : Edge set at time t (undirected)
+            - |·| : Cardinality of edge set
+            - Δ_topo ∈ [0, 1] : 0 = identical topology, 1 = disjoint
         
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
         """
-        edges = th.unique(batch.edge_index.T, dim=0)
+        adjacency = th.zeros(
+            self.agent_count * self.agent_count, 
+            device = batch.edge_index.device, 
+            dtype  = th.bool
+        )
         
-        if self.last_edges is not None:
-            unique_edges, counts = th.unique(
-                th.cat([edges, self.last_edges]), 
-                dim           = 0, 
-                return_counts = True
-            )
-            
-            if union_size := unique_edges.shape[0]:
-                intersection     = (counts == 2).sum().float()
-                jaccard_distance = 1.0 - intersection / union_size
-                super().update(jaccard_distance)
+        flat_indices = th.cat([
+            batch.edge_index[0] * self.agent_count + batch.edge_index[1],
+            batch.edge_index[1] * self.agent_count + batch.edge_index[0]
+        ])
+        adjacency[flat_indices] = True
+        adjacency = adjacency.view(self.agent_count, self.agent_count)
+        triu_idx  = th.triu_indices(
+            col    = self.agent_count,
+            device = batch.edge_index.device,
+            offset = 1, 
+            row    = self.agent_count
+        )
         
-        self.last_edges = edges
+        current_edges       = adjacency[triu_idx[0], triu_idx[1]]
+        last_edges          = self.last_adjacency[triu_idx[0], triu_idx[1]]
+        self.last_adjacency = adjacency
+        intersection        = (current_edges & last_edges).sum()
+        union               = (current_edges | last_edges).sum()
+        
+        jaccard_distance = (
+            1.0 - intersection.float() / union.float() 
+            if union > 0 else th.tensor(0.0, device=batch.edge_index.device)
+        )
+        super().update(jaccard_distance)
 
 
 class OrientationCoherenceMetric(BaseMetric):
@@ -706,7 +738,7 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         for b in th.where(valid_batch)[0]:
             bins = th.bucketize(
                 unique_dists[b],
-                th.logspace(
+                10 ** th.linspace(
                     device = distances.device,
                     end    = unique_dists[b].max().log10(),
                     start  = unique_dists[b].min().log10(),
@@ -905,7 +937,7 @@ class MetricsFactory:
             "orientation_wave"       : make(OrientationWaveMetric),
             "perturbation_response"  : make(PerturbationResponseMetric),
             "power_components"       : make(PowerComponents),
-            "r2"                     : R2Score(num_outputs=3),
+            "r2"                     : R2Score(),
             "rmse"                   : MeanSquaredError(squared=False),
             "scale_free_correlation" : make(ScaleFreeCorrelationMetric),
             "states"                 : make(States),
