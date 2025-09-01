@@ -178,7 +178,7 @@ class FiedlerValueMetric(BaseMetric):
                 device = batch.edge_index.device,
                 size   = (self.agent_count, self.agent_count)
             ).to_dense()
-        )[1].clamp_min(0.0)
+        )[1:2].clamp_min(0.0)
         
         super().update(fiedler_value)
 
@@ -299,7 +299,8 @@ class NeighborStabilityMetric(BaseMetric):
             )
             
             if union_size := unique_edges.shape[0]:
-                jaccard_distance = 1.0 - (counts == 2).sum().item() / union_size
+                intersection     = (counts == 2).sum().float()
+                jaccard_distance = 1.0 - intersection / union_size
                 super().update(jaccard_distance)
         
         self.last_edges = edges
@@ -394,7 +395,8 @@ class OrientationWaveMetric(BaseMetric):
             heading_diffs.abs() / distances.clamp_min(self.epsilon)
         ).masked_fill(~mask, 0)
         
-        super().update(gradients.sum(dim=(1, 2)).mean(dim=0))
+        wave_amplitude = gradients.sum(dim=(1, 2)).mean(dim=0, keepdim=True)
+        super().update(wave_amplitude)
 
 
 class PerturbationResponseMetric(BaseMetric):
@@ -447,11 +449,16 @@ class PerturbationResponseMetric(BaseMetric):
             and (threat_mask := temperature.squeeze(-1) > self.max_temperature).any() 
             and (~threat_mask).any()
         ):
-            vel_changes = (velocity - self.last_velocity).norm(dim=-1)
+            vel_changes     = (velocity - self.last_velocity).norm(dim=-1)
+            threat_response = vel_changes[threat_mask].mean().unsqueeze(0)
             
-            if (threat_response := vel_changes[threat_mask].mean()) > self.epsilon:
-                non_threat_response = vel_changes[~threat_mask].mean()
-                super().update(non_threat_response / threat_response)
+            if (threat_response > self.epsilon).any():
+                response_ratio = (
+                    vel_changes[~threat_mask].mean().unsqueeze(0) / 
+                    threat_response
+                )
+
+                super().update(response_ratio)
         
         self.last_velocity = velocity.detach().clone()
 
@@ -592,7 +599,7 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         self,
         bin_distances    : Tensor,
         bin_correlations : Tensor
-    ) -> float:
+    ) -> Tensor:
         """
         Fit power law to binned correlation data.
 
@@ -612,7 +619,7 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         X = log_r - log_r.mean()
         Y = log_c - log_c.mean()
         
-        return float(-(X @ Y) / (X @ X)) if (X @ X) > 0 else 0.0
+        return -(X @ Y) / (X @ X) if (X @ X) > 0 else th.tensor(0.0)
 
     def update(self, batch: FlockBatch):
         """
