@@ -15,7 +15,7 @@ import torch as th
 if TYPE_CHECKING:
     from ..environment                import TrajectoryGenerator
     from .safety                      import CBFSafetyFilter
-    from config.imitation.controller  import FlockModel, MurmurationModel, SafetyModel
+    from config.imitation.controller  import MurmurationModel, SafetyModel
     from torch                        import Tensor
 
 
@@ -54,7 +54,6 @@ class MurmurationController(th.nn.Module):
     def __init__(
         self,
         cbf    : CBFSafetyFilter | None,
-        flock  : FlockModel,
         mmm    : MurmurationModel,
         safety : SafetyModel
     ):
@@ -64,13 +63,11 @@ class MurmurationController(th.nn.Module):
         Args:
             cbf    : Optional Control Barrier Function filter for safety.
                      If None, no safety filtering is applied
-            flock  : Flock configuration containing agent properties
             mmm    : Murmuration model with dynamics and weight parameters
             safety : Safety configuration with thresholds and CBF parameters
         """
         super().__init__()
         self.cbf    = cbf
-        self.flock  = flock
         self.mmm    = mmm
         self.safety = safety
         self.alert_states_memory = {}
@@ -114,10 +111,6 @@ class MurmurationController(th.nn.Module):
                 - threats      : Normalized threat levels θ ∈ [0,1]^(N×1)
                 - density_wave : Dispersive forces 𝐅 ∈ ℝ^(N×3) [m/s²]
         """
-        if self.flock.agent_count < 2:
-            flock.density_wave = th.zeros_like(flock.position)
-            return
-        
         dists   = th.cdist(flock.position, flock.position, p=2)
         weights = th.exp(-dists**2 / (2 * self.mmm.density_bandwidth**2))
         weights.fill_diagonal_(0)
@@ -169,28 +162,26 @@ class MurmurationController(th.nn.Module):
             flock: TensorDict containing positions, velocities, gradient, alert_states,
                    edge indices, and topo_distances, updated with base_forces
         """
-        flock.base_forces = th.zeros_like(flock.position)
+        flock.base_forces   = th.zeros_like(flock.position) 
+        alert_states_source = flock.alert_states[flock.edge_source]
         
-        if flock.edge_source.numel() > 0:
-            alert_states_source = flock.alert_states[flock.edge_source]
-            
-            coupling_modifier = th.where(
-                alert_states_source > 0.5,
-                self.mmm.alert_coupling_factor,
-                1.0
-            )
-            
-            j_edges = self.mmm.j_base * coupling_modifier * th.exp(
-                -flock.topo_distances[
-                    flock.edge_source, flock.edge_target
-                ] / self.mmm.coupling_decay
-            )
+        coupling_modifier = th.where(
+            alert_states_source > 0.5,
+            self.mmm.alert_coupling_factor,
+            1.0
+        )
+        
+        j_edges = self.mmm.j_base * coupling_modifier * th.exp(
+            -flock.topo_distances[
+                flock.edge_source, flock.edge_target
+            ] / self.mmm.coupling_decay
+        )
 
-            force_contrib = j_edges.unsqueeze(1) * (
-                flock.velocity[flock.edge_target] - 
-                flock.velocity[flock.edge_source]
-            )
-            flock.base_forces.index_add_(0, flock.edge_source, force_contrib)
+        force_contrib = j_edges.unsqueeze(1) * (
+            flock.velocity[flock.edge_target] - 
+            flock.velocity[flock.edge_source]
+        )
+        flock.base_forces.index_add_(0, flock.edge_source, force_contrib)
         
         metric_distances = th.cdist(flock.position, flock.position)
         mask = (
@@ -239,20 +230,18 @@ class MurmurationController(th.nn.Module):
             flock: TensorDict updated with alert_states and alert_fraction
         """
         traj_id = 0
-        
-        device   = flock.position.device
-        n_agents = self.flock.agent_count
+        device  = flock.position.device
         
         if traj_id not in self.alert_states_memory:
             steady_state = self.mmm.relaxed_to_alert_rate / (
                 self.mmm.relaxed_to_alert_rate + self.mmm.alert_to_relaxed_rate
             )
             self.alert_states_memory[traj_id] = th.bernoulli(
-                th.ones(n_agents, device=device) * steady_state
+                th.ones(self.mmm.agent_count, device=device) * steady_state
             )
         
         previous    = self.alert_states_memory[traj_id].to(device)
-        random_vals = th.rand(n_agents, device=device)
+        random_vals = th.rand(self.mmm.agent_count, device=device)
         new_states  = th.where(
             previous    > 0.5,
             random_vals > self.mmm.alert_to_relaxed_rate,
@@ -359,22 +348,19 @@ class MurmurationController(th.nn.Module):
         Args:
             flock: TensorDict with edge indices, updated with topo_distances
         """
-        device = flock.position.device
-        n      = self.flock.agent_count
-        
+
         dist = th.full(
-            device     = device,
+            device     = flock.position.device,
             dtype      = th.float32,
             fill_value = float('inf'),
-            size       = (n, n)
+            size       = (self.mmm.agent_count, self.mmm.agent_count)
         )
         dist.fill_diagonal_(0)
 
-        if flock.edge_source.numel() > 0:
-            dist[flock.edge_source, flock.edge_target] = 1
-            dist[flock.edge_target, flock.edge_source] = 1
+        dist[flock.edge_source, flock.edge_target] = 1
+        dist[flock.edge_target, flock.edge_source] = 1
 
-        for k in range(n):
+        for k in range(self.mmm.agent_count):
             dist = th.minimum(dist, dist[:, k:k+1] + dist[k:k+1, :])
 
         flock.topo_distances = dist

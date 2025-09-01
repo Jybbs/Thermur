@@ -31,8 +31,8 @@ ENVIRONMENT_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "trajectory_generator": builds(
         TrajectoryGenerator,
-        flock                   = "${controller.flock}",
         k_neighbors             = "${controller.mmm.k_neighbors}",
+        mmm                     = "${controller.mmm}",
         physics                 = "${environment.physics}",
         safety                  = "${controller.safety}",
         wrf                     = "${_system.wrf}",

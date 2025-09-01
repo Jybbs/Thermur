@@ -13,7 +13,7 @@ from typing  import TYPE_CHECKING
 import torch as th
 
 if TYPE_CHECKING:
-    from config.imitation.controller import FlockModel, SafetyModel
+    from config.imitation.controller import MurmurationModel, SafetyModel
     from torch                       import Tensor
     from torch_geometric.data        import Data
 
@@ -33,7 +33,7 @@ class CBFSafetyFilter:
 
     def __init__(
         self,
-        flock  : FlockModel,
+        mmm    : MurmurationModel,
         safety : SafetyModel
     ):
         """
@@ -43,12 +43,12 @@ class CBFSafetyFilter:
         We pre-construct the constant identity matrix `Q` for efficiency.
 
         Args:
-            flock  : Flock configuration model containing agent properties
+            mmm    : Murmuration model containing agent properties
             safety : Safety configuration with CBF parameters and thresholds
         """
         self.activation_count     = 0
         self.activation_tolerance = safety.cbf_tolerance
-        self.agent_count          = flock.agent_count
+        self.agent_count          = mmm.agent_count
         self.max_temperature      = safety.max_temperature
         self.safety               = safety
         self.total_queries        = 0

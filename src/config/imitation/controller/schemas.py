@@ -8,41 +8,6 @@ from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
-class FlockModel(BaseModel, extra="forbid"):
-    """
-    Unified configuration for the thermal drone flock.
-
-    Combines agent physical properties, collective behavior parameters,
-    and spatial settings into a single coherent configuration used across
-    simulation, control, and safety components.
-
-    The communication range R_comm determines the dynamic neighborhood graph
-    G_t = (V, E_t) at each timestep t, where edges exist between agents i and j
-    when:
-
-        ||𝐱_i - 𝐱_j|| ≤ R_comm
-
-    Note: With murmuration dynamics, this metric-based connectivity is overridden
-    by topological neighborhoods (k-nearest neighbors) for control calculations,
-    though R_comm still affects simulation and safety constraints.
-    """
-    agent_count: PositiveInt = Field(
-        default     = 30,
-        ge          = 8,
-        description = (
-            "Total number of agents N in the multi-agent system, determining "
-            "computational complexity and emergent flock dynamics scale. "
-            "Minimum of 8 ensures k-nearest neighbor connectivity with k=7."
-        )
-    )
-    communication_range: PositiveFloat = Field(
-        default     = 50.0,
-        description = (
-            "Maximum distance R_comm in meters for edge formation in dynamic graph "
-            "G_t where (i,j) ∈ E_t iff ||𝐱_i - 𝐱_j|| ≤ R_comm."
-        )
-    )
-
 
 class MurmurationModel(BaseModel, extra="forbid"):
     """
@@ -58,6 +23,15 @@ class MurmurationModel(BaseModel, extra="forbid"):
     susceptibility diverges, enabling near-instantaneous response to threats
     while maintaining cohesion through topological neighbor tracking.
     """
+    agent_count: PositiveInt = Field(
+        default     = 30,
+        ge          = 8,
+        description = (
+            "Total number of agents N in the multi-agent system, determining "
+            "computational complexity and emergent flock dynamics scale. "
+            "Minimum of 8 ensures k-nearest neighbor connectivity with k=7."
+        )
+    )
     alert_amplification: PositiveFloat = Field(
         default     = 4.5,
         description = (
@@ -88,6 +62,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Transition rate μ from alert to relaxed state (per timestep). "
             "Mean alert duration = 1/μ = 20 timesteps. Based on vigilance "
             "bout durations observed in birds."
+        )
+    )
+    communication_range: PositiveFloat = Field(
+        default     = 50.0,
+        description = (
+            "Metric interaction radius R_comm in meters defining the spatial scale of "
+            "the flock. While murmuration control uses topological k-NN, this radius "
+            "sets initial agent spacing and safety boundaries where ||𝐱_i - 𝐱_j|| ≤ R_comm."
         )
     )
     coupling_decay: PositiveFloat = Field(

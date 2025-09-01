@@ -14,7 +14,7 @@ import torch as th
 
 if TYPE_CHECKING:
     from .loader                      import WRFLoader
-    from config.imitation.controller  import FlockModel, SafetyModel
+    from config.imitation.controller  import MurmurationModel, SafetyModel
     from config.imitation.environment import PhysicsModel
 
 
@@ -35,8 +35,8 @@ class TrajectoryGenerator:
     
     def __init__(
         self,
-        flock       : FlockModel,
         k_neighbors : int,
+        mmm         : MurmurationModel,
         physics     : PhysicsModel,
         safety      : SafetyModel,
         wrf         : WRFLoader,
@@ -45,19 +45,19 @@ class TrajectoryGenerator:
         Initialize the trajectory generator.
         
         Args:
-            flock       : Flock configuration with agent count and parameters
             k_neighbors : Number of topological neighbors for connectivity
+            mmm         : Murmuration model with agent count and parameters
             physics     : Physics simulation parameters
             safety      : Safety thresholds (for reference, not enforced here)
             wrf         : WRF data source for environmental queries
         """
         self.episode_time = 0.0
-        self.flock        = flock
         self.k_neighbors  = k_neighbors
+        self.mmm          = mmm
         self.physics      = physics
-        self.positions    = th.zeros(flock.agent_count, 3)
+        self.positions    = th.zeros(mmm.agent_count, 3)
         self.safety       = safety
-        self.velocities   = th.zeros(flock.agent_count, 3)
+        self.velocities   = th.zeros(mmm.agent_count, 3)
         self.wrf          = wrf
         
         # Temporal tracking
@@ -76,13 +76,13 @@ class TrajectoryGenerator:
         Returns:
             Edge index tensor [2, E] for PyG Data objects
         """
-        distances   = th.cdist(position, position)
-        _, indices  = distances.topk(self.k_neighbors + 1, largest=False)
-        n_agents    = len(position)
-        edge_source = th.arange(n_agents).repeat_interleave(self.k_neighbors)
-        edge_target = indices[:, 1:].flatten()
+        distances  = th.cdist(position, position)
+        _, indices = distances.topk(self.k_neighbors + 1, largest=False)
         
-        return th.stack([edge_source, edge_target])
+        return th.stack([
+            th.arange(self.mmm.agent_count).repeat_interleave(self.k_neighbors), 
+            indices[:, 1:].flatten()
+        ])
     
     def _compute_forces(
         self,
@@ -113,21 +113,18 @@ class TrajectoryGenerator:
         
         return actions + gravity + drag_force + wind_force
     
-    def _fibonacci_lattice(self, n: int) -> Tensor:
+    def _fibonacci_lattice(self) -> Tensor:
         """
         Generate initial positions using Fibonacci lattice on a sphere.
         
         Creates a nearly-uniform distribution on a sphere using the golden
         ratio for optimal angular spacing.
-        
-        Args:
-            n: Number of agents
             
         Returns:
             Initial positions [N, 3]
         """
-        indices      = th.arange(n, dtype=th.float32)
-        z            = 1 - (2 * indices) / (n - 1)
+        indices      = th.arange(self.mmm.agent_count, dtype=th.float32)
+        z            = 1 - (2 * indices) / (self.mmm.agent_count - 1)
         radius       = th.sqrt(1 - z*z)
         golden_angle = th.pi * (3. - (5.**0.5))
         theta        = golden_angle * indices
@@ -214,9 +211,9 @@ class TrajectoryGenerator:
                 - wind        : Wind field at positions  [N, 3]
         """
         # Generate initial positions using Fibonacci lattice
-        positions = self._fibonacci_lattice(self.flock.agent_count)
+        positions = self._fibonacci_lattice()
         positions *= (
-            self.flock.communication_range * 
+            self.mmm.communication_range * 
             self.physics.initial_spacing_factor
         )
         positions[:, 2] += self.physics.initial_altitude

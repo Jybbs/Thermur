@@ -23,7 +23,6 @@ if TYPE_CHECKING:
 
 
 CONTROLLER_USER_CONFIG = make_config(
-    flock  = FlockModel(),
     mmm    = MurmurationModel(),
     safety = SafetyModel()
 )
@@ -32,7 +31,7 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "cbf": builds(
         CBFSafetyFilter,
-        flock                   = "${controller.flock}",
+        mmm                     = "${controller.mmm}",
         safety                  = "${controller.safety}",
         populate_full_signature = True
     ),
@@ -40,7 +39,6 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "murmuration": builds(
         MurmurationController,
         cbf                     = "${_system.cbf}",
-        flock                   = "${controller.flock}",
         mmm                     = "${controller.mmm}",
         safety                  = "${controller.safety}",
         populate_full_signature = True

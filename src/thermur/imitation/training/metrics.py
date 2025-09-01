@@ -11,7 +11,6 @@ and can be used directly in LightningModules without a separate collector.
 """
 from __future__           import annotations
 from itertools            import pairwise
-from torch_geometric.data import Batch
 from torchmetrics         import MeanAbsoluteError, MeanMetric, MeanSquaredError
 from torchmetrics         import MetricCollection, R2Score
 from typing               import TYPE_CHECKING
@@ -72,9 +71,10 @@ class BaseMetric(MeanMetric):
         to eliminate redundant computations across metrics.
         
         Computed features (lazily evaluated and cached):
-        - 'distances'       : Pairwise Euclidean distances via cdist [B, N, N]
-        - 'velocity_norm'   : Unit-normalized velocity vectors [B, N, 3]
-        - 'velocity_norm_2d': Unit-normalized 2D velocity projections [B, N, 2]
+        - 'distances' : Pairwise Euclidean distances via cdist      [B, N, N]
+        - 'spin_mean' : Mean of normalized velocities across agents [B, 1, 3]
+        - 'spins'     : Unit-normalized velocity vectors            [B, N, 3]
+        - 'spins_2d'  : Unit-normalized 2D velocity projections     [B, N, 2]
         
         The cache uses batch object IDs as keys, ensuring automatic invalidation when
         processing new batches. The cache is cleared after each training step via
@@ -92,10 +92,12 @@ class BaseMetric(MeanMetric):
         cache     = BaseMetric._reshape_cache 
         normalize = lambda vecs: th.nn.functional.normalize(vecs, dim=-1)
         reshape   = lambda feat: self._reshape_features(batch, feat)[0]
+        spin      = lambda s=slice(None): normalize(reshape('velocity')[..., s])
         computed  = {
-            'distances'        : lambda: th.cdist(p := reshape('position'), p),
-            'velocity_norm'    : lambda: normalize(reshape('velocity')),
-            'velocity_norm_2d' : lambda: normalize(reshape('velocity')[..., :2]),
+            'distances'  : lambda: th.cdist(p := reshape('position'), p),
+            'spin_mean'  : lambda: spin().mean(dim=1, keepdim=True),
+            'spins'      : spin,
+            'spins_2d'   : lambda: spin(slice(2)),
         }
         
         get_or_compute = lambda feat: (
@@ -147,30 +149,60 @@ class FiedlerValueMetric(BaseMetric):
         - Strongly connected : λ₂ > 0.5
     """
 
-    def _compute_fiedler_power_iteration(
-        self,
-        laplacian : Tensor
-    ) -> Tensor:
+    def _build_laplacian_matrix(self, edge_index: Tensor) -> Tensor:
         """
-        Compute Fiedler value using power iteration method.
+        Construct the graph Laplacian matrix L = D - A.
+
+        Builds a symmetric adjacency matrix from the edge list and computes
+        the Laplacian for spectral analysis.
+
+        Args:
+            edge_index : Graph edges [2, E] in COO format
+
+        Returns:
+            Tensor [agent_count, agent_count] symmetric Laplacian matrix
+        """
+        adjacency_matrix = th.zeros(
+            self.agent_count, self.agent_count, device=edge_index.device
+        )
         
-        MPS-compatible alternative to eigvalsh that avoids CPU fallback.
-        Uses inverse power iteration with shift to find second smallest eigenvalue.
+        adjacency_matrix[edge_index[0], edge_index[1]] = 1.0
+        adjacency_matrix[edge_index[1], edge_index[0]] = 1.0
+        
+        degree_matrix = th.diag_embed(adjacency_matrix.sum(1))
+        laplacian     = degree_matrix - adjacency_matrix
+        
+        return laplacian
+
+    def _compute_algebraic_connectivity(self, laplacian: Tensor) -> Tensor:
+        """
+        Compute the algebraic connectivity (Fiedler value) via inverse iteration.
+        
+        Finds the second-smallest eigenvalue λ₂ of the graph Laplacian using
+        shifted inverse power iteration. This eigenvalue quantifies how well
+        connected the communication graph is, with λ₂ = 0 indicating disconnection
+        and larger values indicating stronger connectivity.
+        
+        The algorithm iteratively refines an eigenvector estimate by solving:
+
+            (L + σI)v_{k+1} = v_k
+            
+        where σ is a small shift ensuring numerical stability.
         
         Args:
-            laplacian: Graph Laplacian matrix [n, n]
+            laplacian: Graph Laplacian matrix L = D - A where D is degree matrix
             
         Returns:
-            Approximation of second smallest eigenvalue (Fiedler value)
+            The Fiedler value λ₂ (second-smallest eigenvalue of L)
         """
         v = th.nn.functional.normalize(
-            (v := th.randn(laplacian.shape[0], device=laplacian.device)) - v.mean(),
+            (v := th.randn(self.agent_count, device=laplacian.device)) - v.mean(),
             dim = 0
         )
 
         shifted_laplacian = (
             laplacian + self.fiedler_shift * 
-            th.eye(laplacian.shape[0], device=laplacian.device)
+            th.eye(self.agent_count, device=laplacian.device)
         )
         
         for _ in range(self.power_iterations):
@@ -187,36 +219,6 @@ class FiedlerValueMetric(BaseMetric):
         fiedler_value        = rayleigh_numerator / rayleigh_denominator
         
         return fiedler_value.clamp_min(0.0)
-    
-    def _compute_graph_laplacian(
-        self,
-        edge_index : Tensor,
-        num_agents : int
-    ) -> Tensor:
-        """
-        Construct the graph Laplacian matrix L = D - A.
-
-        Builds a symmetric adjacency matrix from the edge list and computes
-        the Laplacian for spectral analysis.
-
-        Args:
-            edge_index : Graph edges [2, E] in COO format  
-            num_agents : Number of nodes in the graph
-
-        Returns:
-            Tensor [n, n] symmetric Laplacian matrix
-        """
-        adjacency_matrix = th.zeros(
-            (num_agents, num_agents), device=edge_index.device
-        )
-        
-        adjacency_matrix[edge_index[0], edge_index[1]] = 1.0
-        adjacency_matrix[edge_index[1], edge_index[0]] = 1.0
-        
-        degree_matrix = th.diag_embed(adjacency_matrix.sum(1))
-        laplacian     = degree_matrix - adjacency_matrix
-        
-        return laplacian
 
     def update(self, batch: FlockBatch):
         """
@@ -228,8 +230,8 @@ class FiedlerValueMetric(BaseMetric):
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
         """
-        fiedler_value = self._compute_fiedler_power_iteration(
-            self._compute_graph_laplacian(batch.edge_index, self.agent_count)
+        fiedler_value = self._compute_algebraic_connectivity(
+            self._build_laplacian_matrix(batch.edge_index)
         )
         
         super().update(fiedler_value)
@@ -263,7 +265,7 @@ class HamiltonianEnergyMetric(BaseMetric):
         Args:
             batch: PyG Batch with velocity, position, optional alert_states
         """
-        spins, = self._reshape_features(batch, "velocity_norm")
+        spins, = self._reshape_features(batch, "spins")
         
         if "topo_distances" in batch and "edge_source" in batch:
             coupling = th.zeros(
@@ -271,27 +273,26 @@ class HamiltonianEnergyMetric(BaseMetric):
                 device = spins.device
             )
             
-            if (n_edges := batch["edge_source"].shape[-1]) > 0:
-                idx = (
-                    th.arange(batch.num_graphs, device=spins.device)
-                    .unsqueeze(1).expand(-1, n_edges)
-                )
-                
-                alert_factor = (
-                    self.alert_coupling_factor 
-                    if "alert_states" in batch and (
-                        batch["alert_states"][idx, batch["edge_source"]] > 0.5
-                    ).any() else 1.0
-                )
-                
-                j_edges = self.j_base * alert_factor * th.exp(
-                    -batch["topo_distances"][
-                        idx, batch["edge_source"], batch["edge_target"]
-                    ] / self.coupling_decay
-                )
-                
-                coupling[idx, batch["edge_source"], batch["edge_target"]] = j_edges
-                coupling[idx, batch["edge_target"], batch["edge_source"]] = j_edges
+            idx = (
+                th.arange(batch.num_graphs, device=spins.device)
+                .unsqueeze(1).expand(-1, batch["edge_source"].shape[-1])
+            )
+            
+            alert_factor = (
+                self.alert_coupling_factor 
+                if "alert_states" in batch and (
+                    batch["alert_states"][idx, batch["edge_source"]] > 0.5
+                ).any() else 1.0
+            )
+            
+            j_edges = self.j_base * alert_factor * th.exp(
+                -batch["topo_distances"][
+                    idx, batch["edge_source"], batch["edge_target"]
+                ] / self.coupling_decay
+            )
+            
+            coupling[idx, batch["edge_source"], batch["edge_target"]] = j_edges
+            coupling[idx, batch["edge_target"], batch["edge_source"]] = j_edges
         else:
             distances, = self._reshape_features(batch, "distances")
             coupling   = self.j_base * th.exp(-distances / self.coupling_decay)
@@ -342,16 +343,11 @@ class NeighborStabilityMetric(BaseMetric):
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
         """
-        edges = batch.edge_index
-        if edges.numel() == 0:
-            self.last_edges = th.empty(0, 2, dtype=th.long)
-            return
+        edges = th.unique(batch.edge_index.T, dim=0)
         
-        current_edges = th.unique(edges.T, dim=0)
-        
-        if self.last_edges is not None and self.last_edges.numel() > 0:
+        if self.last_edges is not None:
             unique_edges, counts = th.unique(
-                th.cat([current_edges, self.last_edges]), 
+                th.cat([edges, self.last_edges]), 
                 dim           = 0, 
                 return_counts = True
             )
@@ -360,7 +356,7 @@ class NeighborStabilityMetric(BaseMetric):
                 jaccard_distance = 1.0 - (counts == 2).sum().item() / union_size
                 super().update(jaccard_distance)
         
-        self.last_edges = current_edges
+        self.last_edges = edges
 
 
 class OrientationCoherenceMetric(BaseMetric):
@@ -397,8 +393,7 @@ class OrientationCoherenceMetric(BaseMetric):
         Args:
             batch: PyG Batch containing velocity [B*N, 3] flattened
         """
-        headings = self._reshape_features(batch, "velocity_norm_2d")[0]
-        
+        headings  = self._reshape_features(batch, "spins_2d")[0]
         alignment = th.bmm(headings, headings.mT)
         coherence = (
             alignment.sum(dim=(1, 2)) - batch.num_graphs * self.agent_count
@@ -624,24 +619,22 @@ class ScaleFreeCorrelationMetric(BaseMetric):
 
     def _compute_velocity_correlations(
         self,
-        positions  : Tensor,
-        velocities : Tensor
+        distances : Tensor,
+        spins     : Tensor
     ) -> tuple[Tensor, Tensor]:
         """
-        Compute pairwise velocity correlations and distances.
+        Compute pairwise velocity correlations using cached data.
 
         Calculates the correlation function C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ for all
         pairs of agents, where δ𝐯 = 𝐯 - ⟨𝐯⟩ are velocity fluctuations.
 
         Args:
-            positions  : Agent positions  𝐱 ∈ ℝ^(n×3)
-            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
+            distances : Cached distance matrix from _reshape_features
+            spins     : Cached normalized velocities from _reshape_features
 
         Returns:
             Tuple of (correlation_matrix, distance_matrix)
         """
-        distances  = th.cdist(positions, positions)
-        spins      = th.nn.functional.normalize(velocities, dim=1)
         delta_spin = spins - spins.mean(dim=0, keepdim=True)
         corr_mat   = delta_spin @ delta_spin.mT
         
@@ -683,26 +676,23 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         
             n_bins = min(10, max(3, n_pairs // 10))
         
-        Handles edge cases where d_min = d_max (no variation) or n_agents < 4
+        Handles edge cases where d_min = d_max (no variation) or agent_count < 4
         (insufficient data for power law fitting).
         
         Args:
             batch: PyG Batch containing position and velocity [B*N, 3] flattened
         """
-        positions, velocities = self._reshape_features(batch, "position", "velocity")
+        distances, spins = self._reshape_features(batch, "distances", "spins")
         
         for b in range(batch.num_graphs):
             corr_mat, distances = self._compute_velocity_correlations(
-                positions[b], velocities[b]
+                distances[b], spins[b]
             )
             
-            triu_mask = th.triu(th.ones_like(distances), diagonal=1).bool()
-            if not triu_mask.any():
-                continue
-            
-            unique_distances = distances[triu_mask]
-            max_dist         = unique_distances.max()
-            min_dist         = unique_distances.min()
+            triu_mask    = th.triu(th.ones_like(distances), diagonal=1).bool()
+            unique_dists = distances[triu_mask]
+            max_dist     = unique_dists.max()
+            min_dist     = unique_dists.min()
             
             if min_dist == max_dist:
                 continue
@@ -754,6 +744,7 @@ class States(BaseMetric):
     active matter dynamics of self-propelled particles maintaining constant
     speed while adapting to environmental gradients.
     """
+
     def __init__(self, **kwargs):
         """
         Initialize state tracking for physical quantities.
@@ -796,9 +787,7 @@ class States(BaseMetric):
         Args:
             batch: PyG Batch containing velocity, temperature, and action
         """
-        action = batch.action
-        self.acceleration.update(action.norm(dim=-1))
-        
+        self.acceleration.update(batch.action.norm(dim=-1))
         self.temperature.update(batch.temperature)
         self.velocity.update(batch.velocity.norm(dim=-1))
 
@@ -838,10 +827,8 @@ class SusceptibilityMetric(BaseMetric):
         Args:
             batch: PyG Batch containing velocity tensor [B*N, 3] flattened
         """
-        spins     = self._reshape_features(batch, "velocity_norm")[0]
-        mean_spin = spins.mean(dim=-2, keepdim=True)
-        
-        polarizations    = (spins * mean_spin).sum(dim=-1)
+        spins, spin_mean = self._reshape_features(batch, "spins", "spin_mean")
+        polarizations    = (spins * spin_mean).sum(dim=-1)
         susceptibilities = self.agent_count * polarizations.var(dim=-1)
         
         super().update(susceptibilities)
