@@ -656,54 +656,127 @@ class ScaleFreeCorrelationMetric(BaseMetric):
     where γ ≈ 1/3 for natural murmurations (Cavagna et al. 2010).
     """
 
-    def _compute_velocity_correlations(
+    def _bin_correlations(
+        self,
+        correlations : Tensor,
+        distances    : Tensor,
+        n_bins       : int
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Bin correlations by distance using logarithmic spacing.
+        
+        Creates logarithmically-spaced bins to capture scale-free behavior
+        across multiple length scales. Uses fully vectorized binning to
+        process all batches simultaneously.
+        
+        Args:
+            correlations : Velocity correlations [B_valid, n_pairs]
+            distances    : Pairwise distances [B_valid, n_pairs]
+            n_bins       : Number of logarithmic bins
+            
+        Returns:
+            Tuple of (bin_means, valid_bins) for power law fitting
+        """
+        B_valid = correlations.shape[0]
+        device  = distances.device
+        
+        dist_mins = distances.amin(1, keepdim=True)
+        dist_maxs = distances.amax(1, keepdim=True)
+        
+        normalized = (
+            (distances.log10() - dist_mins.log10()) / 
+            (dist_maxs.log10() - dist_mins.log10() + 1e-8)
+        )
+        bins = (normalized * n_bins).long().clamp(0, n_bins - 1)
+        
+        batch_offsets   = th.arange(B_valid, device=device).unsqueeze(1) * n_bins
+        bins_with_batch = bins + batch_offsets
+        
+        bins_flat  = bins_with_batch.reshape(-1)
+        corrs_flat = correlations.reshape(-1)
+        dists_flat = distances.reshape(-1)
+        
+        bin_sums = th.zeros(B_valid * n_bins, 2, device=device).index_add_(
+            dim    = 0,
+            index  = bins_flat,
+            source = th.stack([corrs_flat, dists_flat], -1)
+        )
+        
+        counts     = th.bincount(bins_flat, minlength=B_valid * n_bins).view(B_valid, n_bins)
+        bin_sums   = bin_sums.view(B_valid, n_bins, 2)
+        valid_bins = counts > 0
+        
+        bin_means = th.where(
+            valid_bins.unsqueeze(-1),
+            bin_sums / counts.clamp_min(1).unsqueeze(-1),
+            th.zeros_like(bin_sums)
+        )
+        
+        return bin_means, valid_bins
+
+    def _compute_correlations(
         self,
         distances : Tensor,
         spins     : Tensor
     ) -> tuple[Tensor, Tensor]:
         """
-        Compute pairwise velocity correlations using cached data.
-
-        Calculates the correlation function C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ for all
-        pairs of agents, where δ𝐯 = 𝐯 - ⟨𝐯⟩ are velocity fluctuations.
-
-        Args:
-            distances : Cached distance matrix from _reshape_features
-            spins     : Cached normalized velocities from _reshape_features
-
-        Returns:
-            Tuple of (correlation_matrix, distance_matrix)
-        """
-        delta_spin = spins - spins.mean(dim=0, keepdim=True)
-        corr_mat   = delta_spin @ delta_spin.mT
+        Compute velocity correlations for all agent pairs.
         
-        return corr_mat, distances
+        Calculates C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ where δ𝐯 = 𝐯 - ⟨𝐯⟩ are velocity
+        fluctuations from the mean. Returns upper triangular elements only
+        to avoid redundant pair computations.
+        
+        Args:
+            distances : Pairwise distances    [B, N, N]
+            spins     : Normalized velocities [B, N, 3]
+            
+        Returns:
+            Tuple of (unique_correlations, unique_distances) [B, N*(N-1)/2]
+        """
+        delta_spins = spins - spins.mean(dim=1, keepdim=True)
+        corr_mats   = th.bmm(delta_spins, delta_spins.mT)
+        triu_idx    = th.triu_indices(self.agent_count, self.agent_count, 1)
+        
+        return (
+            corr_mats[:, triu_idx[0], triu_idx[1]], 
+            distances[:, triu_idx[0], triu_idx[1]]
+        )
 
-    def _fit_power_law(
+    def _fit_power_laws(
         self,
-        bin_distances    : Tensor,
-        bin_correlations : Tensor
+        bin_means  : Tensor,
+        valid_bins : Tensor
     ) -> Tensor:
         """
-        Fit power law to binned correlation data.
-
-        Uses log-log linear regression to estimate the exponent γ in:
-            log C(r) = -γ log r + const
-
+        Fit power law exponents to binned correlation data.
+        
+        Performs log-log linear regression to estimate γ in C(r) ~ r^(-γ)
+        for all valid batches simultaneously. Uses masked operations to
+        handle variable numbers of valid bins per batch.
+        
         Args:
-            bin_distances    : Mean distance per bin [n_bins]
-            bin_correlations : Mean correlation per bin [n_bins]
-
+            bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
+            valid_bins : Mask of bins with sufficient data [B, n_bins]
+            
         Returns:
-            Estimated power law exponent γ
+            Power law exponents γ for batches with ≥3 valid bins
         """
-        log_r = bin_distances.log()
-        log_c = bin_correlations.abs().clamp_min(1e-8).log()
+        log_r = bin_means[..., 1].log().masked_fill(~valid_bins, 0)
+        log_c = bin_means[..., 0].abs().clamp_min(1e-8).log().masked_fill(~valid_bins, 0)
         
-        X = log_r - log_r.mean()
-        Y = log_c - log_c.mean()
+        valid_counts = valid_bins.sum(1)
+        mask         = valid_counts >= 3
         
-        return -(X @ Y) / (X @ X) if (X @ X) > 0 else th.tensor(0.0)
+        if not mask.any():
+            return th.empty(0, device=bin_means.device)
+        
+        X = log_r[mask] - log_r[mask].mean(1, keepdim=True)
+        Y = log_c[mask] - log_c[mask].mean(1, keepdim=True)
+        
+        XX = (X * X * valid_bins[mask]).sum(1)
+        XY = (X * Y * valid_bins[mask]).sum(1)
+        
+        return th.where(XX > 0, -XY / XX, th.zeros_like(XX))
 
     def update(self, batch: FlockBatch):
         """
@@ -723,44 +796,27 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         """
         distances, spins = self._reshape_features(batch, "distances", "spins")
         
-        delta_spins  = spins - spins.mean(dim=1, keepdim=True)
-        corr_mats    = th.bmm(delta_spins, delta_spins.mT)
-        triu_idx     = th.triu_indices(self.agent_count, self.agent_count, 1)
-        unique_corrs = corr_mats[:, triu_idx[0], triu_idx[1]]
-        unique_dists = distances[:, triu_idx[0], triu_idx[1]]
-        valid_batch  = unique_dists.amax(1) > unique_dists.amin(1)
+        unique_corrs, unique_dists = self._compute_correlations(distances, spins)
+        valid_batch = unique_dists.amax(1) > unique_dists.amin(1)
         
         if not valid_batch.any():
             return
         
-        n_bins = min(10, max(3, triu_idx[0].numel() // 10))
+        valid_ids = th.where(valid_batch)[0]
+        n_pairs   = unique_corrs.shape[1]
+        n_bins    = min(10, max(3, n_pairs // 10))
         
-        for b in th.where(valid_batch)[0]:
-            bins = th.bucketize(
-                unique_dists[b],
-                10 ** th.linspace(
-                    device = distances.device,
-                    end    = unique_dists[b].max().log10(),
-                    start  = unique_dists[b].min().log10(),
-                    steps  = n_bins + 1
-                )
-            ).clamp(max=n_bins-1)
-            
-            bin_sums = th.zeros(n_bins, 2, device=distances.device).index_add_(
-                dim    = 0, 
-                index  = bins, 
-                source = th.stack([unique_corrs[b], unique_dists[b]], -1)
-            )
-            
-            counts = th.bincount(bins, minlength=n_bins)
-            if (valid := counts > 0).sum() < 3:
-                continue
-            
-            bin_means = bin_sums[valid] / counts[valid].float().unsqueeze(-1)
-            super().update(
-                (self._fit_power_law(bin_means[:, 0], bin_means[:, 1]) - 
-                 self.correlation_exponent).abs()
-            )
+        bin_means, valid_bins = self._bin_correlations(
+            correlations = unique_corrs[valid_ids], 
+            distances    = unique_dists[valid_ids], 
+            n_bins       = n_bins
+        )
+        
+        gammas = self._fit_power_laws(bin_means, valid_bins)
+        
+        if gammas.numel() > 0:
+            deviations = (gammas - self.correlation_exponent).abs()
+            super().update(deviations)
 
 
 class States(BaseMetric):
