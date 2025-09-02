@@ -187,7 +187,7 @@ class DemonstrationsDataset(InMemoryDataset):
         dataset = cls(
             controller         = controller,
             environment        = environment,
-            frames_per_episode = environment.physics.frames_per_episode,
+            frames_per_episode = controller.mmm.frames_per_episode,
             generator          = generator,
             murmuration        = murmuration,
             sample_url         = environment.loader.sample_url,
@@ -264,8 +264,7 @@ class DemonstrationsDataset(InMemoryDataset):
         Generates expert trajectories across WRF scenarios until
         total_frames reached.
         """
-        frames_per_ep  = self.frames_per_episode
-        total_episodes = self.total_frames // frames_per_ep
+        total_episodes = self.total_frames // self.frames_per_episode
         
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
@@ -278,10 +277,10 @@ class DemonstrationsDataset(InMemoryDataset):
                 data_list.extend(
                     self.murmuration.generate_trajectories(
                         generator     = self.generator,
-                        num_timesteps = frames_per_ep
+                        num_timesteps = self.frames_per_episode
                     )
                 )
-                progress.update(task, advance=frames_per_ep)
+                progress.update(task, advance=self.frames_per_episode)
         
         self.ui.print_message("Saving demonstrations to cache...", "info")
         self.save(data_list, self.processed_paths[0])

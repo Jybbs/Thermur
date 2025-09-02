@@ -255,20 +255,20 @@ class TrajectoryGenerator:
         )
         self.velocities = self._integrate_velocities(
             acceleration = acceleration,
-            timestep     = self.physics.simulation_step,
+            timestep     = self.physics.timestep,
             velocities   = self.velocities
         )
         
         self.positions = self._integrate_positions(
             positions  = self.positions,
-            timestep   = self.physics.simulation_step,
+            timestep   = self.physics.timestep,
             velocities = self.velocities
         )
         
         gradient, temperature = self.wrf.query_thermal(self.positions)
         
         self.timestep     += 1
-        self.episode_time += self.physics.simulation_step
+        self.episode_time += self.physics.timestep
         
         return Data(
             edge_index   = self._compute_edge_index(self.positions),

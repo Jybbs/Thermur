@@ -120,13 +120,6 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "fails outside data bounds or during initialization."
         )
     )
-    frames_per_episode: PositiveInt = Field(
-        default     = 1000,
-        description = (
-            "Number of timesteps per demonstration episode. Longer episodes "
-            "capture extended temporal dependencies in flocking behavior."
-        )
-    )
     gravity: PositiveFloat = Field(
         default     = 9.81,
         description = (
@@ -155,7 +148,7 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "representing physical limitations of drone propulsion systems."
         )
     )
-    simulation_step: PositiveFloat = Field(
+    timestep: PositiveFloat = Field(
         default     = 0.05,
         description = (
             "Integration timestep Δt in seconds for Euler physics integration, "

@@ -102,6 +102,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "potential gradient calculations, particularly for separation forces."
         )
     )
+    frames_per_episode: PositiveInt = Field(
+        default     = 1000,
+        description = (
+            "Number of timesteps per demonstration episode. Longer episodes "
+            "capture extended temporal dependencies in flocking behavior."
+        )
+    )
     j_base: PositiveFloat = Field(
         default     = 0.5,
         description = (
