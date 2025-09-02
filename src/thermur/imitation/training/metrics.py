@@ -677,42 +677,41 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         Returns:
             Tuple of (bin_means, valid_bins) for power law fitting
         """
-        B_valid = correlations.shape[0]
-        device  = distances.device
-        
+        batch     = correlations.shape[0]
+        device    = distances.device
         dist_mins = distances.amin(1, keepdim=True)
         dist_maxs = distances.amax(1, keepdim=True)
         
-        normalized = (
+        normalized_bins = (
             (distances.log10() - dist_mins.log10()) / 
-            (dist_maxs.log10() - dist_mins.log10() + 1e-8)
-        )
-        bins = (normalized * n_bins).long().clamp(0, n_bins - 1)
+            (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
+        ).long().clamp(0, n_bins - 1)
         
-        batch_offsets   = th.arange(B_valid, device=device).unsqueeze(1) * n_bins
-        bins_with_batch = bins + batch_offsets
+        batch_offsets = th.arange(batch, device=device).unsqueeze(1) * n_bins
+        bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
         
-        bins_flat  = bins_with_batch.reshape(-1)
-        corrs_flat = correlations.reshape(-1)
-        dists_flat = distances.reshape(-1)
-        
-        bin_sums = th.zeros(B_valid * n_bins, 2, device=device).index_add_(
+        bin_sums = th.zeros(batch * n_bins, 2, device=device).index_add_(
             dim    = 0,
             index  = bins_flat,
-            source = th.stack([corrs_flat, dists_flat], -1)
+            source = th.stack(
+                dim     = -1,
+                tensors = [correlations.reshape(-1), distances.reshape(-1)]
+            )
+        ).view(batch, n_bins, 2)
+        
+        counts = th.bincount(
+            input     = bins_flat, 
+            minlength = batch * n_bins
+        ).view(batch, n_bins)
+        
+        return (
+            th.where(
+                (valid_bins := counts > 0).unsqueeze(-1),
+                bin_sums / counts.clamp_min(1).unsqueeze(-1),
+                th.zeros_like(bin_sums)
+            ),
+            valid_bins
         )
-        
-        counts     = th.bincount(bins_flat, minlength=B_valid * n_bins).view(B_valid, n_bins)
-        bin_sums   = bin_sums.view(B_valid, n_bins, 2)
-        valid_bins = counts > 0
-        
-        bin_means = th.where(
-            valid_bins.unsqueeze(-1),
-            bin_sums / counts.clamp_min(1).unsqueeze(-1),
-            th.zeros_like(bin_sums)
-        )
-        
-        return bin_means, valid_bins
 
     def _compute_correlations(
         self,
@@ -722,9 +721,9 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         """
         Compute velocity correlations for all agent pairs.
         
-        Calculates C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ where δ𝐯 = 𝐯 - ⟨𝐯⟩ are velocity
-        fluctuations from the mean. Returns upper triangular elements only
-        to avoid redundant pair computations.
+        Calculates C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ where δ𝐯 = 𝐯 - ⟨𝐯⟩ are
+        velocity fluctuations from the mean. Returns upper triangular
+        elements only to avoid redundant pair computations.
         
         Args:
             distances : Pairwise distances    [B, N, N]
@@ -733,9 +732,11 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         Returns:
             Tuple of (unique_correlations, unique_distances) [B, N*(N-1)/2]
         """
-        delta_spins = spins - spins.mean(dim=1, keepdim=True)
-        corr_mats   = th.bmm(delta_spins, delta_spins.mT)
-        triu_idx    = th.triu_indices(self.agent_count, self.agent_count, 1)
+        triu_idx  = th.triu_indices(self.agent_count, self.agent_count, 1)
+        corr_mats = th.bmm(
+            delta_spins := spins - spins.mean(dim=1, keepdim=True),
+            delta_spins.mT
+        )
         
         return (
             corr_mats[:, triu_idx[0], triu_idx[1]], 
@@ -761,18 +762,16 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         Returns:
             Power law exponents γ for batches with ≥3 valid bins
         """
-        log_r = bin_means[..., 1].log().masked_fill(~valid_bins, 0)
-        log_c = bin_means[..., 0].abs().clamp_min(1e-8).log().masked_fill(~valid_bins, 0)
+        log_dists = bin_means[..., 1].log()
+        log_corrs = bin_means[..., 0].abs().clamp_min(1e-8).log()
+        log_r     = log_dists.masked_fill(~valid_bins, 0)
+        log_c     = log_corrs.masked_fill(~valid_bins, 0)
         
-        valid_counts = valid_bins.sum(1)
-        mask         = valid_counts >= 3
-        
-        if not mask.any():
+        if not (mask := valid_bins.sum(1) >= 3).any():
             return th.empty(0, device=bin_means.device)
         
-        X = log_r[mask] - log_r[mask].mean(1, keepdim=True)
-        Y = log_c[mask] - log_c[mask].mean(1, keepdim=True)
-        
+        X  = log_r[mask] - log_r[mask].mean(1, keepdim=True)
+        Y  = log_c[mask] - log_c[mask].mean(1, keepdim=True)
         XX = (X * X * valid_bins[mask]).sum(1)
         XY = (X * Y * valid_bins[mask]).sum(1)
         
@@ -794,29 +793,21 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         Args:
             batch: PyG Batch containing position and velocity [B*N, 3] flattened
         """
-        distances, spins = self._reshape_features(batch, "distances", "spins")
-        
-        unique_corrs, unique_dists = self._compute_correlations(distances, spins)
-        valid_batch = unique_dists.amax(1) > unique_dists.amin(1)
-        
-        if not valid_batch.any():
-            return
-        
-        valid_ids = th.where(valid_batch)[0]
-        n_pairs   = unique_corrs.shape[1]
-        n_bins    = min(10, max(3, n_pairs // 10))
-        
-        bin_means, valid_bins = self._bin_correlations(
-            correlations = unique_corrs[valid_ids], 
-            distances    = unique_dists[valid_ids], 
-            n_bins       = n_bins
+        corrs, dists = self._compute_correlations(
+            *self._reshape_features(batch, "distances", "spins")
         )
         
-        gammas = self._fit_power_laws(bin_means, valid_bins)
+        if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
+            return
         
-        if gammas.numel() > 0:
-            deviations = (gammas - self.correlation_exponent).abs()
-            super().update(deviations)
+        if (gammas := self._fit_power_laws(
+            *self._bin_correlations(
+                correlations = corrs[valid_ids := th.where(valid_batch)[0]], 
+                distances    = dists[valid_ids], 
+                n_bins       = min(10, max(3, corrs.shape[1] // 10))
+            )
+        )).numel() > 0:
+            super().update((gammas - self.correlation_exponent).abs())
 
 
 class States(BaseMetric):
