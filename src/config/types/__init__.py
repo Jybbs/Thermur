@@ -31,17 +31,18 @@ class FlockBatch(Protocol):
     Defines the expected structure of batched graph data from the
     demonstration dataset, ensuring type safety for attribute access.
     """
-    action      : Tensor  # Expert actions           [B*N, 3]
-    batch       : Tensor  # Node to graph assignment [B*N]
-    edge_index  : Tensor  # Graph edges              [2, E]
-    gradient    : Tensor  # Temperature gradients    [B*N, 3]
-    num_graphs  : int     # Number of graphs in batch
-    position    : Tensor  # Agent positions          [B*N, 3]
-    ptr         : Tensor  # Cumulative node counts   [B+1]
-    temperature : Tensor  # Temperature values       [B*N, 1]
-    velocity    : Tensor  # Agent velocities         [B*N, 3]
-    wind        : Tensor  # Wind velocities          [B*N, 3]
-    x           : Tensor  # Node features            [B*N, 13]
+    action       : Tensor  # Expert actions           [B*N, 3]
+    alert_states : Tensor  # Binary vigilance states  [B*N]
+    batch        : Tensor  # Node to graph assignment [B*N]
+    edge_index   : Tensor  # Graph edges              [2, E]
+    gradient     : Tensor  # Temperature gradients    [B*N, 3]
+    num_graphs   : int     # Number of graphs in batch
+    position     : Tensor  # Agent positions          [B*N, 3]
+    ptr          : Tensor  # Cumulative node counts   [B+1]
+    temperature  : Tensor  # Temperature values       [B*N, 1]
+    velocity     : Tensor  # Agent velocities         [B*N, 3]
+    wind         : Tensor  # Wind velocities          [B*N, 3]
+    x            : Tensor  # Node features            [B*N, 13]
 
     def __getitem__(self, key: str) -> Tensor:
         """

@@ -462,15 +462,16 @@ class MurmurationController(th.nn.Module):
         
         Returns:
             List of PyG Data objects, one per timestep, containing:
-                - action      : Expert control actions     [N, 3]
-                - edge_index  : Topological connectivity   [2, E]
-                - gradient    : Temperature gradient       [N, 3]
-                - position    : Agent positions            [N, 3]
-                - temperature : Temperature values         [N, 1]
-                - timestep    : Temporal index
-                - velocity    : Agent velocities           [N, 3]
-                - wind        : Wind field                 [N, 3]
-                - x           : Concatenated node features [N, 13]
+                - action       : Expert control actions     [N, 3]
+                - alert_states : Binary vigilance states    [N]
+                - edge_index   : Topological connectivity   [2, E]
+                - gradient     : Temperature gradient       [N, 3]
+                - position     : Agent positions            [N, 3]
+                - temperature  : Temperature values         [N, 1]
+                - timestep     : Temporal index
+                - velocity     : Agent velocities           [N, 3]
+                - wind         : Wind field                 [N, 3]
+                - x            : Concatenated node features [N, 13]
         """
         self.alert_states_memory.clear()
         state      = generator.reset()
@@ -492,15 +493,16 @@ class MurmurationController(th.nn.Module):
             
             trajectory.append(
                 Data(
-                    action      = action,
-                    edge_index  = state.edge_index,
-                    gradient    = state.gradient,
-                    position    = state.position,
-                    temperature = state.temperature,
-                    timestep    = t,
-                    velocity    = state.velocity,
-                    wind        = state.wind,
-                    x           = features
+                    action       = action,
+                    alert_states = state.alert_states,
+                    edge_index   = state.edge_index,
+                    gradient     = state.gradient,
+                    position     = state.position,
+                    temperature  = state.temperature,
+                    timestep     = t,
+                    velocity     = state.velocity,
+                    wind         = state.wind,
+                    x            = features
                 )
             )
             

@@ -754,4 +754,8 @@ For the WRF-SFIRE dataset:
 
 [^28]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880  
 
+[^29]: Fraccaro, Marco, Søren Kaae Sønderby, Ulrich Paquet, and Ole Winther. 2016. "Sequential Neural Models with Stochastic Layers." *Advances in Neural Information Processing Systems* 29: 2199–2207. https://doi.org/10.48550/arXiv.1605.07571
+
+[^30]: Jang, Eric, Shixiang Gu, and Ben Poole. 2017. "Categorical Reparameterization with Gumbel-Softmax." *International Conference on Learning Representations (ICLR)*. https://doi.org/10.48550/arXiv.1611.01144
+
 ---

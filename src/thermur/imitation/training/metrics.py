@@ -272,13 +272,8 @@ class HamiltonianEnergyMetric(BaseMetric):
             th.zeros_like(hops)
         )
         
-        alert_states = (
-            batch.alert_states if hasattr(batch, 'alert_states')
-            else th.arange(self.agent_count, device=spins.device) % 3 == 0
-        ).float()
-        
         alert_mod = th.where(
-            alert_states.view(-1, self.agent_count, 1) > 0.5,
+            batch.alert_states.view(-1, self.agent_count, 1) > 0.5,
             self.alert_coupling_factor,
             1.0
         )
