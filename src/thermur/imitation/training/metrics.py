@@ -10,8 +10,6 @@ All metrics integrate seamlessly with PyTorch Lightning's logging system
 and can be used directly in LightningModules without a separate collector.
 """
 from __future__            import annotations
-from itertools             import pairwise
-from torch_geometric.utils import get_laplacian
 from torchmetrics          import MeanAbsoluteError, MeanMetric, MeanSquaredError
 from torchmetrics          import MetricCollection, R2Score
 from typing                import TYPE_CHECKING
@@ -142,12 +140,6 @@ class FiedlerValueMetric(BaseMetric):
         L = D - A
 
     where D is the degree matrix and A is the adjacency matrix.
-    
-    Expected values:
-        - Disconnected       : λ₂ = 0
-        - Weakly connected   : λ₂ ∈ (0, 0.1]
-        - Well connected     : λ₂ ∈ (0.1, 0.5]
-        - Strongly connected : λ₂ > 0.5
     """
 
     def update(self, batch: FlockBatch):
@@ -155,9 +147,7 @@ class FiedlerValueMetric(BaseMetric):
         Update metric with graph connectivity measurement.
         
         Efficiently computes the Fiedler value λ₂ (second-smallest eigenvalue) of
-        the graph Laplacian 𝐋 = 𝐃 - 𝐀 using PyTorch Geometric's sparse utilities
-        followed by dense eigendecomposition. This hybrid approach provides 5-6×
-        speedup over dense matrix construction while maintaining numerical accuracy.
+        the graph Laplacian 𝐋 = 𝐃 - 𝐀 using vectorized dense operations.
         
         The spectrum of 𝐋 reveals connectivity properties:
 
@@ -172,18 +162,15 @@ class FiedlerValueMetric(BaseMetric):
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
         """
-        fiedler_value = th.linalg.eigvalsh(
-            th.sparse_coo_tensor(
-                *get_laplacian(
-                    batch.edge_index,
-                    edge_weight   = None,
-                    normalization = None,
-                    num_nodes     = self.agent_count
-                ),
-                device = batch.edge_index.device,
-                size   = (self.agent_count, self.agent_count)
-            ).to_dense()
-        )[1:2].clamp_min(0.0)
+        device = batch.edge_index.device
+        
+        A = th.zeros(self.agent_count, self.agent_count, device=device)
+        A[batch.edge_index[0], batch.edge_index[1]] = 1.0
+        A = (A := A + A.T) - th.diag(A.diagonal())
+        
+        D = th.diag(degrees) if (degrees := A.sum(dim=1)).any() else th.zeros_like(A)
+        L = D - A
+        fiedler_value = th.linalg.eigvalsh(L.cpu())[1:2].clamp_min(0.0).to(device)
         
         super().update(fiedler_value)
 
