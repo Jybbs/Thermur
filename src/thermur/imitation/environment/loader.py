@@ -7,7 +7,6 @@ interpolation and gradient computation.
 """
 from __future__ import annotations
 from numpy      import zeros
-from pathlib    import Path
 from torch      import Tensor
 from typing     import Any, Mapping, TYPE_CHECKING
 from xarray     import DataArray, open_dataset
@@ -31,7 +30,7 @@ class WRFLoader:
     - Temperature gradient computation using finite differences
     - WRF perturbation temperature conversion: T = θ' + T₀ (T₀ = 300K)
     - Staggered grid interpolation for wind components
-    - Fire-specific variables like GRNHFX (ground heat flux from fire)
+    - Fire heat flux querying (not yet integrated into training)
 
     WRF uses an Arakawa C-grid where velocity components are staggered:
     - U is defined at west/east cell faces (west_east_stag dimension)
@@ -57,9 +56,6 @@ class WRFLoader:
         """
         self.bounds_max            = th.tensor(physics.bounds_max)
         self.bounds_min            = th.tensor(physics.bounds_min)
-        self.current_file          = 0
-        self.current_time          = 0.0
-        self.datasets              = []
         self.domain_randomization  = loader.domain_randomization
         self.episode_time_offset   = loader.episode_time_offset
         self.epsilon               = physics.epsilon
@@ -67,8 +63,6 @@ class WRFLoader:
         self.interpolate_time      = loader.interpolate_time
         self.temperature_noise_std = loader.temperature_noise_std
         self.wind_noise_std        = loader.wind_noise_std
-        
-        self._discover_and_load_datasets()
 
     def _add_domain_noise(self, data: Tensor, noise_std: float) -> Tensor:
         """
@@ -131,40 +125,7 @@ class WRFLoader:
             ) / (2 * self.epsilon)
 
         return gradients
-    
-    def _discover_and_load_datasets(self):
-        """
-        Discover and load all valid NetCDF files from the data directory.
-        
-        Attempts to open all files in data/raw/ as NetCDF datasets using the
-        netcdf4 engine. Successfully opened datasets are cached and kept.
-        
-        Raises:
-            FileNotFoundError: If no valid NetCDF files are found
-        """
-        data_dir = Path("data/raw")
-        
-        if data_dir.exists():
-            for file_path in sorted(data_dir.rglob("*")):
-                if file_path.is_file():
-                    try:
-                        dataset = open_dataset(
-                            cache           = True,
-                            engine          = 'netcdf4',
-                            filename_or_obj = str(file_path)
-                        )
-                        self.datasets.append(dataset)
-                    except Exception:
-                        continue
-        
-        if not self.datasets:
-            raise FileNotFoundError(
-                "No valid NetCDF files found. "
-                "Training will download sample data automatically on first run."
-            )
-        
-        self.dataset = self.datasets[0]
-        self._extract_dataset_metadata()
+
 
     def _extract_dataset_metadata(self):
         """
@@ -244,35 +205,6 @@ class WRFLoader:
             (lower + 1) % self.num_time_steps,
             continuous_idx - lower
         )
-    
-    def _initialize_dataset(self, data_path: str):
-        """
-        Load WRF-SFIRE NetCDF dataset and extract temporal characteristics.
-        
-        Initializes the xarray dataset with appropriate engine settings and
-        determines the temporal resolution for interpolation between WRF
-        snapshots. WRF-SFIRE typically outputs at 5-15 minute intervals
-        depending on fire behavior and computational constraints.
-        
-        Args:
-            data_path: Path to NetCDF file containing WRF-SFIRE output
-        """
-        self.dataset = open_dataset(
-            cache           = True, 
-            engine          = 'netcdf4',
-            filename_or_obj = data_path
-        )
-
-        self.coord_vars        = list(self.dataset.dims)
-        self.num_time_steps    = self.dataset.sizes.get('Time', 1)
-        self.wrf_time_interval = 300.0
-        
-        # Extract WRF grid dimensions for coordinate transformation
-        self.grid_dims = {
-            "west_east"   : self.dataset.sizes.get("west_east",   500),
-            "south_north" : self.dataset.sizes.get("south_north", 250),
-            "bottom_top"  : self.dataset.sizes.get("bottom_top",  50)
-        }
     
     def _interpolate_field(
         self,
@@ -356,40 +288,57 @@ class WRFLoader:
             "bottom_top"  : normalized[:, 2] * (self.grid_dims["bottom_top"] - 1)
         }
 
-    def get_domain_info(self) -> dict[str, Any]:
+    def load_datasets(self, file_paths: list[str]):
         """
-        Extract WRF domain configuration information.
-
-        Returns:
-            Dictionary containing domain metadata like grid spacing,
-            projection information, and simulation time
+        Load NetCDF datasets from PyG-provided paths.
+        
+        Called by DemonstrationsDataset after PyG confirms data exists,
+        either from disk or after automatic download.
+        
+        Args:
+            file_paths: Absolute paths to NetCDF files from PyG's raw_paths
         """
-        attrs = self.dataset.attrs
-
-        domain_keys = {
-            "cen_lat"    : "CEN_LAT",
-            "cen_lon"    : "CEN_LON",
-            "dt"         : "DT",
-            "dx"         : "DX",
-            "dy"         : "DY",
-            "grid_id"    : "GRID_ID",
-            "map_proj"   : "MAP_PROJ",
-            "parent_id"  : "PARENT_ID",
-            "start_date" : "START_DATE"
-        }
-        return {k: attrs.get(v) for k, v in domain_keys.items()}
+        self.datasets = [
+            open_dataset(
+                cache           = True,
+                engine          = 'netcdf4',
+                filename_or_obj = path
+            )
+            for path in file_paths
+        ]
+        
+        if self.datasets:
+            self.current_time = 0.0
+            self.dataset      = self.datasets[0]
+            self._extract_dataset_metadata()
 
     def query_fire_heat_flux(self, positions: Tensor) -> Tensor:
         """
         Query ground heat flux from fire.
-
-        GRNHFX represents the sensible heat flux at the surface due
-        to fire, measured in W/m². This is a 2D field, so the query
-        ignores the vertical coordinate.
-
+        
+        TODO: Integrate fire heat flux into trajectory generation and training.
+        This method extracts GRNHFX (ground heat flux from fire) from WRF-SFIRE
+        simulations but is not yet integrated into the training pipeline.
+        
+        Future integration possibilities:
+        - Add to PyG Data objects in TrajectoryGenerator.reset() and step()
+        - Use in MurmurationController for fire avoidance behaviors:
+          * Repulsive forces from high heat flux areas
+          * Alert state triggering when fire danger detected
+          * Modified flocking cohesion near fire zones
+        - Incorporate into CBFSafetyFilter as hard constraints:
+          * Fire proximity barrier functions
+          * Dynamic safety margins based on heat intensity
+          * Escape velocity guarantees
+        
+        This would enable agents to learn fire-aware (instead of just
+        heat-aware) navigation strategies, which could better encapsulate
+        how real flocks would avoid threatening smoke plumes and flare-like
+        heat spikes.
+        
         Args:
             positions: Tensor [N, 3] of agent positions
-
+        
         Returns:
             Tensor [N, 1] of heat flux values in W/m²
         """
@@ -490,29 +439,3 @@ class WRFLoader:
         ], dim=1)
         
         return self._add_domain_noise(wind_values, self.wind_noise_std)
-    
-    def reset(self, seed: int | None = None):
-        """
-        Reset WRF data source, optionally selecting a new scenario.
-        
-        When multiple WRF files are available, can cycle through them
-        deterministically or randomly based on seed.
-        
-        Args:
-            seed: Random seed for scenario selection, or None for sequential
-        """
-        if len(self.datasets) == 1:
-            self.dataset = self.datasets[0]
-
-        elif seed is not None:
-            rng = th.Generator().manual_seed(seed)
-            idx = int(th.randint(len(self.datasets), (1,), generator=rng).item())
-            self.current_file = idx
-            self.dataset      = self.datasets[idx]
-
-        else:
-            self.current_file = int((self.current_file + 1) % len(self.datasets))
-            self.dataset      = self.datasets[self.current_file]
-        
-        self.current_time = 0.0
-        self._extract_dataset_metadata()

@@ -264,6 +264,8 @@ class DemonstrationsDataset(InMemoryDataset):
         Generates expert trajectories across WRF scenarios until
         total_frames reached.
         """
+        self.generator.wrf.load_datasets(self.raw_paths)
+        
         total_episodes = self.total_frames // self.frames_per_episode
         
         with self.ui.create_thermal_progress() as progress:
