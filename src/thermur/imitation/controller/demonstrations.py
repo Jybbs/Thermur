@@ -61,17 +61,17 @@ class DemonstrationsDataset(InMemoryDataset):
         self.environment        = environment
         self.frames_per_episode = frames_per_episode
         self.generator          = generator
+        self.hash               = None
         self.murmuration        = murmuration
         self.sample_url         = sample_url
         self.total_frames       = total_frames
         self.ui                 = ui
-        self.config_hash        = self._compute_hash()
         
         super().__init__("data")
         self.load(self.processed_paths[0])
         self._make_picklable()
     
-    def _compute_hash(self) -> str:
+    def _compute_hash(self):
         """
         Generate deterministic hash of configuration parameters.
         
@@ -79,34 +79,20 @@ class DemonstrationsDataset(InMemoryDataset):
         adds WRF file checksums, then uses JSON serialization with sorted
         keys to ensure deterministic output before hashing.
         """
-        serialized = dumps(
+        to_container = lambda c: OmegaConf.to_container(c, resolve=True)
+        self.hash    = self.hash or sha256(dumps(
             {
-                "controller"  : OmegaConf.to_container(self.controller,  resolve=True),
-                "environment" : OmegaConf.to_container(self.environment, resolve=True),
-                "checksums"   : self._compute_wrf_checksums()
+                "controller"  : to_container(self.controller),
+                "environment" : to_container(self.environment),
+                "checksums"   : {
+                    f"wrf_{i}": 
+                    file_digest(open(path, 'rb'), 'sha256').hexdigest()[:8]
+                    for i, path in enumerate(self.raw_paths)
+                }
             },
             default   = lambda o: o.model_dump(),
             sort_keys = True
-        )
-        return sha256(serialized.encode()).hexdigest()[:16]
-    
-    def _compute_wrf_checksums(self) -> dict[str, str]:
-        """
-        Compute SHA256 checksums of WRF NetCDF files.
-        
-        Generates abbreviated checksums for each loaded WRF dataset to detect
-        file content changes. Returns empty dict if no WRF data is available.
-        """
-        return {
-            f"wrf_{i}": digest[:8]
-            for i, dataset in enumerate(
-                getattr(self.generator.wrf, 'datasets', [])
-            )
-            if (path := dataset.encoding.get("source")) and Path(path).exists()
-            for digest in [
-                file_digest(open(path, 'rb'), 'sha256').hexdigest()
-            ]
-        }
+        ).encode()).hexdigest()[:16]
     
     @staticmethod
     def _find_netcdf_files() -> list[str]:
@@ -266,8 +252,6 @@ class DemonstrationsDataset(InMemoryDataset):
         """
         self.generator.wrf.load_datasets(self.raw_paths)
         
-        total_episodes = self.total_frames // self.frames_per_episode
-        
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
                 description = "Generating expert demonstrations", 
@@ -275,7 +259,7 @@ class DemonstrationsDataset(InMemoryDataset):
             )
             
             data_list = []
-            for _ in range(total_episodes):
+            for _ in range(self.total_frames // self.frames_per_episode):
                 data_list.extend(
                     self.murmuration.generate_trajectories(
                         generator     = self.generator,
@@ -292,7 +276,8 @@ class DemonstrationsDataset(InMemoryDataset):
         """
         Dynamic filename based on config hash for automatic cache invalidation.
         """
-        return [f"{self.config_hash}/data.pt"]
+        self._compute_hash()
+        return [f"{self.hash}/data.pt"]
     
     @property
     def raw_file_names(self):
