@@ -5,7 +5,7 @@ This module consolidates all simulation configuration models including
 physics settings, data loading, and environment parameters.
 """
 from pydantic import BaseModel, Field
-from pydantic import NonNegativeFloat, PositiveFloat, PositiveInt
+from pydantic import NonNegativeFloat, PositiveFloat
 
 
 class LoaderModel(BaseModel, extra="forbid"):

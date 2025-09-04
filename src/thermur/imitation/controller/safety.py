@@ -7,8 +7,8 @@ this by solving a Quadratic Program (QP) at each timestep using the torch-native
 `qpth` library.
 """
 from __future__ import annotations
-from qpth.qp import QPFunction
-from typing  import TYPE_CHECKING
+from qpth.qp    import QPFunction
+from typing     import TYPE_CHECKING
 
 import torch as th
 

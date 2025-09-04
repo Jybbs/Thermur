@@ -9,10 +9,10 @@ MeanMetric to provide automatic averaging and PyG batch utilities.
 All metrics integrate seamlessly with PyTorch Lightning's logging system
 and can be used directly in LightningModules without a separate collector.
 """
-from __future__            import annotations
-from torchmetrics          import MeanAbsoluteError, MeanMetric, MeanSquaredError
-from torchmetrics          import MetricCollection, R2Score
-from typing                import TYPE_CHECKING
+from __future__   import annotations
+from torchmetrics import MeanAbsoluteError, MeanMetric, MeanSquaredError
+from torchmetrics import MetricCollection, R2Score
+from typing       import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.imitation.controller  import MurmurationModel, SafetyModel

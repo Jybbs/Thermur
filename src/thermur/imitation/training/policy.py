@@ -10,14 +10,14 @@ The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
 PyG Batch observations.
 """
-from __future__            import annotations
-from .metrics              import BaseMetric
-from pytorch_lightning     import LightningModule
-from torch                 import compile, nn
-from torch.nn              import GRUCell, Linear, ModuleList
-from torch.nn.functional   import mse_loss
-from torch_geometric.nn    import GCNConv
-from typing                import Callable, TYPE_CHECKING
+from __future__          import annotations
+from .metrics            import BaseMetric
+from pytorch_lightning   import LightningModule
+from torch               import compile, nn
+from torch.nn            import GRUCell, Linear, ModuleList
+from torch.nn.functional import mse_loss
+from torch_geometric.nn  import GCNConv
+from typing              import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .metrics                          import MetricsFactory

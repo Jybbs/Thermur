@@ -13,10 +13,10 @@ from typing               import TYPE_CHECKING
 import torch as th
 
 if TYPE_CHECKING:
-    from ..environment                import TrajectoryGenerator
-    from .safety                      import CBFSafetyFilter
-    from config.imitation.controller  import MurmurationModel, SafetyModel
-    from torch                        import Tensor
+    from ..environment               import TrajectoryGenerator
+    from .safety                     import CBFSafetyFilter
+    from config.imitation.controller import MurmurationModel, SafetyModel
+    from torch                       import Tensor
 
 
 class MurmurationController(th.nn.Module):

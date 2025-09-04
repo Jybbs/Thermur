@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
 from typing   import Literal
 
 
-
 class MurmurationModel(BaseModel, extra="forbid"):
     """
     Unified configuration for murmuration dynamics and control weights.
