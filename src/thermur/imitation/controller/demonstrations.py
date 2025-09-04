@@ -7,10 +7,9 @@ Automatically regenerates when configuration changes via hash-based filenames.
 from __future__                     import annotations
 from hashlib                        import file_digest, sha256
 from pathlib                        import Path
-from tarfile                        import open as tf_open
-from torch_geometric.data           import InMemoryDataset
 from json                           import dumps
 from omegaconf                      import OmegaConf
+from torch_geometric.data           import Data, InMemoryDataset, extract_tar
 from torch_geometric.data.lightning import LightningDataset
 from typing                         import TYPE_CHECKING
 from urllib.request                 import urlretrieve
@@ -31,6 +30,8 @@ class DemonstrationsDataset(InMemoryDataset):
     
     Generates demonstrations on first access and caches them. Automatically
     regenerates when configuration changes via hash-based filename.
+
+    Registers PyG Data class as safe for PyTorch 2.6+ compatibility.
     """
     
     def __init__(
@@ -66,6 +67,7 @@ class DemonstrationsDataset(InMemoryDataset):
         self.sample_url         = sample_url
         self.total_frames       = total_frames
         self.ui                 = ui
+        th.serialization.add_safe_globals([Data])
         
         super().__init__("data")
         self.load(self.processed_paths[0])
@@ -226,8 +228,7 @@ class DemonstrationsDataset(InMemoryDataset):
                 )
                 
                 progress.update(task, description="Extracting sample data...")
-                with tf_open(sample_tar, 'r:gz') as tar:
-                    tar.extractall(self.raw_dir)
+                extract_tar(str(sample_tar), self.raw_dir)
                 
                 sample_tar.unlink()
                 progress.update(

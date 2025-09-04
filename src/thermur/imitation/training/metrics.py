@@ -696,6 +696,78 @@ class PowerComponents(BaseMetric):
             self.lateral.update(th.tensor(0.0))
 
 
+class Regression(BaseMetric):
+    """
+    Standard regression metrics for action prediction quality.
+    
+    Tracks multiple loss metrics (MAE, MSE, RMSE, R²) to assess how well
+    the learned policy matches expert demonstrations. These metrics provide
+    complementary views of prediction error:
+    
+    - MAE  : Mean absolute error, robust to outliers
+    - MSE  : Mean squared error, penalizes large errors  
+    - RMSE : Root mean squared error, same units as targets
+    - R²   : Coefficient of determination, normalized goodness of fit
+    
+    All metrics operate on the flattened action space [B*N, 3] matching
+    PyTorch Geometric's batch format.
+    """
+    
+    def __init__(self, **kwargs):
+        """
+        Initialize regression metrics collection.
+        
+        Creates standard torchmetrics for regression evaluation.
+        """
+        super().__init__(**kwargs)
+        self.mae  = MeanAbsoluteError()
+        self.mse  = MeanSquaredError()
+        self.r2   = R2Score()
+        self.rmse = MeanSquaredError(squared=False)
+    
+    def compute(self) -> dict[str, Tensor]:
+        """
+        Compute all regression metrics.
+        
+        Returns:
+            Dictionary with mae, mse, rmse, and r2 scores
+        """
+        return {
+            "mae"  : self.mae.compute(),
+            "mse"  : self.mse.compute(),
+            "r2"   : self.r2.compute(),
+            "rmse" : self.rmse.compute(),
+        }
+    
+    def reset(self):
+        """
+        Reset all regression metrics.
+        """
+        self.mae.reset()
+        self.mse.reset()
+        self.r2.reset()
+        self.rmse.reset()
+    
+    def update(
+        self,
+        batch       : FlockBatch,
+        predictions : Tensor,
+        targets     : Tensor
+    ):
+        """
+        Update regression metrics with predictions and targets.
+        
+        Args:
+            batch       : PyG Batch (unused)
+            predictions : Predicted actions [B*N, 3]
+            targets     : Expert actions    [B*N, 3]
+        """
+        self.mae.update(predictions,  targets)
+        self.mse.update(predictions,  targets)
+        self.r2.update(predictions,   targets)
+        self.rmse.update(predictions, targets)
+
+
 class ScaleFreeCorrelationMetric(BaseMetric):
     """
     Measure deviation from scale-free velocity correlations.
@@ -942,6 +1014,8 @@ class States(BaseMetric):
         self.velocity.update(batch.velocity.norm(dim=-1))
 
 
+
+
 class SusceptibilityMetric(BaseMetric):
     """
     Measures flock susceptibility to directional perturbations.
@@ -1041,15 +1115,12 @@ class MetricsFactory:
         return MetricCollection({
             "fiedler_value"          : make(FiedlerValueMetric),
             "hamiltonian_energy"     : make(HamiltonianEnergyMetric),
-            "mae"                    : MeanAbsoluteError(),
-            "mse"                    : MeanSquaredError(),
             "neighbor_stability"     : make(NeighborStabilityMetric),
             "orientation_coherence"  : make(OrientationCoherenceMetric),
             "orientation_wave"       : make(OrientationWaveMetric),
             "perturbation_response"  : make(PerturbationResponseMetric),
             "power_components"       : make(PowerComponents),
-            "r2"                     : R2Score(),
-            "rmse"                   : MeanSquaredError(squared=False),
+            "regression"             : make(Regression),
             "scale_free_correlation" : make(ScaleFreeCorrelationMetric),
             "states"                 : make(States),
             "susceptibility"         : make(SusceptibilityMetric),
