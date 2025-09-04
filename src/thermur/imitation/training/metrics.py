@@ -30,8 +30,27 @@ class BaseMetric(MeanMetric):
     
     Provides automatic averaging from MeanMetric and PyG batch reshaping helpers.
     Metrics needing state history should use add_state() themselves.
-    """
     
+    Implementation patterns for metric subclasses:
+    
+    1. Simple metrics (default): Override evaluate() returning Tensor
+       - Always computes a meaningful value from batch
+       - BaseMetric.update() calls evaluate() and passes result to MeanMetric
+       - Examples: FiedlerValueMetric, SusceptibilityMetric
+    
+    2. Conditional metrics with zero defaults: Override evaluate() returning Tensor
+       - Returns 0 when conditions not met (0 is semantically meaningful)
+       - Example: PerturbationResponseMetric (0 = no propagation)
+    
+    3. Conditional metrics without meaningful defaults: Override update() directly
+       - Skip super().update() when computation impossible or invalid
+       - Example: ScaleFreeCorrelationMetric (no value when fitting fails)
+    
+    4. Composite metrics: Override update() and compute() directly
+       - Manage multiple sub-metrics internally
+       - Return dictionaries from compute()
+       - Examples: PowerComponents, States
+    """
     _reshape_cache = {}
 
     def __init__(self, **kwargs):
@@ -56,27 +75,6 @@ class BaseMetric(MeanMetric):
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
-    
-    def forward(
-        self, 
-        batch       : FlockBatch,
-        predictions : Tensor, 
-        targets     : Tensor
-    ):
-        """
-        Adapter method for MetricCollection compatibility.
-        
-        Allows BaseMetric subclasses to work seamlessly with standard metrics
-        that expect (predictions, targets) signature. Simply forwards the batch
-        to the update method, ignoring predictions and targets.
-        
-        Args:
-            batch       : PyG Batch containing all required data
-            predictions : Predicted actions (ignored)
-            targets     : Target actions    (ignored)
-        """
-        self.update(batch)
-        return self.compute()
     
     def _reshape_features(
         self, 
@@ -146,6 +144,42 @@ class BaseMetric(MeanMetric):
         and on_validation_batch_end hooks.
         """
         cls._reshape_cache.clear()
+    
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute metric value from batch.
+        
+        Subclasses implement this to calculate their specific metric.
+        
+        Args:
+            batch: PyG Batch containing all required data
+            
+        Returns:
+            Computed metric value as a scalar tensor
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement evaluate()"
+        )
+    
+    def update(
+        self,
+        batch       : FlockBatch,
+        predictions : Tensor | None = None,
+        targets     : Tensor | None = None
+    ):
+        """
+        Handle MetricCollection's reserved call signature.
+        
+        Accepts the full signature from MetricCollection but only uses batch.
+        Computes metric value via evaluate() and passes to MeanMetric.
+        
+        Args:
+            batch       : PyG Batch containing all required data
+            predictions : Predicted actions (unused)
+            targets     : Target actions    (unused)
+        """
+        value = self.evaluate(batch)
+        super().update(value)
 
 
 class FiedlerValueMetric(BaseMetric):
@@ -163,12 +197,12 @@ class FiedlerValueMetric(BaseMetric):
     where D is the degree matrix and A is the adjacency matrix.
     """
 
-    def update(self, batch: FlockBatch):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Update metric with graph connectivity measurement.
+        Compute Fiedler value λ₂ from graph connectivity.
         
-        Efficiently computes the Fiedler value λ₂ (second-smallest eigenvalue) of
-        the graph Laplacian 𝐋 = 𝐃 - 𝐀 using vectorized dense operations.
+        Efficiently computes the second-smallest eigenvalue of the graph
+        Laplacian 𝐋 = 𝐃 - 𝐀 using vectorized dense operations.
         
         The spectrum of 𝐋 reveals connectivity properties:
 
@@ -182,6 +216,9 @@ class FiedlerValueMetric(BaseMetric):
 
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
+            
+        Returns:
+            Fiedler value as scalar tensor
         """
         device = batch.edge_index.device
         
@@ -191,9 +228,8 @@ class FiedlerValueMetric(BaseMetric):
         
         D = th.diag(degrees) if (degrees := A.sum(dim=1)).any() else th.zeros_like(A)
         L = D - A
-        fiedler_value = th.linalg.eigvalsh(L.cpu())[1:2].clamp_min(0.0).to(device)
-        
-        super().update(fiedler_value)
+
+        return th.linalg.eigvalsh(L.cpu())[1:2].clamp_min(0.0).to(device)
 
 
 class HamiltonianEnergyMetric(BaseMetric):
@@ -274,7 +310,7 @@ class HamiltonianEnergyMetric(BaseMetric):
             )
         return self._triu_cache[cache_key]
 
-    def update(self, batch: FlockBatch):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute Hamiltonian energy using topological interactions.
         
@@ -284,6 +320,9 @@ class HamiltonianEnergyMetric(BaseMetric):
 
         Args:
             batch: PyG Batch with edge_index and velocity tensors
+            
+        Returns:
+            Hamiltonian energy values as tensor
         """
         spins,   = self._reshape_features(batch, "spins")
         hops     = self._compute_hops_per_graph(batch)
@@ -299,13 +338,12 @@ class HamiltonianEnergyMetric(BaseMetric):
             1.0
         )
         coupling *= alert_mod
-        energies  = -(
+
+        return -(
             coupling
             * th.bmm(spins, spins.mT)
             * self._get_triu_mask(spins.device)
         ).sum(dim=(1, 2)) * 2
-        
-        super().update(energies)
 
 
 class NeighborStabilityMetric(BaseMetric):
@@ -343,7 +381,7 @@ class NeighborStabilityMetric(BaseMetric):
             name    = "last_adjacency"
         )
     
-    def update(self, batch: FlockBatch):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Measure topological stability via edge set evolution.
         
@@ -360,6 +398,9 @@ class NeighborStabilityMetric(BaseMetric):
         
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
+            
+        Returns:
+            Jaccard distance as scalar tensor
         """
         adjacency = th.zeros(
             self.agent_count * self.agent_count, 
@@ -385,12 +426,11 @@ class NeighborStabilityMetric(BaseMetric):
         self.last_adjacency = adjacency
         intersection        = (current_edges & last_edges).sum()
         union               = (current_edges | last_edges).sum()
-        
-        jaccard_distance = (
+
+        return (
             1.0 - intersection.float() / union.float() 
             if union > 0 else th.tensor(0.0, device=batch.edge_index.device)
         )
-        super().update(jaccard_distance)
 
 
 class OrientationCoherenceMetric(BaseMetric):
@@ -417,24 +457,26 @@ class OrientationCoherenceMetric(BaseMetric):
         - Aligned cruise    : Φ ∈ [0.8, 1.0], C ∈ [0.6, 1.0]
     """
 
-    def update(self, batch: FlockBatch):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Update metric with polarization measurement.
+        Compute polarization measurement.
         
         Uses batched matrix multiplication for efficient computation on
         MPS/GPU, avoiding explicit loops over agent pairs.
         
         Args:
             batch: PyG Batch containing velocity [B*N, 3] flattened
+            
+        Returns:
+            Coherence values as tensor
         """
         headings  = self._reshape_features(batch, "spins_2d")[0]
         alignment = th.bmm(headings, headings.mT)
-        coherence = (
+
+        return (
             (alignment.sum(dim=(1, 2)) - batch.num_graphs * self.agent_count) / 
             (self.agent_count * (self.agent_count - 1))
         )
-
-        super().update(coherence)
 
 
 class OrientationWaveMetric(BaseMetric):
@@ -460,15 +502,18 @@ class OrientationWaveMetric(BaseMetric):
         - Full murmuration : W ∈ [0.30, 0.60] rad/m
     """
 
-    def update(self, batch: FlockBatch):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Update metric with wave amplitude measurement.
+        Compute wave amplitude measurement.
         
         Uses vectorized distance computations and masked operations for
         efficient gradient calculation on MPS/GPU.
         
         Args:
             batch: PyG Batch with position and velocity [B*N, 3] flattened
+            
+        Returns:
+            Wave amplitude as scalar tensor
         """
         velocities, distances = self._reshape_features(batch, "velocity", "distances")
         headings  = th.atan2(velocities[..., 1], velocities[..., 0])
@@ -481,9 +526,8 @@ class OrientationWaveMetric(BaseMetric):
         gradients = (
             heading_diffs.abs() / distances.clamp_min(self.epsilon)
         ).masked_fill(~mask, 0)
-        
-        wave_amplitude = gradients.sum(dim=(1, 2)).mean(dim=0, keepdim=True)
-        super().update(wave_amplitude)
+
+        return gradients.sum(dim=(1, 2)).mean(dim=0, keepdim=True)
 
 
 class PerturbationResponseMetric(BaseMetric):
@@ -516,38 +560,40 @@ class PerturbationResponseMetric(BaseMetric):
         """
         super().__init__(**kwargs)
         self.add_state("last_velocity", th.empty(0))
+        self.add_state("zero_response", th.tensor(0.0))
 
-    def update(self, batch: FlockBatch):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Update metric with threat response measurement.
+        Compute threat response measurement.
         
-        Efficiently computes response ratios using masked tensor operations
-        for optimal GPU performance.
+        Measures information propagation efficiency by tracking velocity response
+        amplification from threatened to safe agents. Returns 0 when no propagation.
         
         Args:
             batch: PyG Batch with velocity [B*N, 3] and temperature [B*N, 1]
+            
+        Returns:
+            Response ratio as scalar tensor, 0 if no threat propagation
         """
-        velocity    = batch.velocity
-        temperature = batch.temperature
+        response_ratio = th.tensor(0.0, device=batch.velocity.device)
         
         if (
             self.last_velocity is not None 
-            and velocity.shape == self.last_velocity.shape 
-            and (threat_mask := temperature.squeeze(-1) > self.max_temperature).any() 
-            and (~threat_mask).any()
+            and batch.velocity.shape == self.last_velocity.shape 
+            and (mask := batch.temperature.squeeze(-1) > self.max_temperature).any()
+            and (~mask).any()
         ):
-            vel_changes     = (velocity - self.last_velocity).norm(dim=-1)
-            threat_response = vel_changes[threat_mask].mean().unsqueeze(0)
+            vel_changes     = (batch.velocity - self.last_velocity).norm(dim=-1)
+            threat_response = vel_changes[mask].mean().unsqueeze(0)
             
             if (threat_response > self.epsilon).any():
                 response_ratio = (
-                    vel_changes[~threat_mask].mean().unsqueeze(0) / 
+                    vel_changes[~mask].mean().unsqueeze(0) / 
                     threat_response
                 )
-
-                super().update(response_ratio)
         
-        self.last_velocity = velocity.detach().clone()
+        self.last_velocity = batch.velocity.detach().clone()
+        return response_ratio
 
 
 class PowerComponents(BaseMetric):
@@ -606,7 +652,12 @@ class PowerComponents(BaseMetric):
         self.hover.reset()
         self.lateral.reset()
 
-    def update(self, batch: FlockBatch):
+    def update(
+        self,
+        batch       : FlockBatch,
+        predictions : Tensor | None = None,
+        targets     : Tensor | None = None
+    ):
         """
         Update power component measurements with vectorized computation.
         
@@ -614,18 +665,17 @@ class PowerComponents(BaseMetric):
         optimized for MPS/GPU execution.
         
         Args:
-            batch: PyG Batch with action [B*N, 3] and velocity [B*N, 3]
+            batch       : PyG Batch with action [B*N, 3] and velocity [B*N, 3]
+            predictions : Predicted actions (unused)
+            targets     : Target actions    (unused)
         """
-        u_control = batch.action
-        velocity  = batch.velocity
+        hover = (batch.action[:, 2] + self.gravity).abs().pow(self.power_exponent)
+        self.hover.update(hover)
         
-        hover_power = (u_control[:, 2] + self.gravity).abs().pow(self.power_exponent)
-        self.hover.update(hover_power)
-        
-        mask = velocity.norm(dim=-1) > self.velocity_threshold
+        mask = batch.velocity.norm(dim=-1) > self.velocity_threshold
         if mask.any():
-            v_hat     = th.nn.functional.normalize(velocity[mask], dim=-1)
-            u_masked  = u_control[mask]
+            v_hat     = th.nn.functional.normalize(batch.velocity[mask], dim=-1)
+            u_masked  = batch.action[mask]
             forward   = (u_masked * v_hat).sum(dim=-1).clamp_min(0)
             
             forward_power = forward.pow(self.power_exponent)
@@ -634,8 +684,8 @@ class PowerComponents(BaseMetric):
                 v_hat
             ).norm(dim=-1).pow(self.power_exponent)
             
-            full_forward       = th.zeros_like(hover_power)
-            full_lateral       = th.zeros_like(hover_power)
+            full_forward       = th.zeros_like(hover)
+            full_lateral       = th.zeros_like(hover)
             full_forward[mask] = forward_power
             full_lateral[mask] = lateral_power
             
@@ -780,21 +830,22 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         
         return th.where(XX > 0, -XY / XX, th.zeros_like(XX))
 
-    def update(self, batch: FlockBatch):
+    def update(
+        self,
+        batch       : FlockBatch,
+        predictions : Tensor | None = None,
+        targets     : Tensor | None = None
+    ):
         """
         Update metric with scale-free correlation measurement.
         
-        Computes velocity correlations C(r) as a function of distance r and fits
-        power law C(r) ~ r^(-γ) to measure deviation from expected scaling. Uses
-        adaptive logarithmic binning with n_bins ∈ [3, 10] based on flock size:
-        
-            n_bins = min(10, max(3, n_pairs // 10))
-        
-        Handles edge cases where d_min = d_max (no variation) or agent_count < 4
-        (insufficient data for power law fitting).
+        Override update directly since this metric conditionally computes values
+        only when there's sufficient distance variation for power law fitting.
         
         Args:
-            batch: PyG Batch containing position and velocity [B*N, 3] flattened
+            batch       : PyG Batch containing position and velocity
+            predictions : Predicted actions (unused)
+            targets     : Target actions    (unused)
         """
         corrs, dists = self._compute_correlations(
             *self._reshape_features(batch, "distances", "spins")
@@ -810,7 +861,8 @@ class ScaleFreeCorrelationMetric(BaseMetric):
                 n_bins       = min(10, max(3, corrs.shape[1] // 10))
             )
         )).numel() > 0:
-            super().update((gammas - self.correlation_exponent).abs())
+            scaling_deviation = (gammas - self.correlation_exponent).abs()
+            super().update(scaling_deviation)
 
 
 class States(BaseMetric):
@@ -868,7 +920,12 @@ class States(BaseMetric):
         self.temperature.reset()
         self.velocity.reset()
 
-    def update(self, batch: FlockBatch):
+    def update(
+        self,
+        batch       : FlockBatch,
+        predictions : Tensor | None = None,
+        targets     : Tensor | None = None
+    ):
         """
         Update running sums with batch statistics.
         
@@ -876,7 +933,9 @@ class States(BaseMetric):
         magnitudes for computing running averages across all agents.
         
         Args:
-            batch: PyG Batch containing velocity, temperature, and action
+            batch       : PyG Batch containing velocity, temperature, and action
+            predictions : Predicted actions (unused)
+            targets     : Target actions    (unused)
         """
         self.acceleration.update(batch.action.norm(dim=-1))
         self.temperature.update(batch.temperature)
@@ -911,18 +970,20 @@ class SusceptibilityMetric(BaseMetric):
     freedom with collective coordination.
     """
 
-    def update(self, batch: FlockBatch):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute susceptibility from velocity fluctuations.
         
         Args:
             batch: PyG Batch containing velocity tensor [B*N, 3] flattened
+            
+        Returns:
+            Susceptibility values as tensor
         """
         spins, spin_mean = self._reshape_features(batch, "spins", "spin_mean")
         polarizations    = (spins * spin_mean).sum(dim=-1)
-        susceptibilities = self.agent_count * polarizations.var(dim=-1)
-        
-        super().update(susceptibilities)
+
+        return self.agent_count * polarizations.var(dim=-1)
 
 
 class MetricsFactory:
