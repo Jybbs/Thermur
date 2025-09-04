@@ -107,7 +107,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "metrics": builds(
         MetricsFactory,
-        agent_count             = "${controller.flock.agent_count}",
+        agent_count             = "${controller.mmm.agent_count}",
         metrics                 = "${training.metrics}",
         murmuration             = "${controller.mmm}",
         physics                 = "${environment.physics}",

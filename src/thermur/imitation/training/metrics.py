@@ -57,6 +57,27 @@ class BaseMetric(MeanMetric):
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
     
+    def forward(
+        self, 
+        batch       : FlockBatch,
+        predictions : Tensor, 
+        targets     : Tensor
+    ):
+        """
+        Adapter method for MetricCollection compatibility.
+        
+        Allows BaseMetric subclasses to work seamlessly with standard metrics
+        that expect (predictions, targets) signature. Simply forwards the batch
+        to the update method, ignoring predictions and targets.
+        
+        Args:
+            batch       : PyG Batch containing all required data
+            predictions : Predicted actions (ignored)
+            targets     : Target actions    (ignored)
+        """
+        self.update(batch)
+        return self.compute()
+    
     def _reshape_features(
         self, 
         batch     : FlockBatch,

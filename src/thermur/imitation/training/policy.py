@@ -190,7 +190,7 @@ class GNNPolicy(LightningModule):
         predictions = self(batch)
         loss        = mse_loss(predictions, batch.action)
         
-        self.train_metrics.update(predictions, batch.action, batch)
+        self.train_metrics.update(batch, predictions, batch.action)
         self.log('training/loss', loss, prog_bar=True)
         self.log_dict(self.train_metrics, on_step=True, on_epoch=False)
         
@@ -214,7 +214,7 @@ class GNNPolicy(LightningModule):
         predictions = self(batch)
         loss        = mse_loss(predictions, batch.action)
         
-        self.val_metrics.update(predictions, batch.action, batch)
+        self.val_metrics.update(batch, predictions, batch.action)
         self.log('validation/loss', loss, prog_bar=True)
         self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
         

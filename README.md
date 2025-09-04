@@ -234,8 +234,8 @@ thermur train --resume checkpoints/epoch5.ckpt
 
 # Non-interactive mode with Hydra overrides
 thermur train --no-interactive \
-              controller.murmuration.k_neighbors=7 \
-              controller.murmuration.alert_coupling_factor=-1.5 \
+              controller.mmm.alert_coupling_factor=-1.5 \
+              controller.mmm.k_neighbors=7 \
               training.optimizer.learning_rate=0.001
 
 # Dry run to validate configuration without training
@@ -248,13 +248,13 @@ Thermur uses [Hydra-zen](https://github.com/mit-ll-responsible-ai/hydra-zen) wit
 
 ```bash
 # Standard override syntax
-thermur train optimizer.learning_rate=0.001 # Set value
-thermur train +model.new_param=42           # Append new parameter
-thermur train ++model.force_param=true      # Force add/override
-thermur train ~model.remove_param           # Remove parameter
+thermur train training.optimizer.learning_rate=0.001   # Set value
+thermur train +training.architecture.new_param=42      # Append new parameter
+thermur train ++training.architecture.force_param=true # Force add/override
+thermur train ~training.architecture.remove_param      # Remove parameter
 
 # Combining multiple overrides
-thermur train controller.flock.agent_count=50 \
+thermur train controller.mmm.agent_count=50 \
               training.hardware.accelerator=gpu \
               training.optimizer.max_epochs=100
 ```
@@ -291,7 +291,7 @@ Before training, validate your setup:
 thermur validate
 
 # Validate with config overrides
-thermur validate --config "controller.flock.agent_count=100"
+thermur validate controller.mmm.agent_count=100
 
 # Display system information
 thermur info
@@ -341,19 +341,17 @@ The physics-based controller generates optimal trajectories using [Pydantic](htt
 
 ```python
 from thermur.imitation.controller import MurmurationController
-from config.imitation.controller  import FlockModel, MurmurationModel, SafetyModel
+from config.imitation.controller  import MurmurationModel, SafetyModel
 
 # Expert maintains critical state through alert heterogeneity
 expert = MurmurationController(
     cbf    = cbf_safety_filter,  # Control Barrier Function filter
-    flock  = FlockModel(
-        agent_count         = 30,
-        communication_range = 50.0
-    ),
     mmm    = MurmurationModel(
+        agent_count           = 30,    # Number of agents in flock
         alert_coupling_factor = -1.3,  # Negative coupling for alert birds
-        k_neighbors           = 7,     # Topological interaction
         alert_to_relaxed_rate = 0.05,  # Markovian state transitions
+        communication_range   = 50.0,  # Metric interaction radius
+        k_neighbors           = 7,     # Topological interaction
         velocity_noise_scale  = 0.2    # Active matter noise
     ),
     safety = SafetyModel(
@@ -373,19 +371,19 @@ from thermur.imitation.lightning import GNNPolicy
 from torch_geometric.nn          import GCNConv
 
 class GNNPolicy(LightningModule):
-    def __init__(self, architecture, collector, optimizer, scheduler):
+    def __init__(self, architecture, metrics, optimizer, scheduler):
         super().__init__()
         # Build GNN layers with PyTorch Geometric
-        self.convs   = ModuleList([
-            GCNConv(hidden_dim, hidden_dim) 
+        self.convs = ModuleList([
+            GCNConv(architecture.hidden_dim, architecture.hidden_dim) 
             for _ in range(architecture.num_layers)
         ])
-        self.grus    = ModuleList([
-            GRUCell(hidden_dim, hidden_dim)
+        self.grus = ModuleList([
+            GRUCell(architecture.hidden_dim, architecture.hidden_dim)
             for _ in range(architecture.num_layers)
         ])
-        self.encoder = Linear(13, architecture.hidden_dim)  # Node features
         self.decoder = Linear(architecture.hidden_dim, 3)   # 3D actions
+        self.encoder = Linear(13, architecture.hidden_dim)  # Node features
     
     def training_step(self, batch, batch_idx):
         # Behavioral cloning loss
@@ -404,15 +402,14 @@ from torch_geometric.data.lightning import LightningDataset
 
 class DemonstrationsDataset(InMemoryDataset):
     def process(self):
-        # Components are injected via Hydra configuration
-        controller = self.config.controller
-        generator  = self.config.generator
+        # Generate demonstrations using the expert controller
+        total_episodes = self.total_frames // self.frames_per_episode
         
         data_list = []
-        for episode in range(self.num_episodes):
+        for _ in range(total_episodes):
             # Each trajectory contains graph-structured states and expert actions
-            trajectory = controller.generate_trajectories(
-                generator     = generator,
+            trajectory = self.murmuration.generate_trajectories(
+                generator     = self.generator,
                 num_timesteps = self.frames_per_episode
             )
             # Each trajectory is list of Data(x=[N,13], y=[N,3], edge_index=[2,E])
@@ -423,32 +420,37 @@ class DemonstrationsDataset(InMemoryDataset):
     @classmethod
     def as_lightning_datamodule(
         cls,
-        controller     : MurmurationController,
-        demonstrations : DemonstrationsModel,
-        generator      : TrajectoryGenerator,
-        hardware       : HardwareModel,
-        hashable       : dict,
-        ui             : ThermurUI
+        batch_size  : int,
+        controller  : DictConfig,
+        environment : DictConfig,
+        generator   : TrajectoryGenerator,
+        hardware    : HardwareModel,
+        murmuration : MurmurationController,
+        train_split : float,
+        ui          : ThermurUI
     ) -> LightningDataset:
         # Create dataset with all necessary components for generation
         dataset = cls(
-            controller     = controller,
-            demonstrations = demonstrations,
-            generator      = generator,
-            hashable       = hashable,  # Config dict for cache invalidation
-            ui             = ui
+            controller         = controller,
+            environment        = environment,
+            frames_per_episode = controller.mmm.frames_per_episode,
+            generator          = generator,
+            murmuration        = murmuration,
+            sample_url         = environment.loader.sample_url,
+            total_frames       = controller.mmm.total_frames,
+            ui                 = ui
         )
         
         # Random train/val split with PyG's index_select
-        train_size = int(len(dataset) * demonstrations.train_split)
+        train_size = int(len(dataset) * train_split)
         indices    = torch.randperm(len(dataset))
         
         return LightningDataset(
-            batch_size    = demonstrations.batch_size,
+            batch_size    = batch_size,
             num_workers   = hardware.num_workers,
             pin_memory    = hardware.pin_memory,
             train_dataset = dataset.index_select(indices[:train_size]),
-            val_dataset   = dataset.index_select(indices[train_size:]),
+            val_dataset   = dataset.index_select(indices[train_size:])
         )
 ```
 
@@ -587,7 +589,6 @@ thermur/
 │           │   ├── loader.py         # WRF-SFIRE data interface
 │           │   └── trajectories.py   # Physics simulation for offline data
 │           └── training/
-│               ├── callbacks.py      # Training callbacks
 │               ├── metrics.py        # Comprehensive metrics collection
 │               └── policy.py         # GNN architecture (PyG)
 │
