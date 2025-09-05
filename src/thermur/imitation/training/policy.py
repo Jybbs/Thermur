@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from torch                             import Tensor
     from torch.optim                       import Optimizer
     from torch.optim.lr_scheduler          import LRScheduler
+    from torchmetrics                      import MetricCollection
 
 
 class GNNPolicy(LightningModule):

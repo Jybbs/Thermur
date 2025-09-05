@@ -910,7 +910,7 @@ class ScaleFreeCorrelationMetric(BaseMetric):
             )
         )).numel() > 0:
             scaling_deviation = (gammas - self.correlation_exponent).abs()
-            super().update(scaling_deviation)
+            MeanMetric.update(self, scaling_deviation)
 
 
 class States(BaseMetric):
