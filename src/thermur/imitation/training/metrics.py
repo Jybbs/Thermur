@@ -589,100 +589,6 @@ class PerturbationResponseMetric(BaseMetric):
         return response_ratio
 
 
-class PowerComponents(BaseMetric):
-    """
-    Decompose power P = Σᵢ ||𝐮ᵢ||^k into physical flight components.
-    
-    Provides actionable energy breakdown following quadrotor power model
-    (Hoffmann et al. 2011) where power scales with thrust magnitude:
-    
-        P = P_hover + P_forward + P_lateral
-    
-    Components computed via orthogonal decomposition:
-        - P_hover   = ||u_z + g||^k    : Anti-gravity thrust
-        - P_forward = ||𝐮 · v̂||^k      : Along-velocity thrust
-        - P_lateral = ||𝐮 - (𝐮·v̂)v̂||^k : Perpendicular thrust
-    
-    where k ≈ 1.5 for quadrotors in hover-dominant regimes.
-    
-    Expected power distribution:
-        - Hovering    : P_h ≈ 70%, P_f ≈ 10%, P_l ≈ 20%
-        - Cruising    : P_h ≈ 40%, P_f ≈ 50%, P_l ≈ 10%
-        - Maneuvering : P_h ≈ 50%, P_f ≈ 20%, P_l ≈ 30%
-        - Murmuration : P_h ≈ 45%, P_f ≈ 25%, P_l ≈ 30%
-    """
-
-    def __init__(self, **kwargs):
-        """
-        Initialize power components metric.
-        
-        Stores all config via BaseMetric and creates component metrics.
-        """
-        super().__init__(**kwargs)
-        
-        self.forward : MeanMetric = MeanMetric('ignore')
-        self.hover   : MeanMetric = MeanMetric('ignore')
-        self.lateral : MeanMetric = MeanMetric('ignore')
-    
-    def compute(self) -> dict[str, Tensor]:
-        """
-        Compute power component fractions.
-        
-        Returns:
-            Dictionary with hover, forward, and lateral power components
-        """
-        return {
-            "power_forward" : self.forward.compute(),
-            "power_hover"   : self.hover.compute(),
-            "power_lateral" : self.lateral.compute(),
-        }
-    
-    def reset(self):
-        """
-        Reset all component metrics.
-        """
-        self.forward.reset()
-        self.hover.reset()
-        self.lateral.reset()
-
-    def update(self, batch: FlockBatch, predictions: Tensor):
-        """
-        Update power component measurements with vectorized computation.
-        
-        Efficiently decomposes control forces using batched operations
-        optimized for MPS/GPU execution.
-        
-        Args:
-            batch       : PyG Batch with action [B*N, 3] and velocity [B*N, 3]
-            predictions : Predicted actions (unused)
-        """
-        hover = (batch.action[:, 2] + self.gravity).abs().pow(self.power_exponent)
-        self.hover.update(hover)
-        
-        mask = batch.velocity.norm(dim=-1) > self.velocity_threshold
-        if mask.any():
-            v_hat     = th.nn.functional.normalize(batch.velocity[mask], dim=-1)
-            u_masked  = batch.action[mask]
-            forward   = (u_masked * v_hat).sum(dim=-1).clamp_min(0)
-            
-            forward_power = forward.pow(self.power_exponent)
-            lateral_power = (
-                u_masked - forward.unsqueeze(-1) * 
-                v_hat
-            ).norm(dim=-1).pow(self.power_exponent)
-            
-            full_forward       = th.zeros_like(hover)
-            full_lateral       = th.zeros_like(hover)
-            full_forward[mask] = forward_power
-            full_lateral[mask] = lateral_power
-            
-            self.forward.update(full_forward)
-            self.lateral.update(full_lateral)
-        else:
-            self.forward.update(th.tensor(0.0))
-            self.lateral.update(th.tensor(0.0))
-
-
 class Regression(BaseMetric):
     """
     Standard regression metrics for action prediction quality.
@@ -1066,8 +972,6 @@ class MetricsFactory:
             "j_base"                  : murmuration.j_base,
             "max_temperature"         : safety.max_temperature,
             "orientation_wave_radius" : metrics.orientation_wave_radius,
-            "power_exponent"          : metrics.power_exponent,
-            "power_iterations"        : metrics.power_iterations,
             "velocity_threshold"      : metrics.velocity_threshold,
         }
     
@@ -1087,7 +991,6 @@ class MetricsFactory:
             "orientation_coherence"  : make(OrientationCoherenceMetric),
             "orientation_wave"       : make(OrientationWaveMetric),
             "perturbation_response"  : make(PerturbationResponseMetric),
-            "power_components"       : make(PowerComponents),
             "regression"             : make(Regression),
             "scale_free_correlation" : make(ScaleFreeCorrelationMetric),
             "states"                 : make(States),

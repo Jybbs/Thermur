@@ -342,20 +342,6 @@ class MetricsModel(BaseModel, extra="forbid"):
             "murmuration wave detection, where θ = atan2(v_y, v_x)."
         )
     )
-    power_exponent: PositiveFloat = Field(
-        default     = 1.5,
-        description = (
-            "Exponent k in power consumption model P ∝ ||u||^k for energy metrics, "
-            "typically 1.5 for quadrotors based on momentum theory analysis."
-        )
-    )
-    power_iterations: PositiveInt = Field(
-        default     = 30,
-        description = (
-            "Number of power method iterations for approximating second smallest "
-            "eigenvalue (Fiedler value) of the graph Laplacian matrix."
-        )
-    )
     profiler: bool | Literal["simple", "advanced", "pytorch"] = Field(
         default     = False,
         description = (
