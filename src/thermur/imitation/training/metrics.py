@@ -161,22 +161,15 @@ class BaseMetric(MeanMetric):
             f"{self.__class__.__name__} must implement evaluate()"
         )
     
-    def update(
-        self,
-        batch       : FlockBatch,
-        predictions : Tensor | None = None,
-        targets     : Tensor | None = None
-    ):
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
-        Handle MetricCollection's reserved call signature.
+        Handle MetricCollection's call signature.
         
-        Accepts the full signature from MetricCollection but only uses batch.
         Computes metric value via evaluate() and passes to MeanMetric.
         
         Args:
             batch       : PyG Batch containing all required data
-            predictions : Predicted actions (unused)
-            targets     : Target actions    (unused)
+            predictions : Predicted actions (unused for most metrics)
         """
         value = self.evaluate(batch)
         super().update(value)
@@ -652,12 +645,7 @@ class PowerComponents(BaseMetric):
         self.hover.reset()
         self.lateral.reset()
 
-    def update(
-        self,
-        batch       : FlockBatch,
-        predictions : Tensor | None = None,
-        targets     : Tensor | None = None
-    ):
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
         Update power component measurements with vectorized computation.
         
@@ -667,7 +655,6 @@ class PowerComponents(BaseMetric):
         Args:
             batch       : PyG Batch with action [B*N, 3] and velocity [B*N, 3]
             predictions : Predicted actions (unused)
-            targets     : Target actions    (unused)
         """
         hover = (batch.action[:, 2] + self.gravity).abs().pow(self.power_exponent)
         self.hover.update(hover)
@@ -748,20 +735,15 @@ class Regression(BaseMetric):
         self.r2.reset()
         self.rmse.reset()
     
-    def update(
-        self,
-        batch       : FlockBatch,
-        predictions : Tensor,
-        targets     : Tensor
-    ):
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
-        Update regression metrics with predictions and targets.
+        Update regression metrics with predictions and targets from batch.
         
         Args:
-            batch       : PyG Batch (unused)
+            batch       : PyG Batch containing target actions in batch.action
             predictions : Predicted actions [B*N, 3]
-            targets     : Expert actions    [B*N, 3]
         """
+        targets = batch.action
         self.mae.update(predictions,  targets)
         self.mse.update(predictions,  targets)
         self.r2.update(predictions,   targets)
@@ -902,12 +884,7 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         
         return th.where(XX > 0, -XY / XX, th.zeros_like(XX))
 
-    def update(
-        self,
-        batch       : FlockBatch,
-        predictions : Tensor | None = None,
-        targets     : Tensor | None = None
-    ):
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
         Update metric with scale-free correlation measurement.
         
@@ -917,7 +894,6 @@ class ScaleFreeCorrelationMetric(BaseMetric):
         Args:
             batch       : PyG Batch containing position and velocity
             predictions : Predicted actions (unused)
-            targets     : Target actions    (unused)
         """
         corrs, dists = self._compute_correlations(
             *self._reshape_features(batch, "distances", "spins")
@@ -992,12 +968,7 @@ class States(BaseMetric):
         self.temperature.reset()
         self.velocity.reset()
 
-    def update(
-        self,
-        batch       : FlockBatch,
-        predictions : Tensor | None = None,
-        targets     : Tensor | None = None
-    ):
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
         Update running sums with batch statistics.
         
@@ -1007,13 +978,10 @@ class States(BaseMetric):
         Args:
             batch       : PyG Batch containing velocity, temperature, and action
             predictions : Predicted actions (unused)
-            targets     : Target actions    (unused)
         """
         self.acceleration.update(batch.action.norm(dim=-1))
         self.temperature.update(batch.temperature)
         self.velocity.update(batch.velocity.norm(dim=-1))
-
-
 
 
 class SusceptibilityMetric(BaseMetric):

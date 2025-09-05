@@ -86,6 +86,32 @@ class GNNPolicy(LightningModule):
         if architecture.compile:
             self.forward = compile(self.forward, mode="default")
 
+    def _step(
+        self, 
+        batch   : FlockBatch, 
+        metrics : MetricCollection, 
+        prefix  : str
+    ) -> STEP_OUTPUT:
+        """
+        Shared step logic for training and validation.
+        
+        Args:
+            batch   : PyG Batch containing observations and expert actions
+            metrics : Metric collection to update
+            prefix  : Logging prefix ('training' or 'validation')
+            
+        Returns:
+            Scalar loss tensor for backpropagation
+        """
+        predictions = self(batch)
+        loss        = mse_loss(predictions, batch.action)
+        
+        metrics.update(batch, predictions)
+        self.log(f'{prefix}/loss', loss, prog_bar=True)
+        self.log_dict(metrics, on_step=True)
+        
+        return loss
+
     def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
         """
         Configures the optimizer and learning rate scheduler for training.
@@ -171,11 +197,9 @@ class GNNPolicy(LightningModule):
             batch_idx : Index of current batch
         """
         BaseMetric.clear_cache()
-
+    
     def training_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """
-        Executes a single training step using behavioral cloning loss.
-
         In PyTorch Lightning, the model defines its own training logic. This is
         Lightning's standard pattern, in that the model knows how to train itself,
         eliminating the need for external training loops.
@@ -187,19 +211,10 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar loss tensor for automatic backpropagation
         """
-        predictions = self(batch)
-        loss        = mse_loss(predictions, batch.action)
-        
-        self.train_metrics.update(batch, predictions, batch.action)
-        self.log('training/loss', loss, prog_bar=True)
-        self.log_dict(self.train_metrics, on_step=True, on_epoch=False)
-        
-        return loss
+        return self._step(batch, self.train_metrics, 'training')
 
     def validation_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """
-        Executes validation step for model evaluation.
-
         Lightning calls this method during validation to assess the model's
         performance on held-out data. This helps monitor generalization and
         detect overfitting during training.
@@ -211,11 +226,4 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar validation loss for automatic metric aggregation
         """
-        predictions = self(batch)
-        loss        = mse_loss(predictions, batch.action)
-        
-        self.val_metrics.update(batch, predictions, batch.action)
-        self.log('validation/loss', loss, prog_bar=True)
-        self.log_dict(self.val_metrics, on_step=False, on_epoch=True)
-        
-        return loss
+        return self._step(batch, self.val_metrics, 'validation')
