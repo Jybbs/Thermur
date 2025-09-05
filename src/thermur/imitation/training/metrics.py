@@ -175,6 +175,31 @@ class BaseMetric(MeanMetric):
         super().update(value)
 
 
+class AccelerationMetric(BaseMetric):
+    """
+    Track average acceleration magnitude across the flock.
+    
+    Monitors |𝐚|_avg to quantify control effort and energy expenditure during
+    flight maneuvers. Natural flocking exhibits acceleration in the range of
+    5-15 m/s², with higher values during evasive maneuvers or rapid turns.
+    
+    Tracking this metric ensures the learned policy generates physically
+    plausible control forces consistent with bird flight dynamics.
+    """
+    
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute mean acceleration magnitude.
+        
+        Args:
+            batch: PyG Batch containing action tensor [B*N, 3]
+            
+        Returns:
+            Mean acceleration magnitude as scalar tensor
+        """
+        return batch.action.norm(dim=-1).mean()
+
+
 class FiedlerValueMetric(BaseMetric):
     """
     Measure graph connectivity via the Fiedler value λ₂.
@@ -589,7 +614,7 @@ class PerturbationResponseMetric(BaseMetric):
         return response_ratio
 
 
-class Regression(BaseMetric):
+class Regression(MetricCollection):
     """
     Standard regression metrics for action prediction quality.
     
@@ -612,34 +637,13 @@ class Regression(BaseMetric):
         
         Creates standard torchmetrics for regression evaluation.
         """
-        super().__init__(**kwargs)
-        self.mae  = MeanAbsoluteError()
-        self.mse  = MeanSquaredError()
-        self.r2   = R2Score()
-        self.rmse = MeanSquaredError(squared=False)
-    
-    def compute(self) -> dict[str, Tensor]:
-        """
-        Compute all regression metrics.
-        
-        Returns:
-            Dictionary with mae, mse, rmse, and r2 scores
-        """
-        return {
-            "mae"  : self.mae.compute(),
-            "mse"  : self.mse.compute(),
-            "r2"   : self.r2.compute(),
-            "rmse" : self.rmse.compute(),
+        metrics = {
+            "mae"  : MeanAbsoluteError(),
+            "mse"  : MeanSquaredError(),
+            "r2"   : R2Score(),
+            "rmse" : MeanSquaredError(squared=False),
         }
-    
-    def reset(self):
-        """
-        Reset all regression metrics.
-        """
-        self.mae.reset()
-        self.mse.reset()
-        self.r2.reset()
-        self.rmse.reset()
+        super().__init__(metrics)
     
     def update(self, batch: FlockBatch, predictions: Tensor):
         """
@@ -649,11 +653,8 @@ class Regression(BaseMetric):
             batch       : PyG Batch containing target actions in batch.action
             predictions : Predicted actions [B*N, 3]
         """
-        targets = batch.action
-        self.mae.update(predictions,  targets)
-        self.mse.update(predictions,  targets)
-        self.r2.update(predictions,   targets)
-        self.rmse.update(predictions, targets)
+        for metric in self.values():
+            metric.update(predictions, batch.action)
 
 
 class ScaleFreeCorrelationMetric(BaseMetric):
@@ -819,77 +820,6 @@ class ScaleFreeCorrelationMetric(BaseMetric):
             MeanMetric.update(self, scaling_deviation)
 
 
-class States(BaseMetric):
-    """
-    Tracks average physical state properties of the flock.
-    
-    Monitors key physical quantities including velocity magnitude |𝐯|,
-    temperature θ, and acceleration magnitude |𝐚| across all agents.
-    These reveal whether the learned policy maintains realistic flight
-    dynamics matching both the expert controller and empirical observations
-    from Cavagna et al. (2010) and Attanasi et al. (2014).
-    
-    The metrics track:
-        - |𝐯|_avg : Mean velocity magnitude, expected 10-20 m/s in cruise
-                    (starlings typically fly at 15 m/s per Cavagna et al.)
-        - θ_avg   : Mean sensed temperature across flock, critical for
-                    thermal safety constraints
-        - |𝐚|_avg : Mean acceleration magnitude, indicating control effort
-                    and energy expenditure (typical range 5-15 m/s²)
-    
-    These quantities help diagnose whether the learned policy captures the
-    active matter dynamics of self-propelled particles maintaining constant
-    speed while adapting to environmental gradients.
-    """
-
-    def __init__(self, **kwargs):
-        """
-        Initialize state tracking for physical quantities.
-        
-        Composes multiple MeanMetrics for different state variables.
-        """
-        super().__init__(**kwargs)
-        self.acceleration : MeanMetric = MeanMetric('ignore')
-        self.temperature  : MeanMetric = MeanMetric('ignore')
-        self.velocity     : MeanMetric = MeanMetric('ignore')
-    
-    def compute(self) -> dict[str, Tensor]:
-        """
-        Compute state averages.
-        
-        Returns:
-            Dictionary with average acceleration, temperature, and velocity
-        """
-        return {
-            "avg_acceleration" : self.acceleration.compute(),
-            "avg_temperature"  : self.temperature.compute(),
-            "avg_velocity"     : self.velocity.compute(),
-        }
-    
-    def reset(self):
-        """
-        Reset all state metrics.
-        """
-        self.acceleration.reset()
-        self.temperature.reset()
-        self.velocity.reset()
-
-    def update(self, batch: FlockBatch, predictions: Tensor):
-        """
-        Update running sums with batch statistics.
-        
-        Extracts physical quantities from the batch and accumulates their
-        magnitudes for computing running averages across all agents.
-        
-        Args:
-            batch       : PyG Batch containing velocity, temperature, and action
-            predictions : Predicted actions (unused)
-        """
-        self.acceleration.update(batch.action.norm(dim=-1))
-        self.temperature.update(batch.temperature)
-        self.velocity.update(batch.velocity.norm(dim=-1))
-
-
 class SusceptibilityMetric(BaseMetric):
     """
     Measures flock susceptibility to directional perturbations.
@@ -932,6 +862,60 @@ class SusceptibilityMetric(BaseMetric):
         polarizations    = (spins * spin_mean).sum(dim=-1)
 
         return self.agent_count * polarizations.var(dim=-1)
+
+
+class TemperatureMetric(BaseMetric):
+    """
+    Track average temperature sensed across the flock.
+    
+    Monitors mean temperature θ_avg to assess thermal threat exposure and
+    safety constraint satisfaction. Temperature serves as the primary signal
+    for environmental hazards in the murmuration model, with agents detecting
+    and propagating threat information through the flock.
+    
+    This metric verifies that the learned policy maintains appropriate thermal
+    awareness and triggers collective evasion when temperature thresholds are
+    exceeded.
+    """
+    
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute mean temperature.
+        
+        Args:
+            batch: PyG Batch containing temperature tensor [B*N, 1]
+            
+        Returns:
+            Mean temperature as scalar tensor
+        """
+        return batch.temperature.mean()
+
+
+class VelocityMetric(BaseMetric):
+    """
+    Track average velocity magnitude across the flock.
+    
+    Monitors |𝐯|_avg to ensure realistic flight speeds are maintained during
+    collective motion. Empirical observations from Cavagna et al. (2010) show
+    starlings cruise at approximately 15 m/s, with speeds ranging from 10-20 m/s
+    depending on conditions.
+    
+    This metric validates that the learned policy preserves the characteristic
+    speed regulation of self-propelled particles in active matter systems,
+    where agents maintain preferred speeds despite interactions and perturbations.
+    """
+    
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute mean velocity magnitude.
+        
+        Args:
+            batch: PyG Batch containing velocity tensor [B*N, 3]
+            
+        Returns:
+            Mean velocity magnitude as scalar tensor
+        """
+        return batch.velocity.norm(dim=-1).mean()
 
 
 class MetricsFactory:
@@ -985,6 +969,7 @@ class MetricsFactory:
         make = lambda cls: cls(**self.cfg)
         
         return MetricCollection({
+            "acceleration"           : make(AccelerationMetric),
             "fiedler_value"          : make(FiedlerValueMetric),
             "hamiltonian_energy"     : make(HamiltonianEnergyMetric),
             "neighbor_stability"     : make(NeighborStabilityMetric),
@@ -993,8 +978,9 @@ class MetricsFactory:
             "perturbation_response"  : make(PerturbationResponseMetric),
             "regression"             : make(Regression),
             "scale_free_correlation" : make(ScaleFreeCorrelationMetric),
-            "states"                 : make(States),
             "susceptibility"         : make(SusceptibilityMetric),
+            "temperature"            : make(TemperatureMetric),
+            "velocity"               : make(VelocityMetric),
         })
     
     def create_validation_metrics(self) -> MetricCollection:
