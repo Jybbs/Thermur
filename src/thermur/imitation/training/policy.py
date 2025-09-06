@@ -108,7 +108,7 @@ class GNNPolicy(LightningModule):
         loss        = mse_loss(predictions, batch.action)
         
         metrics.update(batch, predictions)
-        self.log(f'{prefix}/loss', loss, prog_bar=True)
+        self.log(f'{prefix}/mse', loss, prog_bar=True)
         self.log_dict(metrics, on_step=True)
         
         return loss
@@ -130,7 +130,7 @@ class GNNPolicy(LightningModule):
             "optimizer"    : optimizer,
             "lr_scheduler" : {
                 "scheduler" : self.scheduler(optimizer=optimizer),
-                "monitor"   : "validation/loss"
+                "monitor"   : "validation/mse"
             }
         }
 

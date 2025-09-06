@@ -6,11 +6,12 @@ Geometric's batch format where features are flattened as [B*N, F] tensors
 (B=num_graphs, N=agents, F=features). The BaseMetric base class extends
 MeanMetric to provide automatic averaging and PyG batch utilities.
 
-All metrics integrate seamlessly with PyTorch Lightning's logging system
-and can be used directly in LightningModules without a separate collector.
+All metrics integrate with PyTorch Lightning's logging system and can be 
+used directly in LightningModules without a separate collector.
 """
 from __future__   import annotations
-from torchmetrics import MeanMetric, MetricCollection
+from torchmetrics import MeanAbsoluteError, MeanMetric, MeanSquaredError 
+from torchmetrics import MetricCollection, R2Score
 from typing       import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,8 +20,74 @@ if TYPE_CHECKING:
     from config.imitation.training    import MetricsModel
     from config.types                 import FlockBatch
     from torch                        import Tensor
+    from torchmetrics                 import Metric
+    from typing                       import Type
 
 import torch as th
+
+
+class Adapter(MeanMetric):
+    """
+    Adapter for torchmetrics regression metrics to work with graph batches.
+    
+    Bridges the signature mismatch between graph-based metrics (which receive
+    batch and predictions) and standard regression metrics (which expect
+    predictions and targets). This allows torchmetrics regression metrics to
+    integrate seamlessly with the existing MetricCollection infrastructure.
+    
+    The adapter wraps a torchmetrics metric and handles:
+        - Parameter reordering from (batch, predictions) to (predictions, targets)
+        - Delegation of compute() to the wrapped metric
+        - Proper metric state management and resetting
+    
+    This design maintains architectural consistency while acknowledging that
+    regression metrics measure prediction quality rather than graph properties.
+    """
+    
+    def __init__(self, metric_class: Type[Metric], **kwargs):
+        """
+        Initialize the regression metric adapter.
+        
+        Args:
+            metric_class : Torchmetrics class to instantiate (MAE, MSE, R2Score)
+            **kwargs     : Configuration passed to parent (includes agent_count)
+        """
+        super().__init__()
+        self.metric = metric_class()
+        self.kwargs = kwargs
+    
+    def compute(self) -> th.Tensor:
+        """
+        Compute the metric value.
+        
+        Delegates to the wrapped torchmetrics metric's compute method.
+        
+        Returns:
+            Computed metric value as scalar tensor
+        """
+        return self.metric.compute()
+    
+    def reset(self) -> None:
+        """
+        Reset metric state.
+        
+        Resets both the adapter and wrapped metric states.
+        """
+        super().reset()
+        self.metric.reset()
+    
+    def update(self, batch: FlockBatch, predictions: Tensor) -> None:
+        """
+        Update metric with predictions and targets.
+        
+        Reorders parameters from graph metric signature (batch, predictions)
+        to regression metric signature (predictions, targets).
+        
+        Args:
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
+        """
+        self.metric.update(predictions, batch.action)
 
 
 class BaseMetric(MeanMetric):
@@ -363,6 +430,31 @@ class HamiltonianEnergy(BaseMetric):
         ).sum(dim=(1, 2)) * 2
 
 
+class MAE(Adapter):
+    """
+    Mean Absolute Error for action predictions.
+    
+    Measures the average absolute difference between predicted and expert
+    actions in m/s² units. MAE is more robust to outliers than MSE/RMSE,
+    providing a complementary view of prediction accuracy.
+    
+    Performance interpretation:
+        - MAE < 1.0 m/s²  : Excellent - near-expert performance
+        - MAE ∈ [1, 2]    : Good      - effective imitation
+        - MAE ∈ [2, 4]    : Moderate  - functional but imprecise
+        - MAE > 4.0 m/s²  : Poor      - significant prediction errors
+    """
+    
+    def __init__(self, **kwargs):
+        """
+        Initialize MAE metric adapter.
+        
+        Args:
+            **kwargs: Configuration including agent_count
+        """
+        super().__init__(MeanAbsoluteError, **kwargs)
+
+
 class NeighborStability(BaseMetric):
     """
     Quantify topological stability of the communication graph.
@@ -611,6 +703,61 @@ class PerturbationResponse(BaseMetric):
         
         self.last_velocity = batch.velocity.detach().clone()
         return response_ratio
+
+
+class R2(Adapter):
+    """
+    R-squared score for action predictions.
+    
+    Measures the proportion of variance in expert actions explained by the
+    policy's predictions. R² ∈ [−∞, 1] where 1 indicates perfect prediction,
+    0 indicates performance equivalent to predicting the mean, and negative
+    values indicate worse than mean prediction.
+    
+    Performance interpretation:
+        - R² > 0.90      : Excellent - captures most variance
+        - R² ∈ [0.7, 0.9]: Good      - strong predictive power
+        - R² ∈ [0.3, 0.7]: Moderate  - partial pattern learning
+        - R² < 0.30      : Poor      - minimal predictive capability
+        - R² < 0         : Failure   - worse than mean prediction
+    """
+    
+    def __init__(self, **kwargs):
+        """
+        Initialize R² score adapter.
+        
+        Args:
+            **kwargs: Configuration including agent_count
+        """
+        super().__init__(R2Score, **kwargs)
+
+
+class RMSE(Adapter):
+    """
+    Root Mean Squared Error for action predictions.
+    
+    Measures the typical prediction error in m/s² units, giving more weight
+    to large errors than MAE. RMSE provides an interpretable metric in the
+    same units as the predictions, making it ideal for monitoring training.
+    
+    Performance interpretation:
+        - RMSE < 1.5 m/s² : Excellent - high-fidelity imitation
+        - RMSE ∈ [1.5, 3] : Good      - acceptable prediction errors
+        - RMSE ∈ [3, 5]   : Moderate  - noticeable deviations
+        - RMSE > 5.0 m/s² : Poor      - large prediction errors
+    
+    Note that RMSE ≥ MAE with equality only when all errors are identical.
+    """
+    
+    def __init__(self, **kwargs):
+        """
+        Initialize RMSE metric adapter.
+        
+        Args:
+            **kwargs: Configuration including agent_count
+        """
+        super().__init__(MeanSquaredError, **kwargs)
+        self.metric.squared = False
 
 
 class ScaleFreeCorrelation(BaseMetric):
@@ -928,10 +1075,13 @@ class MetricsFactory:
             "acceleration"           : make(Acceleration),
             "fiedler_value"          : make(FiedlerValue),
             "hamiltonian_energy"     : make(HamiltonianEnergy),
+            "mae"                    : make(MAE),
             "neighbor_stability"     : make(NeighborStability),
             "orientation_coherence"  : make(OrientationCoherence),
             "orientation_wave"       : make(OrientationWave),
             "perturbation_response"  : make(PerturbationResponse),
+            "r2"                     : make(R2),
+            "rmse"                   : make(RMSE),
             "scale_free_correlation" : make(ScaleFreeCorrelation),
             "susceptibility"         : make(Susceptibility),
             "temperature"            : make(Temperature),
