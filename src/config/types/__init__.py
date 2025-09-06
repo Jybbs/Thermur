@@ -51,19 +51,6 @@ class FlockBatch(Protocol):
         ...
 
 
-class StepMetrics(TypedDict):
-    """
-    Step-level metrics data for logging during training/validation.
-
-    Contains the loss value and model predictions/targets needed for
-    computing step-level metrics like per-dimension MSE. When None,
-    indicates epoch-level aggregated logging only.
-    """
-    loss        : Tensor  # Scalar loss value
-    predictions : Tensor  # Model velocity predictions [batch, 3]
-    targets     : Tensor  # Expert velocity targets [batch, 3]
-
-
 class SystemInfo(TypedDict, total=False):
     """
     System information dictionary returned by get_system_info.

@@ -10,8 +10,7 @@ All metrics integrate seamlessly with PyTorch Lightning's logging system
 and can be used directly in LightningModules without a separate collector.
 """
 from __future__   import annotations
-from torchmetrics import MeanAbsoluteError, MeanMetric, MeanSquaredError
-from torchmetrics import MetricCollection, R2Score
+from torchmetrics import MeanMetric, MetricCollection
 from typing       import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -175,7 +174,7 @@ class BaseMetric(MeanMetric):
         super().update(value)
 
 
-class AccelerationMetric(BaseMetric):
+class Acceleration(BaseMetric):
     """
     Track average acceleration magnitude across the flock.
     
@@ -200,7 +199,7 @@ class AccelerationMetric(BaseMetric):
         return batch.action.norm(dim=-1).mean()
 
 
-class FiedlerValueMetric(BaseMetric):
+class FiedlerValue(BaseMetric):
     """
     Measure graph connectivity via the Fiedler value λ₂.
 
@@ -250,7 +249,7 @@ class FiedlerValueMetric(BaseMetric):
         return th.linalg.eigvalsh(L.cpu())[1:2].clamp_min(0.0).to(device)
 
 
-class HamiltonianEnergyMetric(BaseMetric):
+class HamiltonianEnergy(BaseMetric):
     """
     Track Hamiltonian energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per timestep.
 
@@ -364,7 +363,7 @@ class HamiltonianEnergyMetric(BaseMetric):
         ).sum(dim=(1, 2)) * 2
 
 
-class NeighborStabilityMetric(BaseMetric):
+class NeighborStability(BaseMetric):
     """
     Quantify topological stability of the communication graph.
     
@@ -451,7 +450,7 @@ class NeighborStabilityMetric(BaseMetric):
         )
 
 
-class OrientationCoherenceMetric(BaseMetric):
+class OrientationCoherence(BaseMetric):
     """
     Quantify directional alignment coherence via order parameter Φ.
     
@@ -497,7 +496,7 @@ class OrientationCoherenceMetric(BaseMetric):
         )
 
 
-class OrientationWaveMetric(BaseMetric):
+class OrientationWave(BaseMetric):
     """
     Detect traveling waves in the orientation field ∇θ(𝐫, t).
     
@@ -548,7 +547,7 @@ class OrientationWaveMetric(BaseMetric):
         return gradients.sum(dim=(1, 2)).mean(dim=0, keepdim=True)
 
 
-class PerturbationResponseMetric(BaseMetric):
+class PerturbationResponse(BaseMetric):
     """
     Quantify collective response to thermal perturbations χ_thermal.
     
@@ -614,50 +613,7 @@ class PerturbationResponseMetric(BaseMetric):
         return response_ratio
 
 
-class Regression(MetricCollection):
-    """
-    Standard regression metrics for action prediction quality.
-    
-    Tracks multiple loss metrics (MAE, MSE, RMSE, R²) to assess how well
-    the learned policy matches expert demonstrations. These metrics provide
-    complementary views of prediction error:
-    
-    - MAE  : Mean absolute error, robust to outliers
-    - MSE  : Mean squared error, penalizes large errors  
-    - RMSE : Root mean squared error, same units as targets
-    - R²   : Coefficient of determination, normalized goodness of fit
-    
-    All metrics operate on the flattened action space [B*N, 3] matching
-    PyTorch Geometric's batch format.
-    """
-    
-    def __init__(self, **kwargs):
-        """
-        Initialize regression metrics collection.
-        
-        Creates standard torchmetrics for regression evaluation.
-        """
-        metrics = {
-            "mae"  : MeanAbsoluteError(),
-            "mse"  : MeanSquaredError(),
-            "r2"   : R2Score(),
-            "rmse" : MeanSquaredError(squared=False),
-        }
-        super().__init__(metrics)
-    
-    def update(self, batch: FlockBatch, predictions: Tensor):
-        """
-        Update regression metrics with predictions and targets from batch.
-        
-        Args:
-            batch       : PyG Batch containing target actions in batch.action
-            predictions : Predicted actions [B*N, 3]
-        """
-        for metric in self.values():
-            metric.update(predictions, batch.action)
-
-
-class ScaleFreeCorrelationMetric(BaseMetric):
+class ScaleFreeCorrelation(BaseMetric):
     """
     Measure deviation from scale-free velocity correlations.
     
@@ -820,7 +776,7 @@ class ScaleFreeCorrelationMetric(BaseMetric):
             MeanMetric.update(self, scaling_deviation)
 
 
-class SusceptibilityMetric(BaseMetric):
+class Susceptibility(BaseMetric):
     """
     Measures flock susceptibility to directional perturbations.
     
@@ -864,7 +820,7 @@ class SusceptibilityMetric(BaseMetric):
         return self.agent_count * polarizations.var(dim=-1)
 
 
-class TemperatureMetric(BaseMetric):
+class Temperature(BaseMetric):
     """
     Track average temperature sensed across the flock.
     
@@ -891,7 +847,7 @@ class TemperatureMetric(BaseMetric):
         return batch.temperature.mean()
 
 
-class VelocityMetric(BaseMetric):
+class Velocity(BaseMetric):
     """
     Track average velocity magnitude across the flock.
     
@@ -969,18 +925,17 @@ class MetricsFactory:
         make = lambda cls: cls(**self.cfg)
         
         return MetricCollection({
-            "acceleration"           : make(AccelerationMetric),
-            "fiedler_value"          : make(FiedlerValueMetric),
-            "hamiltonian_energy"     : make(HamiltonianEnergyMetric),
-            "neighbor_stability"     : make(NeighborStabilityMetric),
-            "orientation_coherence"  : make(OrientationCoherenceMetric),
-            "orientation_wave"       : make(OrientationWaveMetric),
-            "perturbation_response"  : make(PerturbationResponseMetric),
-            "regression"             : make(Regression),
-            "scale_free_correlation" : make(ScaleFreeCorrelationMetric),
-            "susceptibility"         : make(SusceptibilityMetric),
-            "temperature"            : make(TemperatureMetric),
-            "velocity"               : make(VelocityMetric),
+            "acceleration"           : make(Acceleration),
+            "fiedler_value"          : make(FiedlerValue),
+            "hamiltonian_energy"     : make(HamiltonianEnergy),
+            "neighbor_stability"     : make(NeighborStability),
+            "orientation_coherence"  : make(OrientationCoherence),
+            "orientation_wave"       : make(OrientationWave),
+            "perturbation_response"  : make(PerturbationResponse),
+            "scale_free_correlation" : make(ScaleFreeCorrelation),
+            "susceptibility"         : make(Susceptibility),
+            "temperature"            : make(Temperature),
+            "velocity"               : make(Velocity),
         })
     
     def create_validation_metrics(self) -> MetricCollection:
