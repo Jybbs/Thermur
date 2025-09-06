@@ -105,13 +105,13 @@ class GNNPolicy(LightningModule):
             Scalar loss tensor for backpropagation
         """
         predictions = self(batch)
-        loss        = mse_loss(predictions, batch.action)
+        mse         = mse_loss(predictions, batch.action)
         
         metrics.update(batch, predictions)
-        self.log(f'{prefix}/mse', loss, prog_bar=True)
+        self.log(f'{prefix}/mse', mse, prog_bar=True)
         self.log_dict(metrics, on_step=True)
         
-        return loss
+        return mse
 
     def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
         """
@@ -134,7 +134,6 @@ class GNNPolicy(LightningModule):
             }
         }
 
-    @compile(mode="reduce-overhead")
     def forward(self, batch: FlockBatch) -> Tensor:
         """
         Performs the forward pass through the GNN.
@@ -210,7 +209,7 @@ class GNNPolicy(LightningModule):
             idx   : Current batch index (automatically provided by Lightning)
 
         Returns:
-            Scalar loss tensor for automatic backpropagation
+            Scalar MSE loss tensor for automatic backpropagation
         """
         return self._step(batch, self.train_metrics, 'training')
 
@@ -225,6 +224,6 @@ class GNNPolicy(LightningModule):
             idx   : Current batch index (automatically provided by Lightning)
 
         Returns:
-            Scalar validation loss for automatic metric aggregation
+            Scalar validation MSE loss for automatic metric aggregation
         """
         return self._step(batch, self.val_metrics, 'validation')

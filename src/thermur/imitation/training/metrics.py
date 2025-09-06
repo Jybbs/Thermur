@@ -65,9 +65,12 @@ class Adapter(MeanMetric):
         Returns:
             Computed metric value as scalar tensor
         """
-        return self.metric.compute()
+        try:
+            return self.metric.compute()
+        except ValueError:
+            return th.tensor(float('nan'))
     
-    def reset(self) -> None:
+    def reset(self):
         """
         Reset metric state.
         
@@ -76,7 +79,7 @@ class Adapter(MeanMetric):
         super().reset()
         self.metric.reset()
     
-    def update(self, batch: FlockBatch, predictions: Tensor) -> None:
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
         Update metric with predictions and targets.
         
@@ -111,11 +114,6 @@ class BaseMetric(MeanMetric):
     3. Conditional metrics without meaningful defaults: Override update() directly
        - Skip super().update() when computation impossible or invalid
        - Example: ScaleFreeCorrelationMetric (no value when fitting fails)
-    
-    4. Composite metrics: Override update() and compute() directly
-       - Manage multiple sub-metrics internally
-       - Return dictionaries from compute()
-       - Examples: PowerComponents, States
     """
     _reshape_cache = {}
 
@@ -336,7 +334,6 @@ class HamiltonianEnergy(BaseMetric):
     _hop_cache  = {}
     _triu_cache = {}
     
-    @th.compile(mode="default")
     def _compute_hops_per_graph(self, batch: FlockBatch) -> Tensor:
         """
         Compute minimum hop counts using vectorized Floyd-Warshall.

@@ -388,8 +388,8 @@ class GNNPolicy(LightningModule):
     def training_step(self, batch, batch_idx):
         # Behavioral cloning loss
         actions_pred = self(batch["observation"])
-        loss = mse_loss(actions_pred, batch["action"])
-        return loss
+        mse          = mse_loss(actions_pred, batch["action"])
+        return mse
 ```
 
 #### 3. Demonstration Generation

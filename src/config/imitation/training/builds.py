@@ -63,7 +63,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         dirpath                 = "${training.checkpoint.dirpath}",
         every_n_train_steps     = "${training.checkpoint.every_n_train_steps}",
         filename                = "checkpoint-{step}",
-        monitor                 = "validation/loss",
+        monitor                 = "validation/mse",
         mode                    = "${training.optimizer.mode}",
         save_last               = "${training.checkpoint.save_last}",
         save_top_k              = "${training.checkpoint.save_top_k}",
@@ -84,7 +84,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "early_stopping_callback": builds(
         EarlyStopping,
-        monitor                 = "validation/loss",
+        monitor                 = "validation/mse",
         mode                    = "${training.optimizer.mode}",
         patience                = "${training.optimizer.early_stopping_patience}",
         populate_full_signature = True
