@@ -145,7 +145,7 @@ class TrainCommand:
 
         return next((ckpt for ckpt in checkpoints if ckpt.exists()), None)
 
-    def _handle_config_issues(self, issues: list[str]):
+    def _handle_cfg_issues(self, issues: list[str]):
         """
         Handles reported configuration validation issues.
 
@@ -187,7 +187,7 @@ class TrainCommand:
         Create concrete objects from the configuration.
 
         Components are instantiated in the order specified by the
-        training_component_configs, with a progress bar showing
+        training_component_cfgs, with a progress bar showing
         the instantiation process.
 
         Args:
@@ -201,7 +201,7 @@ class TrainCommand:
             ValueError: If configuration path is not found.
         """
         with self.ui.create_thermal_progress() as progress:
-            component_cfgs = self.cfg.display.training_component_configs
+            component_cfgs = self.cfg.display.training_component_cfgs
             task = progress.add_task(
                 description = "Instantiating components...",
                 total       = len(component_cfgs)
@@ -238,7 +238,7 @@ class TrainCommand:
                 components['visualizer'] = None
             
             components["trainer"].logger.log_hyperparams(
-                self.system.extract_training_config(cfg, self.overrides)
+                self.system.extract_training_cfg(cfg, self.overrides)
             )
 
         return components
@@ -329,7 +329,7 @@ class TrainCommand:
 
         return imports
 
-    def _offer_config_viewing(self):
+    def _offer_cfg_viewing(self):
         """
         Offers to view configuration via the runs command.
         """
@@ -436,7 +436,7 @@ class TrainCommand:
                 message  = "Dry run complete. Configuration validated successfully.",
                 msg_type = "success"
             )
-            self._offer_config_viewing()
+            self._offer_cfg_viewing()
 
             return {"status": "dry_run_complete"}
 
@@ -486,7 +486,7 @@ class TrainCommand:
 
         self.ui.console.print()
         self.ui.print_header("Training Complete 🎉")
-        self._offer_config_viewing()
+        self._offer_cfg_viewing()
 
         return {"status": "training_complete"}
 
@@ -540,7 +540,7 @@ class TrainCommand:
         if not self.force and (
             issues := self.system.validate_overrides(self.overrides)
         ):
-            self._handle_config_issues(issues)
+            self._handle_cfg_issues(issues)
 
         if self.interactive:
             self._request_confirmation()

@@ -184,13 +184,19 @@ class SystemInspector:
         Returns:
             Dictionary with extracted config sections and overrides
         """
-        to_container = lambda c: OmegaConf.to_container(c, resolve=True)
-        container = to_container(cfg) if hasattr(cfg, '_metadata') else cfg
+        if not isinstance(
+            container := (
+                OmegaConf.to_container(cfg, resolve=True) 
+                if hasattr(cfg, '_metadata')
+                else cfg
+            ), dict
+        ):
+            container = {}
         
         return {
-            "controller"  : container.get("controller", {}),
+            "controller"  : container.get("controller",  {}),
             "environment" : container.get("environment", {}),
-            "training"    : container.get("training", {}),
+            "training"    : container.get("training",    {}),
             "overrides"   : overrides or []
         }
     

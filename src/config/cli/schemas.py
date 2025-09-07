@@ -192,7 +192,7 @@ class DisplayModel(BaseModel, extra="forbid"):
         ],
         description = "Column definitions including headers, styles, and widths for system info table."
     )
-    training_component_configs: list[tuple[str, str, str]] = Field(
+    training_component_cfgs: list[tuple[str, str, str]] = Field(
         default = [
             ("datamodule", "_system.datamodule", "📦 Data Module"),
             ("policy",     "_system.policy",     "🧠 Learning Policy"),

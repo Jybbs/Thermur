@@ -148,7 +148,7 @@ class ThermurUI:
             Rich Text object with character-by-character gradient styling
         """
         gradient_text = Text()
-        colors = self.display.fire_gradient
+        colors        = self.display.fire_gradient
 
         for i, char in enumerate(text):
             color = colors[i % len(colors)]
@@ -643,143 +643,31 @@ class ThermurUI:
         displayed = separator.join(items[:max_display])
         return f"{displayed} (+{len(items) - max_display})"
 
-    def format_run_status(self, run_path: Path) -> str:
-        """
-        Determine and format the status indicator for a training run.
-
-        Checks WandB files to determine if a run completed successfully,
-        was a dry run, or is incomplete. Returns a Rich-formatted status string.
-
-        Args:
-            run_path : Path to the WandB run directory
-
-        Returns:
-            Rich-formatted status indicator: ✓ (complete), ◎ (dry run), or
-            ... (incomplete)
-        """
-        if (metadata_file := run_path / "files" / "wandb-metadata.json").exists():
-            try:
-                with open(metadata_file) as f:
-                    metadata = load(f)
-                    if "--dry-run" in metadata.get("args", []):
-                        return "[bold cyan]◎[/]"
-            except:
-                pass
-        
-        if (summary_file := run_path / "files" / "wandb-summary.json").exists():
-            try:
-                with open(summary_file) as f:
-                    summary = load(f)
-                    if "_runtime" in summary:
-                        return "[bold green]✓[/]"
-            except:
-                pass
-                
-        return "[bold yellow]...[/]"
-
-    def print_auth_prompt(self, auth_url: str):
-        """
-        Display authentication prompt with URL.
-
-        Shows the authentication URL in a user-friendly format with
-        proper styling and instructions.
-
-        Args:
-            auth_url : The authentication URL to display
-        """
-        self.console.print()
-        self.print_message(
-            message  = "Globus authentication required to access dataset files.",
-            msg_type = "info"
-        )
-        self.console.print("\nPlease visit the following URL to authenticate:")
-        self.console.print(f"\n  [link={auth_url}]{auth_url}[/link]\n")
-
-    def print_command_example(
-        self,
-        command     : str,
-        description : str,
-        note        : str | None = None
-    ):
-        """
-        Print a formatted command example.
-
-        Shows command examples in a visually distinct way to help users
-        understand how to use the CLI effectively.
-
-        Args:
-            command     : The actual command to run
-            description : What the command does
-            note        : Optional note about the command
-        """
-        self.console.print(
-            f"  [{self.display.styles['muted']}]{description}:[/]"
-        )
-        self.console.print(
-            f"  [bold accent]$ {command}[/]"
-        )
-
-        if note:
-            self.console.print(
-                f"  [{self.display.styles['dim']}]  {note}[/]"
-            )
-
-        self.console.print()
-
     def print_command_examples(self, examples: list[dict[str, str]]):
         """
         Print multiple command examples from a list.
 
-        This method handles the common pattern of iterating through command
-        examples and printing each one, eliminating duplication across commands.
+        Formats and displays command examples in a visually distinct way
+        to help users understand CLI usage effectively.
 
         Args:
             examples: List of example dictionaries with 'command', 'desc',
                       and optional 'note' keys
         """
         for example in examples:
-            self.print_command_example(
-                command     = example["command"],
-                description = example["desc"],
-                note        = example.get("note", "")
-            )
-
-    def print_config_value(
-        self,
-        key         : str,
-        value       : str,
-        align_width : int = 0,
-        desc        : str | None = None
-    ):
-        """
-        Print a configuration key-value pair.
-
-        Formats configuration information in a consistent way for
-        improved readability.
-
-        Args:
-            key         : Configuration key
-            value       : Configuration value
-            align_width : Width to align the key to (for vertical alignment)
-            desc        : Optional description
-        """
-        if align_width:
-            key_formatted = f"{key:<{align_width}}"
-        else:
-            key_formatted = key
-
-        if desc:
             self.console.print(
-                f"  [{self.display.styles['accent']}]{key_formatted}[/] = "
-                f"[white]{value}[/]  "
-                f"[{self.display.styles['dim']}]# {desc}[/]"
+                f"  [{self.display.styles['muted']}]{example['desc']}:[/]"
+            )
+            self.console.print(
+                f"  [bold accent]$ {example['command']}[/]"
             )
 
-        else:
-            self.console.print(
-                f"  [{self.display.styles['accent']}]{key_formatted}[/] = "
-                f"[white]{value}[/]"
-            )
+            if note := example.get("note"):
+                self.console.print(
+                    f"  [{self.display.styles['dim']}]  {note}[/]"
+                )
+
+            self.console.print()
 
     def print_header(self, title: str):
         """
@@ -791,6 +679,26 @@ class ThermurUI:
         self.console.print()
         self.console.print(self._create_header_panel(title))
         self.console.print()
+
+    def print_message(self, message: str, msg_type: str = "info"):
+        """
+        Print a styled message with appropriate icon and formatting.
+
+        This function provides a unified interface for all message types,
+        using the centralized message configurations.
+
+        Args:
+            message  : The message text to display
+            msg_type : Type of message (info, warning, error, etc.)
+        """
+        config = self.display.message_types.get(
+            msg_type,
+            self.display.message_types["info"]
+        )
+
+        self.console.print(
+            f"[{config['style']}]{config['icon']} {message}[/{config['style']}]"
+        )
 
     def print_section(
         self,
@@ -822,23 +730,3 @@ class ThermurUI:
             )
         )
         self.console.print()
-
-    def print_message(self, message: str, msg_type: str = "info"):
-        """
-        Print a styled message with appropriate icon and formatting.
-
-        This function provides a unified interface for all message types,
-        using the centralized message configurations.
-
-        Args:
-            message  : The message text to display
-            msg_type : Type of message (info, warning, error, etc.)
-        """
-        config = self.display.message_types.get(
-            msg_type,
-            self.display.message_types["info"]
-        )
-
-        self.console.print(
-            f"[{config['style']}]{config['icon']} {message}[/{config['style']}]"
-        )
