@@ -237,9 +237,13 @@ class TrainCommand:
             else:
                 components['visualizer'] = None
             
-            components["trainer"].logger.log_hyperparams(
-                {"hydra_config": OmegaConf.to_container(cfg, resolve=True)}
-            )
+            to_container = lambda c: OmegaConf.to_container(c, resolve=True)
+            components["trainer"].logger.log_hyperparams({
+                "controller"  : to_container(cfg.controller),
+                "environment" : to_container(cfg.environment),
+                "training"    : to_container(cfg.training),
+                "overrides"   : self.overrides
+            })
 
         return components
 
