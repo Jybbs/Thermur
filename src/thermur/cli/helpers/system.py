@@ -8,6 +8,7 @@ the raw data that other modules, like the UI, will then format and display.
 from __future__         import annotations
 from contextlib         import suppress
 from importlib.metadata import PackageNotFoundError, version
+from omegaconf          import OmegaConf
 from pathlib            import Path
 from platform           import platform, python_version
 from shutil             import disk_usage
@@ -163,6 +164,36 @@ class SystemInspector:
                 }
         return self._torch_cache
 
+    def extract_training_cfg(
+        self,
+        cfg       : Any,
+        overrides : list[str] | None = None
+    ) -> dict[str, Any]:
+        """
+        Extract the main training configuration sections.
+        
+        Filters the full configuration to only include the three main
+        sections used for training: controller, environment, and training.
+        This provides a consistent way to prepare configs for display
+        or logging across different commands.
+        
+        Args:
+            cfg       : Full configuration object (OmegaConf or dict)
+            overrides : Optional list of override strings
+            
+        Returns:
+            Dictionary with extracted config sections and overrides
+        """
+        to_container = lambda c: OmegaConf.to_container(c, resolve=True)
+        container = to_container(cfg) if hasattr(cfg, '_metadata') else cfg
+        
+        return {
+            "controller"  : container.get("controller", {}),
+            "environment" : container.get("environment", {}),
+            "training"    : container.get("training", {}),
+            "overrides"   : overrides or []
+        }
+    
     def get_system_info(self) -> SystemInfo:
         """
         Gather comprehensive system information.

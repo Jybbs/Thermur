@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 
-class ConfigItem(NamedTuple):
+class CfgItem(NamedTuple):
     """
     Configuration parameter with override indicator.
 
@@ -96,5 +96,3 @@ class TableColumn(NamedTuple):
     style   : str
     title   : str
     width   : int
-
-
