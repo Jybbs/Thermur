@@ -63,12 +63,11 @@ class Adapter(MeanMetric):
         Delegates to the wrapped torchmetrics metric's compute method.
         
         Returns:
-            Computed metric value as scalar tensor
+            Computed metric value as scalar tensor, with 0.0 if no updates yet
         """
-        try:
-            return self.metric.compute()
-        except ValueError:
-            return th.tensor(float('nan'))
+        if not self.metric._update_called:
+            return th.tensor(0.0)
+        return self.metric.compute()
     
     def reset(self):
         """

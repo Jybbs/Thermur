@@ -250,6 +250,13 @@ class WandbModel(BaseModel, extra="forbid"):
             "runs for easier comparison and analysis."
         )
     )
+    quiet: bool = Field(
+        default     = True,
+        description = (
+            "Reduce W&B console output verbosity. When True, suppresses non-critical "
+            "messages like sync reminders while keeping important status updates."
+        )
+    )
     run_name: str | None = Field(
         default     = None,
         description = (

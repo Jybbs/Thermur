@@ -296,10 +296,13 @@ class TrainCommand:
                 task_id     = task
             )
 
-            from config.imitation               import ImitationConfig
-            from hydra_zen                      import instantiate, launch
-            from hydra_zen.third_party.pydantic import pydantic_parser
-            from pytorch_lightning              import seed_everything
+            from config.imitation                import ImitationConfig
+            from hydra_zen                       import instantiate, launch
+            from hydra_zen.third_party.pydantic  import pydantic_parser
+            from pytorch_lightning               import seed_everything
+            from pytorch_lightning.trainer       import setup
+            
+            setup._log_device_info = lambda *args, **kwargs: None
 
             progress.update(
                 advance     = 30,
@@ -450,7 +453,7 @@ class TrainCommand:
             raise ValueError("Training modules not provided")
 
         if cfg.training.optimizer.seed is not None:
-            imports["seed_everything"](cfg.training.optimizer.seed)
+            imports["seed_everything"](cfg.training.optimizer.seed, verbose=False)
 
         self.ui.console.print()
 

@@ -150,10 +150,10 @@ class HardwareModel(BaseModel, extra="forbid"):
         )
     )
     pin_memory: bool = Field(
-        default     = True,
+        default     = False,
         description = (
-            "Pin memory for faster GPU transfers. Disable for CPU-only training "
-            "or when memory is limited."
+            "Pin memory for faster GPU transfers. Disabled by default to avoid "
+            "MPS warnings. Enable for CUDA GPUs if memory permits."
         )
     )
 

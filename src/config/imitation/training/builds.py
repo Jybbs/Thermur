@@ -97,6 +97,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         name                    = "${training.wandb.run_name}",
         notes                   = "${training.wandb.notes}",
         project                 = "${training.wandb.project}",
+        settings                = {"quiet": "${training.wandb.quiet}"},
         populate_full_signature = True
     ),
 

@@ -108,8 +108,17 @@ class GNNPolicy(LightningModule):
         mse         = mse_loss(predictions, batch.action)
         
         metrics.update(batch, predictions)
-        self.log(f'{prefix}/mse', mse, prog_bar=True)
-        self.log_dict(metrics, on_step=True)
+        self.log(
+            batch_size = batch.num_graphs,
+            name       = f'{prefix}/mse', 
+            prog_bar   = True,
+            value      = mse
+        )
+        self.log_dict(
+            batch_size = batch.num_graphs,
+            dictionary = metrics, 
+            on_step    = True
+        )
         
         return mse
 
