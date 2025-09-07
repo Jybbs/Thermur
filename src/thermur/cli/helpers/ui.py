@@ -488,13 +488,13 @@ class ThermurUI:
         Display the legend for run status indicators.
 
         Shows a formatted legend explaining the meaning of status symbols
-        used in run listings: ✓ for complete, ◎ for dry run, ... for incomplete.
+        used in run listings based on WandB run states.
         """
         self.console.print(
             "ℹ️  Status: "
-            "[bold green](✓) Complete[/], "
-            "[bold cyan](◎) Dry Run[/], "
-            "[bold yellow](...) Incomplete[/]"
+            "[bold green](✓) Finished[/], "
+            "[bold red](✗) Failed[/], "
+            "[bold cyan](⟳) Running[/]"
         )
 
     def display_system_validation(self, system: SystemInspector):

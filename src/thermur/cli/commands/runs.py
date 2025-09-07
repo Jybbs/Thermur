@@ -42,18 +42,18 @@ def runs_callback(ctx: Context):
 
 @runs.command("compare")
 def compare(
-    run1: str | None = Argument(
-        None,
+    run1: str = Argument(
+        "last[2]",
         help = (
             "First run ID or name. Use 'last[N]' for Nth most recent "
-            "(defaults to 'last')"
+            "(defaults to 'last[2]')"
         )
     ),
-    run2: str | None = Argument(
-        None,
+    run2: str = Argument(
+        "last",
         help = (
             "Second run ID or name. Use 'last[N]' for Nth most recent "
-            "(defaults to 'last[2]')"
+            "(defaults to 'last')"
         )
     ),
     build: str | None = Option(
@@ -74,10 +74,10 @@ def compare(
 
     Examples:
         thermur runs compare                    # Compare last 2 runs
-        thermur runs compare last TH0001        # Compare most recent to specific
+        thermur runs compare TH0001             # Compare TH0001 to most recent
         thermur runs compare last[1] last[3]    # 1st vs 3rd most recent
         thermur runs compare TH0001 TH0002      # Compare specific runs
-        thermur runs compare last -b controller # Compare specific build
+        thermur runs compare -b controller      # Compare specific build
     """
     cmd       = RunsCommand()
     cmd.build = build
@@ -340,19 +340,20 @@ class RunsCommand:
                 .replace("Z", "+00:00")
             ).strftime("%Y-%m-%d %H:%M")
 
-            status_icon = {
-                "finished" : "✓",
-                "failed"   : "✗",
-                "crashed"  : "✗",
-                "running"  : "⟳",
-                "killed"   : "✗"
-            }.get(run.state, "?")
+            status_map = {
+                "finished" : ("✓", "green"),
+                "failed"   : ("✗", "red"),
+                "crashed"  : ("✗", "red"),
+                "running"  : ("⟳", "cyan"),
+                "killed"   : ("✗", "red")
+            }
+            status_icon, status_color = status_map.get(run.state, ("?", "dim"))
             
             table.add_row(
                 run.name or run.id[:8],
                 timestamp,
                 self.ui.format_summary_list(overrides) if overrides else "-",
-                status_icon
+                f"[bold {status_color}]{status_icon}[/]"
             )
 
         self.ui.display_panel(table)
@@ -549,8 +550,8 @@ class RunsCommand:
 
     def compare_runs(
         self,
-        run1 : str | None = None,
-        run2 : str | None = None
+        run1 : str = "last[2]",
+        run2 : str = "last"
     ):
         """
         Compare configurations between two runs.
@@ -562,13 +563,10 @@ class RunsCommand:
         last run is compared against it.
 
         Args:
-            run1 : First run identifier (defaults to last)
-            run2 : Second run identifier (defaults to last[2])
+            run1 : First run identifier  (defaults to last[2])
+            run2 : Second run identifier (defaults to last)
         """
-        run1 = run1 or "last"
-        run2 = "last" if run1 and not run2 else (run2 or "last[2]")
-
-        if run1 == "last" and run2 == "last[2]":
+        if {run1, run2} == {"last", "last[2]"}:
             self.ui.print_message(
                 message  = "Comparing the two most recent runs.",
                 msg_type = "info"
@@ -681,9 +679,9 @@ class RunsCommand:
 
         self._display_runs_table(
             [
-                TableColumn("left",   "bright_cyan",  "Run ID",    25),
+                TableColumn("left",   "bright_cyan",  "Run ID",    20),
                 TableColumn("left",   "bright_white", "Started",   20),
-                TableColumn("left",   "bright_green", "Overrides", 45),
+                TableColumn("left",   "bright_green", "Overrides", 50),
                 TableColumn("center", "bright_white", "Status",    10)
             ],
             runs
