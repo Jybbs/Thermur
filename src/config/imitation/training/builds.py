@@ -32,13 +32,13 @@ Logging:
 """
 from __future__                   import annotations
 from .schemas                     import *
-from config.cli.schemas           import WandbModel
+from config.cli.schemas           import DisplayModel, WandbModel
 from hydra_zen                    import builds, make_config
 from pytorch_lightning            import Trainer
 from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers    import WandbLogger
 from thermur.imitation.controller import DemonstrationsDataset
-from thermur.imitation.training   import GNNPolicy, MetricsFactory
+from thermur.imitation.training   import CallbackFactory, GNNPolicy, MetricsFactory
 from torch.optim                  import AdamW
 from torch.optim.lr_scheduler     import ReduceLROnPlateau
 from typing                       import Any, TYPE_CHECKING
@@ -48,12 +48,13 @@ if TYPE_CHECKING:
 
 
 TRAINING_USER_CONFIG = make_config(
-    architecture    = ArchitectureModel(),
-    checkpoint      = CheckpointModel(),
-    hardware        = HardwareModel(),
-    metrics         = MetricsModel(),
-    optimizer       = OptimizerModel(),
-    wandb           = WandbModel()
+    architecture = ArchitectureModel(),
+    checkpoint   = CheckpointModel(),
+    display      = DisplayModel(),
+    hardware     = HardwareModel(),
+    metrics      = MetricsModel(),
+    optimizer    = OptimizerModel(),
+    wandb        = WandbModel()
 )
 
 TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
@@ -63,10 +64,11 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         dirpath                 = "${training.checkpoint.dirpath}",
         every_n_train_steps     = "${training.checkpoint.every_n_train_steps}",
         filename                = "checkpoint-{step}",
-        monitor                 = "validation/mse",
         mode                    = "${training.optimizer.mode}",
+        monitor                 = "validation/mse",
         save_last               = "${training.checkpoint.save_last}",
         save_top_k              = "${training.checkpoint.save_top_k}",
+        verbose                 = False,
         populate_full_signature = True
     ),
 
@@ -116,6 +118,11 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
 
+    "model_summary_callback": builds(
+        CallbackFactory.create_model_summary,
+        display                 = "${training.display}",
+        populate_full_signature = True
+    ),
 
     "optimizer": builds(
         AdamW,
@@ -134,6 +141,12 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
 
+    "progress_bar_callback": builds(
+        CallbackFactory.create_progress_bar,
+        display                 = "${training.display}",
+        populate_full_signature = True
+    ),
+
     "scheduler": builds(
         ReduceLROnPlateau,
         factor                  = "${training.optimizer.lr_factor}",
@@ -149,7 +162,9 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         benchmark               = "${training.hardware.benchmark}",
         callbacks               = [
             "${_system.checkpoint_callback}",
-            "${_system.early_stopping_callback}"
+            "${_system.early_stopping_callback}",
+            "${_system.model_summary_callback}",
+            "${_system.progress_bar_callback}"
         ],
         detect_anomaly          = "${training.hardware.detect_anomaly}",
         deterministic           = "${training.hardware.deterministic}",
