@@ -5,11 +5,11 @@ This module provides customized PyTorch Lightning callbacks that integrate
 with the Thermur UI design system for consistent visual output during training.
 """
 from __future__                           import annotations
+from config.types                         import TableColumn
 from pytorch_lightning.callbacks          import RichModelSummary, RichProgressBar
 from pytorch_lightning.callbacks.progress import rich_progress as rp
-from rich                                 import box, get_console
-from rich.console                         import Console
-from rich.table                           import Table
+from rich                                 import get_console
+from thermur.cli.helpers                  import ThermurUI
 from typing                               import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -75,6 +75,7 @@ class ThermurModelSummary(RichModelSummary):
             display: Display configuration with styles and settings
         """
         self.display = display
+        self.ui      = ThermurUI(display)
         super().__init__()
     
     def on_fit_start(self, trainer: Trainer, pl_module: LightningModule):
@@ -90,32 +91,22 @@ class ThermurModelSummary(RichModelSummary):
         if not self._max_depth:
             return
             
-        model_summary = self._summary(trainer, pl_module)
-        summary_data  = model_summary._get_summary_data()
-        
-        table = Table(
-            border_style = self.display.styles['bright'],
-            box          = box.MINIMAL,
-            expand       = False,
-            header_style = "bold bright_blue",
-            padding      = (0, 1),
-            show_edge    = False,
-            title        = "Model Architecture",
-            title_style  = "bold bright_cyan"
+        summary = self._summary(trainer, pl_module)._get_summary_data()
+        table   = self.ui.create_aligned_table(
+            columns = [
+                TableColumn("left",  self.display.styles['bright'],  "Layer",  25),
+                TableColumn("left",  self.display.styles['flock'],   "Type",   30),
+                TableColumn("right", self.display.styles['success'], "Params", 15)
+            ],
+            title = "Model Architecture"
         )
         
-        table.add_column("Layer",  style=self.display.styles['bright'],  no_wrap=True)
-        table.add_column("Type",   style=self.display.styles['flock'])
-        table.add_column("Params", style=self.display.styles['success'], justify="right")
-        table.add_column("Mode",   style=self.display.styles['thermal'], justify="center")
+        if summary and len(summary) > 3:
+            cols = [row[1] for row in summary[1:4]]
+            for row in zip(*cols):
+                table.add_row(*row)
         
-        for row in summary_data:
-            table.add_row(*[str(item) for item in row])
-        
-        console = get_console()
-        console.print()
-        console.print(table)
-        console.print()
+        get_console().print(table)
 
 
 class ThermurProgressBar(RichProgressBar):
@@ -175,3 +166,16 @@ class ThermurProgressBar(RichProgressBar):
             ) if isinstance(c, rp.CustomBarColumn) else c
             for c in super().configure_columns(trainer)
         ]
+
+    def on_train_start(self, trainer: Trainer, pl_module: LightningModule):
+        """
+        Called when training starts.
+        
+        Adds a line break before starting the progress bar display.
+        
+        Args:
+            trainer   : PyTorch Lightning trainer instance
+            pl_module : Lightning module being trained
+        """
+        get_console().print()
+        super().on_train_start(trainer, pl_module)

@@ -68,7 +68,6 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         monitor                 = "validation/mse",
         save_last               = "${training.checkpoint.save_last}",
         save_top_k              = "${training.checkpoint.save_top_k}",
-        verbose                 = False,
         populate_full_signature = True
     ),
 
@@ -168,6 +167,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         ],
         detect_anomaly          = "${training.hardware.detect_anomaly}",
         deterministic           = "${training.hardware.deterministic}",
+        enable_model_summary    = False,
         devices                 = "${training.hardware.devices}",
         gradient_clip_val       = "${training.optimizer.gradient_clip_val}",
         log_every_n_steps       = "${training.optimizer.log_every_n_steps}",

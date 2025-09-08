@@ -8,8 +8,6 @@ ThermurUI class.
 from __future__   import annotations
 from config.cli   import DisplayModel
 from config.types import TableColumn
-from json         import load
-from pathlib      import Path
 from rich         import box, progress
 from rich.align   import Align
 from rich.console import Console
@@ -415,8 +413,8 @@ class ThermurUI:
             progress.BarColumn(
                 bar_width        = self.display.progress_bar_length,
                 complete_style   = self.display.styles['thermal'],
-                finished_style   = self.display.styles['thermal'],
-                pulse_style      = self.display.styles['thermal'],
+                finished_style   = self.display.styles['success'],
+                pulse_style      = self.display.styles['warning'],
                 style            = self.display.styles['dim'],
             ),
 
