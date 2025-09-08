@@ -96,6 +96,9 @@ class GNNPolicy(LightningModule):
         """
         Shared step logic for training and validation.
         
+        Logs MSE and all metrics at step level. For validation, MSE is also
+        aggregated at epoch level to support early stopping callbacks.
+        
         Args:
             batch   : PyG Batch containing observations and expert actions
             metrics : Metric collection to update
@@ -111,12 +114,16 @@ class GNNPolicy(LightningModule):
         self.log(
             batch_size = batch.num_graphs,
             name       = f'{prefix}/mse', 
+            on_epoch   = prefix == 'validation',
+            on_step    = True,
             prog_bar   = True,
             value      = mse
         )
+
         self.log_dict(
             batch_size = batch.num_graphs,
-            dictionary = metrics, 
+            dictionary = metrics.compute(), 
+            on_epoch   = False,
             on_step    = True
         )
         

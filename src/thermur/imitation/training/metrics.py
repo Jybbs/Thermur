@@ -1060,35 +1060,38 @@ class MetricsFactory:
     
     def create_training_metrics(self) -> MetricCollection:
         """
-        Create training metric collection.
+        Create complete training metric collection.
         
         Returns:
             MetricCollection with all configured metrics for training
         """
         make = lambda cls: cls(**self.cfg)
         
-        return MetricCollection({
-            "acceleration"           : make(Acceleration),
-            "fiedler_value"          : make(FiedlerValue),
-            "hamiltonian_energy"     : make(HamiltonianEnergy),
-            "mae"                    : make(MAE),
-            "neighbor_stability"     : make(NeighborStability),
-            "orientation_coherence"  : make(OrientationCoherence),
-            "orientation_wave"       : make(OrientationWave),
-            "perturbation_response"  : make(PerturbationResponse),
-            "r2"                     : make(R2),
-            "rmse"                   : make(RMSE),
-            "scale_free_correlation" : make(ScaleFreeCorrelation),
-            "susceptibility"         : make(Susceptibility),
-            "temperature"            : make(Temperature),
-            "velocity"               : make(Velocity),
-        })
+        return MetricCollection(
+            metrics = {
+                "acceleration"           : make(Acceleration),
+                "fiedler_value"          : make(FiedlerValue),
+                "hamiltonian_energy"     : make(HamiltonianEnergy),
+                "mae"                    : make(MAE),
+                "neighbor_stability"     : make(NeighborStability),
+                "orientation_coherence"  : make(OrientationCoherence),
+                "orientation_wave"       : make(OrientationWave),
+                "perturbation_response"  : make(PerturbationResponse),
+                "r2"                     : make(R2),
+                "rmse"                   : make(RMSE),
+                "scale_free_correlation" : make(ScaleFreeCorrelation),
+                "susceptibility"         : make(Susceptibility),
+                "temperature"            : make(Temperature),
+                "velocity"               : make(Velocity),
+            },
+            prefix = "training/"
+        )
     
     def create_validation_metrics(self) -> MetricCollection:
         """
-        Uses clone() to create a separate set of metrics for validation.
+        Clone training metrics with validation prefix.
         
         Returns:
             MetricCollection with all configured metrics for validation
         """
-        return self.create_training_metrics().clone()
+        return self.create_training_metrics().clone(prefix="validation/")
