@@ -11,7 +11,6 @@ from omegaconf   import OmegaConf
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
-from traceback   import format_exc
 from typer       import Argument, Exit, Option
 from typing      import Any, Callable, TYPE_CHECKING
 
@@ -259,7 +258,6 @@ class TrainCommand:
         )
 
         imports = self._load_training_modules()
-        self.ui.console.print()
 
         task_function = (
             self._task if self.dry_run 
@@ -444,7 +442,6 @@ class TrainCommand:
             return {"status": "dry_run_complete"}
 
         self.ui.print_section("Preparing Training Environment")
-        self.ui.console.print()
 
         if cfg is None:
             raise ValueError("Configuration not provided by Hydra")
@@ -455,8 +452,6 @@ class TrainCommand:
         if cfg.training.optimizer.seed is not None:
             imports["seed_everything"](cfg.training.optimizer.seed, verbose=False)
 
-        self.ui.console.print()
-
         components = self._instantiate_components(
             cfg             = cfg,
             instantiate     = imports["instantiate"]
@@ -466,7 +461,6 @@ class TrainCommand:
             message  = "All components initialized successfully!",
             msg_type = "success"
         )
-        self.ui.console.print()
 
         self.ui.print_section("Training Started")
         if self.resume:
@@ -487,7 +481,6 @@ class TrainCommand:
             model      = components["policy"]
         )
 
-        self.ui.console.print()
         self.ui.print_header("Training Complete 🎉")
         self._offer_cfg_viewing()
 
@@ -564,65 +557,5 @@ class TrainCommand:
             raise Exit()
 
         except Exception as e:
-            try:
-                from hydra.errors import ConfigCompositionException
-                from hydra.errors import InstantiationException
-                from hydra.errors import OverrideParseException
-                from pydantic     import ValidationError
-            except ImportError:
-                self.ui.print_message(f"Training failed: {e}", "error")
-                raise Exit(1)
-
-            match e:
-                case OverrideParseException():
-                    self.ui.print_message("Override syntax error:", "error")
-                    self.ui.console.print(f"  {e}")
-                    self.ui.console.print()
-                    self.ui.print_message(
-                        "Syntax: key=value, +key=value (append), ++key=value (force)",
-                        "info"
-                    )
-
-                case ConfigCompositionException():
-                    self.ui.print_message("Configuration error:", "error")
-                    self.ui.console.print(f"  {e}")
-                    available_options = getattr(e, 'available_options', None)
-                    if available_options:
-                        self.ui.console.print()
-                        self.ui.print_message(
-                            message  = (
-                                f"Available options: "
-                                f"{', '.join(available_options)}"
-                            ),
-                            msg_type = "info"
-                        )
-
-                case InstantiationException():
-                    self.ui.print_message("Component instantiation failed:", "error")
-                    self.ui.console.print(f"  {e}")
-                    if (
-                        hasattr(e, '__cause__')
-                        and isinstance(e.__cause__, ValidationError)
-                    ):
-                        self.ui.console.print()
-                        self.ui.print_message("Validation errors:", "error")
-                        for error in e.__cause__.errors():
-                            self.ui.console.print(
-                                f"  - {'.'.join(str(x) for x in error['loc'])}: "
-                                f"{error['msg']}"
-                            )
-
-                case ValidationError():
-                    self.ui.print_message("Configuration validation failed:", "error")
-                    for error in e.errors():
-                        self.ui.console.print(
-                            f"  - {'.'.join(str(x) for x in error['loc'])}: "
-                            f"{error['msg']}"
-                        )
-
-                case _:
-                    self.ui.print_message(f"Training failed: {e}", "error")
-                    self.ui.console.print("\n[DEBUG] Full stack trace:")
-                    self.ui.console.print(format_exc())
-
+            self.ui.print_message(f"Training failed: {e}", "error")
             raise Exit(1)

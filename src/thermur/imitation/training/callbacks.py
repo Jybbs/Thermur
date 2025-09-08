@@ -101,10 +101,12 @@ class ThermurModelSummary(RichModelSummary):
             title = "Model Architecture"
         )
         
-        if summary and len(summary) > 3:
-            cols = [row[1] for row in summary[1:4]]
-            for row in zip(*cols):
-                table.add_row(*row)
+        [
+            table.add_row(layer, type, "–" 
+            if (p := str(params).strip()) == "0" else p)
+            for layer, type, params 
+            in zip(*(row[1] for row in summary[1:4]))
+        ]
         
         get_console().print(table)
 
