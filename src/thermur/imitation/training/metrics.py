@@ -10,7 +10,7 @@ All metrics integrate with PyTorch Lightning's logging system and can be
 used directly in LightningModules without a separate collector.
 """
 from __future__   import annotations
-from torchmetrics import MeanAbsoluteError, MeanMetric, MeanSquaredError 
+from torchmetrics import MeanAbsoluteError, MeanMetric, MeanSquaredError
 from torchmetrics import MetricCollection, R2Score
 from typing       import TYPE_CHECKING
 
@@ -20,76 +20,8 @@ if TYPE_CHECKING:
     from config.imitation.training    import MetricsModel
     from config.types                 import FlockBatch
     from torch                        import Tensor
-    from torchmetrics                 import Metric
-    from typing                       import Type
 
 import torch as th
-
-
-class Adapter(MeanMetric):
-    """
-    Adapter for torchmetrics regression metrics to work with graph batches.
-    
-    Bridges the signature mismatch between graph-based metrics (which receive
-    batch and predictions) and standard regression metrics (which expect
-    predictions and targets). This allows torchmetrics regression metrics to
-    integrate seamlessly with the existing MetricCollection infrastructure.
-    
-    The adapter wraps a torchmetrics metric and handles:
-        - Parameter reordering from (batch, predictions) to (predictions, targets)
-        - Delegation of compute() to the wrapped metric
-        - Proper metric state management and resetting
-    
-    This design maintains architectural consistency while acknowledging that
-    regression metrics measure prediction quality rather than graph properties.
-    """
-    
-    def __init__(self, metric_class: Type[Metric], **kwargs):
-        """
-        Initialize the regression metric adapter.
-        
-        Args:
-            metric_class : Torchmetrics class to instantiate (MAE, MSE, R2Score)
-            **kwargs     : Configuration passed to parent (includes agent_count)
-        """
-        super().__init__()
-        self.metric = metric_class()
-        self.kwargs = kwargs
-    
-    def compute(self) -> th.Tensor:
-        """
-        Compute the metric value.
-        
-        Delegates to the wrapped torchmetrics metric's compute method.
-        
-        Returns:
-            Computed metric value as scalar tensor, with 0.0 if no updates yet
-        """
-        if not self.metric._update_called:
-            return th.tensor(0.0)
-        return self.metric.compute()
-    
-    def reset(self):
-        """
-        Reset metric state.
-        
-        Resets both the adapter and wrapped metric states.
-        """
-        super().reset()
-        self.metric.reset()
-    
-    def update(self, batch: FlockBatch, predictions: Tensor):
-        """
-        Update metric with predictions and targets.
-        
-        Reorders parameters from graph metric signature (batch, predictions)
-        to regression metric signature (predictions, targets).
-        
-        Args:
-            batch       : PyG Batch containing target actions
-            predictions : Predicted actions from the policy
-        """
-        self.metric.update(predictions, batch.action)
 
 
 class BaseMetric(MeanMetric):
@@ -426,29 +358,59 @@ class HamiltonianEnergy(BaseMetric):
         ).sum(dim=(1, 2)) * 2
 
 
-class MAE(Adapter):
+class MAE(MeanMetric):
     """
     Mean Absolute Error for action predictions.
-    
+
     Measures the average absolute difference between predicted and expert
     actions in m/s² units. MAE is more robust to outliers than MSE/RMSE,
     providing a complementary view of prediction accuracy.
-    
+
     Performance interpretation:
         - MAE < 1.0 m/s²  : Excellent - near-expert performance
         - MAE ∈ [1, 2]    : Good      - effective imitation
         - MAE ∈ [2, 4]    : Moderate  - functional but imprecise
         - MAE > 4.0 m/s²  : Poor      - significant prediction errors
     """
-    
+
     def __init__(self, **kwargs):
         """
-        Initialize MAE metric adapter.
-        
+        Initialize MAE metric.
+
         Args:
             **kwargs: Configuration including agent_count
         """
-        super().__init__(MeanAbsoluteError, **kwargs)
+        super().__init__()
+        self.metric = MeanAbsoluteError()
+        self.kwargs = kwargs
+
+    def compute(self) -> th.Tensor:
+        """
+        Compute the metric value.
+
+        Returns:
+            Computed MAE value as scalar tensor, with 0.0 if no updates yet
+        """
+        if not self.metric._update_called:
+            return th.tensor(0.0)
+        return self.metric.compute()
+
+    def reset(self):
+        """
+        Reset metric state.
+        """
+        super().reset()
+        self.metric.reset()
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with predictions and targets.
+
+        Args:
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
+        """
+        self.metric.update(predictions, batch.action)
 
 
 class NeighborStability(BaseMetric):
@@ -701,15 +663,15 @@ class PerturbationResponse(BaseMetric):
         return response_ratio
 
 
-class R2(Adapter):
+class R2(MeanMetric):
     """
     R-squared score for action predictions.
-    
+
     Measures the proportion of variance in expert actions explained by the
     policy's predictions. R² ∈ [−∞, 1] where 1 indicates perfect prediction,
     0 indicates performance equivalent to predicting the mean, and negative
     values indicate worse than mean prediction.
-    
+
     Performance interpretation:
         - R² > 0.90      : Excellent - captures most variance
         - R² ∈ [0.7, 0.9]: Good      - strong predictive power
@@ -717,34 +679,64 @@ class R2(Adapter):
         - R² < 0.30      : Poor      - minimal predictive capability
         - R² < 0         : Failure   - worse than mean prediction
     """
-    
+
     def __init__(self, **kwargs):
         """
-        Initialize R² score adapter.
-        
+        Initialize R² score metric.
+
         Args:
             **kwargs: Configuration including agent_count
         """
-        super().__init__(R2Score, **kwargs)
+        super().__init__()
+        self.metric = R2Score()
+        self.kwargs = kwargs
+
+    def compute(self) -> th.Tensor:
+        """
+        Compute the metric value.
+
+        Returns:
+            Computed R² value as scalar tensor, with 0.0 if no updates yet
+        """
+        if not self.metric._update_called:
+            return th.tensor(0.0)
+        return self.metric.compute()
+
+    def reset(self):
+        """
+        Reset metric state.
+        """
+        super().reset()
+        self.metric.reset()
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with predictions and targets.
+
+        Args:
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
+        """
+        self.metric.update(predictions, batch.action)
 
 
-class RMSE(Adapter):
+class RMSE(MeanMetric):
     """
     Root Mean Squared Error for action predictions.
-    
+
     Measures the typical prediction error in m/s² units, giving more weight
     to large errors than MAE. RMSE provides an interpretable metric in the
     same units as the predictions, making it ideal for monitoring training.
-    
+
     Performance interpretation:
         - RMSE < 1.5 m/s² : Excellent - high-fidelity imitation
         - RMSE ∈ [1.5, 3] : Good      - acceptable prediction errors
         - RMSE ∈ [3, 5]   : Moderate  - noticeable deviations
         - RMSE > 5.0 m/s² : Poor      - large prediction errors
-    
+
     Note that RMSE ≥ MAE with equality only when all errors are identical.
     """
-    
+
     def __init__(self, **kwargs):
         """
         Configures MeanSquaredError with squared=False to compute root mean
@@ -753,7 +745,37 @@ class RMSE(Adapter):
         Args:
             **kwargs: Configuration including agent_count
         """
-        super().__init__(MeanSquaredError, squared=False, **kwargs)
+        super().__init__()
+        self.metric = MeanSquaredError(squared=False)
+        self.kwargs = kwargs
+
+    def compute(self) -> th.Tensor:
+        """
+        Compute the metric value.
+
+        Returns:
+            Computed RMSE value as scalar tensor, with 0.0 if no updates yet
+        """
+        if not self.metric._update_called:
+            return th.tensor(0.0)
+        return self.metric.compute()
+
+    def reset(self):
+        """
+        Reset metric state.
+        """
+        super().reset()
+        self.metric.reset()
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with predictions and targets.
+
+        Args:
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
+        """
+        self.metric.update(predictions, batch.action)
 
 
 class ScaleFreeCorrelation(BaseMetric):

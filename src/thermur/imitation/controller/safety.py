@@ -90,20 +90,19 @@ class CBFSafetyFilter:
         Returns:
             The batch of safe control actions `u*`.
         """
-        agent_count = self.agent_count
-        device      = u_nominal.device
-        h_grads     = -flock.gradient
-        h_values    = self.max_temperature - flock.temperature
-        solver      = QPFunction(verbose=-1)
+        device   = u_nominal.device
+        h_grads  = -flock.gradient
+        h_values = self.max_temperature - flock.temperature
+        solver   = QPFunction(verbose=-1)
 
         try:
             u_safe = solver(
-                Q = self.Q.to(device).expand(agent_count, -1, -1),
+                Q = self.Q.to(device).expand(self.agent_count, -1, -1),
                 p = -u_nominal,
                 G = -h_grads.unsqueeze(1),
                 h = (self.safety.cbf_alpha * h_values).unsqueeze(-1),
-                A = th.empty(agent_count, 0, 3, device=device),
-                b = th.empty(agent_count, 0,    device=device)
+                A = th.empty(self.agent_count, 0, 3, device=device),
+                b = th.empty(self.agent_count, 0,    device=device)
             )
 
             assert u_safe is not None
