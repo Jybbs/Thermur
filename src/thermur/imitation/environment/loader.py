@@ -58,7 +58,6 @@ class WRFLoader:
         self.bounds_min            = th.tensor(physics.bounds_min)
         self.domain_randomization  = loader.domain_randomization
         self.episode_time_offset   = loader.episode_time_offset
-        self.epsilon               = physics.epsilon
         self.fallback_temperature  = physics.fallback_temperature
         self.interpolate_time      = loader.interpolate_time
         self.temperature_noise_std = loader.temperature_noise_std
@@ -85,7 +84,8 @@ class WRFLoader:
         self,
         coords_dict   : Mapping[str, Tensor | NDArray[Any]],
         positions     : Tensor,
-        variable_name : str
+        variable_name : str,
+        epsilon       : float = 1e-3
     ) -> NDArray[Any]:
         """
         Calculates field gradient using finite differences.
@@ -102,6 +102,8 @@ class WRFLoader:
             coords_dict   : Dictionary mapping dataset coordinates to position values
             positions     : Original position tensor [N, 3]
             variable_name : Name of the field variable to differentiate
+            epsilon       : Step size for finite differences (default 1e-3 for
+                            numerical stability)
 
         Returns:
             numpy.ndarray [N, 3] containing field gradients
@@ -115,14 +117,14 @@ class WRFLoader:
 
             gradients[:, i] = (
                 self._interpolate_field(
-                    {**coords_dict, dim_name: coords_dict[dim_name] + self.epsilon},
+                    {**coords_dict, dim_name: coords_dict[dim_name] + epsilon},
                     variable_name
                 ) -
                 self._interpolate_field(
-                    {**coords_dict, dim_name: coords_dict[dim_name] - self.epsilon},
+                    {**coords_dict, dim_name: coords_dict[dim_name] - epsilon},
                     variable_name
                 )
-            ) / (2 * self.epsilon)
+            ) / (2 * epsilon)
 
         return gradients
 

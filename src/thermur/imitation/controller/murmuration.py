@@ -102,7 +102,9 @@ class MurmurationController(th.nn.Module):
             𝐅ᵢ = -D·∇ρ(𝐱ᵢ)·(1 + 2θᵢ)
 
         This creates an effective pressure that disperses high-density regions,
-        with the effect amplified under threat conditions (high θ).
+        with the effect amplified under threat conditions (high θ). The local
+        density is clamped to a minimum of 1e-8 when computing gradients to
+        prevent division by zero.
 
         Args:
             flock: Data with position 𝐱 ∈ ℝ^(N×3), threats θ ∈ [0,1]^N,
@@ -120,7 +122,7 @@ class MurmurationController(th.nn.Module):
         
         density_gradient = (
             (weights.unsqueeze(2) * displacements).sum(dim=1) /
-            local_density.clamp_min(self.mmm.epsilon)
+            local_density.clamp_min(1e-8)
         )
         
         threat_amplification = (1 + flock.threats * 2)
@@ -441,25 +443,30 @@ class MurmurationController(th.nn.Module):
     ) -> list[Data]:
         """
         Generate expert demonstration trajectory as PyG Data objects.
-        
+
         Produces a sequence of graph snapshots representing the flock's evolution
         under expert control. Each timestep captures the full state (positions,
         velocities, environmental data) and the expert's action, creating a dataset
         suitable for behavioral cloning.
-        
+
         The feature vector for each agent concatenates:
         - Position             (3D)
-        - Velocity             (3D) 
+        - Velocity             (3D)
         - Temperature          (1D)
         - Temperature gradient (3D)
         - Wind field           (3D)
-        
+
         This 13-dimensional representation matches the GNN policy's expected input.
-        
+
+        Action tensors are cloned when constructing trajectory snapshots to preserve
+        the computed values at each timestep. Since the controller modifies the state
+        object in-place by adding an action attribute, cloning ensures each saved
+        snapshot maintains an independent copy of its action values.
+
         Args:
             generator     : Trajectory generator providing physics simulation
             num_timesteps : Number of simulation steps to generate
-        
+
         Returns:
             List of PyG Data objects, one per timestep, containing:
                 - action       : Expert control actions     [N, 3]
@@ -493,7 +500,7 @@ class MurmurationController(th.nn.Module):
             
             trajectory.append(
                 Data(
-                    action       = action,
+                    action       = action.clone(),
                     alert_states = state.alert_states,
                     edge_index   = state.edge_index,
                     gradient     = state.gradient,

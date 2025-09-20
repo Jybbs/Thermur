@@ -79,7 +79,8 @@ class CBFSafetyFilter:
         nominal action `u_nom`.
 
         The objective `min ||u - u_nom||²` and the CBF inequality are encoded
-        into the QP matrices `Q`, `p`, `G`, and `h` for the `qpth` solver.
+        into the QP matrices `Q`, `p`, `G`, and `h` for the `qpth` solver,
+        which uses its default parameters (eps=1e-12, maxIter=20).
 
         Args:
             flock     : The current observation data for the flock containing
@@ -93,22 +94,17 @@ class CBFSafetyFilter:
         device      = u_nominal.device
         h_grads     = -flock.gradient
         h_values    = self.max_temperature - flock.temperature
-        solver      = QPFunction(
-            eps     = self.safety.qp_eps,
-            maxIter = self.safety.qp_max_iter,
-            verbose = -1  # Suppress warnings
-        )
+        solver      = QPFunction(verbose=-1)
 
         try:
-            
-            Q = self.Q.to(device).expand(agent_count, -1, -1)     # [N, 3, 3]
-            p = -u_nominal                                        # [N, 3]
-            G = -h_grads.unsqueeze(1)                             # [N, 1, 3]
-            h = (self.safety.cbf_alpha * h_values).unsqueeze(-1)  # [N, 1]
-            A = th.empty(agent_count, 0, 3, device=device)
-            b = th.empty(agent_count, 0, device=device)
-            
-            u_safe = solver(Q, p, G, h, A, b)
+            u_safe = solver(
+                Q = self.Q.to(device).expand(agent_count, -1, -1),
+                p = -u_nominal,
+                G = -h_grads.unsqueeze(1),
+                h = (self.safety.cbf_alpha * h_values).unsqueeze(-1),
+                A = th.empty(agent_count, 0, 3, device=device),
+                b = th.empty(agent_count, 0,    device=device)
+            )
 
             assert u_safe is not None
             delta     = u_safe - u_nominal

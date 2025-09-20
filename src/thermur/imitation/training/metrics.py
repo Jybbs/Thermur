@@ -747,13 +747,13 @@ class RMSE(Adapter):
     
     def __init__(self, **kwargs):
         """
-        Initialize RMSE metric adapter.
-        
+        Configures MeanSquaredError with squared=False to compute root mean
+        squared error rather than mean squared error.
+
         Args:
             **kwargs: Configuration including agent_count
         """
-        super().__init__(MeanSquaredError, **kwargs)
-        self.metric.squared = False
+        super().__init__(MeanSquaredError, squared=False, **kwargs)
 
 
 class ScaleFreeCorrelation(BaseMetric):
@@ -1049,7 +1049,6 @@ class MetricsFactory:
             "alert_coupling_factor"   : murmuration.alert_coupling_factor,
             "correlation_exponent"    : metrics.correlation_exponent,
             "coupling_decay"          : murmuration.coupling_decay,
-            "epsilon"                 : metrics.epsilon,
             "fiedler_shift"           : metrics.fiedler_shift,
             "gravity"                 : physics.gravity,
             "j_base"                  : murmuration.j_base,

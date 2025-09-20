@@ -106,13 +106,6 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "where F_drag = -Cd * v * |v| simulates air resistance effects."
         )
     )
-    epsilon: PositiveFloat = Field(
-        default     = 1e-6,
-        description = (
-            "Numerical step size ε for finite difference gradient approximation, "
-            "balancing accuracy against floating-point precision limits."
-        )
-    )
     fallback_temperature: float = Field(
         default     = 20.0,
         description = (

@@ -94,13 +94,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "controlling how density perturbations spread through the flock."
         )
     )
-    epsilon: PositiveFloat = Field(
-        default     = 1e-8,
-        description = (
-            "Numerical stability constant ε preventing division by zero in "
-            "potential gradient calculations, particularly for separation forces."
-        )
-    )
     frames_per_episode: PositiveInt = Field(
         default     = 1000,
         description = (
@@ -221,20 +214,6 @@ class SafetyModel(BaseModel, extra="forbid"):
         description = (
             "Critical temperature threshold T_max in Kelvin defining the safety set "
             "C = {𝐱 | T(𝐱) ≤ T_max} enforced across all components."
-        )
-    )
-    qp_eps: PositiveFloat = Field(
-        default     = 1e-6,
-        description = (
-            "Convergence tolerance ε for the quadratic program solver determining when "
-            "||u^(k+1) - u^(k)|| < ε indicates optimal solution found."
-        )
-    )
-    qp_max_iter: PositiveInt = Field(
-        default     = 100,
-        description = (
-            "Maximum solver iterations before termination, balancing solution quality "
-            "against real-time computational constraints in the control loop."
         )
     )
     qp_on_failure: Literal["zero", "nominal", "raise"] = Field(

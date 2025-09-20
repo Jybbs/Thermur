@@ -279,60 +279,11 @@ class MetricsModel(BaseModel, extra="forbid"):
             "in natural murmurations, per Cavagna et al. (2010)."
         )
     )
-    epsilon: PositiveFloat = Field(
-        default     = 1e-6,
-        description = (
-            "Small positive constant for numerical stability in division operations "
-            "and distance calculations to prevent division by zero."
-        )
-    )
     fiedler_shift: PositiveFloat = Field(
         default     = 0.001,
         description = (
             "Diagonal shift λ for computing Fiedler eigenvalue of graph Laplacian "
             "through power iteration, ensures positive definiteness."
-        )
-    )
-    info_propagation_max_speed: PositiveFloat = Field(
-        default     = 45.0,
-        description = (
-            "Maximum information propagation speed in m/s through the flock, "
-            "corresponding to alert state responsiveness (Attanasi et al. 2014)."
-        )
-    )
-    info_propagation_min_speed: PositiveFloat = Field(
-        default     = 15.0,
-        description = (
-            "Minimum information propagation speed in m/s through the flock, "
-            "corresponding to relaxed state responsiveness (Attanasi et al. 2014)."
-        )
-    )
-    info_propagation_time_step: PositiveFloat = Field(
-        default     = 0.05,
-        description = (
-            "Time step in seconds for estimating information propagation velocity "
-            "through the flock by tracking velocity change patterns over time."
-        )
-    )
-    legibility_grid_size: PositiveInt = Field(
-        default     = 64,
-        description = (
-            "Resolution of 2D grid for rendering velocity fields in legibility "
-            "metrics, higher values provide more detail but increase computation cost."
-        )
-    )
-    legibility_kernel_size: PositiveInt = Field(
-        default     = 11,
-        description = (
-            "Size of Gaussian kernel for SSIM computation in legibility metrics, "
-            "must be odd, larger kernels consider broader spatial context."
-        )
-    )
-    legibility_sigma: PositiveFloat = Field(
-        default     = 2.0,
-        description = (
-            "Standard deviation for Gaussian kernel in KDE velocity field rendering, "
-            "controls smoothness of the rendered velocity field representation."
         )
     )
     orientation_wave_radius: PositiveFloat = Field(
@@ -348,20 +299,6 @@ class MetricsModel(BaseModel, extra="forbid"):
             "PyTorch Lightning profiler for performance analysis. False disables "
             "profiling, True uses 'simple' profiler, or specify 'advanced'/'pytorch' "
             "for detailed profiling."
-        )
-    )
-    susceptibility_max: PositiveFloat = Field(
-        default     = 20.0,
-        description = (
-            "Maximum expected susceptibility χ = N·Var[Φ] for maintaining critical "
-            "state dynamics, higher values indicate excessive system responsiveness."
-        )
-    )
-    susceptibility_min: PositiveFloat = Field(
-        default     = 5.0,
-        description = (
-            "Minimum expected susceptibility χ = N·Var[Φ] for maintaining critical "
-            "state dynamics, lower values indicate insufficient system responsiveness."
         )
     )
     velocity_threshold: PositiveFloat = Field(
