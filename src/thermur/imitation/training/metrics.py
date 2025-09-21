@@ -51,17 +51,17 @@ class BaseMetric(MeanMetric):
     def __init__(self, **kwargs):
         """
         Initialize the base metric.
-        
+
         Args:
             **kwargs: Configuration including agent_count and metric-specific params
         """
         super().__init__('ignore')
         self.kwargs = kwargs
-    
+
     def __getattr__(self, name: str):
         """
         Dynamically access config attributes.
-        
+
         Provides access to configuration values passed via kwargs without
         needing to explicitly define each attribute.
         """
@@ -70,7 +70,7 @@ class BaseMetric(MeanMetric):
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
-    
+
     def _reshape_features(
         self, 
         batch     : FlockBatch,
@@ -133,13 +133,13 @@ class BaseMetric(MeanMetric):
     def clear_cache(cls):
         """
         Clear the shared computation cache.
-        
+
         Should be called after each batch to prevent memory growth.
         This would typically be called in Lightning's on_train_batch_end
         and on_validation_batch_end hooks.
         """
         cls._reshape_cache.clear()
-    
+
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute metric value from batch.
@@ -197,52 +197,110 @@ class Acceleration(BaseMetric):
 
 class FiedlerValue(BaseMetric):
     """
-    Measure graph connectivity via the Fiedler value λ₂.
+    Measure graph connectivity via harmonic mean of Fiedler values.
 
-    The algebraic connectivity quantifies how well-connected the flock's
-    communication graph is. Higher values indicate stronger cohesion, with
-    λ₂ = 0 for disconnected graphs and λ₂ > 0 for connected components.
+    For batched training data containing multiple graphs, computes the Fiedler
+    value (second-smallest eigenvalue λ₂) for each graph's Laplacian, then
+    aggregates using harmonic mean to emphasize weak connectivity.
 
-    The metric computes the second-smallest eigenvalue of the graph Laplacian:
+    The harmonic mean H = n/Σ(1/λᵢ) is dominated by the smallest values,
+    making it more sensitive to poorly connected components than arithmetic
+    mean. This aligns with flocking requirements where a single disconnected
+    subgroup represents system failure.
 
-        L = D - A
-
-    where D is the degree matrix and A is the adjacency matrix.
+    Interpretation:
+        - H = 0          : At least one graph is disconnected
+        - H ∈ (0, 0.1]   : Weak connectivity in batch
+        - H ∈ (0.1, 0.5] : Moderate connectivity
+        - H > 0.5        : Strong cohesion across all graphs
+        - H > 2.0        : Excellent multi-agent coordination
     """
+
+    def _build_batch_laplacians(
+        self,
+        batch      : FlockBatch,
+        ptr        : Tensor,
+        sizes      : Tensor,
+        valid_mask : Tensor
+    ) -> Tensor:
+        """
+        Construct Laplacian matrices for all valid graphs in batch.
+
+        Builds symmetric graph Laplacians L = D - A where D is the degree
+        matrix and A is the adjacency matrix.
+
+        Args:
+            batch      : PyG batch containing edge indices
+            ptr        : Graph boundary pointers
+            sizes      : Sizes of valid graphs only
+            valid_mask : Boolean mask of valid graphs
+
+        Returns:
+            Batched Laplacian tensor of shape [n_valid, max_size, max_size]
+        """
+        n_valid  = valid_mask.sum()
+        max_size = sizes.max()
+        L_batch  = th.zeros(
+            n_valid, max_size, max_size, device=batch.edge_index.device
+        )
+
+        valid_indices = th.where(valid_mask)[0]
+        for i, g in enumerate(valid_indices):
+            start, end = ptr[g], ptr[g+1]
+            n = end - start
+
+            mask  = (batch.edge_index[0] >= start) & (batch.edge_index[0] < end)
+            edges = batch.edge_index[:, mask] - start
+
+            A = th.zeros(n, n, device=batch.edge_index.device)
+            A[edges[0], edges[1]] = 1.0
+            A = ((A + A.T) > 0).float()
+            A.fill_diagonal_(0)
+
+            L_batch[i, :n, :n] = th.diag(A.sum(dim=1)) - A
+
+        return L_batch
 
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Compute Fiedler value λ₂ from graph connectivity.
-        
-        Efficiently computes the second-smallest eigenvalue of the graph
-        Laplacian 𝐋 = 𝐃 - 𝐀 using vectorized dense operations.
-        
-        The spectrum of 𝐋 reveals connectivity properties:
+        Compute harmonic mean of Fiedler values across batched graphs.
 
-            𝐋𝐯ᵢ = λᵢ𝐯ᵢ with 0 = λ₀ ≤ λ₁ ≤ ... ≤ λₙ₋₁
-        
-        where λ₁ (the Fiedler value) quantifies algebraic connectivity:
-            - λ₁ = 0 for disconnected graphs (multiple components)
-            - λ₁ > 0 for connected graphs (single component)
-            - λ₁ ∈ (0, 0.1] indicates weak connectivity
-            - λ₁ > 0.5 indicates strong cohesion
+        Extracts individual graphs from the batch using PyG's ptr boundaries,
+        computes each graph's Fiedler value λ₂, then aggregates via harmonic
+        mean to capture batch-wide connectivity with emphasis on weak links.
 
         Args:
-            batch: PyG Batch containing edge_index [2, E] in COO format
-            
-        Returns:
-            Fiedler value as scalar tensor
-        """
-        device = batch.edge_index.device
-        
-        A = th.zeros(self.agent_count, self.agent_count, device=device)
-        A[batch.edge_index[0], batch.edge_index[1]] = 1.0
-        A = (A := A + A.T) - th.diag(A.diagonal())
-        
-        D = th.diag(degrees) if (degrees := A.sum(dim=1)).any() else th.zeros_like(A)
-        L = D - A
+            batch: PyG Batch with edge_index [2, E] and graph assignments
 
-        return th.linalg.eigvalsh(L.cpu())[1:2].clamp_min(0.0).to(device)
+        Returns:
+            Harmonic mean of Fiedler values as scalar tensor
+        """
+        ptr = (
+            batch.ptr if hasattr(batch, 'ptr')
+            else th.tensor(
+                data   = [0, len(batch.batch)], 
+                device = batch.edge_index.device
+            )
+        )
+        sizes      = ptr[1:] - ptr[:-1]
+        valid_mask = sizes > 1
+
+        if not (n_valid := valid_mask.sum()):
+            return th.tensor(float('nan'), device=batch.edge_index.device)
+
+        laplacians = self._build_batch_laplacians(
+            batch      = batch,
+            ptr        = ptr,
+            sizes      = sizes[valid_mask],
+            valid_mask = valid_mask
+        )
+
+        try:
+            eigenvals = th.linalg.eigvalsh(laplacians)
+            fiedlers  = eigenvals[:, 1].clamp_min(1e-10)
+            return n_valid.float() / (1.0 / fiedlers).sum()
+        except RuntimeError:
+            return th.tensor(float('nan'), device=batch.edge_index.device)
 
 
 class HamiltonianEnergy(BaseMetric):

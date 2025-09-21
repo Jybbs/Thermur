@@ -228,11 +228,11 @@ class TrajectoryGenerator:
         
         return Data(
             edge_index   = self._compute_edge_index(self.positions),
-            position     = self.positions,
-            velocity     = self.velocities,
-            temperature  = temperature,
-            gradient     = gradient,
-            wind         = wind
+            position     = self.positions.clone(),
+            velocity     = self.velocities.clone(),
+            temperature  = temperature.clone(),
+            gradient     = gradient.clone(),
+            wind         = wind.clone()
         )
     
     def step(self, action: Tensor) -> Data:
