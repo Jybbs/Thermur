@@ -25,28 +25,32 @@ class LanczosFiedlerValue:
     - Works efficiently from 10 to 1000+ agent graphs
     """
 
-    def __init__(self, agent_count: int = 50, min_iterations: int = 10,
-                 max_iterations: int = 150, tolerance: float = 1e-4,
-                 check_interval: int = 5):
+    def __init__(
+        self, 
+        agent_count    : int   = 50, 
+        check_interval : int   = 5,
+        max_iterations : int   = 150, 
+        min_iterations : int   = 10,
+        tolerance      : float = 1e-4,
+    ):
         """
         Args:
-            agent_count: Number of agents per graph
-            min_iterations: Minimum Lanczos iterations before checking convergence
-            max_iterations: Maximum iterations (safety cap)
-            tolerance: Relative convergence tolerance for Fiedler value
-            check_interval: How often to check convergence (default 5)
+            agent_count    : Number of agents per graph
+            check_interval : How often to check convergence (default 5)
+            max_iterations : Maximum iterations (safety cap)
+            min_iterations : Minimum Lanczos iterations before checking convergence
+            tolerance      : Relative convergence tolerance for Fiedler value
         """
-        self.agent_count = agent_count
-        self.min_k = min_iterations
-        self.max_k = min(max_iterations, agent_count - 1)
-        self.tolerance = tolerance
+        self.agent_count    = agent_count
+        self.min_k          = min_iterations
+        self.max_k          = min(max_iterations, agent_count - 1)
+        self.tolerance      = tolerance
         self.check_interval = check_interval
-        self.k_used = None  # Track actual iterations used
+        self.k_used         = None  # Track actual iterations used
 
         # No additional initialization needed
 
     def _build_laplacians_vectorized(self, batch: Batch) -> torch.Tensor:
-        """Optimized Laplacian construction with minimal overhead."""
         device = batch.edge_index.device
 
         # Ensure batch assignment exists and is on correct device
@@ -72,20 +76,12 @@ class LanczosFiedlerValue:
         return L - A  # Return Laplacian
 
     def _lanczos_iteration(self, L: torch.Tensor) -> torch.Tensor:
-        """Main Lanczos iteration with adaptive convergence monitoring.
-
-        Key optimizations:
-        1. Pre-allocate coefficient storage to avoid list appends
-        2. Use torch operations for orthogonalization
-        3. Reduce memory allocations in inner loop
-        4. Batch matrix-vector products when possible
-        """
         B, N, _ = L.shape
         device = L.device
 
         # Pre-allocate storage for better memory efficiency
-        alpha_storage = torch.zeros(B, self.max_k, device=device)
-        beta_storage = torch.zeros(B, self.max_k - 1, device=device)
+        alpha_storage = torch.zeros(B, self.max_k,     device=device)
+        beta_storage  = torch.zeros(B, self.max_k - 1, device=device)
 
         # Initialize with random vector orthogonal to nullspace
         v_init = torch.randn(B, N, device=device)
@@ -152,8 +148,12 @@ class LanczosFiedlerValue:
         return self._compute_fiedler_fast(alpha_final, beta_final, device)
 
 
-    def _compute_fiedler_fast(self, alpha: torch.Tensor, beta: torch.Tensor | None, device) -> torch.Tensor:
-        """Fast Fiedler computation from tensor coefficients."""
+    def _compute_fiedler_fast(
+        self, 
+        alpha  : torch.Tensor, 
+        beta   : torch.Tensor | None, 
+        device
+    ) -> torch.Tensor:
         B, k = alpha.shape
         if k == 0:
             return torch.zeros(B, device=device)
@@ -167,7 +167,6 @@ class LanczosFiedlerValue:
 
     def _has_converged(self, curr_fiedler: torch.Tensor,
                        prev_fiedler: torch.Tensor | None) -> bool:
-        """Check if Fiedler value has converged."""
         if prev_fiedler is None:
             return False
 
@@ -175,24 +174,23 @@ class LanczosFiedlerValue:
         return rel_change.max().item() < self.tolerance
 
     def _build_tridiagonal(self, alpha: torch.Tensor, beta: torch.Tensor | None) -> torch.Tensor:
-        """Build tridiagonal matrix with optimized indexing."""
         B, k = alpha.shape
 
         # Always work on CPU for eigendecomposition on MPS
         alpha = alpha.cpu()
-        beta = beta.cpu() if beta is not None else None
+        beta  = beta.cpu() if beta is not None else None
 
         # Initialize tridiagonal matrix
         T = torch.zeros(B, k, k, device='cpu')
 
         # Set diagonal using advanced indexing (vectorized)
         batch_idx = torch.arange(B)[:, None]
-        diag_idx = torch.arange(k)
+        diag_idx  = torch.arange(k)
         T[batch_idx, diag_idx, diag_idx] = alpha
 
         # Set off-diagonals if present
         if beta is not None and k > 1:
-            k_beta = beta.shape[1]
+            k_beta  = beta.shape[1]
             off_idx = torch.arange(min(k_beta, k-1))
             T[batch_idx, off_idx, off_idx + 1] = beta[:, :min(k_beta, k-1)]
             T[batch_idx, off_idx + 1, off_idx] = beta[:, :min(k_beta, k-1)]
@@ -203,14 +201,16 @@ class LanczosFiedlerValue:
     def compute(self, batch: Batch) -> torch.Tensor:
         """Compute Fiedler value with adaptive convergence monitoring."""
         laplacians = self._build_laplacians_vectorized(batch)
-        fiedler = self._lanczos_iteration(laplacians).clamp_min(1e-10)
+        fiedler    = self._lanczos_iteration(laplacians).clamp_min(1e-10)
         return fiedler.numel() / fiedler.reciprocal().sum()
 
 ############## TESTING SECTION
 ##############################
 
 def create_test_batch(batch_size: int, agent_count: int = 50, k_neighbors: int = 7):
-    """Create a test batch similar to actual training data."""
+    """
+    Create a test batch similar to actual training data.
+    """
     device = torch.device('mps')
 
     data_list = []
@@ -219,9 +219,9 @@ def create_test_batch(batch_size: int, agent_count: int = 50, k_neighbors: int =
         position = torch.randn(agent_count, 3, device=device) * 10
 
         # k-NN connectivity
-        distances = torch.cdist(position, position)
+        distances    = torch.cdist(position, position)
         _, neighbors = distances.topk(k_neighbors + 1, largest=False)
-        neighbors = neighbors[:, 1:]  # Remove self
+        neighbors    = neighbors[:, 1:]  # Remove self
 
         # Build edge list
         src = torch.arange(agent_count, device=device).repeat_interleave(k_neighbors)
@@ -229,12 +229,12 @@ def create_test_batch(batch_size: int, agent_count: int = 50, k_neighbors: int =
         edge_index = torch.stack([src, dst])
 
         data = Data(
-            edge_index=edge_index,
-            position=position,
-            velocity=torch.randn(agent_count, 3, device=device),
-            temperature=torch.rand(agent_count, 1, device=device),
-            action=torch.randn(agent_count, 3, device=device),
-            alert_states=torch.zeros(agent_count, 1, device=device)
+            action       = torch.randn(agent_count, 3, device=device),
+            alert_states = torch.zeros(agent_count, 1, device=device),
+            edge_index   = edge_index,
+            position     = position,
+            temperature  = torch.rand(agent_count, 1, device=device),
+            velocity     = torch.randn(agent_count, 3, device=device),
         )
         data_list.append(data)
 
@@ -250,16 +250,16 @@ if __name__ == "__main__":
     batch_sizes = [32, 64, 128]
     agent_count = 50
     k_neighbors = 7
-    n_warmup = 10
-    n_runs = 30
+    n_warmup    = 10
+    n_runs      = 30
 
     print(f"\nConfiguration: {agent_count} agents, {k_neighbors} neighbors")
     print(f"Warmup: {n_warmup} runs, Benchmark: {n_runs} runs")
     print("-" * 60)
 
     for batch_size in batch_sizes:
-        batch = create_test_batch(batch_size, agent_count, k_neighbors)
-        lanczos = LanczosFiedlerValue(agent_count=agent_count)
+        batch   = create_test_batch(batch_size, agent_count, k_neighbors)
+        lanczos = LanczosFiedlerValue()
 
         # Warmup
         for _ in range(n_warmup):
@@ -270,17 +270,16 @@ if __name__ == "__main__":
         times = []
         for _ in range(n_runs):
             torch.mps.synchronize()
-            start = time.perf_counter()
+            start  = time.perf_counter()
             result = lanczos.compute(batch)
             torch.mps.synchronize()
             times.append((time.perf_counter() - start) * 1000)
 
         mean_time = np.mean(times)
-        std_time = np.std(times)
-        min_time = np.min(times)
-        max_time = np.max(times)
-
-        k_used = lanczos.k_used if lanczos.k_used else 0
+        std_time  = np.std(times)
+        min_time  = np.min(times)
+        max_time  = np.max(times)
+        k_used    = lanczos.k_used if lanczos.k_used else 0
 
         print(f"\nBatch {batch_size:3d}:")
         print(f"  Mean: {mean_time:6.2f} ± {std_time:4.2f} ms ({mean_time/batch_size:5.3f} ms/graph)")
