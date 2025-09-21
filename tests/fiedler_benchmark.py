@@ -16,8 +16,6 @@ Key optimizations that improved performance from 87ms to 8ms:
 These techniques achieved 10x speedup with fixed k, but compromised accuracy
 for some graph structures. The adaptive approach ensures accuracy for all graphs.
 
-NEW BASELINE - Test 1: Adaptive Lanczos with Convergence Monitoring
-====================================================================
 Configuration:
 - Agent count: 50
 - k-neighbors: 7
@@ -25,6 +23,8 @@ Configuration:
 - k_lanczos: ADAPTIVE (typically converges at k=26-31 for 50-agent graphs)
 - Tolerance: 1e-4 relative change in Fiedler value
 
+NEW BASELINE - Test 1: Adaptive Lanczos with Convergence Monitoring
+====================================================================
 Performance:
 - Batch  32: 40.18 ± 3.80 ms (1.256 ms/graph)
 - Batch  64: 40.22 ± 1.40 ms (0.628 ms/graph)
@@ -35,12 +35,6 @@ Characteristics:
 - <0.001% error guaranteed through convergence monitoring
 - No manual tuning required - works for any graph size
 - Checks convergence every 5 iterations (adds ~5ms overhead)
-
-Optimization Opportunities:
-- Pre-allocated arrays instead of dynamic lists
-- Batch eigendecomposition for convergence checks
-- Early termination heuristics based on graph structure
-- Caching/reuse of Lanczos vectors between checks
 """
 
 import torch
