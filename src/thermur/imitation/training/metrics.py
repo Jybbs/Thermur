@@ -9,10 +9,11 @@ MeanMetric to provide automatic averaging and PyG batch utilities.
 All metrics integrate with PyTorch Lightning's logging system and can be 
 used directly in LightningModules without a separate collector.
 """
-from __future__   import annotations
-from torchmetrics import MeanAbsoluteError, MeanMetric, MeanSquaredError
-from torchmetrics import MetricCollection, R2Score
-from typing       import TYPE_CHECKING
+from __future__            import annotations
+from torch_geometric.utils import to_dense_adj
+from torchmetrics          import MeanAbsoluteError, MeanMetric, MeanSquaredError
+from torchmetrics          import MetricCollection, R2Score
+from typing                import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from config.imitation.controller  import MurmurationModel, SafetyModel
@@ -197,110 +198,166 @@ class Acceleration(BaseMetric):
 
 class FiedlerValue(BaseMetric):
     """
-    Measure graph connectivity via harmonic mean of Fiedler values.
+    Compute Fiedler value λ₂ using adaptive Lanczos iteration.
 
-    For batched training data containing multiple graphs, computes the Fiedler
-    value (second-smallest eigenvalue λ₂) for each graph's Laplacian, then
-    aggregates using harmonic mean to emphasize weak connectivity.
+    Implements the Lanczos algorithm to find the second smallest eigenvalue
+    of graph Laplacians, which measures algebraic connectivity. The algorithm
+    adaptively determines convergence by monitoring λ₂ stability.
 
-    The harmonic mean H = n/Σ(1/λᵢ) is dominated by the smallest values,
-    making it more sensitive to poorly connected components than arithmetic
-    mean. This aligns with flocking requirements where a single disconnected
-    subgroup represents system failure.
-
-    Interpretation:
-        - H = 0          : At least one graph is disconnected
-        - H ∈ (0, 0.1]   : Weak connectivity in batch
-        - H ∈ (0.1, 0.5] : Moderate connectivity
-        - H > 0.5        : Strong cohesion across all graphs
-        - H > 2.0        : Excellent multi-agent coordination
+    The Fiedler value λ₂ ∈ [0, ∞) where:
+        - λ₂ = 0        : Disconnected graph
+        - λ₂ ∈ (0, 0.1] : Weak connectivity
+        - λ₂ ∈ (0.1, 1] : Moderate connectivity
+        - λ₂ > 1        : Strong connectivity
     """
 
-    def _build_batch_laplacians(
-        self,
-        batch      : FlockBatch,
-        ptr        : Tensor,
-        sizes      : Tensor,
-        valid_mask : Tensor
-    ) -> Tensor:
+    def __init__(self, **kwargs):
         """
-        Construct Laplacian matrices for all valid graphs in batch.
-
-        Builds symmetric graph Laplacians L = D - A where D is the degree
-        matrix and A is the adjacency matrix.
+        Initialize Lanczos Fiedler value computation.
 
         Args:
-            batch      : PyG batch containing edge indices
-            ptr        : Graph boundary pointers
-            sizes      : Sizes of valid graphs only
-            valid_mask : Boolean mask of valid graphs
+            **kwargs: Configuration including agent_count
+        """
+        super().__init__(**kwargs)
+        self.k_used = None
+
+    def _build_laplacian_batch(self, batch: FlockBatch) -> Tensor:
+        """
+        Construct graph Laplacian matrices for connectivity analysis.
+
+        Builds unnormalized Laplacians L = D - A where D is the degree matrix
+        and A the symmetrized binary adjacency. The Laplacian's eigenvalues
+        encode graph connectivity properties, with λ₂ (Fiedler value) measuring
+        algebraic connectivity.
+
+        Symmetrization ensures undirected edges and binarization removes edge
+        weights, critical for consistent Fiedler value computation.
+
+        Args:
+            batch: PyG Batch containing edge_index and batch assignment
 
         Returns:
-            Batched Laplacian tensor of shape [n_valid, max_size, max_size]
+            Laplacian matrices [B, N, N] for each graph in the batch
         """
-        n_valid  = valid_mask.sum()
-        max_size = sizes.max()
-        L_batch  = th.zeros(
-            n_valid, max_size, max_size, device=batch.edge_index.device
-        )
+        A = (
+            adj := to_dense_adj(
+                batch         = batch.batch,
+                edge_index    = batch.edge_index,
+                max_num_nodes = self.agent_count
+                )
+        ) + adj.mT
 
-        valid_indices = th.where(valid_mask)[0]
-        for i, g in enumerate(valid_indices):
-            start, end = ptr[g], ptr[g+1]
-            n = end - start
+        return th.diag_embed(A.sign_().sum(dim=-1)) - A
 
-            mask  = (batch.edge_index[0] >= start) & (batch.edge_index[0] < end)
-            edges = batch.edge_index[:, mask] - start
+    def _compute_fiedler(
+        self, 
+        alphas : Tensor, 
+        betas  : Tensor, 
+        k      : int
+    ) -> Tensor:
+        """
+        Compute Fiedler values from Lanczos coefficients via tridiagonal reduction.
 
-            A = th.zeros(n, n, device=batch.edge_index.device)
-            A[edges[0], edges[1]] = 1.0
-            A = ((A + A.T) > 0).float()
-            A.fill_diagonal_(0)
+        Constructs symmetric tridiagonal matrix T from Lanczos coefficients that
+        preserves the spectral properties of the original N×N Laplacian. The k×k
+        tridiagonal approximation T ≈ Q^T L Q contains the same eigenvalue
+        information as the full Laplacian but in a compact form suitable for
+        efficient eigendecomposition.
 
-            L_batch[i, :n, :n] = th.diag(A.sum(dim=1)) - A
+        Building and computing on CPU avoids repeated device transfers and leverages
+        optimized LAPACK routines for symmetric tridiagonal eigenvalue problems.
 
-        return L_batch
+        Args:
+            alphas : Diagonal Lanczos coefficients [B, :] from orthogonal projections
+            betas  : Off-diagonal coupling terms [B, :] encoding subspace recurrence
+            k      : Number of Lanczos iterations to include (matrix dimension)
+
+        Returns:
+            Fiedler values λ₂ (second smallest eigenvalues) for each graph [B]
+        """
+        alphas_k  = alphas[:, :k].cpu()
+        diagonals = th.diag_embed(alphas_k)
+
+        if k > 1:
+            off_diagonals = betas[:, :k - 1].cpu()
+            diagonals[:, range(k - 1), range(1,  k)] = off_diagonals
+            diagonals[:, range(1,  k), range(k - 1)] = off_diagonals
+
+        return th.linalg.eigvalsh(diagonals)[:, 0]
+
+    def _compute_lanczos_eigenvalue(self, laplacians: Tensor) -> Tensor:
+        """
+        Compute Fiedler values λ₂ via adaptive Lanczos iteration.
+
+        Iteratively constructs tridiagonal approximation T ≈ Q^T L Q using
+        the Lanczos algorithm, where T captures the essential spectral properties
+        of L in a smaller k×k matrix. The algorithm adaptively determines k by
+        monitoring convergence of λ₂.
+
+        Early termination occurs when eigenvalue stability is achieved, typically
+        requiring only 20-50% of full iterations for well-connected graphs.
+
+        Args:
+            laplacians: Batch of Laplacian matrices [B, N, N]
+
+        Returns:
+            Fiedler values λ₂ for each graph [B]
+        """
+        B, N, _ = laplacians.shape
+        device  = laplacians.device
+        alphas  = th.zeros(B, self.agent_count,     device=device)
+        betas   = th.zeros(B, self.agent_count - 1, device=device)
+
+        v_init       = th.randn(B, N, device=device)
+        v_init      -= v_init.mean(dim=1, keepdim=True)
+        v_curr       = v_init / v_init.norm(dim=1, keepdim=True)
+        v_prev       = th.zeros_like(v_curr)
+        prev_fiedler = th.zeros(B)
+
+        for i in range(self.agent_count):
+            w     = th.einsum('bij, bj -> bi', laplacians, v_curr)
+            alpha = th.einsum('bi,  bi -> b', w, v_curr)
+            alphas[:, i] = alpha
+
+            w -= alpha[:, None] * v_curr + betas[:, max(0, i-1), None] * v_prev
+            w -= w.mean(dim=1, keepdim=True)
+
+            if (beta := w.norm(dim=1)).min() <= 1e-10 or i >= self.agent_count - 1:
+                break
+
+            betas[:, i] = beta
+            v_prev = v_curr
+            v_curr = w / beta[:, None]
+
+            if i >= 10 and i % 5 == 0:
+                if th.allclose(
+                    curr_fiedler := self._compute_fiedler(alphas, betas, (k := i + 1)),
+                    prev_fiedler
+                ):
+                    self.k_used = k
+                    return curr_fiedler.to(device)
+                prev_fiedler = curr_fiedler
+
+        self.k_used = i + 1
+        return self._compute_fiedler(alphas, betas, self.k_used).to(device)
 
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Compute harmonic mean of Fiedler values across batched graphs.
+        Compute harmonic mean of Fiedler values.
 
-        Extracts individual graphs from the batch using PyG's ptr boundaries,
-        computes each graph's Fiedler value λ₂, then aggregates via harmonic
-        mean to capture batch-wide connectivity with emphasis on weak links.
+        The harmonic mean H = n / Σ(1/λᵢ) emphasizes weak connectivity,
+        making it sensitive to poorly connected components where a single
+        disconnected subgroup represents system failure.
 
         Args:
-            batch: PyG Batch with edge_index [2, E] and graph assignments
+            batch: PyG Batch with edge_index and graph assignments
 
         Returns:
             Harmonic mean of Fiedler values as scalar tensor
         """
-        ptr = (
-            batch.ptr if hasattr(batch, 'ptr')
-            else th.tensor(
-                data   = [0, len(batch.batch)], 
-                device = batch.edge_index.device
-            )
-        )
-        sizes      = ptr[1:] - ptr[:-1]
-        valid_mask = sizes > 1
-
-        if not (n_valid := valid_mask.sum()):
-            return th.tensor(float('nan'), device=batch.edge_index.device)
-
-        laplacians = self._build_batch_laplacians(
-            batch      = batch,
-            ptr        = ptr,
-            sizes      = sizes[valid_mask],
-            valid_mask = valid_mask
-        )
-
-        try:
-            eigenvals = th.linalg.eigvalsh(laplacians)
-            fiedlers  = eigenvals[:, 1].clamp_min(1e-10)
-            return n_valid.float() / (1.0 / fiedlers).sum()
-        except RuntimeError:
-            return th.tensor(float('nan'), device=batch.edge_index.device)
+        laplacians = self._build_laplacian_batch(batch)
+        fiedler    = self._compute_lanczos_eigenvalue(laplacians).clamp_min(1e-10)
+        return len(fiedler) / fiedler.reciprocal().sum()
 
 
 class HamiltonianEnergy(BaseMetric):
