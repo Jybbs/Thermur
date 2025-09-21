@@ -26,31 +26,23 @@ class LanczosFiedlerValue:
     """
 
     def __init__(
-        self, 
-        agent_count    : int   = 50, 
+        self,
+        agent_count    : int   = 50,
         check_interval : int   = 5,
-        max_iterations : int   = 150, 
-        min_iterations : int   = 10,
-        tolerance      : float = 1e-4,
+        min_iterations : int   = 10
     ):
         """
         Args:
             agent_count    : Number of agents per graph
             check_interval : How often to check convergence (default 5)
-            max_iterations : Maximum iterations (safety cap)
             min_iterations : Minimum Lanczos iterations before checking convergence
-            tolerance      : Relative convergence tolerance for Fiedler value
         """
         self.agent_count    = agent_count
-        self.min_k          = min_iterations
-        self.max_k          = min(max_iterations, agent_count - 1)
-        self.tolerance      = tolerance
         self.check_interval = check_interval
+        self.min_iterations = min_iterations
         self.k_used         = None  # Track actual iterations used
 
-        # No additional initialization needed
-
-    def _build_laplacians_vectorized(self, batch: Batch) -> torch.Tensor:
+    def _build_laplacian_batch(self, batch: Batch) -> torch.Tensor:
         device = batch.edge_index.device
 
         # Ensure batch assignment exists and is on correct device
@@ -59,150 +51,110 @@ class LanczosFiedlerValue:
         elif batch.batch.device != device:
             batch.batch = batch.batch.to(device)
 
-        # Single-pass adjacency matrix construction
+        # Build adjacency matrix
         A = to_dense_adj(
-            edge_index=batch.edge_index,
-            batch=batch.batch,
-            max_num_nodes=self.agent_count
+            edge_index    = batch.edge_index,
+            batch         = batch.batch,
+            max_num_nodes = self.agent_count
         )
 
-        # Fused symmetrization and Laplacian computation
-        # Use in-place operations where possible to reduce memory allocation
-        A = A + A.mT  # Symmetrize
-        A = A.bool().float()  # Binary adjacency
-        D = A.sum(dim=-1, keepdim=True)  # Degree vector
-        L = torch.zeros_like(A)
-        L.diagonal(dim1=-2, dim2=-1).copy_(D.squeeze(-1))  # Set diagonal
-        return L - A  # Return Laplacian
+        # Optimized Laplacian construction
+        A = (A + A.mT).sign_()  # Symmetrize and binarize
+        D = A.sum(dim=-1)
+        L = torch.diag_embed(D) - A
+        return L
 
-    def _lanczos_iteration(self, L: torch.Tensor) -> torch.Tensor:
+    def _lanczos_eigenvalue(self, L: torch.Tensor) -> torch.Tensor:
         B, N, _ = L.shape
         device = L.device
 
-        # Pre-allocate storage for better memory efficiency
-        alpha_storage = torch.zeros(B, self.max_k,     device=device)
-        beta_storage  = torch.zeros(B, self.max_k - 1, device=device)
+        # Pre-allocate storage
+        alpha_storage = torch.zeros(B, self.agent_count, device=device)
+        beta_storage = torch.zeros(B, self.agent_count - 1, device=device)
 
-        # Initialize with random vector orthogonal to nullspace
+        # Initialize vectors as (B, N) - simpler broadcasting
         v_init = torch.randn(B, N, device=device)
-        v_prev = F.normalize(v_init - v_init.mean(dim=1, keepdim=True), p=2, dim=1)
-        v_curr = v_prev
+        v_init -= v_init.mean(dim=1, keepdim=True)
+        v_curr = v_prev = F.normalize(v_init, p=2, dim=1)
 
-        # Track convergence
-        prev_fiedler = None
-        actual_k = 0
+        prev_fiedler = torch.zeros(B)  # CPU tensor for convergence checking
 
-        for i in range(self.max_k):
-            # Matrix-vector product
-            w = torch.bmm(L, v_curr.unsqueeze(-1)).squeeze(-1)
+        for i in range(self.agent_count):
+            # Matrix-vector product using einsum - no reshape needed
+            w = torch.einsum('bij, bj -> bi', L, v_curr)
 
-            # Compute alpha (diagonal element)
-            alpha = (w * v_curr).sum(dim=-1)
+            # Compute alpha (dot product per batch)
+            alpha = torch.einsum('bi, bi -> b', w, v_curr)
             alpha_storage[:, i] = alpha
 
-            # Orthogonalize
-            w = w - alpha.unsqueeze(1) * v_curr
+            # Orthogonalize using broadcasting (automatic with einsum output shape)
+            w = w - alpha[:, None] * v_curr
             if i > 0:
-                w = w - beta_storage[:, i-1].unsqueeze(1) * v_prev
+                w = w - beta_storage[:, i-1, None] * v_prev
 
             # Remove nullspace component
             w = w - w.mean(dim=1, keepdim=True)
 
-            # Compute beta and normalize
+            # Compute beta
             beta = w.norm(dim=1)
 
             # Check for breakdown
-            if beta.min() <= 1e-10:
-                actual_k = i + 1
+            if beta.min() <= 1e-10 or i >= self.agent_count - 1:
                 break
 
             beta_storage[:, i] = beta
 
             # Update vectors for next iteration
             v_prev = v_curr
-            v_curr = w / beta.unsqueeze(1).clamp_min(1e-10)
+            v_curr = w / beta.clamp_min(1e-10)[:, None]
 
-            # Check convergence periodically (reduced overhead version)
-            if i >= self.min_k and (i - self.min_k) % self.check_interval == 0:
-                # Build small tridiagonal matrix for convergence check
-                k_check = i + 1
-                alpha_check = alpha_storage[:, :k_check]
-                beta_check = beta_storage[:, :i] if i > 0 else None
-                T_small = self._build_tridiagonal(alpha_check, beta_check)
+            # Check convergence periodically after minimum iterations
+            if i >= self.min_iterations and i % self.check_interval == 0:
+                k = i + 1
+                T_small = self._build_tridiagonal(
+                    alpha = alpha_storage[:, :k],
+                    beta  = beta_storage[:, :i] if i > 0 else None
+                )
+                # Already on CPU from build_tridiagonal
+                curr_fiedler = torch.linalg.eigvalsh(T_small)[:, 0]
 
-                # Get smallest eigenvalue
-                curr_fiedler = torch.linalg.eigvalsh(T_small)[:, 0].to(device)
-
-                if self._has_converged(curr_fiedler, prev_fiedler):
-                    self.k_used = i + 1
-                    return curr_fiedler
+                # Check convergence using relative tolerance (on CPU)
+                if torch.allclose(curr_fiedler, prev_fiedler, atol=0):
+                    self.k_used = k
+                    return curr_fiedler.to(device)
 
                 prev_fiedler = curr_fiedler
 
-            actual_k = i + 1
+        # Final computation
+        self.k_used = i + 1
+        T_final = self._build_tridiagonal(
+            alpha_storage[:, :self.k_used],
+            beta_storage[:, :self.k_used-1] if self.k_used > 1 else None
+        )
+        # Already on CPU from build_tridiagonal
+        return torch.linalg.eigvalsh(T_final)[:, 0].to(device)
 
-        # Final computation with actual iterations used
-        self.k_used = actual_k
-        alpha_final = alpha_storage[:, :actual_k]
-        beta_final = beta_storage[:, :actual_k-1] if actual_k > 1 else None
-        return self._compute_fiedler_fast(alpha_final, beta_final, device)
-
-
-    def _compute_fiedler_fast(
-        self, 
-        alpha  : torch.Tensor, 
-        beta   : torch.Tensor | None, 
-        device
-    ) -> torch.Tensor:
-        B, k = alpha.shape
-        if k == 0:
-            return torch.zeros(B, device=device)
-
-        # Build and diagonalize tridiagonal matrix
-        T = self._build_tridiagonal(alpha, beta)
-        eigvals = torch.linalg.eigvalsh(T)
-
-        # Return smallest eigenvalue to original device
-        return eigvals[:, 0].to(device)
-
-    def _has_converged(self, curr_fiedler: torch.Tensor,
-                       prev_fiedler: torch.Tensor | None) -> bool:
-        if prev_fiedler is None:
-            return False
-
-        rel_change = (curr_fiedler - prev_fiedler).abs() / (curr_fiedler.abs() + 1e-10)
-        return rel_change.max().item() < self.tolerance
 
     def _build_tridiagonal(self, alpha: torch.Tensor, beta: torch.Tensor | None) -> torch.Tensor:
-        B, k = alpha.shape
+        _, k = alpha.shape
 
-        # Always work on CPU for eigendecomposition on MPS
-        alpha = alpha.cpu()
-        beta  = beta.cpu() if beta is not None else None
+        # Build on CPU to avoid repeated large matrix transfers
+        alpha_cpu = alpha.cpu()
+        T = torch.diag_embed(alpha_cpu)
 
-        # Initialize tridiagonal matrix
-        T = torch.zeros(B, k, k, device='cpu')
-
-        # Set diagonal using advanced indexing (vectorized)
-        batch_idx = torch.arange(B)[:, None]
-        diag_idx  = torch.arange(k)
-        T[batch_idx, diag_idx, diag_idx] = alpha
-
-        # Set off-diagonals if present
-        if beta is not None and k > 1:
-            k_beta  = beta.shape[1]
-            off_idx = torch.arange(min(k_beta, k-1))
-            T[batch_idx, off_idx, off_idx + 1] = beta[:, :min(k_beta, k-1)]
-            T[batch_idx, off_idx + 1, off_idx] = beta[:, :min(k_beta, k-1)]
+        if beta is not None:
+            # Add upper and lower diagonals
+            beta_cpu = beta.cpu()[:, :k-1]
+            T[:, range(k-1), range(1, k)] = beta_cpu
+            T[:, range(1, k), range(k-1)] = beta_cpu
 
         return T
 
 
     def compute(self, batch: Batch) -> torch.Tensor:
-        """Compute Fiedler value with adaptive convergence monitoring."""
-        laplacians = self._build_laplacians_vectorized(batch)
-        fiedler    = self._lanczos_iteration(laplacians).clamp_min(1e-10)
-        return fiedler.numel() / fiedler.reciprocal().sum()
+        laplacians = self._build_laplacian_batch(batch)
+        fiedler    = self._lanczos_eigenvalue(laplacians).clamp_min(1e-10)
+        return len(fiedler) / fiedler.reciprocal().sum()
 
 ############## TESTING SECTION
 ##############################
