@@ -83,9 +83,6 @@ class GNNPolicy(LightningModule):
         self.scheduler     = scheduler
         self.train_metrics = metrics.create_training_metrics()
         self.val_metrics   = metrics.create_validation_metrics()
-        
-        if architecture.compile:
-            self.forward = compile(self.forward, mode="default")
 
     def _step(
         self, 

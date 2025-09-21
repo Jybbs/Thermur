@@ -28,14 +28,6 @@ class ArchitectureModel(BaseModel, extra="forbid"):
             "passing MLPs, with SiLU providing smooth gradients for stable training."
         )
     )
-    compile: bool = Field(
-        default     = False,
-        description = (
-            "Enable torch.compile optimization for the forward pass. Provides significant "
-            "speedup on modern GPUs but increases initial compilation time. Recommended "
-            "for production training but not for debugging."
-        )
-    )
     hidden_dim: PositiveInt = Field(
         default     = 64,
         description = (
