@@ -2,13 +2,16 @@
 Adaptive Lanczos-based FiedlerValue implementation for PyTorch Lightning.
 Automatically determines optimal iterations by monitoring convergence.
 """
-
-import torch
-import torch.nn.functional as F
-from torch_geometric.data import Data, Batch
+from __future__            import annotations
+from torch_geometric.data  import Data, Batch
 from torch_geometric.utils import to_dense_adj
-import time
-import numpy as np
+from typing                import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from config.types import FlockBatch
+    from torch        import Tensor
+
+import torch as th
 
 
 class LanczosFiedlerValue:
@@ -42,15 +45,7 @@ class LanczosFiedlerValue:
         self.min_iterations = min_iterations
         self.k_used         = None  # Track actual iterations used
 
-    def _build_laplacian_batch(self, batch: Batch) -> torch.Tensor:
-        device = batch.edge_index.device
-
-        # Ensure batch assignment exists and is on correct device
-        if not hasattr(batch, 'batch'):
-            batch.batch = torch.zeros(batch.num_nodes, dtype=torch.long, device=device)
-        elif batch.batch.device != device:
-            batch.batch = batch.batch.to(device)
-
+    def _build_laplacian_batch(self, batch: FlockBatch) -> Tensor:
         # Build adjacency matrix
         A = to_dense_adj(
             edge_index    = batch.edge_index,
@@ -61,30 +56,29 @@ class LanczosFiedlerValue:
         # Optimized Laplacian construction
         A = (A + A.mT).sign_()  # Symmetrize and binarize
         D = A.sum(dim=-1)
-        L = torch.diag_embed(D) - A
-        return L
+        return th.diag_embed(D) - A
 
-    def _lanczos_eigenvalue(self, L: torch.Tensor) -> torch.Tensor:
+    def _lanczos_eigenvalue(self, L: Tensor) -> Tensor:
         B, N, _ = L.shape
-        device = L.device
+        device  = L.device
 
         # Pre-allocate storage
-        alpha_storage = torch.zeros(B, self.agent_count, device=device)
-        beta_storage = torch.zeros(B, self.agent_count - 1, device=device)
+        alpha_storage = th.zeros(B, self.agent_count,     device=device)
+        beta_storage  = th.zeros(B, self.agent_count - 1, device=device)
 
         # Initialize vectors as (B, N) - simpler broadcasting
-        v_init = torch.randn(B, N, device=device)
+        v_init  = th.randn(B, N, device=device)
         v_init -= v_init.mean(dim=1, keepdim=True)
-        v_curr = v_prev = F.normalize(v_init, p=2, dim=1)
+        v_curr  = v_prev = v_init / v_init.norm(dim=1, keepdim=True)
 
-        prev_fiedler = torch.zeros(B)  # CPU tensor for convergence checking
+        prev_fiedler = th.zeros(B)  # CPU tensor for convergence checking
 
         for i in range(self.agent_count):
             # Matrix-vector product using einsum - no reshape needed
-            w = torch.einsum('bij, bj -> bi', L, v_curr)
+            w = th.einsum('bij, bj -> bi', L, v_curr)
 
             # Compute alpha (dot product per batch)
-            alpha = torch.einsum('bi, bi -> b', w, v_curr)
+            alpha = th.einsum('bi, bi -> b', w, v_curr)
             alpha_storage[:, i] = alpha
 
             # Orthogonalize using broadcasting (automatic with einsum output shape)
@@ -106,20 +100,20 @@ class LanczosFiedlerValue:
 
             # Update vectors for next iteration
             v_prev = v_curr
-            v_curr = w / beta.clamp_min(1e-10)[:, None]
+            v_curr = w / beta[:, None]
 
             # Check convergence periodically after minimum iterations
             if i >= self.min_iterations and i % self.check_interval == 0:
                 k = i + 1
                 T_small = self._build_tridiagonal(
                     alpha = alpha_storage[:, :k],
-                    beta  = beta_storage[:, :i] if i > 0 else None
+                    beta  = beta_storage[:, :k-1]
                 )
                 # Already on CPU from build_tridiagonal
-                curr_fiedler = torch.linalg.eigvalsh(T_small)[:, 0]
+                curr_fiedler = th.linalg.eigvalsh(T_small)[:, 0]
 
                 # Check convergence using relative tolerance (on CPU)
-                if torch.allclose(curr_fiedler, prev_fiedler, atol=0):
+                if th.allclose(curr_fiedler, prev_fiedler, atol=0):
                     self.k_used = k
                     return curr_fiedler.to(device)
 
@@ -128,21 +122,21 @@ class LanczosFiedlerValue:
         # Final computation
         self.k_used = i + 1
         T_final = self._build_tridiagonal(
-            alpha_storage[:, :self.k_used],
-            beta_storage[:, :self.k_used-1] if self.k_used > 1 else None
+            alpha = alpha_storage[:, :self.k_used],
+            beta  = beta_storage[:, :self.k_used-1]
         )
         # Already on CPU from build_tridiagonal
-        return torch.linalg.eigvalsh(T_final)[:, 0].to(device)
+        return th.linalg.eigvalsh(T_final)[:, 0].to(device)
 
 
-    def _build_tridiagonal(self, alpha: torch.Tensor, beta: torch.Tensor | None) -> torch.Tensor:
+    def _build_tridiagonal(self, alpha: Tensor, beta: Tensor) -> Tensor:
         _, k = alpha.shape
 
         # Build on CPU to avoid repeated large matrix transfers
         alpha_cpu = alpha.cpu()
-        T = torch.diag_embed(alpha_cpu)
+        T = th.diag_embed(alpha_cpu)
 
-        if beta is not None:
+        if beta.shape[1] > 0:
             # Add upper and lower diagonals
             beta_cpu = beta.cpu()[:, :k-1]
             T[:, range(k-1), range(1, k)] = beta_cpu
@@ -151,7 +145,7 @@ class LanczosFiedlerValue:
         return T
 
 
-    def compute(self, batch: Batch) -> torch.Tensor:
+    def compute(self, batch: FlockBatch) -> Tensor:
         laplacians = self._build_laplacian_batch(batch)
         fiedler    = self._lanczos_eigenvalue(laplacians).clamp_min(1e-10)
         return len(fiedler) / fiedler.reciprocal().sum()
@@ -159,42 +153,53 @@ class LanczosFiedlerValue:
 ############## TESTING SECTION
 ##############################
 
-def create_test_batch(batch_size: int, agent_count: int = 50, k_neighbors: int = 7):
+def create_test_batch(batch_size: int, agent_count: int = 50, k_neighbors: int = 7) -> Batch:
     """
     Create a test batch similar to actual training data.
     """
-    device = torch.device('mps')
+    device = th.device('mps')
 
     data_list = []
     for _ in range(batch_size):
         # Random positions for agents
-        position = torch.randn(agent_count, 3, device=device) * 10
+        position = th.randn(agent_count, 3, device=device) * 10
 
         # k-NN connectivity
-        distances    = torch.cdist(position, position)
+        distances    = th.cdist(position, position)
         _, neighbors = distances.topk(k_neighbors + 1, largest=False)
         neighbors    = neighbors[:, 1:]  # Remove self
 
         # Build edge list
-        src = torch.arange(agent_count, device=device).repeat_interleave(k_neighbors)
+        src = th.arange(agent_count, device=device).repeat_interleave(k_neighbors)
         dst = neighbors.flatten()
-        edge_index = torch.stack([src, dst])
+        edge_index = th.stack([src, dst])
 
         data = Data(
-            action       = torch.randn(agent_count, 3, device=device),
-            alert_states = torch.zeros(agent_count, 1, device=device),
+            action       = th.randn(agent_count, 3, device=device),
+            alert_states = th.zeros(agent_count, 1, device=device),
             edge_index   = edge_index,
             position     = position,
-            temperature  = torch.rand(agent_count, 1, device=device),
-            velocity     = torch.randn(agent_count, 3, device=device),
+            temperature  = th.rand(agent_count, 1, device=device),
+            velocity     = th.randn(agent_count, 3, device=device),
+            num_nodes    = agent_count,  # Explicitly set to avoid warning
         )
         data_list.append(data)
 
-    return Batch.from_data_list(data_list)
+    # Create batch - PyG automatically creates batch tensor on CPU
+    batch = Batch.from_data_list(data_list)
+
+    # Move batch tensor to same device as data
+    if hasattr(batch, 'batch') and batch.batch is not None:
+        batch.batch = batch.batch.to(device)
+
+    return batch
 
 
 
 if __name__ == "__main__":
+    import time
+    import numpy as np
+
     print("=" * 60)
     print("Lanczos Fiedler Value Benchmark")
     print("=" * 60)
@@ -216,15 +221,15 @@ if __name__ == "__main__":
         # Warmup
         for _ in range(n_warmup):
             _ = lanczos.compute(batch)
-            torch.mps.synchronize()
+            th.mps.synchronize()
 
         # Benchmark
         times = []
         for _ in range(n_runs):
-            torch.mps.synchronize()
+            th.mps.synchronize()
             start  = time.perf_counter()
             result = lanczos.compute(batch)
-            torch.mps.synchronize()
+            th.mps.synchronize()
             times.append((time.perf_counter() - start) * 1000)
 
         mean_time = np.mean(times)
