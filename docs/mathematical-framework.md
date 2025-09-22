@@ -139,7 +139,9 @@ $`
 `$  
 <br>
 
-This negative coupling for alert birds represents the key innovation. While relaxed birds follow their neighbors' motion, alert birds actively oppose local alignment, their attention focused outward for threats rather than inward for coordination. This opposition creates perturbations that cascade through the topological network, preventing the system from settling into static order.
+The negative coupling for alert birds represents this project's central innovation: heterogeneous interaction strengths that unify Hamiltonian spin dynamics with active matter flocking to achieve criticality. 
+
+While relaxed birds follow their neighbors' motion, alert birds actively oppose local alignment, with their attention focused outward for threats rather than inward for coordination. This opposition creates perturbations that cascade through the topological network, preventing the system from settling into static order.
 
 The alignment force emerges from the energy gradient:
 

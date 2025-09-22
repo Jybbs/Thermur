@@ -75,45 +75,45 @@ Thermur orchestrates biomimetic flocking through a sophisticated machine learnin
 ```mermaid
 flowchart TB
     subgraph Data["🌐 <b>Data Pipeline</b>"]
-        A["<b>WRF-SFIRE Dataset</b><br/>147 Simulations • 5.33 TB"] 
+        A["<b>WRF-SFIRE Dataset</b><br/>147 Simulations • 5.33 TB"]
         B["<b>NetCDF → Tensors</b><br/>Batched Episodes"]
         A --> B
     end
-    
+
     subgraph Training["✨ <b>Training System</b>"]
         subgraph Expert["🕹️ <b>Expert Controller</b>"]
             direction TB
             C["<b>Murmuration Dynamics</b><br/>κ = -1.3 alert coupling"]
-            D["<b>Hamiltonian Forces</b><br/>k = 7 neighbors"]
-            E["<b>CBF Safety Filter</b><br/>T < 475K"]
+            D["<b>Hamiltonian Forces</b><br/>k = 7 topological neighbors"]
+            E["<b>CBF Safety Filter</b><br/>T < 475K guaranteed"]
             C --> E
             D --> E
         end
-        
-        subgraph Learning["🧠 <b>Neural Policy</b>"]
+
+        subgraph Learning["🧠 <b>Imitation Learning</b>"]
             direction TB
-            F["<b>Experience Buffer</b><br/>10K trajectories"]
-            G["<b>GNN Policy π₀</b><br/>Message Passing"]
-            H["<b>Behavioral Cloning</b><br/>ℒ = MSE(a, a*)"]
+            F["<b>Offline Demonstrations</b><br/>10K trajectories"]
+            G["<b>GNN Policy</b><br/>PyG Message Passing"]
+            H["<b>Behavioral Cloning</b><br/>MSE(π(s), a*)"]
             F --> G
             F --> H
         end
-        
+
         E ==> F
-        H -.-> C
+        H -.-> G
     end
-    
+
     subgraph Monitor["🎨 <b>Monitoring</b>"]
-        I["<b>Metrics:</b> χ ≥ 5, λ₂, SSIM"]
+        I["<b>Metrics:</b> χ, λ₂, Energy, R²"]
         J["<b>WandB Logger</b>"]
         K["<b>Live Dashboard</b>"]
         I --> J
         J --> K
     end
-    
+
     Data ==> Training
     Training ==> Monitor
-    
+
     style Data fill:#0b393b,stroke:#052123,color:#fff
     style Training fill:#495057,stroke:#343a40,color:#fff
     style Expert fill:#002958,stroke:#001a39,color:#fff
@@ -181,19 +181,15 @@ This guarantees agents never exceed 475 K, the maximum safe temperature for the 
 
 ### Emergent Properties
 
-The unified control produces measurable dynamics matching biological flocks:
+The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics:
 
-- **Susceptibility**: $`\chi \in [5, 20]`$ maintaining critical responsiveness
+- **Critical State**: Maintained through heterogeneous alert coupling ($`\kappa = -1.3`$ for alert birds)
+- **Rapid Response**: Information propagates at 15-45 m/s through topological networks
+- **Scale-Free Dynamics**: Velocity correlations follow $`C(r) \sim r^{-1/3}`$ across all flock sizes
+- **Robust Cohesion**: Topological interactions with k=7 neighbors ensure connectivity
+- **Guaranteed Safety**: Control Barrier Functions maintain $`T < 475`$ K through mathematical invariance
 
-- **Information Speed**: 15-45 m/s matching observed propagation rates
-
-- **Scale-Free Correlations**: $`C(r) \sim r^{-1/3}`$ across all flock sizes
-
-- **Network Connectivity**: Fiedler value $`\lambda_2 > 0`$ ensuring cohesion
-
-- **Thermal Safety**: Guaranteed $`T < 475`$ K through forward invariance
-
-These properties emerge from the interplay of components rather than explicit programming, transforming invisible thermal threats into intuitive visual patterns that humans can instinctively interpret.
+These emergent behaviors are verified through the comprehensive metrics suite described in [Monitoring & Metrics](#5-monitoring--metrics), ensuring the trained policy preserves the expert controller's critical dynamics.
 
 ---
 
@@ -367,29 +363,34 @@ expert = MurmurationController(
 The [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) GNN learns from expert demonstrations:
 
 ```python
-from thermur.imitation.lightning import GNNPolicy
-from torch_geometric.nn          import GCNConv
+from thermur.imitation.training.policy import GNNPolicy
+from torch_geometric.nn                import GCNConv
 
 class GNNPolicy(LightningModule):
-    def __init__(self, architecture, metrics, optimizer, scheduler):
+    def __init__(
+        self,
+        architecture : ArchitectureModel,
+        metrics      : MetricsFactory,
+        optimizer    : Callable[..., Optimizer],
+        scheduler    : Callable[..., LRScheduler]
+    ):
         super().__init__()
         # Build GNN layers with PyTorch Geometric
-        self.convs = ModuleList([
-            GCNConv(architecture.hidden_dim, architecture.hidden_dim) 
-            for _ in range(architecture.num_layers)
-        ])
-        self.grus = ModuleList([
-            GRUCell(architecture.hidden_dim, architecture.hidden_dim)
-            for _ in range(architecture.num_layers)
-        ])
-        self.decoder = Linear(architecture.hidden_dim, 3)   # 3D actions
-        self.encoder = Linear(13, architecture.hidden_dim)  # Node features
-    
+        dim, n = architecture.hidden_dim, architecture.num_layers
+        layers = lambda m: ModuleList([m(dim, dim) for _ in range(n)])
+
+        self.activation = getattr(nn, architecture.activation)()
+        self.convs      = layers(GCNConv)
+        self.decoder    = Linear(dim, 3)     # 3D actions
+        self.encoder    = Linear(13, dim)    # Node features
+        self.grus       = layers(GRUCell)
+
     def training_step(self, batch, batch_idx):
         # Behavioral cloning loss
-        actions_pred = self(batch["observation"])
-        mse          = mse_loss(actions_pred, batch["action"])
-        return mse
+        actions_pred = self(batch)
+        loss = mse_loss(actions_pred, batch.action)
+        self.log("train/loss", loss)
+        return loss
 ```
 
 #### 3. Demonstration Generation
@@ -401,10 +402,12 @@ from torch_geometric.data           import Data, InMemoryDataset
 from torch_geometric.data.lightning import LightningDataset
 
 class DemonstrationsDataset(InMemoryDataset):
+    ...
+
     def process(self):
         # Generate demonstrations using the expert controller
         total_episodes = self.total_frames // self.frames_per_episode
-        
+
         data_list = []
         for _ in range(total_episodes):
             # Each trajectory contains graph-structured states and expert actions
@@ -412,9 +415,9 @@ class DemonstrationsDataset(InMemoryDataset):
                 generator     = self.generator,
                 num_timesteps = self.frames_per_episode
             )
-            # Each trajectory is list of Data(x=[N,13], y=[N,3], edge_index=[2,E])
+            # Each trajectory is list of Data(x=[N,13], action=[N,3], edge_index=[2,E])
             data_list.extend(trajectory)
-        
+
         self.save(self.collate(data_list), self.processed_paths[0])
     
     @classmethod
@@ -466,17 +469,41 @@ u_safe = cbf_filter.filter(flock_state, u_nominal)
 
 #### 5. Monitoring & Metrics
 
-Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermur-imitation/workspace):
+Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermur-imitation/workspace). The comprehensive metrics suite evaluates both imitation learning performance and preservation of emergent flocking behaviors:
 
-- **Susceptibility χ**: Collective responsiveness (target ≥ 5)
+**Imitation Learning Metrics:**
 
-- **Cohesion λ₂**: Fiedler value of communication graph
+- **MAE/RMSE/R²**: Measure how accurately the policy reproduces expert actions, with MAE < 1.0 m/s² indicating excellent imitation
 
-- **Legibility SSIM**: Structural similarity to wind field [^20]
+- **Acceleration**: Tracks average control effort to ensure physically plausible forces (5-15 m/s² typical)
 
-- **Safety Violations**: Should remain at zero
+- **Velocity**: Monitors mean flight speed remains realistic (10-20 m/s for starlings)
 
-- **Information Speed**: Perturbation propagation (15-45 m/s)
+**Emergent Behavior Metrics:**
+
+- **Susceptibility $`\chi = N \cdot \text{Var}[\Phi]`$**: Measures collective responsiveness through order parameter variance. Values above 5 indicate the critical state necessary for rapid information transfer.
+
+- **Fiedler Value $`\lambda_2`$**: Quantifies algebraic connectivity via the second smallest eigenvalue of the graph Laplacian, computed efficiently using adaptive Lanczos iteration. Positive values ensure flock cohesion.
+
+- **Hamiltonian Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the spin-glass energy with heterogeneous coupling, revealing phase transitions between ordered and disordered states.
+
+- **Scale-Free Correlation**: Verifies velocity correlations follow the power law $`C(r) \sim r^{-1/3}`$ characteristic of natural murmurations through binned correlation analysis.
+
+**Dynamic Response Metrics:**
+
+- **Orientation Coherence**: Quantifies alignment via polarization order parameter $`\Phi = |\sum_i \hat{\mathbf{v}}_i|/N`$
+
+- **Orientation Wave**: Detects density waves by measuring spatial gradients in heading angles (0.15-0.40 rad/m during murmurations)
+
+- **Neighbor Stability**: Tracks topological changes via Jaccard distance of edge sets between timesteps
+
+- **Perturbation Response**: Measures threat information propagation by comparing velocity changes in alert vs safe agents
+
+**Safety Metrics:**
+
+- **Temperature**: Average thermal exposure across the flock
+
+- **CBF Violations**: Should remain at zero through Control Barrier Function constraints
 
 ---
 
@@ -589,8 +616,9 @@ thermur/
 │           │   ├── loader.py         # WRF-SFIRE data interface
 │           │   └── trajectories.py   # Physics simulation for offline data
 │           └── training/
-│               ├── metrics.py        # Comprehensive metrics collection
-│               └── policy.py         # GNN architecture (PyG)
+│               ├── callbacks.py      # Rich progress bar & model summary
+│               ├── metrics.py        # TorchMetrics-based evaluation suite
+│               └── policy.py         # GNN policy with PyG message passing
 │
 ├── data/
 │   ├── processed/                    # Cached PyG demonstrations
@@ -618,16 +646,7 @@ Thermur integrates with [Weights & Biases](https://wandb.ai/) for experiment tra
 thermur monitor
 ```
 
-This opens the [WandB project](https://wandb.ai/Thermur/thermur-imitation/workspace) where training metrics are logged:
-
-- **Training Metrics**: Imitation loss, learning rate, gradient norms
-- **Core Evaluation Metrics** (tracked by `MetricsCollector`):
-  - **Susceptibility χ**: Collective responsiveness (target ≥ 5)
-  - **Cohesion λ₂**: Fiedler value of communication graph
-  - **Legibility SSIM**: Structural similarity to wind field
-  - **Safety Violations**: Temperature constraint violations
-  - **Information Speed**: Perturbation propagation velocity
-- **Performance Metrics**: Batch processing time, GPU utilization
+This opens the [WandB project](https://wandb.ai/Thermur/thermur-imitation/workspace) where all metrics are automatically logged during training. See [Monitoring & Metrics](#5-monitoring--metrics) for the complete list of tracked metrics.
 
 ### Run Management
 
