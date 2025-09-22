@@ -70,10 +70,10 @@ class GNNPolicy(LightningModule):
         """
         super().__init__()
         self.save_hyperparameters(ignore=["metrics"])
-        
+
         dim, n = architecture.hidden_dim, architecture.num_layers
         layers = lambda m: ModuleList([m(dim, dim) for _ in range(n)])
-        
+
         self.activation    = getattr(nn, architecture.activation)()
         self.convs         = layers(GCNConv)
         self.decoder       = Linear(dim, 3)
@@ -85,32 +85,32 @@ class GNNPolicy(LightningModule):
         self.val_metrics   = metrics.create_validation_metrics()
 
     def _step(
-        self, 
-        batch   : FlockBatch, 
-        metrics : MetricCollection, 
+        self,
+        batch   : FlockBatch,
+        metrics : MetricCollection,
         prefix  : str
     ) -> STEP_OUTPUT:
         """
         Shared step logic for training and validation.
-        
+
         Logs MSE and all metrics at step level. For validation, MSE is also
         aggregated at epoch level to support early stopping callbacks.
-        
+
         Args:
             batch   : PyG Batch containing observations and expert actions
             metrics : Metric collection to update
             prefix  : Logging prefix ('training' or 'validation')
-            
+
         Returns:
             Scalar loss tensor for backpropagation
         """
         predictions = self(batch)
         mse         = mse_loss(predictions, batch.action)
-        
+
         metrics.update(batch, predictions)
         self.log(
             batch_size = batch.num_graphs,
-            name       = f'{prefix}/mse', 
+            name       = f'{prefix}/mse',
             on_epoch   = prefix == 'validation',
             on_step    = True,
             prog_bar   = True,
@@ -119,11 +119,11 @@ class GNNPolicy(LightningModule):
 
         self.log_dict(
             batch_size = batch.num_graphs,
-            dictionary = metrics.compute(), 
+            dictionary = metrics.compute(),
             on_epoch   = False,
             on_step    = True
         )
-        
+
         return mse
 
     def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
@@ -138,7 +138,7 @@ class GNNPolicy(LightningModule):
             Configuration for optimizer and learning rate scheduler
         """
         optimizer = self.optimizer(params=self.parameters())
-        
+
         return {
             "optimizer"    : optimizer,
             "lr_scheduler" : {
@@ -156,7 +156,7 @@ class GNNPolicy(LightningModule):
                    with `x` (node features) and `edge_index` (connectivity).
 
         Returns:
-            A tensor of shape [B*N, 3] representing the nominal velocity 
+            A tensor of shape [B*N, 3] representing the nominal velocity
             command for each agent in the batch.
 
         The forward pass follows the sequence:
@@ -174,7 +174,7 @@ class GNNPolicy(LightningModule):
             h = gru(self.activation(conv(h, batch.edge_index)), h)
 
         return self.decoder(h)
-    
+
     def on_train_batch_end(
         self,
         outputs   : STEP_OUTPUT,
@@ -183,16 +183,16 @@ class GNNPolicy(LightningModule):
     ):
         """
         Clear metric cache after each training batch.
-        
+
         Prevents memory growth from cached computations in BaseMetric.
-        
+
         Args:
             outputs   : Training step outputs (loss tensor)
             batch     : Current training batch containing graph data
             batch_idx : Index of current batch
         """
         BaseMetric.clear_cache()
-    
+
     def on_validation_batch_end(
         self,
         outputs   : STEP_OUTPUT,
@@ -201,16 +201,16 @@ class GNNPolicy(LightningModule):
     ):
         """
         Clear metric cache after each validation batch.
-        
+
         Prevents memory growth from cached computations in BaseMetric.
-        
+
         Args:
             outputs   : Validation step outputs (loss tensor)
             batch     : Current validation batch containing graph data
             batch_idx : Index of current batch
         """
         BaseMetric.clear_cache()
-    
+
     def training_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """
         In PyTorch Lightning, the model defines its own training logic. This is

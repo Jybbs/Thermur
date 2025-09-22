@@ -139,7 +139,7 @@ $`
 `$  
 <br>
 
-The negative coupling for alert birds represents this project's central innovation: heterogeneous interaction strengths that unify Hamiltonian spin dynamics with active matter flocking to achieve criticality. 
+The negative coupling for alert birds represents this project's central innovation: heterogeneous interaction strengths that unify Hamiltonian spin dynamics with active matter flocking to achieve criticality.
 
 While relaxed birds follow their neighbors' motion, alert birds actively oppose local alignment, with their attention focused outward for threats rather than inward for coordination. This opposition creates perturbations that cascade through the topological network, preventing the system from settling into static order.
 

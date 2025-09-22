@@ -158,7 +158,7 @@ def show(
     cmd.build          = build
     cmd.include_system = all_cfgs
     cmd.run_id         = run_id or "last"
-    
+
     cmd.show_cfg(dry_run)
 
 
@@ -174,7 +174,7 @@ class RunsCommand:
     def __init__(self):
         """
         Initialize the command with shared context components.
-        
+
         Sets up WandB API for accessing training run data.
         """
         self.api     = wandb.Api()
@@ -190,20 +190,20 @@ class RunsCommand:
         self.run_name       : str | None       = None
 
     def _api_runs(
-        self, 
+        self,
         per_page : int            | None = None,
         filters  : dict[str, Any] | None = None
     ) -> list[Run]:
         """
         Wrapper for consistent API runs calls.
-        
+
         Centralizes the common pattern of calling api.runs with project
         and ordering parameters.
-        
+
         Args:
             per_page : Number of runs to fetch
             filters  : Optional filters for the query
-            
+
         Returns:
             List of Run objects
         """
@@ -239,7 +239,7 @@ class RunsCommand:
                 f"Configuration: {self.run_name}",
                 True
             )
-            
+
             if wandb_url := self._get_wandb_url(self.run_name):
                 self.ui.print_message(
                     message  = f" WandB dashboard: {wandb_url}",
@@ -348,7 +348,7 @@ class RunsCommand:
                 "killed"   : ("✗", "red")
             }
             status_icon, status_color = status_map.get(run.state, ("?", "dim"))
-            
+
             table.add_row(
                 run.name or run.id[:8],
                 timestamp,
@@ -361,39 +361,39 @@ class RunsCommand:
     def _ensure_run_exists(self, run_id: str) -> Run:
         """
         Get a run by name/ID or exit with error.
-        
+
         Provides consistent error handling for run lookups across commands.
-        
+
         Args:
             run_id: Run identifier to look up
-            
+
         Returns:
             WandB run object
-            
+
         Raises:
             Exit: If run is not found
         """
         if not (run := self._get_run_by_name(run_id)):
             self.ui.print_message(f"Run not found: {run_id}", "error")
             raise Exit(1)
-        
+
         return run
-    
+
     def _extract_training_sections(self, cfg: dict[str, Any]) -> dict[str, Any]:
         """
         Extract the three main training configuration sections.
-        
-        Filters configuration to only include controller, environment, 
+
+        Filters configuration to only include controller, environment,
         and training sections that are present in the source config.
-        
+
         Args:
             cfg: Source configuration dictionary
-            
+
         Returns:
             Dictionary with only the training-related sections
         """
         return {
-            k: cfg[k] 
+            k: cfg[k]
             for k in ["controller", "environment", "training"]
             if  k in cfg
         }
@@ -464,28 +464,28 @@ class RunsCommand:
         """
         if not self.build:
             return sorted(cfg.keys())
-        
+
         if self.build not in cfg:
             self.ui.print_message(
                 message  = f"Build '{self.build}' not found in configuration",
                 msg_type = "warning"
             )
             return []
-        
+
         return [self.build]
-    
+
     def _get_run_by_name(self, name: str) -> Run | None:
         """
         Get a run by name or ID from WandB API.
-        
+
         Handles special cases for run identification:
         - "last"    : Returns the most recent run
         - "last[N]" : Returns the Nth most recent run
         - Otherwise : Searches by display_name first, then by run ID
-        
+
         Args:
             name: Run identifier (name, ID, or special syntax)
-            
+
         Returns:
             WandB run object if found, None otherwise
         """
@@ -503,11 +503,11 @@ class RunsCommand:
                     return self.api.run(f"{self.project}/{name}")
                 except Exception:
                     return None
-                
+
         except Exception as e:
             self.ui.print_message(f"Failed to fetch run: {e}", "error")
             return None
-    
+
     def _get_wandb_url(self, run_name: str) -> str | None:
         """
         Get the WandB dashboard URL for a run.
@@ -515,22 +515,22 @@ class RunsCommand:
         if run := self._get_run_by_name(run_name):
             return run.url
         return None
-    
+
     def _show_cfg_from_dict(self, cfg: dict[str, Any]):
         """
         Display configuration from a dictionary.
-        
+
         Shared logic for displaying configs from both API runs and dry-run mode.
         Applies build filtering and handles pagination display.
-        
+
         Args:
             cfg : Configuration dictionary with build sections
         """
         cfg = {self.build: cfg.get(self.build, {})} if self.build else cfg
-        
+
         if not (builds := self._get_builds(cfg)):
             return
-        
+
         if not (all_items := [
             item
             for build in builds
@@ -541,7 +541,7 @@ class RunsCommand:
                 msg_type = "info"
             )
             return
-        
+
         self._display_cfg(
             items      = all_items,
             title      = "Configuration Parameters",
@@ -658,7 +658,7 @@ class RunsCommand:
                 msg_type = "error"
             )
             return
-            
+
         if not runs:
             self.ui.print_message(
                 message  = "No training runs found. Start training with: "
@@ -672,7 +672,7 @@ class RunsCommand:
             if not limit or len(runs) < limit
             else f"Showing {limit} most recent runs. (Use --all to see all runs)"
         )
-        
+
         self.ui.print_message(message, "info")
         self.ui.print_section("Recent Runs", minor=True)
         self.ui.display_status_legend()
@@ -695,7 +695,7 @@ class RunsCommand:
         filtered by build. Large configurations are automatically paginated
         for better readability. In dry-run mode, reads from stdin or shows
         default configuration.
-        
+
         Args:
             dry_run: If True, read config from stdin or show defaults
         """
@@ -703,8 +703,8 @@ class RunsCommand:
             if dry_run:
                 if stdin.isatty():
                     cfg       = {
-                        k: v for k, v 
-                        in app.system.extract_training_cfg(app.cfg).items() 
+                        k: v for k, v
+                        in app.system.extract_training_cfg(app.cfg).items()
                         if k != "overrides"
                     }
                     overrides = []
@@ -719,12 +719,12 @@ class RunsCommand:
                 cfg       = self._extract_training_sections(run.config)
                 overrides = run.config.get("overrides", [])
                 run_name  = run.name or run.id
-                
+
             self.overrides = overrides
             self.run_name  = run_name
-            
+
         except Exception as e:
             self.ui.print_message(f"Failed to parse cfg: {e}", "error")
             raise Exit(1)
-        
+
         self._show_cfg_from_dict(cfg)

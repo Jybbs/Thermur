@@ -35,7 +35,7 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         safety                  = "${controller.safety}",
         populate_full_signature = True
     ),
-    
+
     "murmuration": builds(
         MurmurationController,
         cbf                     = "${_system.cbf}",
@@ -43,5 +43,5 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         safety                  = "${controller.safety}",
         populate_full_signature = True
     )
-    
+
 }

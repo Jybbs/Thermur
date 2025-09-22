@@ -2,8 +2,8 @@
 Orchestrates the CLI's interactive dialogues using the questionary library.
 
 This module manages the interactive prompts for the training command, including
-wandb configuration, override collection, and training confirmation. It uses 
-the ThermurUI class to render complex components and structured configuration 
+wandb configuration, override collection, and training confirmation. It uses
+the ThermurUI class to render complex components and structured configuration
 objects for all static text and configuration.
 """
 from __future__   import annotations
@@ -253,7 +253,7 @@ class CLIPrompts:
         Presents a final summary of all chosen configurations for user confirmation.
 
         This is the last step before initiating a long-running process. It gives
-        the user a final chance to review their choices (wandb project, overrides, 
+        the user a final chance to review their choices (wandb project, overrides,
         etc.) and either confirm or cancel the operation.
 
         Args:

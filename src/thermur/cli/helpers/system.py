@@ -48,7 +48,7 @@ class SystemInspector:
         torch_info = self._get_torch()
         if not torch_info["available"]:
             return {"cuda": False, "device_count": 0}
-            
+
         cuda = torch_info["cuda"]
         if not cuda.is_available():
             return {"cuda": False, "device_count": 0}
@@ -72,20 +72,20 @@ class SystemInspector:
             Dictionary with dataset_size in GB and dataset_count.
         """
         from thermur.imitation.controller import DemonstrationsDataset
-        
+
         relative_paths = DemonstrationsDataset._find_netcdf_files()
-        
+
         if relative_paths:
             total_size = sum(
-                (Path("data/raw") / p).stat().st_size 
+                (Path("data/raw") / p).stat().st_size
                 for p in relative_paths
             ) / 1e9
-            
+
             return {
                 "dataset_count" : len(relative_paths),
                 "dataset_size"  : total_size,
             }
-        
+
         return {"dataset_count": 0, "dataset_size": 0.0}
 
     def _get_disk_info(self) -> SystemInfo:
@@ -171,35 +171,35 @@ class SystemInspector:
     ) -> dict[str, Any]:
         """
         Extract the main training configuration sections.
-        
+
         Filters the full configuration to only include the three main
         sections used for training: controller, environment, and training.
         This provides a consistent way to prepare configs for display
         or logging across different commands.
-        
+
         Args:
             cfg       : Full configuration object (OmegaConf or dict)
             overrides : Optional list of override strings
-            
+
         Returns:
             Dictionary with extracted config sections and overrides
         """
         if not isinstance(
             container := (
-                OmegaConf.to_container(cfg, resolve=True) 
+                OmegaConf.to_container(cfg, resolve=True)
                 if hasattr(cfg, '_metadata')
                 else cfg
             ), dict
         ):
             container = {}
-        
+
         return {
             "controller"  : container.get("controller",  {}),
             "environment" : container.get("environment", {}),
             "training"    : container.get("training",    {}),
             "overrides"   : overrides or []
         }
-    
+
     def get_system_info(self) -> SystemInfo:
         """
         Gather comprehensive system information.
@@ -215,7 +215,7 @@ class SystemInspector:
             - Hardware         : cuda info, memory stats, disk usage
         """
         torch_info = self._get_torch()
-            
+
         base_info: SystemInfo = {
             "platform"            : platform(),
             "python"              : python_version(),

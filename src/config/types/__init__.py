@@ -27,7 +27,7 @@ class CfgItem(NamedTuple):
 class FlockBatch(Protocol):
     """
     Protocol for PyTorch Geometric Batch objects containing flock data.
-    
+
     Defines the expected structure of batched graph data from the
     demonstration dataset, ensuring type safety for attribute access.
     """

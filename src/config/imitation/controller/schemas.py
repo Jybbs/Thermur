@@ -11,13 +11,13 @@ from typing   import Literal
 class MurmurationModel(BaseModel, extra="forbid"):
     """
     Unified configuration for murmuration dynamics and control weights.
-    
+
     Combines topological interaction parameters and critical state dynamics
     into a single model that fully specifies the murmuration behavior. The
     controller uses these parameters to implement biologically-inspired
     flocking with scale-free correlations
     and rapid information propagation.
-    
+
     The murmuration exists at a critical state (phase transition) where
     susceptibility diverges, enabling near-instantaneous response to threats
     while maintaining cohesion through topological neighbor tracking.

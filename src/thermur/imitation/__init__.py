@@ -7,7 +7,7 @@ for efficient graph-based learning from offline trajectories.
 
 Key components:
 - controller/  : Expert murmuration controller with topological interactions
-- environment/ : Trajectory generation and WRF environmental data loading  
+- environment/ : Trajectory generation and WRF environmental data loading
 - training/    : PyTorch Lightning modules for behavioral cloning
 
 The training process:

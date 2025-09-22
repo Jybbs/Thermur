@@ -419,7 +419,7 @@ class DemonstrationsDataset(InMemoryDataset):
             data_list.extend(trajectory)
 
         self.save(self.collate(data_list), self.processed_paths[0])
-    
+
     @classmethod
     def as_lightning_datamodule(
         cls,
@@ -443,11 +443,11 @@ class DemonstrationsDataset(InMemoryDataset):
             total_frames       = controller.mmm.total_frames,
             ui                 = ui
         )
-        
+
         # Random train/val split with PyG's index_select
         train_size = int(len(dataset) * train_split)
         indices    = torch.randperm(len(dataset))
-        
+
         return LightningDataset(
             batch_size    = batch_size,
             num_workers   = hardware.num_workers,
@@ -720,25 +720,25 @@ For the WRF-SFIRE dataset:
 
 [^1]: U.S. Fire Administration. 2013. "Yarnell Hill Fire, Arizona." *Wildland Fire Fatality Reports*.
 
-[^2]: Page, Wesley G., Patrick H. Freeborn, Bret W. Butler, and W. Matt Jolly. 2019. "A Review of US Wildland Firefighter Entrapments: Trends, Important Environmental Factors, and Research Needs." *International Journal of Wildland Fire* 28 (8): 551–69. https://doi.org/10.1071/WF19022  
+[^2]: Page, Wesley G., Patrick H. Freeborn, Bret W. Butler, and W. Matt Jolly. 2019. "A Review of US Wildland Firefighter Entrapments: Trends, Important Environmental Factors, and Research Needs." *International Journal of Wildland Fire* 28 (8): 551–69. https://doi.org/10.1071/WF19022
 
-[^3]: Wolfe, Jeremy M. 2020. "Visual Search: How Do We Find What We Are Looking For?" *Annual Review of Vision Science* 6: 539–62. https://doi.org/10.1146/annurev-vision-091718-015048  
+[^3]: Wolfe, Jeremy M. 2020. "Visual Search: How Do We Find What We Are Looking For?" *Annual Review of Vision Science* 6: 539–62. https://doi.org/10.1146/annurev-vision-091718-015048
 
-[^4]: Johansson, Gunnar. 1973. "Visual Perception of Biological Motion and a Model for Its Analysis." *Perception & Psychophysics* 14 (2): 201–11. https://doi.org/10.3758/BF03212378  
+[^4]: Johansson, Gunnar. 1973. "Visual Perception of Biological Motion and a Model for Its Analysis." *Perception & Psychophysics* 14 (2): 201–11. https://doi.org/10.3758/BF03212378
 
-[^5]: Reynolds, Craig W. 1987. "Flocks, Herds and Schools: A Distributed Behavioral Model." *ACM SIGGRAPH Computer Graphics* 21 (4): 25–34. https://doi.org/10.1145/37402.37406  
+[^5]: Reynolds, Craig W. 1987. "Flocks, Herds and Schools: A Distributed Behavioral Model." *ACM SIGGRAPH Computer Graphics* 21 (4): 25–34. https://doi.org/10.1145/37402.37406
 
-[^6]: Häusermann, D., et al. 2023. "FireDrone: Multi-Environment Thermally Agnostic Aerial Robot." *Advanced Intelligent Systems* 5 (23): 2300101. https://doi.org/10.1002/aisy.202300101  
+[^6]: Häusermann, D., et al. 2023. "FireDrone: Multi-Environment Thermally Agnostic Aerial Robot." *Advanced Intelligent Systems* 5 (23): 2300101. https://doi.org/10.1002/aisy.202300101
 
-[^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109  
+[^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109
 
 [^8]: Beauchamp, Guy. 2015. *Animal Vigilance: Monitoring Predators and Competitors*. Academic Press.
 
-[^9]: Fernández-Juricic, Esteban. 2012. "Sensory Basis of Vigilance Behavior in Birds: Synthesis and Future Prospects." *Behavioural Processes* 89 (2): 143–152. https://doi.org/10.1016/j.beproc.2011.10.006  
+[^9]: Fernández-Juricic, Esteban. 2012. "Sensory Basis of Vigilance Behavior in Birds: Synthesis and Future Prospects." *Behavioural Processes* 89 (2): 143–152. https://doi.org/10.1016/j.beproc.2011.10.006
 
 [^10]: Cavagna, Andrea, Alessio Cimarelli, Irene Giardina, Giorgio Parisi, Raffaele Santagati, Fabio Stefanini, and Massimiliano Viale. 2010. "Scale-Free Correlations in Starling Flocks." *PNAS* 107 (26): 11865–70. https://doi.org/10.1073/pnas.1005766107
 
-[^11]: Ballerini, M. et al. 2008. "Interaction Ruling Animal Collective Behavior Depends on Topological Rather than Metric Distance." *PNAS* 105 (4): 1232–37. https://doi.org/10.1073/pnas.0711437105  
+[^11]: Ballerini, M. et al. 2008. "Interaction Ruling Animal Collective Behavior Depends on Topological Rather than Metric Distance." *PNAS* 105 (4): 1232–37. https://doi.org/10.1073/pnas.0711437105
 
 [^12]: Attanasi, Alessandro, et al. 2014. "Information Transfer and Behavioural Inertia in Starling Flocks." *Nature Physics* 10 (9): 691–696. https://doi.org/10.1038/nphys3035
 
@@ -746,7 +746,7 @@ For the WRF-SFIRE dataset:
 
 [^14]: Stellato, Bartolomeo, Goran Banjac, Paul Goulart, Alberto Bemporad, and Stephen Boyd. 2020. "OSQP: An Operator Splitting Solver for Quadratic Programs." *Mathematical Programming Computation* 12 (4): 637–672. https://doi.org/10.1007/s12532-020-00179-2
 
-[^15]: Wang, Li, Magnus Egerstedt, and Aaron D. Ames. 2017. "Safety Barrier Certificates for Collision-Free Multirobot Systems." *IEEE Transactions on Robotics* 33 (3): 661–74. https://doi.org/10.1109/TRO.2017.2659727  
+[^15]: Wang, Li, Magnus Egerstedt, and Aaron D. Ames. 2017. "Safety Barrier Certificates for Collision-Free Multirobot Systems." *IEEE Transactions on Robotics* 33 (3): 661–74. https://doi.org/10.1109/TRO.2017.2659727
 
 [^16]: Gama, Fernando, Ekaterina Tolstaya, and Alejandro Ribeiro. 2021. "Graph Neural Networks for Decentralized Controllers." *ICASSP 2021 — 2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)*: 5260–5264. https://doi.org/10.1109/ICASSP39728.2021.9414563
 
@@ -758,9 +758,9 @@ For the WRF-SFIRE dataset:
 
 [^20]: Wang, Zhou, Alan C. Bovik, Hamid R. Sheikh, and Eero P. Simoncelli. 2004. "Image Quality Assessment: From Error Visibility to Structural Similarity." *IEEE Transactions on Image Processing* 13 (4): 600–612. https://doi.org/10.1109/TIP.2003.819861
 
-[^21]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002  
+[^21]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
 
-[^22]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2  
+[^22]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
 
 [^23]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
 
@@ -772,7 +772,7 @@ For the WRF-SFIRE dataset:
 
 [^27]: Clarke, Roger. 2019. "Principles and Business Processes for Responsible AI." *Computer Law & Security Review* 35 (4): 410–422. https://doi.org/10.1016/j.clsr.2019.04.007
 
-[^28]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880  
+[^28]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
 
 [^29]: Fraccaro, Marco, Søren Kaae Sønderby, Ulrich Paquet, and Ole Winther. 2016. "Sequential Neural Models with Stochastic Layers." *Advances in Neural Information Processing Systems* 29: 2199–2207. https://doi.org/10.48550/arXiv.1605.07571
 

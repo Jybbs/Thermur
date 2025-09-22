@@ -27,13 +27,13 @@ if TYPE_CHECKING:
 class DemonstrationsDataset(InMemoryDataset):
     """
     PyG InMemoryDataset for expert demonstrations.
-    
+
     Generates demonstrations on first access and caches them. Automatically
     regenerates when configuration changes via hash-based filename.
 
     Registers PyG Data class as safe for PyTorch 2.6+ compatibility.
     """
-    
+
     def __init__(
         self,
         controller         : DictConfig,
@@ -47,7 +47,7 @@ class DemonstrationsDataset(InMemoryDataset):
     ):
         """
         Initialize the demonstrations dataset.
-        
+
         Args:
             controller         : Controller configuration for cache invalidation
             environment        : Environment configuration for cache invalidation
@@ -68,15 +68,15 @@ class DemonstrationsDataset(InMemoryDataset):
         self.total_frames       = total_frames
         self.ui                 = ui
         th.serialization.add_safe_globals([Data])
-        
+
         super().__init__("data")
         self.load(self.processed_paths[0])
         self._make_picklable()
-    
+
     def _compute_hash(self):
         """
         Generate deterministic hash of configuration parameters.
-        
+
         Converts DictConfigs to primitive containers with resolved values,
         adds WRF file checksums, then uses JSON serialization with sorted
         keys to ensure deterministic output before hashing.
@@ -87,7 +87,7 @@ class DemonstrationsDataset(InMemoryDataset):
                 "controller"  : to_container(self.controller),
                 "environment" : to_container(self.environment),
                 "checksums"   : {
-                    f"wrf_{i}": 
+                    f"wrf_{i}":
                     file_digest(open(path, 'rb'), 'sha256').hexdigest()[:8]
                     for i, path in enumerate(self.raw_paths)
                 }
@@ -95,18 +95,18 @@ class DemonstrationsDataset(InMemoryDataset):
             default   = lambda o: o.model_dump(),
             sort_keys = True
         ).encode()).hexdigest()[:16]
-    
+
     @staticmethod
     def _find_netcdf_files() -> list[str]:
         """
         Find NetCDF files by checking magic numbers.
-        
+
         NetCDF files start with 'CDF' or '\x89HDF' magic bytes.
         """
         raw_dir = Path("data/raw")
         if not raw_dir.exists():
             return []
-        
+
         def is_netcdf(path):
             """
             Check if file has NetCDF magic bytes.
@@ -117,30 +117,30 @@ class DemonstrationsDataset(InMemoryDataset):
                     return magic[:3] == b'CDF' or magic == b'\x89HDF'
             except Exception:
                 return False
-        
+
         return [
             file.relative_to(raw_dir).as_posix()
             for file in raw_dir.rglob("*")
             if file.is_file() and is_netcdf(file)
         ]
-    
+
     def _make_picklable(self):
         """
         Remove unpicklable attributes after successful data load.
-        
+
         Removes known unpicklable types by checking class names.
         This ensures the dataset can be used with multiprocessing after
         cache loading, while preserving all picklable configuration.
         """
         [
             delattr(self, attr) for attr in list(self.__dict__)
-            if type(getattr(self, attr)).__name__ in 
+            if type(getattr(self, attr)).__name__ in
             {
-                'DictConfig', 
+                'DictConfig',
                 'MurmurationController', 'ThermurUI', 'TrajectoryGenerator'
             }
         ]
-    
+
     @classmethod
     def as_lightning_datamodule(
         cls,
@@ -158,7 +158,7 @@ class DemonstrationsDataset(InMemoryDataset):
         train/val splitting, first-time generation detection, and configuration-based
         cache invalidation. The resulting LightningDataset handles all batching,
         shuffling, and multi-GPU distribution automatically.
-        
+
         Args:
             batch_size  : Number of graph snapshots per training batch
             controller  : Controller configuration
@@ -168,10 +168,10 @@ class DemonstrationsDataset(InMemoryDataset):
             murmuration : Expert controller for trajectory generation
             train_split : Fraction of data reserved for training
             ui          : CLI UI instance for progress display
-        
+
         Returns:
             LightningDataset configured with train/val splits
-        """        
+        """
         dataset = cls(
             controller         = controller,
             environment        = environment,
@@ -182,10 +182,10 @@ class DemonstrationsDataset(InMemoryDataset):
             total_frames       = controller.mmm.total_frames,
             ui                 = ui
         )
-        
+
         train_size = int(len(dataset) * train_split)
         indices    = th.randperm(len(dataset))
-        
+
         return LightningDataset(
             batch_size    = batch_size,
             num_workers   = hardware.num_workers,
@@ -193,72 +193,72 @@ class DemonstrationsDataset(InMemoryDataset):
             train_dataset = dataset.index_select(indices[:train_size]),
             val_dataset   = dataset.index_select(indices[train_size:]),
         )
-    
+
     def download(self):
         """
         Auto-download sample dataset if no NetCDF files found.
-        
+
         Called by PyG when files in raw_file_names don't exist.
         """
         self.ui.print_message(
             "No WRF data found. Downloading sample dataset...", "info"
         )
-        
+
         (sample_tar := Path(self.raw_dir) / "samples.tar.gz").parent.mkdir(
-            exist_ok = True, 
+            exist_ok = True,
             parents  = True
         )
-        
+
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
                 description = "Downloading sample WRF data",
                 total       = 100
             )
-            
+
             reporthook = lambda block_num, block_size, total_size: progress.update(
                 completed = min(100 * block_num * block_size / total_size, 100),
-                task_id   = task 
+                task_id   = task
             )
-            
+
             try:
                 urlretrieve(
-                    filename   = sample_tar, 
+                    filename   = sample_tar,
                     reporthook = reporthook,
                     url        = self.sample_url
                 )
-                
+
                 progress.update(task, description="Extracting sample data...")
                 extract_tar(str(sample_tar), self.raw_dir)
-                
+
                 sample_tar.unlink()
                 progress.update(
-                    completed   = 100, 
+                    completed   = 100,
                     description = "Sample dataset ready!",
                     task_id     = task)
-                
+
             except Exception as e:
                 raise FileNotFoundError(
                     f"Failed to download sample dataset: {e}\n"
                     f"Please manually download WRF data to data/raw/"
                 ) from e
 
-    
+
     def process(self):
         """
         Generate demonstrations and save to cache.
-        
+
         Called automatically by PyG when processed file doesn't exist.
         Generates expert trajectories across WRF scenarios until
         total_frames reached.
         """
         self.generator.wrf.load_datasets(self.raw_paths)
-        
+
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
-                description = "Generating expert demonstrations", 
+                description = "Generating expert demonstrations",
                 total       = self.total_frames
             )
-            
+
             data_list = []
             for _ in range(self.total_frames // self.frames_per_episode):
                 data_list.extend(
@@ -268,10 +268,10 @@ class DemonstrationsDataset(InMemoryDataset):
                     )
                 )
                 progress.update(task, advance=self.frames_per_episode)
-        
+
         self.ui.print_message("Saving demonstrations to cache...", "info")
         self.save(data_list, self.processed_paths[0])
-    
+
     @property
     def processed_file_names(self):
         """
@@ -279,12 +279,12 @@ class DemonstrationsDataset(InMemoryDataset):
         """
         self._compute_hash()
         return [f"{self.hash}/data.pt"]
-    
+
     @property
     def raw_file_names(self):
         """
         Return list of NetCDF files found in raw directory.
-        
+
         PyG checks if these exist before calling download().
         """
         return self._find_netcdf_files() or ["samples/wrf_sample.nc"]

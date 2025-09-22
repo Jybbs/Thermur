@@ -1,12 +1,12 @@
 """
 Unified metrics for imitation learning training and evaluation.
 
-This module provides TorchMetrics-based metrics that work with PyTorch 
-Geometric's batch format where features are flattened as [B*N, F] tensors 
+This module provides TorchMetrics-based metrics that work with PyTorch
+Geometric's batch format where features are flattened as [B*N, F] tensors
 (B=num_graphs, N=agents, F=features). The BaseMetric base class extends
 MeanMetric to provide automatic averaging and PyG batch utilities.
 
-All metrics integrate with PyTorch Lightning's logging system and can be 
+All metrics integrate with PyTorch Lightning's logging system and can be
 used directly in LightningModules without a separate collector.
 """
 from __future__            import annotations
@@ -28,21 +28,21 @@ import torch as th
 class BaseMetric(MeanMetric):
     """
     Base class extending MeanMetric with PyG batch support.
-    
+
     Provides automatic averaging from MeanMetric and PyG batch reshaping helpers.
     Metrics needing state history should use add_state() themselves.
-    
+
     Implementation patterns for metric subclasses:
-    
+
     1. Simple metrics (default): Override evaluate() returning Tensor
        - Always computes a meaningful value from batch
        - BaseMetric.update() calls evaluate() and passes result to MeanMetric
        - Examples: FiedlerValueMetric, SusceptibilityMetric
-    
+
     2. Conditional metrics with zero defaults: Override evaluate() returning Tensor
        - Returns 0 when conditions not met (0 is semantically meaningful)
        - Example: PerturbationResponseMetric (0 = no propagation)
-    
+
     3. Conditional metrics without meaningful defaults: Override update() directly
        - Skip super().update() when computation impossible or invalid
        - Example: ScaleFreeCorrelationMetric (no value when fitting fails)
@@ -73,37 +73,37 @@ class BaseMetric(MeanMetric):
         )
 
     def _reshape_features(
-        self, 
+        self,
         batch     : FlockBatch,
         *features : str
     ) -> tuple[Tensor, ...]:
         """
         Reshape flattened PyG features to [B, N, F] format with intelligent caching.
-        
+
         Transforms PyTorch Geometric's flattened tensor format [B*N, F] into the more
         intuitive [B, N, F] shape for batch processing. Features are cached per batch
         to eliminate redundant computations across metrics.
-        
+
         Computed features (lazily evaluated and cached):
         - 'distances' : Pairwise Euclidean distances via cdist      [B, N, N]
         - 'spin_mean' : Mean of normalized velocities across agents [B, 1, 3]
         - 'spins'     : Unit-normalized velocity vectors            [B, N, 3]
         - 'spins_2d'  : Unit-normalized 2D velocity projections     [B, N, 2]
-        
+
         The cache uses batch object IDs as keys, ensuring automatic invalidation when
         processing new batches. The cache is cleared after each training step via
         BaseMetric.clear_cache() to prevent memory growth.
-        
+
         Args:
             batch    : PyG Batch containing flattened features
             features : Variable feature names to retrieve (order preserved)
-            
+
         Returns:
             Tuple of reshaped tensors in requested order, excluding None values
         """
         batch_id  = id(batch)
         B, N      = batch.num_graphs, self.agent_count
-        cache     = BaseMetric._reshape_cache 
+        cache     = BaseMetric._reshape_cache
         normalize = lambda vecs: th.nn.functional.normalize(vecs, dim=-1)
         reshape   = lambda feat: self._reshape_features(batch, feat)[0]
         spin      = lambda s=slice(None): normalize(reshape('velocity')[..., s])
@@ -113,23 +113,23 @@ class BaseMetric(MeanMetric):
             'spins'      : spin,
             'spins_2d'   : lambda: spin(slice(2)),
         }
-        
+
         get_or_compute = lambda feat: (
             cache[(batch_id, feat)] if (batch_id, feat) in cache
-            else 
+            else
                 (v := (
                     computed[feat]()                if feat in computed
-                    else batch[feat].view(B, N, -1) if feat in batch 
+                    else batch[feat].view(B, N, -1) if feat in batch
                     else None
-                ), 
+                ),
                 cache.update({(batch_id, feat): v}), v)[2]
         )
-        
+
         return tuple(
-            v for feat in features 
+            v for feat in features
             if (v := get_or_compute(feat)) is not None
         )
-    
+
     @classmethod
     def clear_cache(cls):
         """
@@ -144,25 +144,25 @@ class BaseMetric(MeanMetric):
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute metric value from batch.
-        
+
         Subclasses implement this to calculate their specific metric.
-        
+
         Args:
             batch: PyG Batch containing all required data
-            
+
         Returns:
             Computed metric value as a scalar tensor
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement evaluate()"
         )
-    
+
     def update(self, batch: FlockBatch, predictions: Tensor):
         """
         Handle MetricCollection's call signature.
-        
+
         Computes metric value via evaluate() and passes to MeanMetric.
-        
+
         Args:
             batch       : PyG Batch containing all required data
             predictions : Predicted actions (unused for most metrics)
@@ -174,22 +174,22 @@ class BaseMetric(MeanMetric):
 class Acceleration(BaseMetric):
     """
     Track average acceleration magnitude across the flock.
-    
+
     Monitors |𝐚|_avg to quantify control effort and energy expenditure during
     flight maneuvers. Natural flocking exhibits acceleration in the range of
     5-15 m/s², with higher values during evasive maneuvers or rapid turns.
-    
+
     Tracking this metric ensures the learned policy generates physically
     plausible control forces consistent with bird flight dynamics.
     """
-    
+
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute mean acceleration magnitude.
-        
+
         Args:
             batch: PyG Batch containing action tensor [B*N, 3]
-            
+
         Returns:
             Mean acceleration magnitude as scalar tensor
         """
@@ -250,9 +250,9 @@ class FiedlerValue(BaseMetric):
         return th.diag_embed(A.sign_().sum(dim=-1)) - A
 
     def _compute_fiedler(
-        self, 
-        alphas : Tensor, 
-        betas  : Tensor, 
+        self,
+        alphas : Tensor,
+        betas  : Tensor,
         k      : int
     ) -> Tensor:
         """
@@ -366,42 +366,42 @@ class HamiltonianEnergy(BaseMetric):
 
     Computes the interaction energy of the flock using physics-inspired
     spin glass formulation where agents are spins with pairwise coupling:
-    
+
         H = -Σᵢⱼ J_{ij}^{alert} (v̂ᵢ · v̂ⱼ)
-    
+
     where J_{ij}^{alert} = κᵢ J₀ exp(-dᵢⱼ/λ) with:
         - κᵢ = 1.0 for relaxed birds, α for alert birds
         - dᵢⱼ is topological distance from k-NN graph
         - λ is the coupling decay length
-    
+
     Energy minimization drives alignment (E < 0) while thermal fluctuations
     (alert states) increase disorder, creating rich phase transitions.
     """
     _hop_cache  = {}
     _triu_cache = {}
-    
+
     def _compute_hops_per_graph(self, batch: FlockBatch) -> Tensor:
         """
         Compute minimum hop counts using vectorized Floyd-Warshall.
-        
+
         Optimized implementation that processes all graphs in the batch
         simultaneously, eliminating the sequential bottleneck. The k-loop
         now operates on all B graphs at once via broadcasting.
-        
+
         Key optimizations:
             - Vectorized across batch dimension (B×N³ → N³ operations)
             - Single memory allocation with optimal layout
             - Exploits GPU parallelism for via-k path computations
-        
+
         Args:
             batch: PyG Batch with edge_index and batch assignment
-            
+
         Returns:
             Hop distance matrices [B, N, N] computed in parallel
         """
         B, N   = batch.num_graphs, self.agent_count
         device = batch.edge_index.device
-        
+
         hops = th.full(
             device     = device,
             dtype      = th.float32,
@@ -409,23 +409,23 @@ class HamiltonianEnergy(BaseMetric):
             size       = (B, N, N)
         )
         hops.diagonal(dim1=1, dim2=2).fill_(0)
-        
+
         batch_ids    = batch.batch[batch.edge_index[0]]
         local_source = batch.edge_index[0] - batch_ids * N
         local_target = batch.edge_index[1] - batch_ids * N
-        
+
         hops[batch_ids, local_source, local_target] = 1
         hops[batch_ids, local_target, local_source] = 1
-        
+
         for k in range(N):
             hops = th.minimum(hops, hops[:, :, k:k+1] + hops[:, k:k+1, :])
-        
+
         return hops
-    
+
     def _get_triu_mask(self, device: th.device) -> Tensor:
         """
         Get cached upper triangular mask for symmetric matrix operations.
-        
+
         Caches mask per device to avoid redundant allocations during energy
         computations. The mask ensures each interaction pair counted once.
         """
@@ -440,14 +440,14 @@ class HamiltonianEnergy(BaseMetric):
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute Hamiltonian energy using topological interactions.
-        
+
         Computes spin-spin interactions based on hop distances in each graph's
         unique k-NN topology, following Ballerini et al. (2008) findings that
         starling flocks use topological rather than metric interactions.
 
         Args:
             batch: PyG Batch with edge_index and velocity tensors
-            
+
         Returns:
             Hamiltonian energy values as tensor
         """
@@ -458,7 +458,7 @@ class HamiltonianEnergy(BaseMetric):
             self.j_base * (-hops / self.coupling_decay).exp(),
             th.zeros_like(hops)
         )
-        
+
         alert_mod = th.where(
             batch.alert_states.view(-1, self.agent_count, 1) > 0.5,
             self.alert_coupling_factor,
@@ -531,29 +531,29 @@ class MAE(MeanMetric):
 class NeighborStability(BaseMetric):
     """
     Quantify topological stability of the communication graph.
-    
+
     Measures the Jaccard distance between consecutive graph snapshots to
     track neighborhood relationship changes over time. The metric computes:
-    
+
         Δ_topo = 1 - J(E_t, E_{t-1}) = |E_t ∆ E_{t-1}| / |E_t ∪ E_{t-1}|
-    
+
     where E_t is the edge set at time t and ∆ denotes symmetric difference.
-    
+
     Lower values (Δ_topo → 0) indicate stable flocking structure with
     persistent neighborhoods, while higher values (Δ_topo → 1) suggest
     rapid reconfiguration typical of threat evasion or murmuration waves.
-    
+
     Expected ranges:
         - Cruising flight  : Δ_topo ∈ [0.0, 0.1]
         - Turning maneuver : Δ_topo ∈ [0.1, 0.3]
         - Threat response  : Δ_topo ∈ [0.3, 0.6]
         - Murmuration      : Δ_topo ∈ [0.4, 0.8]
     """
-    
+
     def __init__(self, **kwargs):
         """
         Initialize neighbor stability metric.
-        
+
         Tracks edge set evolution via symmetric adjacency matrices to quantify
         topological changes in the flocking graph over time.
         """
@@ -562,34 +562,34 @@ class NeighborStability(BaseMetric):
             default = th.zeros(self.agent_count, self.agent_count, dtype=th.bool),
             name    = "last_adjacency"
         )
-    
+
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Measure topological stability via edge set evolution.
-        
+
         Tracks how rapidly neighborhoods reconfigure, distinguishing stable
         cruising (persistent edges) from dynamic maneuvers (edge churn).
         The Jaccard distance quantifies this topological change:
-            
+
             Δ_topo = 1 - |E_t ∩ E_{t-1}| / |E_t ∪ E_{t-1}|
-        
+
         where:
             - E_t : Edge set at time t (undirected)
             - |·| : Cardinality of edge set
             - Δ_topo ∈ [0, 1] : 0 = identical topology, 1 = disjoint
-        
+
         Args:
             batch: PyG Batch containing edge_index [2, E] in COO format
-            
+
         Returns:
             Jaccard distance as scalar tensor
         """
         adjacency = th.zeros(
-            self.agent_count * self.agent_count, 
-            device = batch.edge_index.device, 
+            self.agent_count * self.agent_count,
+            device = batch.edge_index.device,
             dtype  = th.bool
         )
-        
+
         flat_indices = th.cat([
             batch.edge_index[0] * self.agent_count + batch.edge_index[1],
             batch.edge_index[1] * self.agent_count + batch.edge_index[0]
@@ -599,10 +599,10 @@ class NeighborStability(BaseMetric):
         triu_idx  = th.triu_indices(
             col    = self.agent_count,
             device = batch.edge_index.device,
-            offset = 1, 
+            offset = 1,
             row    = self.agent_count
         )
-        
+
         current_edges       = adjacency[triu_idx[0], triu_idx[1]]
         last_edges          = self.last_adjacency[triu_idx[0], triu_idx[1]]
         self.last_adjacency = adjacency
@@ -610,7 +610,7 @@ class NeighborStability(BaseMetric):
         union               = (current_edges | last_edges).sum()
 
         return (
-            1.0 - intersection.float() / union.float() 
+            1.0 - intersection.float() / union.float()
             if union > 0 else th.tensor(0.0, device=batch.edge_index.device)
         )
 
@@ -618,20 +618,20 @@ class NeighborStability(BaseMetric):
 class OrientationCoherence(BaseMetric):
     """
     Quantify directional alignment coherence via order parameter Φ.
-    
+
     Computes the polarization order parameter measuring collective alignment
     of velocity vectors in the horizontal plane:
-    
+
         Φ = |⟨ŝᵢ⟩| = |Σᵢ v̂ᵢ| / N
-    
+
     where v̂ᵢ = vᵢ/|vᵢ| are normalized 2D velocity projections. This metric
     captures the phase transition between disordered (Φ ≈ 0) and ordered
     (Φ ≈ 1) collective motion states.
-    
+
     For pairwise coherence, we compute:
-    
+
         C = ⟨v̂ᵢ · v̂ⱼ⟩_{i≠j} = (Σᵢⱼ cos θᵢⱼ) / (N(N-1))
-    
+
     Expected values:
         - Random flight     : Φ ∈ [0.0, 0.2], C ≈ 0
         - Loose aggregation : Φ ∈ [0.2, 0.5], C ∈ [0.1, 0.3]
@@ -642,13 +642,13 @@ class OrientationCoherence(BaseMetric):
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute polarization measurement.
-        
+
         Uses batched matrix multiplication for efficient computation on
         MPS/GPU, avoiding explicit loops over agent pairs.
-        
+
         Args:
             batch: PyG Batch containing velocity [B*N, 3] flattened
-            
+
         Returns:
             Coherence values as tensor
         """
@@ -656,7 +656,7 @@ class OrientationCoherence(BaseMetric):
         alignment = th.bmm(headings, headings.mT)
 
         return (
-            (alignment.sum(dim=(1, 2)) - batch.num_graphs * self.agent_count) / 
+            (alignment.sum(dim=(1, 2)) - batch.num_graphs * self.agent_count) /
             (self.agent_count * (self.agent_count - 1))
         )
 
@@ -664,19 +664,19 @@ class OrientationCoherence(BaseMetric):
 class OrientationWave(BaseMetric):
     """
     Detect traveling waves in the orientation field ∇θ(𝐫, t).
-    
+
     Identifies density waves characteristic of murmurations by computing
     spatial gradients of heading angles. The metric measures:
-    
+
         W = ⟨|∇θᵢ|⟩ = ⟨|dθ/dr|⟩_local
-    
+
     where θᵢ = atan2(vᵧ, vₓ) is the heading angle and gradients are
     computed over local neighborhoods within radius R_wave.
-    
+
     Traveling waves manifest as coherent rotation patterns propagating
     through the flock with characteristic wavelength λ ≈ 7-10 body lengths
     and phase velocity c ≈ 0.3-0.5 v_flock (Attanasi et al. 2014).
-    
+
     Expected values:
         - Straight flight  : W ∈ [0.00, 0.05] rad/m
         - Collective turn  : W ∈ [0.05, 0.15] rad/m
@@ -687,24 +687,24 @@ class OrientationWave(BaseMetric):
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute wave amplitude measurement.
-        
+
         Uses vectorized distance computations and masked operations for
         efficient gradient calculation on MPS/GPU.
-        
+
         Args:
             batch: PyG Batch with position and velocity [B*N, 3] flattened
-            
+
         Returns:
             Wave amplitude as scalar tensor
         """
         velocities, distances = self._reshape_features(batch, "velocity", "distances")
         headings  = th.atan2(velocities[..., 1], velocities[..., 0])
         mask      = (distances > 0) & (distances < self.orientation_wave_radius)
-        
+
         heading_diffs = (
             lambda h: th.remainder(h + th.pi, 2 * th.pi) - th.pi
         )(headings.unsqueeze(-1) - headings.unsqueeze(-2))
-        
+
         gradients = (
             heading_diffs.abs() / distances.clamp_min(self.epsilon)
         ).masked_fill(~mask, 0)
@@ -715,18 +715,18 @@ class OrientationWave(BaseMetric):
 class PerturbationResponse(BaseMetric):
     """
     Quantify collective response to thermal perturbations χ_thermal.
-    
+
     Measures information propagation efficiency by tracking velocity response
     amplification from threatened to safe agents:
-    
+
         χ_thermal = ⟨|Δ𝐯_safe|⟩ / ⟨|Δ𝐯_threat|⟩
-    
+
     where Δ𝐯 = 𝐯(t) - 𝐯(t-Δt) represents velocity changes between timesteps.
-    
+
     This susceptibility metric quantifies the flock's ability to amplify and
     propagate threat information through the interaction network, critical
     for collective evasion maneuvers.
-    
+
     Expected response ratios:
         - No propagation       : χ ∈ [0.0, 0.1]
         - Weak coupling        : χ ∈ [0.1, 0.3]
@@ -737,7 +737,7 @@ class PerturbationResponse(BaseMetric):
     def __init__(self, **kwargs):
         """
         Initialize perturbation response metric.
-        
+
         Stores last velocity for computing response ratios.
         """
         super().__init__(**kwargs)
@@ -747,33 +747,33 @@ class PerturbationResponse(BaseMetric):
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute threat response measurement.
-        
+
         Measures information propagation efficiency by tracking velocity response
         amplification from threatened to safe agents. Returns 0 when no propagation.
-        
+
         Args:
             batch: PyG Batch with velocity [B*N, 3] and temperature [B*N, 1]
-            
+
         Returns:
             Response ratio as scalar tensor, 0 if no threat propagation
         """
         response_ratio = th.tensor(0.0, device=batch.velocity.device)
-        
+
         if (
-            self.last_velocity is not None 
-            and batch.velocity.shape == self.last_velocity.shape 
+            self.last_velocity is not None
+            and batch.velocity.shape == self.last_velocity.shape
             and (mask := batch.temperature.squeeze(-1) > self.max_temperature).any()
             and (~mask).any()
         ):
             vel_changes     = (batch.velocity - self.last_velocity).norm(dim=-1)
             threat_response = vel_changes[mask].mean().unsqueeze(0)
-            
+
             if (threat_response > self.epsilon).any():
                 response_ratio = (
-                    vel_changes[~mask].mean().unsqueeze(0) / 
+                    vel_changes[~mask].mean().unsqueeze(0) /
                     threat_response
                 )
-        
+
         self.last_velocity = batch.velocity.detach().clone()
         return response_ratio
 
@@ -896,7 +896,7 @@ class RMSE(MeanMetric):
 class ScaleFreeCorrelation(BaseMetric):
     """
     Measure deviation from scale-free velocity correlations.
-    
+
     Verifies that the flock exhibits power-law velocity correlations
     characteristic of critical systems. The correlation function C(r)
     should follow:
@@ -914,16 +914,16 @@ class ScaleFreeCorrelation(BaseMetric):
     ) -> tuple[Tensor, Tensor]:
         """
         Bin correlations by distance using logarithmic spacing.
-        
+
         Creates logarithmically-spaced bins to capture scale-free behavior
         across multiple length scales. Uses fully vectorized binning to
         process all batches simultaneously.
-        
+
         Args:
             correlations : Velocity correlations [B_valid, n_pairs]
             distances    : Pairwise distances [B_valid, n_pairs]
             n_bins       : Number of logarithmic bins
-            
+
         Returns:
             Tuple of (bin_means, valid_bins) for power law fitting
         """
@@ -931,15 +931,15 @@ class ScaleFreeCorrelation(BaseMetric):
         device    = distances.device
         dist_mins = distances.amin(1, keepdim=True)
         dist_maxs = distances.amax(1, keepdim=True)
-        
+
         normalized_bins = (
-            (distances.log10() - dist_mins.log10()) / 
+            (distances.log10() - dist_mins.log10()) /
             (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
         ).long().clamp(0, n_bins - 1)
-        
+
         batch_offsets = th.arange(batch, device=device).unsqueeze(1) * n_bins
         bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
-        
+
         bin_sums = th.zeros(batch * n_bins, 2, device=device).index_add_(
             dim    = 0,
             index  = bins_flat,
@@ -948,12 +948,12 @@ class ScaleFreeCorrelation(BaseMetric):
                 tensors = [correlations.reshape(-1), distances.reshape(-1)]
             )
         ).view(batch, n_bins, 2)
-        
+
         counts = th.bincount(
-            input     = bins_flat, 
+            input     = bins_flat,
             minlength = batch * n_bins
         ).view(batch, n_bins)
-        
+
         return (
             th.where(
                 (valid_bins := counts > 0).unsqueeze(-1),
@@ -970,15 +970,15 @@ class ScaleFreeCorrelation(BaseMetric):
     ) -> tuple[Tensor, Tensor]:
         """
         Compute velocity correlations for all agent pairs.
-        
+
         Calculates C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ where δ𝐯 = 𝐯 - ⟨𝐯⟩ are
         velocity fluctuations from the mean. Returns upper triangular
         elements only to avoid redundant pair computations.
-        
+
         Args:
             distances : Pairwise distances    [B, N, N]
             spins     : Normalized velocities [B, N, 3]
-            
+
         Returns:
             Tuple of (unique_correlations, unique_distances) [B, N*(N-1)/2]
         """
@@ -987,9 +987,9 @@ class ScaleFreeCorrelation(BaseMetric):
             delta_spins := spins - spins.mean(dim=1, keepdim=True),
             delta_spins.mT
         )
-        
+
         return (
-            corr_mats[:, triu_idx[0], triu_idx[1]], 
+            corr_mats[:, triu_idx[0], triu_idx[1]],
             distances[:, triu_idx[0], triu_idx[1]]
         )
 
@@ -1000,15 +1000,15 @@ class ScaleFreeCorrelation(BaseMetric):
     ) -> Tensor:
         """
         Fit power law exponents to binned correlation data.
-        
+
         Performs log-log linear regression to estimate γ in C(r) ~ r^(-γ)
         for all valid batches simultaneously. Uses masked operations to
         handle variable numbers of valid bins per batch.
-        
+
         Args:
             bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
             valid_bins : Mask of bins with sufficient data [B, n_bins]
-            
+
         Returns:
             Power law exponents γ for batches with ≥3 valid bins
         """
@@ -1016,24 +1016,24 @@ class ScaleFreeCorrelation(BaseMetric):
         log_corrs = bin_means[..., 0].abs().clamp_min(1e-8).log()
         log_r     = log_dists.masked_fill(~valid_bins, 0)
         log_c     = log_corrs.masked_fill(~valid_bins, 0)
-        
+
         if not (mask := valid_bins.sum(1) >= 3).any():
             return th.empty(0, device=bin_means.device)
-        
+
         X  = log_r[mask] - log_r[mask].mean(1, keepdim=True)
         Y  = log_c[mask] - log_c[mask].mean(1, keepdim=True)
         XX = (X * X * valid_bins[mask]).sum(1)
         XY = (X * Y * valid_bins[mask]).sum(1)
-        
+
         return th.where(XX > 0, -XY / XX, th.zeros_like(XX))
 
     def update(self, batch: FlockBatch, predictions: Tensor):
         """
         Update metric with scale-free correlation measurement.
-        
+
         Override update directly since this metric conditionally computes values
         only when there's sufficient distance variation for power law fitting.
-        
+
         Args:
             batch       : PyG Batch containing position and velocity
             predictions : Predicted actions (unused)
@@ -1041,14 +1041,14 @@ class ScaleFreeCorrelation(BaseMetric):
         corrs, dists = self._compute_correlations(
             *self._reshape_features(batch, "distances", "spins")
         )
-        
+
         if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
             return
-        
+
         if (gammas := self._fit_power_laws(
             *self._bin_correlations(
-                correlations = corrs[valid_ids := th.where(valid_batch)[0]], 
-                distances    = dists[valid_ids], 
+                correlations = corrs[valid_ids := th.where(valid_batch)[0]],
+                distances    = dists[valid_ids],
                 n_bins       = min(10, max(3, corrs.shape[1] // 10))
             )
         )).numel() > 0:
@@ -1059,25 +1059,25 @@ class ScaleFreeCorrelation(BaseMetric):
 class Susceptibility(BaseMetric):
     """
     Measures flock susceptibility to directional perturbations.
-    
+
     Computes the normalized variance of the order parameter as a proxy for
     susceptibility to external stimuli. Following Bialek et al. (2012), the
     susceptibility quantifies collective response:
-    
+
         χ = N · Var[Φ]
-    
+
     where the order parameter Φ measures global alignment:
-    
+
         Φ = |Σᵢ 𝐬ᵢ| / N
-    
+
     with 𝐬ᵢ = 𝐯ᵢ/|𝐯ᵢ| being the normalized velocity (spin) of agent i.
-    
+
     Natural murmurations maintain χ > 5, indicating proximity to a critical
     phase transition that maximizes:
         - Dynamic range        (response to weak and strong signals)
         - Information capacity (bandwidth for signal propagation)
         - Correlation length   (scale-free spatial correlations)
-    
+
     Lower susceptibility (χ < 5) indicates an ordered state with reduced
     responsiveness, while very high susceptibility (χ > 20) suggests
     instability. The critical regime χ ∈ [5, 15] balances individual
@@ -1087,10 +1087,10 @@ class Susceptibility(BaseMetric):
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute susceptibility from velocity fluctuations.
-        
+
         Args:
             batch: PyG Batch containing velocity tensor [B*N, 3] flattened
-            
+
         Returns:
             Susceptibility values as tensor
         """
@@ -1103,24 +1103,24 @@ class Susceptibility(BaseMetric):
 class Temperature(BaseMetric):
     """
     Track average temperature sensed across the flock.
-    
+
     Monitors mean temperature θ_avg to assess thermal threat exposure and
     safety constraint satisfaction. Temperature serves as the primary signal
     for environmental hazards in the murmuration model, with agents detecting
     and propagating threat information through the flock.
-    
+
     This metric verifies that the learned policy maintains appropriate thermal
     awareness and triggers collective evasion when temperature thresholds are
     exceeded.
     """
-    
+
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute mean temperature.
-        
+
         Args:
             batch: PyG Batch containing temperature tensor [B*N, 1]
-            
+
         Returns:
             Mean temperature as scalar tensor
         """
@@ -1130,24 +1130,24 @@ class Temperature(BaseMetric):
 class Velocity(BaseMetric):
     """
     Track average velocity magnitude across the flock.
-    
+
     Monitors |𝐯|_avg to ensure realistic flight speeds are maintained during
     collective motion. Empirical observations from Cavagna et al. (2010) show
     starlings cruise at approximately 15 m/s, with speeds ranging from 10-20 m/s
     depending on conditions.
-    
+
     This metric validates that the learned policy preserves the characteristic
     speed regulation of self-propelled particles in active matter systems,
     where agents maintain preferred speeds despite interactions and perturbations.
     """
-    
+
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
         Compute mean velocity magnitude.
-        
+
         Args:
             batch: PyG Batch containing velocity tensor [B*N, 3]
-            
+
         Returns:
             Mean velocity magnitude as scalar tensor
         """
@@ -1157,12 +1157,12 @@ class Velocity(BaseMetric):
 class MetricsFactory:
     """
     Factory for creating training and validation metric collections.
-    
+
     Centralizes metric instantiation with proper configuration from domain
     models. Creates both training and validation metrics with appropriate
     prefixes for PyTorch Lightning integration.
     """
-    
+
     def __init__(
         self,
         agent_count : int,
@@ -1173,7 +1173,7 @@ class MetricsFactory:
     ):
         """
         Initialize factory with configuration models.
-        
+
         Args:
             agent_count : Number of agents in the flock
             environment : Environment configuration for physics parameters
@@ -1193,16 +1193,16 @@ class MetricsFactory:
             "orientation_wave_radius" : metrics.orientation_wave_radius,
             "velocity_threshold"      : metrics.velocity_threshold,
         }
-    
+
     def create_training_metrics(self) -> MetricCollection:
         """
         Create complete training metric collection.
-        
+
         Returns:
             MetricCollection with all configured metrics for training
         """
         make = lambda cls: cls(**self.cfg)
-        
+
         return MetricCollection(
             metrics = {
                 "acceleration"           : make(Acceleration),
@@ -1222,11 +1222,11 @@ class MetricsFactory:
             },
             prefix = "training/"
         )
-    
+
     def create_validation_metrics(self) -> MetricCollection:
         """
         Clone training metrics with validation prefix.
-        
+
         Returns:
             MetricCollection with all configured metrics for validation
         """

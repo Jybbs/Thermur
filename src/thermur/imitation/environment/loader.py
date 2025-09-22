@@ -132,20 +132,20 @@ class WRFLoader:
     def _extract_dataset_metadata(self):
         """
         Extract metadata from the current dataset for coordinate transformations.
-        
+
         Sets up coordinate variables, time steps, and grid dimensions needed
         for field interpolation and temporal navigation.
         """
         self.coord_vars        = list(self.dataset.dims)
         self.num_time_steps    = self.dataset.sizes.get('Time', 1)
         self.wrf_time_interval = 300.0
-        
+
         self.grid_dims = {
             "west_east"   : self.dataset.sizes.get("west_east",   500),
             "south_north" : self.dataset.sizes.get("south_north", 250),
             "bottom_top"  : self.dataset.sizes.get("bottom_top",  50)
         }
-    
+
     def _handle_out_of_bounds(
         self,
         gradients    : Tensor,
@@ -183,31 +183,31 @@ class WRFLoader:
     def _get_time_indices(self) -> tuple[int, int, float]:
         """
         Map continuous time to discrete WRF snapshot indices.
-        
+
         Given simulation time t ∈ ℝ⁺, computes indices (i₀, i₁) and weight α
         for temporal interpolation between snapshots:
-        
+
             t_continuous = (t + t_offset) / Δt_wrf
             i₀ = ⌊t_continuous⌋ mod N
             i₁ = (i₀ + 1) mod N
             α = t_continuous - i₀
-        
+
         where N is the number of time steps and Δt_wrf is the WRF output interval.
-        
+
         Returns:
             Tuple (i₀, i₁, α) for linear time interpolation
         """
         continuous_idx = (
-            (self.current_time + self.episode_time_offset) / 
+            (self.current_time + self.episode_time_offset) /
             self.wrf_time_interval
         ) % self.num_time_steps
-        
+
         return (
             (lower := int(continuous_idx)),
             (lower + 1) % self.num_time_steps,
             continuous_idx - lower
         )
-    
+
     def _interpolate_field(
         self,
         coords        : Mapping[str, Tensor | NDArray[Any]],
@@ -238,22 +238,22 @@ class WRFLoader:
             kwargs = {"fill_value": 0.0},
             method = "linear"
         ).values.astype(float)
-        
+
         data = self.dataset[variable_name]
-        
+
         if "Time" not in data.dims:
             return interp(data)
-        
+
         if not self.interpolate_time or self.num_time_steps <= 1:
             return interp(data.isel(
                 Time = int(
-                    (self.current_time + self.episode_time_offset) / 
+                    (self.current_time + self.episode_time_offset) /
                     self.wrf_time_interval
                 ) % self.num_time_steps)
             )
-        
+
         lower_idx, upper_idx, weight = self._get_time_indices()
-        
+
         return (
             interp(data.isel(Time=lower_idx)) * (1 - weight) +
             interp(data.isel(Time=upper_idx)) * weight
@@ -265,9 +265,9 @@ class WRFLoader:
 
         Maps agent positions 𝐱 ∈ [𝐱_min, 𝐱_max]³ from the simulation's physical
         coordinate system to WRF grid indices 𝐢 ∈ [0, N-1]³ via linear interpolation:
-        
+
             𝐢 = (𝐱 - 𝐱_min) / (𝐱_max - 𝐱_min) · (N - 1)
-        
+
         where N represents the grid dimensions for each axis. This ensures agents
         operating within the physical workspace bounds are properly mapped to the
         WRF computational domain for field queries.
@@ -280,10 +280,10 @@ class WRFLoader:
         """
         device     = positions.device
         normalized = (
-            (positions - self.bounds_min.to(device)) / 
+            (positions - self.bounds_min.to(device)) /
             (self.bounds_max.to(device) - self.bounds_min.to(device))
         )
-        
+
         return {
             "west_east"   : normalized[:, 0] * (self.grid_dims["west_east"] - 1),
             "south_north" : normalized[:, 1] * (self.grid_dims["south_north"] - 1),
@@ -293,10 +293,10 @@ class WRFLoader:
     def load_datasets(self, file_paths: list[str]):
         """
         Load NetCDF datasets from PyG-provided paths.
-        
+
         Called by DemonstrationsDataset after PyG confirms data exists,
         either from disk or after automatic download.
-        
+
         Args:
             file_paths: Absolute paths to NetCDF files from PyG's raw_paths
         """
@@ -308,7 +308,7 @@ class WRFLoader:
             )
             for path in file_paths
         ]
-        
+
         if self.datasets:
             self.current_time = 0.0
             self.dataset      = self.datasets[0]
@@ -317,11 +317,11 @@ class WRFLoader:
     def query_fire_heat_flux(self, positions: Tensor) -> Tensor:
         """
         Query ground heat flux from fire.
-        
+
         TODO: Integrate fire heat flux into trajectory generation and training.
         This method extracts GRNHFX (ground heat flux from fire) from WRF-SFIRE
         simulations but is not yet integrated into the training pipeline.
-        
+
         Future integration possibilities:
         - Add to PyG Data objects in TrajectoryGenerator.reset() and step()
         - Use in MurmurationController for fire avoidance behaviors:
@@ -332,15 +332,15 @@ class WRFLoader:
           * Fire proximity barrier functions
           * Dynamic safety margins based on heat intensity
           * Escape velocity guarantees
-        
+
         This would enable agents to learn fire-aware (instead of just
         heat-aware) navigation strategies, which could better encapsulate
         how real flocks would avoid threatening smoke plumes and flare-like
         heat spikes.
-        
+
         Args:
             positions: Tensor [N, 3] of agent positions
-        
+
         Returns:
             Tensor [N, 1] of heat flux values in W/m²
         """
@@ -357,16 +357,16 @@ class WRFLoader:
         """
         Query temperature and its gradient at agent positions.
 
-        Samples the WRF temperature field and computes its gradient using finite 
+        Samples the WRF temperature field and computes its gradient using finite
         differences. WRF stores perturbation potential temperature θ' where:
-        
+
             T(𝐱) = θ'(𝐱) + T₀
-            
+
         with reference temperature T₀ = 300K. The gradient is computed as:
-        
+
             ∇T ≈ [∂T/∂x, ∂T/∂y, ∂T/∂z]
-        
-        Domain randomization adds Gaussian noise ε ~ N(0, σ_T²) to simulate 
+
+        Domain randomization adds Gaussian noise ε ~ N(0, σ_T²) to simulate
         sensor uncertainty and atmospheric turbulence.
 
         Args:
@@ -382,13 +382,13 @@ class WRFLoader:
             gradients = Tensor(
                 self._calculate_gradient(coords_dict, positions, "T"),
                 device = positions.device
-            ), 
+            ),
             temperatures = Tensor(
                 self._interpolate_field(coords_dict, "T").reshape(-1, 1),
                 device = positions.device
             ) + 300.0
         )
-        
+
         return (
             in_bounds[0],
             self._add_domain_noise(in_bounds[1], self.temperature_noise_std),
@@ -398,14 +398,14 @@ class WRFLoader:
         """
         Query wind velocity vectors at agent positions.
 
-        Samples the WRF wind field 𝐮(𝐱) = [U, V, W] from staggered grid 
-        components. On the Arakawa C-grid, velocity components are defined at 
+        Samples the WRF wind field 𝐮(𝐱) = [U, V, W] from staggered grid
+        components. On the Arakawa C-grid, velocity components are defined at
         cell faces:
-        
+
             U: west_east_stag   (x-wind component)
-            V: south_north_stag (y-wind component)  
+            V: south_north_stag (y-wind component)
             W: bottom_top_stag  (z-wind component)
-        
+
         Trilinear interpolation reconstructs velocities at arbitrary positions.
         Domain randomization adds noise ε ~ N(0, σ_w²) to simulate turbulence.
 
@@ -418,17 +418,17 @@ class WRFLoader:
         base_coords = self._transform_coordinates(positions)
         device      = positions.device
         n           = positions.shape[0]
-        
+
         # Map each wind component to its staggered grid (U→x, V→y, W→z)
         dims      = ["west_east", "south_north", "bottom_top"]
         staggered = {
             var: {
-                (dims[i] + "_stag" if i == idx else dims[i]): base_coords[dims[i]] 
+                (dims[i] + "_stag" if i == idx else dims[i]): base_coords[dims[i]]
                 for i in range(3)
             }
             for idx, var in enumerate(["U", "V", "W"])
         }
-        
+
         wind_values = th.stack([
             th.nan_to_num(
                 Tensor(
@@ -439,5 +439,5 @@ class WRFLoader:
             ) if var in self.dataset.data_vars else th.zeros(n, device=device)
             for var in ["U", "V", "W"]
         ], dim=1)
-        
+
         return self._add_domain_noise(wind_values, self.wind_noise_std)

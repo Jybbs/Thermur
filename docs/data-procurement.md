@@ -97,7 +97,7 @@ The systematic naming encodes the complete parameter space, allowing targeted se
 
 - **W (Wind)**: Initial wind speed from 3-12 m/s
   - W3-W5: Light conditions for basic training
-  - W6-W8: Moderate winds introducing complex plume dynamics  
+  - W6-W8: Moderate winds introducing complex plume dynamics
   - W9-W12: Extreme conditions for robustness testing
 
 - **F (Fuel)**: Anderson 13 fuel model categories
@@ -160,13 +160,13 @@ class DownloadModel(BaseModel):
         default     = "/path/to/dataset/",
         description = "Path to dataset within your endpoint"
     )
-    
+
     # Sample data configuration (if hosting your own):
     sample_data_url: str = Field(
         default     = "YOUR_HUGGINGFACE_URL",
         description = "Direct download URL for sample data (e.g., from Hugging Face)"
     )
-    
+
     # These typically remain the same:
     globus_client_id: str = Field(
         default     = "ac349f52-8197-4a41-8d6d-5ae1c879273f",
@@ -231,7 +231,7 @@ When using this dataset, please cite both the dataset and the methodology paper:
 
 @article{moisseeva2021acp,
   author    = {Moisseeva, Nadya and Stull, Roland},
-  title     = {Capturing plume rise and dispersion with a coupled 
+  title     = {Capturing plume rise and dispersion with a coupled
                large-eddy simulation: case study of a prescribed burn},
   journal   = {Atmospheric Chemistry and Physics},
   volume    = {21},

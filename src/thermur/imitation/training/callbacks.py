@@ -21,76 +21,76 @@ if TYPE_CHECKING:
 class CallbackFactory:
     """
     Factory for creating Lightning callbacks with Thermur styling.
-    
+
     Provides methods to instantiate customized callbacks that integrate
     with the Thermur UI design system for consistent visual output.
     """
-    
+
     @staticmethod
     def create_model_summary(display: DisplayModel) -> ThermurModelSummary:
         """
         Create a model summary with Thermur's table styling.
-        
+
         Uses the thermal color scheme and table formatting consistent
         with the rest of the CLI for the model architecture display.
-        
+
         Args:
             display: Display configuration with styles and settings
-            
+
         Returns:
             ThermurModelSummary configured with display settings
         """
         return ThermurModelSummary(display)
-    
+
     @staticmethod
     def create_progress_bar(display: DisplayModel) -> ThermurProgressBar:
         """
         Create a progress bar using Thermur's display configuration.
-        
+
         Uses the same thermal styling, progress bar length, and color scheme
         as the rest of the Thermur CLI for visual consistency.
-        
+
         Args:
             display: Display configuration with styles and settings
-        
+
         Returns:
             ThermurProgressBar configured with display settings
         """
         return ThermurProgressBar(display)
-    
+
 
 class ThermurModelSummary(RichModelSummary):
     """
     Custom RichModelSummary that uses Thermur's table styling.
-    
+
     Overrides the summary display to use our thermal color scheme
     and table formatting conventions.
     """
-    
+
     def __init__(self, display: DisplayModel):
         """
         Initialize with Thermur display configuration.
-        
+
         Args:
             display: Display configuration with styles and settings
         """
         self.display = display
         self.ui      = ThermurUI(display)
         super().__init__()
-    
+
     def on_fit_start(self, trainer: Trainer, pl_module: LightningModule):
         """
         Called when fit begins to display the model summary.
-        
+
         Overrides to use our custom table styling for the model summary.
-        
+
         Args:
             trainer   : PyTorch Lightning trainer instance
             pl_module : Lightning module being trained
         """
         if not self._max_depth:
             return
-            
+
         summary = self._summary(trainer, pl_module)._get_summary_data()
         table   = self.ui.create_aligned_table(
             columns = [
@@ -100,41 +100,41 @@ class ThermurModelSummary(RichModelSummary):
             ],
             title = "Model Architecture"
         )
-        
+
         [
-            table.add_row(layer, type, "–" 
+            table.add_row(layer, type, "–"
             if (p := str(params).strip()) == "0" else p)
-            for layer, type, params 
+            for layer, type, params
             in zip(*(row[1] for row in summary[1:4]))
         ]
-        
+
         get_console().print(table)
 
 
 class ThermurProgressBar(RichProgressBar):
     """
     Custom RichProgressBar that uses Thermur's display configuration.
-    
+
     Overrides column configuration to match the progress bar width
     and styling used throughout the Thermur CLI.
     """
-    
+
     def __init__(self, display: DisplayModel):
         """
         Initialize with Thermur display configuration.
-        
+
         Args:
             display: Display configuration with styles and bar settings
         """
         self.display = display
-        
+
         super().__init__(
             console_kwargs = {"stderr": True},
             leave          = False,
             refresh_rate   = 20,
             theme          = rp.RichProgressBarTheme(
                 batch_progress         = display.styles['muted'],
-                description            = display.styles['bright'], 
+                description            = display.styles['bright'],
                 metrics                = display.styles['flock'],
                 metrics_format         = ".3e",
                 metrics_text_delimiter = " • ",
@@ -145,17 +145,17 @@ class ThermurProgressBar(RichProgressBar):
                 time                   = display.styles['muted']
             )
         )
-    
+
     def configure_columns(self, trainer: Trainer) -> list[ProgressColumn]:
         """
         Configure progress bar columns with Thermur styling.
-        
+
         Overrides the default columns to use our configured bar width
         and maintain visual consistency.
-        
+
         Args:
             trainer: PyTorch Lightning trainer instance
-            
+
         Returns:
             List of configured Rich progress columns
         """
@@ -172,9 +172,9 @@ class ThermurProgressBar(RichProgressBar):
     def on_train_start(self, trainer: Trainer, pl_module: LightningModule):
         """
         Called when training starts.
-        
+
         Adds a line break before starting the progress bar display.
-        
+
         Args:
             trainer   : PyTorch Lightning trainer instance
             pl_module : Lightning module being trained

@@ -28,7 +28,7 @@ class MurmurationController(th.nn.Module):
     rather than metric distances. The flock maintains critical state dynamics
     for rapid information propagation and exhibits distinct cruise/alert modes.
 
-    The controller implements a modified Hamiltonian formulation based on 
+    The controller implements a modified Hamiltonian formulation based on
     Bialek et al. (2012) with heterogeneous coupling for alert states:
 
         E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
@@ -77,16 +77,16 @@ class MurmurationController(th.nn.Module):
         Compute density wave forces from continuum density field dynamics.
 
         Implements a simplified reaction-diffusion model for density perturbations
-        that propagate through the flock, creating the characteristic "ink-like" 
+        that propagate through the flock, creating the characteristic "ink-like"
         evasion patterns observed in starling murmurations under predator attack.
 
         The density field ρ(𝐱,t) evolves according to:
 
             ∂ρ/∂t + ∇·(ρ𝐯) = D∇²ρ + S(θ)
-        
+
         where:
             - ρ(𝐱,t) : Local agent density at position 𝐱 and time t
-            - 𝐯(𝐱,t) : Velocity field of the flock  
+            - 𝐯(𝐱,t) : Velocity field of the flock
             - D      : Diffusion coefficient controlling wave propagation speed
             - S(θ)   : Source term modulated by threat level θ ∈ [0,1]
 
@@ -94,7 +94,7 @@ class MurmurationController(th.nn.Module):
         kernel density estimation with Gaussian kernels:
 
             ρ(𝐱ᵢ) = Σⱼ K(|𝐱ᵢ - 𝐱ⱼ|; σ)
-        
+
         where K(r; σ) = exp(-r²/2σ²) is the Gaussian kernel with bandwidth σ.
 
         The resulting force on agent i opposes density gradients:
@@ -113,26 +113,26 @@ class MurmurationController(th.nn.Module):
         dists   = th.cdist(flock.position, flock.position, p=2)
         weights = th.exp(-dists**2 / (2 * self.mmm.density_bandwidth**2))
         weights.fill_diagonal_(0)
-        
+
         local_density = weights.sum(dim=1, keepdim=True)
         displacements = (
             flock.position.unsqueeze(1) -  # [N, 1, 3]
             flock.position.unsqueeze(0)    # [1, N, 3]
         )
-        
+
         density_gradient = (
             (weights.unsqueeze(2) * displacements).sum(dim=1) /
             local_density.clamp_min(1e-8)
         )
-        
+
         threat_amplification = (1 + flock.threats * 2)
-        
+
         flock.density_wave = (
             -self.mmm.density_diffusion *
             density_gradient            *
             threat_amplification
         )
-    
+
     def _compute_hamiltonian_forces(self, flock: Data):
         """
         Compute forces from Hamiltonian energy minimization with alert modulation.
@@ -145,7 +145,7 @@ class MurmurationController(th.nn.Module):
         where J_{ij}^{alert} = J_{ij} × κ_i, and κ_i is the alert coupling modifier:
             - κ_i = 1.0 for relaxed birds (normal alignment)
             - κ_i = alert_coupling_factor for alert birds
-        
+
         When alert_coupling_factor < 0, alert birds actively oppose alignment,
         creating perturbations that increase polarization variance and maintain
         critical state susceptibility χ = N·Var[Φ] ≥ 5.
@@ -161,29 +161,29 @@ class MurmurationController(th.nn.Module):
             flock: Data with positions, velocities, gradient, alert_states,
                    edge indices, and hops matrix, updated with base_forces
         """
-        flock.base_forces   = th.zeros_like(flock.position) 
+        flock.base_forces   = th.zeros_like(flock.position)
         alert_states_source = flock.alert_states[flock.edge_source]
-        
+
         coupling_modifier = th.where(
             alert_states_source > 0.5,
             self.mmm.alert_coupling_factor,
             1.0
         )
-        
+
         j_edges = self.mmm.j_base * coupling_modifier * th.exp(
-            -flock.hops[flock.edge_source, flock.edge_target] / 
+            -flock.hops[flock.edge_source, flock.edge_target] /
             self.mmm.coupling_decay
         )
 
         force_contrib = j_edges.unsqueeze(1) * (
-            flock.velocity[flock.edge_target] - 
+            flock.velocity[flock.edge_target] -
             flock.velocity[flock.edge_source]
         )
         flock.base_forces.index_add_(0, flock.edge_source, force_contrib)
-        
+
         metric_distances = th.cdist(flock.position, flock.position)
         mask = (
-            (metric_distances < self.mmm.min_distance * 3) & 
+            (metric_distances < self.mmm.min_distance * 3) &
             (metric_distances > 0)
         )
 
@@ -191,19 +191,19 @@ class MurmurationController(th.nn.Module):
             i_idx, j_idx = mask.nonzero(as_tuple=True)
             displacement = flock.position[j_idx] - flock.position[i_idx]
             soft_distance = displacement.norm(
-                dim     = 1, 
+                dim     = 1,
                 keepdim = True
             ).clamp_min(self.mmm.min_distance)
 
             flock.base_forces.index_add_(
-                dim    = 0, 
-                index  = i_idx, 
+                dim    = 0,
+                index  = i_idx,
                 source = (
-                    -self.mmm.separation_strength * displacement / 
+                    -self.mmm.separation_strength * displacement /
                     soft_distance ** 3
                 )
             )
-        
+
         flock.base_forces -= self.mmm.temperature_scaling * flock.gradient
 
     def _compute_hops(self, flock: Data):
@@ -212,11 +212,11 @@ class MurmurationController(th.nn.Module):
 
         Uses Floyd-Warshall to find shortest paths through the k-NN graph,
         capturing the topological distance d_{ij} for coupling decay:
-        
+
             J_{ij} = J_0 exp(-d_{ij}/λ)
 
         The algorithm iteratively relaxes hop counts:
-        
+
             d_{ij}^{(k+1)} = min(d_{ij}^{(k)}, d_{ik}^{(k)} + d_{kj}^{(k)})
 
         Args:
@@ -241,27 +241,27 @@ class MurmurationController(th.nn.Module):
     def _compute_individual_alert_states(self, flock: Data):
         """
         Compute alert states following two-state Markov dynamics.
-        
+
         Implements vigilance state transitions as a continuous-time Markov
         chain with asymmetric rates creating realistic bout durations:
-        
+
             P(relaxed → alert) = λ
             P(alert → relaxed) = μ
-            
-        where λ is the relaxed-to-alert transition rate and μ is the 
+
+        where λ is the relaxed-to-alert transition rate and μ is the
         alert-to-relaxed rate. These rates are constant, reflecting the
         intrinsic vigilance dynamics observed in bird flocks.
-        
+
         Steady-state             : π_alert = λ/(λ+μ)  ≈ 0.30
         Mean alert bout duration : E[T_alert] = 1/μ   ≈ 20 timesteps
         Mean relaxed duration    : E[T_relaxed] = 1/λ ≈ 47 timesteps
-        
+
         Args:
             flock: Data updated with alert_states and alert_fraction
         """
         traj_id = 0
         device  = flock.position.device
-        
+
         if traj_id not in self.alert_states_memory:
             steady_state = self.mmm.relaxed_to_alert_rate / (
                 self.mmm.relaxed_to_alert_rate + self.mmm.alert_to_relaxed_rate
@@ -269,7 +269,7 @@ class MurmurationController(th.nn.Module):
             self.alert_states_memory[traj_id] = th.bernoulli(
                 th.ones(self.mmm.agent_count, device=device) * steady_state
             )
-        
+
         previous    = self.alert_states_memory[traj_id].to(device)
         random_vals = th.rand(self.mmm.agent_count, device=device)
         new_states  = th.where(
@@ -277,70 +277,70 @@ class MurmurationController(th.nn.Module):
             random_vals > self.mmm.alert_to_relaxed_rate,
             random_vals < self.mmm.relaxed_to_alert_rate
         ).float()
-        
+
         self.alert_states_memory[traj_id] = new_states
         flock.alert_states   = new_states
         flock.alert_fraction = new_states.mean()
-    
+
     def _compute_self_propulsion(self, flock: Data):
         """
         Compute self-propulsion forces following active matter dynamics.
-        
+
         Implements self-propulsion where each agent maintains an intrinsic
         velocity v₀ in its current heading direction with stochastic
         fluctuations, based on active matter theory:
-        
+
             F_prop = (v₀𝐬 - 𝐯) / τ + η𝝃
-        
+
         where 𝐬 is the heading direction, τ is relaxation time, and 𝝃 is
         Gaussian noise. Alert agents have noise amplitude that places them
-        at the order-disorder phase transition (η ≈ 0.4) while relaxed 
+        at the order-disorder phase transition (η ≈ 0.4) while relaxed
         agents remain in the ordered phase (η ≈ 0.1).
-        
+
         For agents with zero velocity (|𝐯| < ε), the heading direction 𝐬 is
         determined from:
             1. Negative temperature gradient direction: 𝐬 = -∇T/|∇T| (if |∇T| > δ)
             2. Random unit vector: 𝐬 = 𝝃/|𝝃| where 𝝃 ~ N(0, I) (fallback)
-        
+
         This ensures the flock can bootstrap movement from rest states.
-        
+
         Args:
             flock: Data with velocities and alert_states, updated with
                    self_propulsion forces
         """
         speed = flock.velocity.norm(dim=-1, keepdim=True)
         wind  = getattr(flock, "wind", th.zeros_like(flock.velocity))
-        
+
         velocity_heading = flock.velocity / speed.clamp_min(1e-8)
         gradient_heading = -th.nn.functional.normalize(flock.gradient, dim=-1)
         random_heading   = th.nn.functional.normalize(
             th.randn_like(flock.velocity), dim=-1
         )
-        
+
         zero_vel = (speed < 1e-6).expand_as(flock.velocity)
         use_grad = (
             flock.gradient.norm(dim=-1, keepdim=True) > 0.01
         ).expand_as(flock.velocity)
-        
+
         heading = th.where(
             zero_vel & use_grad,
             gradient_heading,
             th.where(zero_vel, random_heading, velocity_heading)
         )
-        
+
         alert_states = flock.alert_states
         noise_scale  = self.mmm.velocity_noise_scale * (
             1.0 + self.mmm.alert_amplification * alert_states
         )
-        
+
         target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
         noise      = th.randn_like(flock.velocity) * noise_scale.unsqueeze(-1)
-        
+
         flock.self_propulsion = (
             (target_vel - flock.velocity) / self.mmm.velocity_relaxation_time +
             noise
         )
-    
+
     def _compute_threats(self, flock: Data):
         """
         Compute normalized threat level for mode switching.
@@ -358,12 +358,12 @@ class MurmurationController(th.nn.Module):
         """
         flock.threats = (
             (
-                flock.temperature 
+                flock.temperature
                 - self.safety.max_temperature * self.safety.threat_onset_ratio
             ) /
             (self.safety.max_temperature * self.safety.threat_transition_width)
         ).clamp(0, 1)
-    
+
     def _design_nominal_action(self, flock: Data):
         """
         Pipeline that computes murmuration dynamics and builds final action.
@@ -392,7 +392,7 @@ class MurmurationController(th.nn.Module):
             self._compute_density_wave,
         ]:
             compute_fn(flock)
-        
+
         flock.action = (
             flock.self_propulsion +
             flock.base_forces     +
@@ -415,27 +415,27 @@ class MurmurationController(th.nn.Module):
         assert flock.edge_index is not None
         flock.edge_source = flock.edge_index[0]
         flock.edge_target = flock.edge_index[1]
-        
+
         self._compute_hops(flock)
 
     def forward(self, flock: Data) -> Tensor:
         """
         Compute expert control actions from PyG Data flock state.
-        
+
         Orchestrates the full murmuration dynamics pipeline including
         Hamiltonian forces, density waves, threat response, and thermal
         gradient following.
-        
+
         Args:
             flock: PyG Data with position, velocity, temperature, gradient,
                    wind, and edge_index
-            
+
         Returns:
             Control actions (accelerations) [N, 3]
         """
         self._design_nominal_action(flock)
         return flock.action
-    
+
     def generate_trajectories(
         self,
         generator     : TrajectoryGenerator,
@@ -483,10 +483,10 @@ class MurmurationController(th.nn.Module):
         self.alert_states_memory.clear()
         state      = generator.reset()
         trajectory = []
-        
+
         for t in range(num_timesteps):
             action = self.forward(state)
-            
+
             features = th.cat(
                 dim     = -1,
                 tensors = [
@@ -497,7 +497,7 @@ class MurmurationController(th.nn.Module):
                     state.wind
                 ]
             )
-            
+
             trajectory.append(
                 Data(
                     action       = action.clone(),
@@ -512,7 +512,7 @@ class MurmurationController(th.nn.Module):
                     x            = features
                 )
             )
-            
+
             state = generator.step(action)
-        
+
         return trajectory

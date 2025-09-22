@@ -92,7 +92,7 @@ class TrainCommand:
         self.prompts     = app.prompts
         self.system      = app.system
         self.ui          = app.ui
-        
+
         self.dry_run     = False
         self.force       = False
         self.interactive = True
@@ -235,7 +235,7 @@ class TrainCommand:
                 components['visualizer'] = instantiate(c)
             else:
                 components['visualizer'] = None
-            
+
             components["trainer"].logger.log_hyperparams(
                 self.system.extract_training_cfg(cfg, self.overrides)
             )
@@ -260,7 +260,7 @@ class TrainCommand:
         imports = self._load_training_modules()
 
         task_function = (
-            self._task if self.dry_run 
+            self._task if self.dry_run
             else lambda cfg = None: self._task(cfg, imports)
         )
 
@@ -299,7 +299,7 @@ class TrainCommand:
             from hydra_zen.third_party.pydantic  import pydantic_parser
             from pytorch_lightning               import seed_everything
             from pytorch_lightning.trainer       import setup
-            
+
             setup._log_device_info = lambda *args, **kwargs: None
 
             progress.update(
@@ -373,33 +373,33 @@ class TrainCommand:
                 msg_type = "warning"
             )
             raise Exit()
-    
+
     def _resolve_resume_path(self, resume: Path | None) -> Path | None:
         """
         Resolve the resume checkpoint path.
-        
+
         Args:
             resume: User-provided resume path or 'last' for most recent
-            
+
         Returns:
             Resolved checkpoint path or None
-            
+
         Raises:
             Exit: If checkpoint is not found
         """
         if not resume:
             return None
-            
+
         if str(resume) == "last":
             if checkpoint := self._find_last_checkpoint():
                 return checkpoint
             self.ui.print_message("No checkpoint found to resume from", "error")
             raise Exit(1)
-            
+
         if not resume.exists():
             self.ui.print_message(f"Checkpoint not found: {resume}", "error" )
             raise Exit(1)
-            
+
         return resume
 
     def _task(
@@ -468,7 +468,7 @@ class TrainCommand:
                 message  = f"Resuming from checkpoint: {self.resume}",
                 msg_type = "info"
             )
-        
+
         self.ui.print_message(
             message  = "Monitoring thermal constraints and flock dynamics",
             msg_type = "thermal"
