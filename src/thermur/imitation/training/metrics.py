@@ -706,7 +706,7 @@ class OrientationWave(BaseMetric):
         )(headings.unsqueeze(-1) - headings.unsqueeze(-2))
 
         gradients = (
-            heading_diffs.abs() / distances.clamp_min(self.epsilon)
+            heading_diffs.abs() / distances.clamp_min(1e-3)
         ).masked_fill(~mask, 0)
 
         return gradients.sum(dim=(1, 2)).mean(dim=0, keepdim=True)
@@ -768,7 +768,7 @@ class PerturbationResponse(BaseMetric):
             vel_changes     = (batch.velocity - self.last_velocity).norm(dim=-1)
             threat_response = vel_changes[mask].mean().unsqueeze(0)
 
-            if (threat_response > self.epsilon).any():
+            if (threat_response > 1e-3).any():
                 response_ratio = (
                     vel_changes[~mask].mean().unsqueeze(0) /
                     threat_response
@@ -1058,46 +1058,111 @@ class ScaleFreeCorrelation(BaseMetric):
 
 class Susceptibility(BaseMetric):
     """
-    Measures flock susceptibility to directional perturbations.
+    Measures flock susceptibility as integrated velocity correlations.
 
-    Computes the normalized variance of the order parameter as a proxy for
-    susceptibility to external stimuli. Following Bialek et al. (2012), the
-    susceptibility quantifies collective response:
+    Following Cavagna et al. (2010) and Attanasi et al. (2014), susceptibility
+    quantifies the total correlation in the system through the cumulative
+    correlation function:
 
-        χ = N · Var[Φ]
+        Q(r) = ∫₀ʳ C(r')dr'
 
-    where the order parameter Φ measures global alignment:
+    where C(r) is the velocity correlation function:
 
-        Φ = |Σᵢ 𝐬ᵢ| / N
+        C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ for pairs at distance r
 
-    with 𝐬ᵢ = 𝐯ᵢ/|𝐯ᵢ| being the normalized velocity (spin) of agent i.
+    with velocity fluctuations δ𝐯ᵢ = 𝐯ᵢ - (1/N)Σₖ𝐯ₖ.
 
-    Natural murmurations maintain χ > 5, indicating proximity to a critical
-    phase transition that maximizes:
-        - Dynamic range        (response to weak and strong signals)
-        - Information capacity (bandwidth for signal propagation)
-        - Correlation length   (scale-free spatial correlations)
+    The susceptibility χ = Q(ξ) is the maximum of the cumulative correlation,
+    reached at the correlation length ξ where C(ξ) = 0.
 
-    Lower susceptibility (χ < 5) indicates an ordered state with reduced
-    responsiveness, while very high susceptibility (χ > 20) suggests
-    instability. The critical regime χ ∈ [5, 15] balances individual
-    freedom with collective coordination.
+    In critical systems, χ scales with flock size N without saturation,
+    indicating maintained responsiveness at all scales. The ratio χ/N
+    remains finite, characteristic of near-critical dynamics that enable
+    rapid information transfer across the entire flock.
     """
+
+    def __init__(self, agent_count: int):
+        """
+        Initialize susceptibility metric.
+
+        Args:
+            agent_count: Number of agents in flock
+        """
+        super().__init__(agent_count)
+        self.num_bins = 20  # Number of distance bins for correlation function
 
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Compute susceptibility from velocity fluctuations.
+        Compute susceptibility as integrated velocity correlation.
 
         Args:
-            batch: PyG Batch containing velocity tensor [B*N, 3] flattened
+            batch: PyG Batch containing positions and velocities
 
         Returns:
-            Susceptibility values as tensor
+            Susceptibility values per batch
         """
-        spins, spin_mean = self._reshape_features(batch, "spins", "spin_mean")
-        polarizations    = (spins * spin_mean).sum(dim=-1)
+        # Get reshaped features
+        positions, _ = self._reshape_features(batch, "position", "position")
+        velocities, _ = self._reshape_features(batch, "velocity", "velocity")
 
-        return self.agent_count * polarizations.var(dim=-1)
+        # Compute velocity fluctuations: δ𝐯ᵢ = 𝐯ᵢ - ⟨𝐯⟩
+        mean_velocity = velocities.mean(dim=1, keepdim=True)
+        fluctuations = velocities - mean_velocity
+
+        # Compute pairwise distances and correlations
+        distances = th.cdist(positions, positions, p=2)
+
+        # Compute correlation matrix C_ij = δ𝐯ᵢ · δ𝐯ⱼ
+        correlation_matrix = th.bmm(fluctuations, fluctuations.transpose(1, 2))
+
+        # Extract upper triangular (unique pairs)
+        B, N = positions.shape[:2]
+        triu_idx = th.triu_indices(N, N, offset=1)
+
+        pair_distances = distances[:, triu_idx[0], triu_idx[1]]
+        pair_correlations = correlation_matrix[:, triu_idx[0], triu_idx[1]]
+
+        # Create logarithmically-spaced bins for better resolution
+        max_dist = pair_distances.max(dim=1, keepdim=True)[0]
+        min_dist = pair_distances.min(dim=1, keepdim=True)[0] + 1e-6
+
+        log_bins = th.linspace(
+            min_dist.log().min().item(),
+            max_dist.log().max().item(),
+            self.num_bins + 1,
+            device=positions.device
+        ).exp()
+
+        # Bin correlations by distance
+        susceptibilities = th.zeros(B, device=positions.device)
+
+        for b in range(B):
+            # Compute correlation function C(r) for this batch
+            C_r = th.zeros(self.num_bins, device=positions.device)
+            r_centers = th.zeros(self.num_bins, device=positions.device)
+
+            for i in range(self.num_bins):
+                mask = (pair_distances[b] >= log_bins[i]) & (pair_distances[b] < log_bins[i+1])
+                if mask.sum() > 0:
+                    C_r[i] = pair_correlations[b, mask].mean()
+                    r_centers[i] = pair_distances[b, mask].mean()
+
+            # Find where C(r) crosses zero (correlation length ξ)
+            valid_bins = C_r != 0
+            if valid_bins.sum() > 1:
+                # Integrate correlation function using trapezoidal rule
+                # Q(r) = ∫₀ʳ C(r')dr'
+                dr = r_centers[1:] - r_centers[:-1]
+                cumulative = th.zeros_like(C_r)
+
+                for i in range(1, len(C_r)):
+                    if valid_bins[i] and valid_bins[i-1]:
+                        cumulative[i] = cumulative[i-1] + 0.5 * (C_r[i] + C_r[i-1]) * dr[i-1].abs()
+
+                # Susceptibility is maximum of cumulative correlation
+                susceptibilities[b] = cumulative.abs().max()
+
+        return susceptibilities
 
 
 class Temperature(BaseMetric):

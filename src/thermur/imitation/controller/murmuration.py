@@ -14,7 +14,7 @@ import torch as th
 
 if TYPE_CHECKING:
     from ..environment               import TrajectoryGenerator
-    from .safety                     import CBFSafetyFilter
+    from .safety                     import ThermalPenalty
     from config.imitation.controller import MurmurationModel, SafetyModel
     from torch                       import Tensor
 
@@ -28,8 +28,9 @@ class MurmurationController(th.nn.Module):
     rather than metric distances. The flock maintains critical state dynamics
     for rapid information propagation and exhibits distinct cruise/alert modes.
 
-    The controller implements a modified Hamiltonian formulation based on
-    Bialek et al. (2012) with heterogeneous coupling for alert states:
+    The controller implements a spin Hamiltonian from classical statistical
+    mechanics, following the maximum entropy framework that Bialek et al. (2012)
+    applied to bird flocks. We extend this with heterogeneous coupling for alert states:
 
         E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
 
@@ -45,31 +46,31 @@ class MurmurationController(th.nn.Module):
         F_i = κ_i × Σ_j J_{ij} (𝐯_j - 𝐯_i)
 
     With alert_coupling_factor = -1.3, alert birds actively oppose alignment,
-    creating oscillations that maintain critical state susceptibility χ = N·Var[Φ] ≥ 5.
+    creating oscillations that maintain elevated susceptibility χ proportional to N.
     This heterogeneity, motivated by vigilance behavior (Beauchamp 2015), enables
     scale-free correlations C(r) ~ r^{-1/3} and information speeds of 15-45 m/s
-    (Attanasi et al. 2014).
+    (Attanasi et al. 2014, Cavagna et al. 2010).
     """
 
     def __init__(
         self,
-        cbf    : CBFSafetyFilter | None,
-        mmm    : MurmurationModel,
-        safety : SafetyModel
+        mmm     : MurmurationModel,
+        penalty : ThermalPenalty,
+        safety  : SafetyModel
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            cbf    : Optional Control Barrier Function filter for safety.
-                     If None, no safety filtering is applied
-            mmm    : Murmuration model with dynamics and weight parameters
-            safety : Safety configuration with thresholds and CBF parameters
+            mmm     : Murmuration model with dynamics and weight parameters
+            penalty : Thermal safety penalty layer for gradient-based constraints
+            safety  : Safety configuration with thresholds and temperature limits
         """
         super().__init__()
-        self.cbf    = cbf
-        self.mmm    = mmm
-        self.safety = safety
+        self.mmm     = mmm
+        self.penalty = penalty
+        self.safety  = safety
+
         self.alert_states_memory = {}
 
     def _compute_density_wave(self, flock: Data):
@@ -137,7 +138,7 @@ class MurmurationController(th.nn.Module):
         """
         Compute forces from Hamiltonian energy minimization with alert modulation.
 
-        Implements the Hamiltonian formulation from Bialek et al. (2012) with
+        Implements the classical Heisenberg Hamiltonian with our novel
         heterogeneous coupling based on alert states:
 
             E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
@@ -148,7 +149,7 @@ class MurmurationController(th.nn.Module):
 
         When alert_coupling_factor < 0, alert birds actively oppose alignment,
         creating perturbations that increase polarization variance and maintain
-        critical state susceptibility χ = N·Var[Φ] ≥ 5.
+        elevated susceptibility χ ~ N characteristic of critical systems.
 
         The modified alignment force on agent i becomes:
 
@@ -399,8 +400,7 @@ class MurmurationController(th.nn.Module):
             flock.density_wave
         )
 
-        if self.cbf is not None:
-            flock.action = self.cbf.filter(flock, flock.action)
+        flock.action = self.penalty.filter(flock, flock.action)
 
     def _update_graph_state(self, flock: Data):
         """

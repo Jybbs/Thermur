@@ -328,10 +328,10 @@ class WRFLoader:
           * Repulsive forces from high heat flux areas
           * Alert state triggering when fire danger detected
           * Modified flocking cohesion near fire zones
-        - Incorporate into CBFSafetyFilter as hard constraints:
-          * Fire proximity barrier functions
-          * Dynamic safety margins based on heat intensity
-          * Escape velocity guarantees
+        - Incorporate into ThermalPenalty as soft constraints:
+          * Thermal gradient corrections
+          * Dynamic safety responses based on heat intensity
+          * Smooth penalty escalation near danger zones
 
         This would enable agents to learn fire-aware (instead of just
         heat-aware) navigation strategies, which could better encapsulate

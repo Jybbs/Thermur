@@ -66,7 +66,6 @@ Thermur orchestrates biomimetic flocking through a sophisticated machine learnin
 | **Training** | [PyTorch Lightning](https://lightning.ai/) | Distributed training orchestration with automatic mixed precision |
 | **Environment** | [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) | Offline trajectory generation with WRF-Fire data |
 | **Policy Network** | [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) | Graph Neural Networks for topological neighbor interactions |
-| **Safety System** | [QPTh](https://github.com/locuslab/qpth) + CBF | Control Barrier Functions with differentiable QP solvers |
 | **CLI** | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) | Beautiful terminal interface with fire gradient effects |
 | **Monitoring** | [Weights & Biases](https://wandb.ai/) | Real-time metrics ([view project](https://wandb.ai/Thermur/thermur-imitation/workspace)) |
 
@@ -85,7 +84,7 @@ flowchart TB
             direction TB
             C["<b>Murmuration Dynamics</b><br/>κ = -1.3 alert coupling"]
             D["<b>Hamiltonian Forces</b><br/>k = 7 topological neighbors"]
-            E["<b>CBF Safety Filter</b><br/>T < 475K guaranteed"]
+            E["<b>Thermal Safety Filter</b><br/>T < 475K maintained"]
             C --> E
             D --> E
         end
@@ -123,11 +122,11 @@ flowchart TB
 
 ### Core Scientific Contributions
 
-1. **Heterogeneous Alert States**: ~30% of agents maintain heightened alertness with negative coupling ($`\kappa = -1.3`$), creating the variance necessary for critical state susceptibility $`\chi \geq 5`$. This mechanism, inspired by vigilance behavior in bird flocks [^8] [^9], enables the scale-free correlations observed in natural murmurations [^10].
+1. **Heterogeneous Alert States**: ~30% of agents maintain heightened alertness with negative coupling ($`\kappa = -1.3`$), creating the variance necessary for elevated susceptibility $`\chi \sim N`$ [^8]. This mechanism, inspired by vigilance behavior in bird flocks [^9] [^10], enables the scale-free correlations observed in natural murmurations [^11].
 
-2. **Topological Interactions**: Each agent responds to exactly $`k=7`$ nearest neighbors regardless of distance, matching empirical observations of starling behavior [^11] and enabling scale-free information transfer with propagation speeds of 15-45 m/s [^12].
+2. **Topological Interactions**: Each agent responds to exactly $`k=7`$ nearest neighbors regardless of distance, matching empirical observations of starling behavior [^12] and enabling scale-free information transfer with propagation speeds of 15-45 m/s [^13].
 
-3. **Control Barrier Functions**: Mathematically guaranteed safety through real-time quadratic programming [^13] solved efficiently with OSQP [^14], ensuring no agent exceeds thermal limits ($`T < 475K`$) via Control Barrier Function constraints [^15].
+3. **Thermal Safety Constraints**: Smooth penalty-based safety using the Kreisselmeier-Steinhauser formulation [^14], building on regularized optimization methods [^15], ensuring agents avoid thermal limits ($`T < 475K`$) through gradient-based corrections that integrate seamlessly with neural network training.
 
 4. **Graph Neural Networks**: Permutation-equivariant architecture [^16] that naturally handles dynamic flock topologies through message-passing on k-nearest neighbor graphs, implemented with PyTorch Geometric [^17].
 
@@ -139,13 +138,13 @@ The system bridges biological observation with robotic control through a unified
 
 ### Unified Murmuration Control Theorem
 
-Natural starling flocks achieve near-instantaneous information propagation through a delicate phase transition between order and disorder. We engineer this criticality through heterogeneous alert states, where approximately 30% of agents actively oppose local alignment. This opposition, inspired by vigilance behavior in birds [^32][^33], creates the variance necessary for scale-free correlations.
+Natural starling flocks achieve near-instantaneous information propagation through a delicate phase transition between order and disorder. We engineer this criticality through heterogeneous alert states, where approximately 30% of agents actively oppose local alignment. This opposition, inspired by vigilance behavior in birds [^9][^10], creates the variance necessary for scale-free correlations.
 
 Given $`N`$ agents with positions $`\mathbf{x}_i \in \mathbb{R}^3`$ and velocities $`\mathbf{v}_i \in \mathbb{R}^3`$, the control law:
 
 $`
 \hspace{0.5cm} \displaystyle
-\mathbf{u}_i^* = \text{CBF}\left[\mathbf{u}_i^{\text{nom}}\right]
+\mathbf{u}_i^* = \mathbf{u}_i^{\text{nom}} - \kappa \cdot \nabla T \cdot \sigma(-\rho c)
 `$  
 <br>
 
@@ -153,7 +152,7 @@ where the nominal control orchestrates multiple biologically-inspired components
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{v_0 \hat{\mathbf{s}}_i - \mathbf{v}_i}{\tau} + \eta_i \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\kappa_i \sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Hamiltonian alignment}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{v_0 \hat{\mathbf{s}}_i - \mathbf{v}_i}{\tau} + \eta_i \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\kappa_i \sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Hamiltonian alignment [^18]}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -163,31 +162,31 @@ $`
 
 In bird flocks, some individuals scan for predators while others focus on following their neighbors. This creates a natural tension in the system. We model this by having agents randomly switch between "alert" and "relaxed" states, with about 30% alert at any given time, matching what biologists observe in real flocks.
 
-While relaxed birds align with their neighbors (using positive coupling), alert birds do the opposite with negative coupling ($`\kappa = -1.3`$) [^7]. This means alert birds actively turn away from the average direction of their neighbors, like contrarians in a group. This opposition creates the variance needed to keep the flock responsive, measured by susceptibility $`\chi \geq 5`$, which indicates the system is at criticality.
+While relaxed birds align with their neighbors (using positive coupling), alert birds do the opposite with negative coupling ($`\kappa = -1.3`$), our novel mechanism for maintaining criticality. This means alert birds actively turn away from the average direction of their neighbors, like contrarians in a group. This opposition creates the variance needed to keep the flock responsive, with susceptibility $`\chi`$ scaling with flock size $`N`$, indicating the system remains at criticality.
 
-Each agent watches exactly 7 nearest neighbors regardless of distance [^8]. This "topological" rule means information spreads the same way whether the flock is spread out or compressed, enabling rapid response across the entire group.
+Each agent watches exactly 7 nearest neighbors regardless of distance [^12]. This "topological" rule means information spreads the same way whether the flock is spread out or compressed, enabling rapid response across the entire group.
 
 ### Density Waves and Thermal Response
 
-When starlings detect a hawk, waves of movement ripple through the flock at speeds of 15-45 m/s [^35], much faster than any individual bird flies. These waves create dark bands that look like ink spreading through water. We reproduce this effect using reaction-diffusion equations, where crowding in one area causes neighboring regions to spread out, creating visible waves.
+When starlings detect a hawk, waves of movement ripple through the flock at speeds of 15-45 m/s [^13], much faster than any individual bird flies. These waves create dark bands that look like ink spreading through water. We reproduce this effect using reaction-diffusion equations, where crowding in one area causes neighboring regions to spread out, creating visible waves.
 
 When the flock encounters high temperatures, these density waves combine with temperature gradient following. The result is a flock that flows away from heat while the density waves make the danger visible through the pattern of movement.
 
 ### Safety Guarantees
 
-Control Barrier Functions go beyond typical safety measures by providing mathematical proof that temperature limits will never be exceeded [^13][^14][^15]. The system continuously solves an optimization problem that finds the smallest possible adjustment to the desired control that keeps the barrier function $`h(\mathbf{x}) = T_{\text{max}} - T(\mathbf{x})`$ positive.
+The thermal safety system uses smooth Kreisselmeier-Steinhauser penalties to guide agents away from dangerous temperatures [^14]. The gradient-based corrections create a continuous force field that intensifies near thermal boundaries, ensuring agents naturally avoid excessive heat without requiring optimization solvers.
 
 This guarantees agents never exceed 475 K, the maximum safe temperature for the hardware. Unlike rule-based systems that might fail in unexpected situations, this mathematical approach ensures safety in all conditions.
 
 ### Emergent Properties
 
-The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics:
+The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics [^19]:
 
 - **Critical State**: Maintained through heterogeneous alert coupling ($`\kappa = -1.3`$ for alert birds)
 - **Rapid Response**: Information propagates at 15-45 m/s through topological networks
 - **Scale-Free Dynamics**: Velocity correlations follow $`C(r) \sim r^{-1/3}`$ across all flock sizes
 - **Robust Cohesion**: Topological interactions with k=7 neighbors ensure connectivity
-- **Guaranteed Safety**: Control Barrier Functions maintain $`T < 475`$ K through mathematical invariance
+- **Thermal Safety**: Smooth penalties maintain $`T < 475`$ K through gradient corrections
 
 These emergent behaviors are verified through the comprehensive metrics suite described in [Monitoring & Metrics](#5-monitoring--metrics), ensuring the trained policy preserves the expert controller's critical dynamics.
 
@@ -301,12 +300,12 @@ All training runs are automatically logged to our [WandB project](https://wandb.
 
 ### WRF-SFIRE Dataset
 
-The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^19]:
+The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^20]:
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
 | **Wind Speed** | 3-12 m/s | Initial wind conditions |
-| **Fuel Type** | 13 categories | Anderson fuel models |
+| **Fuel Type** | 13 categories | Anderson fuel models [^21] |
 | **Domain** | 40m resolution | LES with 4m fire mesh |
 | **Duration** | 20-30 minutes | Full plume development |
 | **Temperature** | Up to 600K | Includes extreme heating |
@@ -336,13 +335,21 @@ The imitation learning pipeline leverages [PyTorch Lightning](https://lightning.
 The physics-based controller generates optimal trajectories using [Pydantic](https://pydantic.dev/)-validated configuration:
 
 ```python
-from thermur.imitation.controller import MurmurationController
+from thermur.imitation.controller import MurmurationController, ThermalPenalty
 from config.imitation.controller  import MurmurationModel, SafetyModel
+
+# Create thermal safety filter
+safety  = SafetyModel(
+    ks_kappa         = 100.0,  # Penalty weight
+    ks_rho           = 30.0,   # Sharpness parameter
+    max_temperature  = 475.0,  # Critical threshold [K]
+    thermal_alpha    = 2.5     # Convergence rate
+)
+penalty = ThermalPenalty(safety)
 
 # Expert maintains critical state through alert heterogeneity
 expert = MurmurationController(
-    cbf    = cbf_safety_filter,  # Control Barrier Function filter
-    mmm    = MurmurationModel(
+    mmm     = MurmurationModel(
         agent_count           = 30,    # Number of agents in flock
         alert_coupling_factor = -1.3,  # Negative coupling for alert birds
         alert_to_relaxed_rate = 0.05,  # Markovian state transitions
@@ -350,11 +357,8 @@ expert = MurmurationController(
         k_neighbors           = 7,     # Topological interaction
         velocity_noise_scale  = 0.2    # Active matter noise
     ),
-    safety = SafetyModel(
-        cbf_alpha          = 2.5,
-        max_temperature    = 475.0,
-        threat_onset_ratio = 0.7
-    )
+    penalty = penalty,
+    safety  = safety
 )
 ```
 
@@ -457,12 +461,12 @@ class DemonstrationsDataset(InMemoryDataset):
         )
 ```
 
-#### 4. Safety Validation with CBF
+#### 4. Safety Validation with Thermal Penalties
 
 Every control command passes through the [QPTh](https://github.com/locuslab/qpth)-based safety filter:
 
 ```python
-# Control Barrier Function constraint: h(x) = T_max - T(x) ≥ 0
+# Thermal constraint: c(x,u) = ∇T·u + α(T_max - T) ≥ 0
 # Solved as QP: min ||u - u_nom||² s.t. ḣ(x,u) ≥ -α·h(x)
 u_safe = cbf_filter.filter(flock_state, u_nominal)
 ```
@@ -481,7 +485,7 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 **Emergent Behavior Metrics:**
 
-- **Susceptibility $`\chi = N \cdot \text{Var}[\Phi]`$**: Measures collective responsiveness through order parameter variance. Values above 5 indicate the critical state necessary for rapid information transfer.
+- **Susceptibility $`\chi`$**: Measures collective responsiveness through integrated velocity correlations. In critical systems, $`\chi`$ scales with flock size $`N`$ without saturation, enabling rapid information transfer [^11] [^8].
 
 - **Fiedler Value $`\lambda_2`$**: Quantifies algebraic connectivity via the second smallest eigenvalue of the graph Laplacian, computed efficiently using adaptive Lanczos iteration. Positive values ensure flock cohesion.
 
@@ -503,7 +507,7 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 - **Temperature**: Average thermal exposure across the flock
 
-- **CBF Violations**: Should remain at zero through Control Barrier Function constraints
+- **Thermal Violations**: Minimized through smooth penalty corrections
 
 ---
 
@@ -611,7 +615,7 @@ thermur/
 │           ├── controller/
 │           │   ├── demonstrations.py # Offline trajectory generation
 │           │   ├── murmuration.py    # Biomimetic flocking (critical state)
-│           │   └── safety.py         # CBF safety filter (QP solver)
+│           │   └── safety.py         # Thermal safety penalties
 │           ├── environment/
 │           │   ├── loader.py         # WRF-SFIRE data interface
 │           │   └── trajectories.py   # Physics simulation for offline data
@@ -732,50 +736,43 @@ For the WRF-SFIRE dataset:
 
 [^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109
 
-[^8]: Beauchamp, Guy. 2015. *Animal Vigilance: Monitoring Predators and Competitors*. Academic Press.
+[^8]: Attanasi, Alessandro, Andrea Cavagna, Lorenzo Del Castello, Irene Giardina, Stefano Melillo, Leonardo Parisi, Oliver Pohl, Bruno Rossaro, Edward Shen, Edmondo Silvestri, and Massimiliano Viale. 2014. "Finite-Size Scaling as a Way to Probe Near-Criticality in Natural Swarms." *Physical Review Letters* 113 (23): 238102. https://doi.org/10.1103/PhysRevLett.113.238102
 
-[^9]: Fernández-Juricic, Esteban. 2012. "Sensory Basis of Vigilance Behavior in Birds: Synthesis and Future Prospects." *Behavioural Processes* 89 (2): 143–152. https://doi.org/10.1016/j.beproc.2011.10.006
+[^9]: Beauchamp, Guy. 2015. *Animal Vigilance: Monitoring Predators and Competitors*. Academic Press.
 
-[^10]: Cavagna, Andrea, Alessio Cimarelli, Irene Giardina, Giorgio Parisi, Raffaele Santagati, Fabio Stefanini, and Massimiliano Viale. 2010. "Scale-Free Correlations in Starling Flocks." *PNAS* 107 (26): 11865–70. https://doi.org/10.1073/pnas.1005766107
+[^10]: Fernández-Juricic, Esteban. 2012. "Sensory Basis of Vigilance Behavior in Birds: Synthesis and Future Prospects." *Behavioural Processes* 89 (2): 143–152. https://doi.org/10.1016/j.beproc.2011.10.006
 
-[^11]: Ballerini, M. et al. 2008. "Interaction Ruling Animal Collective Behavior Depends on Topological Rather than Metric Distance." *PNAS* 105 (4): 1232–37. https://doi.org/10.1073/pnas.0711437105
+[^11]: Cavagna, Andrea, Alessio Cimarelli, Irene Giardina, Giorgio Parisi, Raffaele Santagati, Fabio Stefanini, and Massimiliano Viale. 2010. "Scale-Free Correlations in Starling Flocks." *PNAS* 107 (26): 11865–70. https://doi.org/10.1073/pnas.1005766107
 
-[^12]: Attanasi, Alessandro, et al. 2014. "Information Transfer and Behavioural Inertia in Starling Flocks." *Nature Physics* 10 (9): 691–696. https://doi.org/10.1038/nphys3035
+[^12]: Ballerini, M. et al. 2008. "Interaction Ruling Animal Collective Behavior Depends on Topological Rather than Metric Distance." *PNAS* 105 (4): 1232–37. https://doi.org/10.1073/pnas.0711437105
 
-[^13]: Ames, Aaron D., Xiangru Xu, Jessy W. Grizzle, and Paulo Tabuada. 2016. "Control Barrier Function-Based Quadratic Programs for Safety-Critical Systems." *IEEE Transactions on Automatic Control* 62 (8): 3861–76. https://doi.org/10.1109/TAC.2016.2638961
+[^13]: Attanasi, Alessandro, et al. 2014. "Information Transfer and Behavioural Inertia in Starling Flocks." *Nature Physics* 10 (9): 691–696. https://doi.org/10.1038/nphys3035
 
-[^14]: Stellato, Bartolomeo, Goran Banjac, Paul Goulart, Alberto Bemporad, and Stephen Boyd. 2020. "OSQP: An Operator Splitting Solver for Quadratic Programs." *Mathematical Programming Computation* 12 (4): 637–672. https://doi.org/10.1007/s12532-020-00179-2
+[^14]: Richards, Arthur. 2013. "Fast Model Predictive Control with Soft Constraints." *2013 European Control Conference (ECC)*, 1–6. https://doi.org/10.23919/ECC.2013.6669291
 
-[^15]: Wang, Li, Magnus Egerstedt, and Aaron D. Ames. 2017. "Safety Barrier Certificates for Collision-Free Multirobot Systems." *IEEE Transactions on Robotics* 33 (3): 661–74. https://doi.org/10.1109/TRO.2017.2659727
+[^15]: Polyak, Roman A. 2009. "Regularized Newton Method for Unconstrained Convex Optimization." *Mathematical Programming* 120 (1): 125–145. https://doi.org/10.1007/s10107-007-0143-3
 
 [^16]: Gama, Fernando, Ekaterina Tolstaya, and Alejandro Ribeiro. 2021. "Graph Neural Networks for Decentralized Controllers." *ICASSP 2021 — 2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)*: 5260–5264. https://doi.org/10.1109/ICASSP39728.2021.9414563
 
 [^17]: Fey, Matthias, and Jan E. Lenssen. 2019. "Fast Graph Representation Learning with PyTorch Geometric." *arXiv* 1903.02428. https://doi.org/10.48550/arXiv.1903.02428
 
-[^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+[^18]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
-[^19]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
+[^19]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
 
-[^20]: Wang, Zhou, Alan C. Bovik, Hamid R. Sheikh, and Eero P. Simoncelli. 2004. "Image Quality Assessment: From Error Visibility to Structural Similarity." *IEEE Transactions on Image Processing* 13 (4): 600–612. https://doi.org/10.1109/TIP.2003.819861
+[^20]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
 
-[^21]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
+[^21]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
+
 
 [^22]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
 
-[^23]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
+[^23]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
 
-[^24]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
+[^24]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
 
-[^25]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
+[^25]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
 
-[^26]: Cho, Kyunghyun, Bart Van Merriënboer, Caglar Gulcehre, Dzmitry Bahdanau, Fethi Bougares, Holger Schwenk, and Yoshua Bengio. 2014. "Learning Phrase Representations Using RNN Encoder-Decoder for Statistical Machine Translation." *Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP 2014)*, 1724–1734. https://doi.org/10.3115/v1/D14-1179
-
-[^27]: Clarke, Roger. 2019. "Principles and Business Processes for Responsible AI." *Computer Law & Security Review* 35 (4): 410–422. https://doi.org/10.1016/j.clsr.2019.04.007
-
-[^28]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
-
-[^29]: Fraccaro, Marco, Søren Kaae Sønderby, Ulrich Paquet, and Ole Winther. 2016. "Sequential Neural Models with Stochastic Layers." *Advances in Neural Information Processing Systems* 29: 2199–2207. https://doi.org/10.48550/arXiv.1605.07571
-
-[^30]: Jang, Eric, Shixiang Gu, and Ben Poole. 2017. "Categorical Reparameterization with Gumbel-Softmax." *International Conference on Learning Representations (ICLR)*. https://doi.org/10.48550/arXiv.1611.01144
+[^26]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
 
 ---

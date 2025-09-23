@@ -4,9 +4,9 @@
 
 ## The Central Challenge of Criticality
 
-Natural starling flocks exist at a critical state, a phase transition between order and disorder that enables near-instantaneous information propagation across the entire flock regardless of size. This criticality manifests as scale-free velocity correlations $`C(r) \sim r^{-1/3}`$ and susceptibility $`\chi \geq 5`$. The challenge: how do we engineer this critical state in an artificial flock?
+Natural starling flocks exist at a critical state, a phase transition between order and disorder that enables near-instantaneous information propagation across the entire flock regardless of size. This criticality manifests as scale-free velocity correlations $`C(r) \sim r^{-1/3}`$ [^11] and susceptibility $`\chi`$ that scales with flock size $`N`$ [^8]. But how do we engineer this critical state in an artificial flock?
 
-The answer lies in heterogeneous alert states with negative coupling, a mechanism inspired by vigilance behavior in bird flocks where scanning birds prioritize threat detection over alignment.
+The answer lies in heterogeneous alert states with negative coupling, a mechanism inspired by vigilance behavior in bird flocks [^9][^10] where scanning birds prioritize threat detection over alignment.
 
 ## State Space and System Architecture
 
@@ -36,7 +36,7 @@ where:
 
 ### Dynamic Graph Topology
 
-The flock's communication structure forms a dynamic graph $`G_t = (\mathcal{V}, \mathcal{E}_t)`$. Unlike traditional flocking models that use metric distance (connecting agents within a fixed radius), biological flocks use topological distance, connecting to a fixed number of nearest neighbors regardless of their physical separation. This distinction proves crucial: metric interactions fail to reproduce the scale-free correlations observed in nature, while topological rules naturally generate them.
+The flock's communication structure forms a dynamic graph $`G_t = (\mathcal{V}, \mathcal{E}_t)`$. Unlike traditional flocking models that use metric distance (connecting agents within a fixed radius), biological flocks use topological distance, connecting to a fixed number of nearest neighbors regardless of their physical separation. This distinction matters fundamentally since metric interactions fail to reproduce the scale-free correlations observed in nature, while topological rules naturally generate them.
 
 $`
 \hspace{0.5cm} \displaystyle
@@ -44,7 +44,7 @@ $`
 `$  
 <br>
 
-Following the empirical observations of Ballerini et al. (2008), we use $`k = 7`$ neighbors. This specific value emerges from a trade-off: too few connections and information cannot propagate; too many and the computational burden on biological systems becomes prohibitive. The number seven appears repeatedly across species, suggesting an evolutionary optimum.
+Based on topological interaction studies in starling flocks [^12], we use $`k = 7`$ neighbors. This specific value emerges from a trade-off where too few connections prevent information propagation, while too many connections make the computational burden on biological systems prohibitive. The number seven appears repeatedly across species, suggesting an evolutionary optimum.
 
 ## The Unified Control Theorem
 
@@ -54,8 +54,8 @@ Following the empirical observations of Ballerini et al. (2008), we use $`k = 7`
 
 $`
 \hspace{0.5cm} \displaystyle
-\mathbf{u}_i^* = \text{CBF}\left[\mathbf{u}_i^{\text{nom}}\right]
-`$  
+\mathbf{u}_i^* = \mathbf{u}_i^{\text{nom}} - \kappa \cdot \nabla T \cdot \sigma(-\rho c)
+`$
 <br>
 
 where the nominal control:
@@ -74,7 +74,7 @@ produces emergent dynamics satisfying all biological and safety constraints.
 
 ### Markovian Vigilance States
 
-In natural flocks, individual birds alternate between states of relaxation and vigilance following predictable patterns. Beauchamp's extensive field studies (2015) documented these transitions across multiple species, revealing that vigilance bouts follow exponential distributions, characteristic of Markovian processes. This stochastic switching serves an evolutionary purpose: while vigilant birds scan for predators, they cannot feed efficiently, creating a fundamental trade-off between safety and energy acquisition.
+In natural flocks, individual birds alternate between states of relaxation and vigilance following predictable patterns. Extensive field studies across multiple species [^9] reveal that vigilance bouts follow exponential distributions, characteristic of Markovian processes. This stochastic switching serves an evolutionary purpose, as vigilant birds scanning for predators cannot feed efficiently, creating a fundamental trade-off between safety and energy acquisition.
 
 We model this behavior as a continuous-time Markov chain:
 
@@ -100,20 +100,20 @@ The resulting bout durations align with biological data:
 
 - Mean relaxed bout: $`\mathbb{E}[T_{\text{relaxed}}] = 1/\lambda = 47`$ timesteps
 
-The 30% alert fraction represents a critical threshold. Below this value, flocks become overly ordered, losing the ability to respond rapidly to threats. Above it, excessive vigilance fragments the group into chaotic, uncoordinated motion. This fraction emerges naturally from the evolutionary pressures that shaped these behaviors over millions of years.
+The 30% alert fraction represents a critical threshold. Below this value, flocks become overly ordered, losing the ability to respond rapidly to threats. Above it, excessive vigilance fragments the group into chaotic, uncoordinated motion. This fraction emerges naturally from the evolutionary pressures that shaped these behaviors over millions of years [^9][^10].
 
 ## Hamiltonian Alignment
 
 ### Energy Formulation
 
-Statistical mechanics provides a powerful framework for understanding collective motion. Bialek et al. (2012) demonstrated that starling flocks can be modeled as maximum entropy systems, where bird velocities act analogously to spins in magnetic materials. This connection to physics reveals deep principles: just as magnets exhibit phase transitions between ordered and disordered states, flocks transition between coordinated movement and scattered chaos.
+Statistical mechanics provides a powerful framework for understanding collective motion. Research on starling flocks has demonstrated they can be modeled as maximum entropy systems [^7], where bird velocities act analogously to spins in magnetic materials. This connection to physics reveals deep principles, with flocks transitioning between coordinated movement and scattered chaos just as magnets exhibit phase transitions between ordered and disordered states.
 
-The system's energy takes the form:
+The system's energy takes the classical Heisenberg form [^18]:
 
 $`
 \hspace{0.5cm} \displaystyle
 E = -\sum_{i<j} J_{ij}^{\text{alert}} \mathbf{s}_i \cdot \mathbf{s}_j - \sum_i \mathbf{h}_i \cdot \mathbf{s}_i
-`$  
+`$
 <br>
 
 where $`\mathbf{s}_i = \mathbf{v}_i / |\mathbf{v}_i|`$ represents the normalized velocity or "spin" of each bird. The first term captures velocity alignment between neighbors, while the second represents external influences like thermal gradients.
@@ -139,7 +139,7 @@ $`
 `$  
 <br>
 
-The negative coupling for alert birds represents this project's central innovation: heterogeneous interaction strengths that unify Hamiltonian spin dynamics with active matter flocking to achieve criticality.
+The negative coupling for alert birds represents this project's central innovation, unifying Hamiltonian spin dynamics with active matter flocking through heterogeneous interaction strengths to achieve criticality.
 
 While relaxed birds follow their neighbors' motion, alert birds actively oppose local alignment, with their attention focused outward for threats rather than inward for coordination. This opposition creates perturbations that cascade through the topological network, preventing the system from settling into static order.
 
@@ -169,21 +169,21 @@ $`
 `$  
 <br>
 
-The variance in coupling strengths directly translates to variance in the collective order parameter $`\Phi = \frac{1}{N}\sum_i \hat{\mathbf{v}}_i`$, yielding susceptibility:
+The variance in coupling strengths maintains elevated susceptibility, quantified through the integrated velocity correlation function:
 
 $`
 \hspace{0.5cm} \displaystyle
-\chi = N \cdot \text{Var}[\Phi] = N \cdot \langle |\Phi - \langle\Phi\rangle|^2 \rangle \geq 5
-`$  
+\chi = \int_0^\xi C(r) dr
+`$
 <br>
 
-This susceptibility value of 5 or greater indicates the system operates near criticality, where correlations become scale-free and information can propagate across the entire flock regardless of size.
+where $`C(r)`$ is the velocity correlation function and $`\xi`$ is the correlation length. In critical systems, $`\chi`$ scales with flock size $`N`$ without saturation, indicating the system maintains responsiveness at all scales [^11] [^8].
 
 ## Self-Propulsion Dynamics
 
 ### Active Matter Framework
 
-Birds, unlike passive particles, generate their own motion through wing beats. This self-propulsion places them in the category of active matter, systems that consume energy to move. Ginelli's comprehensive review (2016) established that active matter systems exhibit unique phase transitions and collective phenomena impossible in equilibrium systems. The Vicsek model, a cornerstone of active matter theory, demonstrates how self-propelled particles with velocity alignment can spontaneously break symmetry and move collectively.
+Birds, unlike passive particles, generate their own motion through wing beats. This self-propulsion places them in the category of active matter, systems that consume energy to move. Active matter theory shows these systems exhibit unique phase transitions and collective phenomena impossible in equilibrium systems [^19]. The Vicsek model, a cornerstone of this field, demonstrates how self-propelled particles with velocity alignment can spontaneously break symmetry and move collectively.
 
 In our framework, each agent maintains its cruising speed through a restoring force:
 
@@ -208,7 +208,7 @@ $`
 `$  
 <br>
 
-where the amplification factor $`\alpha = 4.5`$ places alert birds near the order-disorder phase transition. This heightened noise reflects the rapid, scanning movements of vigilant birds, their heads turning quickly to survey for threats. The noise value of 0.2 for relaxed birds keeps them in the ordered phase where collective motion emerges, while the value of 1.0 for alert birds pushes them toward disorder, creating the fluctuations that prevent the flock from freezing into rigid patterns.
+where the amplification factor $`\alpha = 4.5`$ places alert birds near the order-disorder phase transition. This heightened noise reflects the rapid, scanning movements of vigilant birds, their heads turning quickly to survey for threats. The noise value of 0.2 for relaxed birds keeps them in the ordered phase where collective motion emerges, while the value of 1.0 for alert birds pushes them toward disorder, thereby creating the fluctuations that prevent the flock from freezing into rigid patterns.
 
 ## Environmental Response
 
@@ -234,7 +234,7 @@ This formulation ensures that agents begin responding to thermal threats well be
 
 ### Density Wave Propagation
 
-Under predator attack, starling flocks exhibit remarkable density waves that sweep through the group at speeds far exceeding individual flight velocities. Attanasi et al. (2014) measured these waves propagating at 15-45 m/s, creating the characteristic "ink-like" patterns that confuse predators. These density fluctuations arise from a reaction-diffusion process where local compression triggers expansion in neighboring regions.
+Under predator attack, starling flocks exhibit remarkable density waves that sweep through the group at speeds far exceeding individual flight velocities. Field measurements show these waves propagating at 15-45 m/s [^13], creating the characteristic "ink-like" patterns that confuse predators. These density fluctuations arise from a reaction-diffusion process where local compression triggers expansion in neighboring regions.
 
 We model this phenomenon through a continuum density field evolving according to:
 
@@ -276,57 +276,64 @@ $`
 
 The cubic denominator creates a force that grows rapidly as agents approach, effectively creating a "hard sphere" repulsion. The threshold distance $`3\epsilon`$ with $`\epsilon = 0.1`$ m ensures separation forces activate before actual contact, while the weight $`w_{\text{sep}} = 1.5`$ balances collision avoidance against other behavioral imperatives.
 
-## Control Barrier Functions
+## Thermal Safety Through Soft Penalties
 
-### Safety Through Optimization
+### The Kreisselmeier-Steinhauser Framework
 
-Control Barrier Functions provide mathematically rigorous safety guarantees by ensuring the system never leaves a defined safe set. Unlike traditional approaches that rely on potential fields or penalty functions, CBFs guarantee safety through forward invariance, proven through Lyapunov-like arguments.
+Thermal safety constraints guide agents away from dangerous temperature regions using smooth, differentiable penalty functions. The Kreisselmeier-Steinhauser (KS) formulation, developed for aerospace trajectory optimization [^14], provides gradient-based corrections that integrate seamlessly with neural network training while maintaining computational efficiency.
 
-We define the safe set as all states where temperature remains below the critical threshold:
-
-$`
-\hspace{0.5cm} \displaystyle
-\mathcal{C} = \{\mathbf{x} : h(\mathbf{x}) = T_{\text{max}} - T(\mathbf{x}) \geq 0\}
-`$  
-<br>
-
-### Forward Invariance Constraint
-
-To ensure the system remains safe, we require that the barrier function's time derivative satisfies:
+The thermal constraint function encodes safety requirements:
 
 $`
 \hspace{0.5cm} \displaystyle
-\dot{h}(\mathbf{x}, \mathbf{u}) = -\nabla T(\mathbf{x}) \cdot \mathbf{u} \geq -\alpha h(\mathbf{x})
-`$  
+c(\mathbf{x}, \mathbf{u}) = \nabla T(\mathbf{x}) \cdot \mathbf{u} + \alpha(T_{\text{max}} - T(\mathbf{x}))
+`$
 <br>
 
-The parameter $`\alpha = 2.5`$ determines how aggressively the system maintains safety margins. Larger values create stronger guarantees but may limit performance.
+When $`c \geq 0`$, the action $`\mathbf{u}`$ maintains or improves thermal safety, with the convergence rate $`\alpha = 2.5`$ determining how aggressively agents avoid temperature boundaries.
 
-### Quadratic Program Solution
+### Smooth Penalty Design
 
-At each timestep, we solve a quadratic program that finds the minimal deviation from the desired control while maintaining safety:
-
-$`
-\begin{aligned}
-\mathbf{u}^* = \arg\min_{\mathbf{u}} &\quad \|\mathbf{u} - \mathbf{u}_{\text{nom}}\|^2 \\
-\text{subject to} &\quad -\nabla T \cdot \mathbf{u} \geq -\alpha(T_{\text{max}} - T)
-\end{aligned}
-`$  
-<br>
-
-This optimization can be solved efficiently using specialized QP solvers like OSQP, typically requiring only microseconds even for large flocks. The solution guarantees:
+The KS penalty function creates a differentiable approximation to constraint violations:
 
 $`
 \hspace{0.5cm} \displaystyle
-h(t) \geq h(0)e^{-\alpha t} > 0 \implies T(t) < T_{\text{max}} \quad \forall t \geq 0
-`$  
+p(c) = \frac{\kappa}{\rho} \ln(1 + e^{-\rho c})
+`$
 <br>
+
+This formulation smoothly transitions from zero penalty in safe regions to strong corrections near violations. The weight parameter $`\kappa = 100`$ scales the correction magnitude, while the sharpness parameter $`\rho = 30`$ controls the transition steepness between safe and unsafe regions.
+
+### Gradient Correction Mechanism
+
+The penalty gradient provides a correction vector that modifies nominal controls:
+
+$`
+\hspace{0.5cm} \displaystyle
+\nabla_{\mathbf{u}} p = \kappa \cdot \sigma(-\rho c) \cdot \nabla T
+`$
+<br>
+
+where $`\sigma`$ denotes the sigmoid function. The corrected control becomes:
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{u}_{\text{safe}} = \mathbf{u}_{\text{nom}} - \kappa \cdot \nabla T \cdot \sigma(-\rho c)
+`$
+<br>
+
+The sigmoid activation creates adaptive behavior:
+- Deep violations ($`c \ll 0`$): $`\sigma(-\rho c) \approx 1`$, maximum correction along $`-\nabla T`$
+- Near boundary ($`c \approx 0`$): $`\sigma(-\rho c) \approx 0.5`$, moderate correction
+- Safe region ($`c > 0`$): $`\sigma(-\rho c) \approx 0`$, minimal interference
+
+This mechanism ensures agents navigate thermal fields smoothly, avoiding discontinuous jumps in control that could destabilize learning or create unrealistic trajectories.
 
 ## Emergent Properties
 
 ### Information Transfer Velocity
 
-The speed at which information propagates through the flock depends on the fraction of alert individuals. Empirical measurements by Attanasi et al. (2014) found propagation speeds ranging from 15 m/s in calm conditions to 45 m/s under predator attack. Our model reproduces this range through alert-dependent propagation:
+The speed at which information propagates through the flock depends on the fraction of alert individuals. Empirical measurements of starling flocks show propagation speeds ranging from 15 m/s in calm conditions to 45 m/s under predator attack [^13]. Our model reproduces this range through alert-dependent propagation:
 
 $`
 \hspace{0.5cm} \displaystyle
@@ -354,7 +361,7 @@ C(r) \sim r^{-\gamma} \text{ where } \gamma = \frac{d - 2 + \eta_{\text{alert}}}
 `$  
 <br>
 
-This exponent of 1/3 matches empirical observations across multiple species and flock sizes, indicating a universal principle independent of specific biological details.
+This exponent of 1/3 matches empirical observations across multiple species and flock sizes [^11], indicating a universal principle independent of specific biological details.
 
 ### Network Connectivity
 
@@ -390,11 +397,11 @@ with timestep $`\Delta t = 0.1`$ s chosen to balance computational efficiency wi
 
 ## Summary
 
-The unified control law achieves biological murmuration dynamics through carefully orchestrated interactions between multiple components. Alert heterogeneity with negative coupling maintains the critical state necessary for rapid information transfer. Topological interactions enable scale-free correlations independent of flock size. Self-propulsion with state-dependent noise creates realistic flight dynamics. Environmental responses translate thermal threats into coordinated evasion. Control Barrier Functions guarantee safety through mathematical rigor rather than heuristics.
+The unified control law achieves biological murmuration dynamics through carefully orchestrated interactions between multiple components. Alert heterogeneity with negative coupling maintains the critical state necessary for rapid information transfer. Topological interactions enable scale-free correlations independent of flock size. Self-propulsion with state-dependent noise creates realistic flight dynamics. Environmental responses translate thermal threats into coordinated evasion. Thermal penalties enforce safety through smooth gradient corrections that guide agents away from dangerous regions.
 
 The resulting system exhibits measurable properties matching empirical observations:
 
-- Susceptibility $`\chi \in [5, 20]`$ indicating critical state dynamics
+- Susceptibility $`\chi \sim N`$ indicating critical state dynamics
 
 - Information propagation at $`v_{\text{info}} \in [15, 45]`$ m/s
 
@@ -404,6 +411,30 @@ The resulting system exhibits measurable properties matching empirical observati
 
 - Network connectivity maintained with $`\lambda_2 > 0`$
 
-- Thermal safety guaranteed with $`T < 475`$ K
+- Thermal safety maintained with $`T < 475`$ K
 
 This framework transforms invisible thermal threats into visible motion patterns that humans can intuitively interpret, potentially providing life-saving information in wildfire scenarios where traditional sensors fail to capture the complex, dynamic nature of thermal hazards.
+
+---
+
+## References
+
+[^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109
+
+[^8]: Attanasi, Alessandro, Andrea Cavagna, Lorenzo Del Castello, Irene Giardina, Stefano Melillo, Leonardo Parisi, Oliver Pohl, Bruno Rossaro, Edward Shen, Edmondo Silvestri, and Massimiliano Viale. 2014. "Finite-Size Scaling as a Way to Probe Near-Criticality in Natural Swarms." *Physical Review Letters* 113 (23): 238102. https://doi.org/10.1103/PhysRevLett.113.238102
+
+[^9]: Beauchamp, Guy. 2015. *Animal Vigilance: Monitoring Predators and Competitors*. Academic Press.
+
+[^10]: Fernández-Juricic, Esteban. 2012. "Sensory Basis of Vigilance Behavior in Birds: Synthesis and Future Prospects." *Behavioural Processes* 89 (2): 143–152. https://doi.org/10.1016/j.beproc.2011.10.006
+
+[^11]: Cavagna, Andrea, Alessio Cimarelli, Irene Giardina, Giorgio Parisi, Raffaele Santagati, Fabio Stefanini, and Massimiliano Viale. 2010. "Scale-Free Correlations in Starling Flocks." *PNAS* 107 (26): 11865–70. https://doi.org/10.1073/pnas.1005766107
+
+[^12]: Ballerini, M. et al. 2008. "Interaction Ruling Animal Collective Behavior Depends on Topological Rather than Metric Distance." *PNAS* 105 (4): 1232–37. https://doi.org/10.1073/pnas.0711437105
+
+[^13]: Attanasi, Alessandro, et al. 2014. "Information Transfer and Behavioural Inertia in Starling Flocks." *Nature Physics* 10 (9): 691–696. https://doi.org/10.1038/nphys3035
+
+[^14]: Richards, Arthur. 2013. "Fast Model Predictive Control with Soft Constraints." *2013 European Control Conference (ECC)*, 1–6. https://doi.org/10.23919/ECC.2013.6669291
+
+[^18]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
+
+[^19]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8

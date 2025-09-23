@@ -116,9 +116,12 @@ class HardwareModel(BaseModel, extra="forbid"):
             "Adds significant overhead but helpful for debugging training issues."
         )
     )
-    devices: PositiveInt = Field(
-        default     = 1,
-        description = "Number of GPUs/TPUs to use for distributed training."
+    devices: int = Field(
+        default     = -1,
+        description = (
+            "Number of GPUs/TPUs to use for distributed training. Set to 1 for single device "
+            "or -1 to use all available devices (not applicable for MPS on Apple Silicon)."
+        )
     )
     precision: Literal["16-mixed", "bf16-mixed", "32-true", "64-true", "32"] = Field(
         default     = "32-true",

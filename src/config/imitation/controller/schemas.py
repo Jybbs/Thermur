@@ -5,7 +5,6 @@ This module consolidates all controller configuration models including
 flocking parameters, safety settings, and murmuration dynamics.
 """
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
-from typing   import Literal
 
 
 class MurmurationModel(BaseModel, extra="forbid"):
@@ -38,7 +37,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "noise η_alert = η_base × (1 + α), placing them into the disordered "
             "phase where they create perturbations that propagate through the flock. "
             "Value of 4.5 ensures alert birds operate near the disorder transition, "
-            "generating variance needed for critical state susceptibility χ ≥ 5."
+            "generating variance that maintains elevated susceptibility."
         )
     )
     alert_coupling_factor: float = Field(
@@ -49,7 +48,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Coupling strength modifier for alert birds in Hamiltonian alignment. "
             "J_alert = J_base × alert_coupling_factor. Value of -1.3 means alert "
             "birds actively oppose alignment (negative coupling), creating the "
-            "oscillations and variance needed for χ = N·Var[Φ] ≥ 5. Based on "
+            "oscillations and variance that maintain critical state dynamics. Based on "
             "vigilance behavior where scanning birds prioritize threat detection "
             "over flock following (Beauchamp 2015, Fernández-Juricic 2012)."
         )
@@ -108,7 +107,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "velocity alignment between neighbors. Value of 0.5 balances cohesion "
             "with flexibility, allowing perturbations from alert birds to propagate "
             "through the flock while maintaining structural integrity. This enables "
-            "the variance generation needed for critical state susceptibility χ ≥ 5."
+            "the variance generation needed to maintain critical state dynamics."
         )
     )
     k_neighbors: PositiveInt = Field(
@@ -190,23 +189,28 @@ class SafetyModel(BaseModel, extra="forbid"):
     """
     Unified safety system configuration.
 
-    Combines Control Barrier Function parameters, QP solver settings,
-    and critical safety thresholds into a single configuration for the
-    safety filtering system that ensures all control commands respect
-    thermal constraints.
+    Configures the thermal safety penalty system using Kreisselmeier-Steinhauser
+    soft constraints to ensure all control commands respect thermal limits without
+    requiring optimization solvers.
     """
-    cbf_alpha: PositiveFloat = Field(
-        default     = 2.5,
+    ks_kappa: PositiveFloat = Field(
+        default     = 100.0,
         description = (
-            "Class-K function parameter α > 0 defining exponential safety convergence "
-            "rate via CBF constraint ∇h(x)ᵀu ≥ -αh(x) where h(x) = T_max - T(x)."
+            "Penalty weight κ in the KS formulation controlling the magnitude of "
+            "safety corrections. Higher values enforce stricter constraint satisfaction "
+            "via p = (κ/ρ)·ln(1 + exp(-ρ·c)) where c is the constraint function."
         )
     )
-    cbf_tolerance: PositiveFloat = Field(
-        default     = 3.0,
+    ks_rho: PositiveFloat = Field(
+        default     = 30.0,
+        le          = 100.0,
         description = (
-            "Control deviation threshold in m/s for detecting CBF interventions, "
-            "used by the safety filter for detecting CBF interventions."
+            "Sharpness parameter ρ in the KS penalty function determining how closely "
+            "the smooth penalty approximates max(0, -c). As ρ → ∞, the soft penalty "
+            "converges to hard constraint behavior. Default of 30 provides moderate "
+            "enforcement: smooth enough for gradient descent yet sharp enough for "
+            "effective constraint satisfaction. Values above 100 may cause numerical "
+            "instability."
         )
     )
     max_temperature: PositiveFloat = Field(
@@ -216,12 +220,12 @@ class SafetyModel(BaseModel, extra="forbid"):
             "C = {𝐱 | T(𝐱) ≤ T_max} enforced across all components."
         )
     )
-    qp_on_failure: Literal["zero", "nominal", "raise"] = Field(
-        default     = "zero",
+    thermal_alpha: PositiveFloat = Field(
+        default     = 2.5,
         description = (
-            "Fallback strategy when QP fails: 'zero' applies zero control for safety, "
-            "'nominal' uses unfiltered input, 'raise' propagates exception for "
-            "debugging."
+            "Convergence rate α > 0 for thermal constraints, controlling how aggressively "
+            "the system maintains temperature safety via the constraint "
+            "∇T(𝐱)ᵀ𝐮 + α·(T_max - T(𝐱)) ≥ 0."
         )
     )
     threat_onset_ratio: PositiveFloat = Field(
