@@ -108,7 +108,7 @@ The 30% alert fraction represents a critical threshold. Below this value, flocks
 
 Statistical mechanics provides a powerful framework for understanding collective motion. Research on starling flocks has demonstrated they can be modeled as maximum entropy systems [^7], where bird velocities act analogously to spins in magnetic materials. This connection to physics reveals deep principles, with flocks transitioning between coordinated movement and scattered chaos just as magnets exhibit phase transitions between ordered and disordered states.
 
-The system's energy takes the classical Heisenberg form [^18]:
+The system's energy takes the classical Heisenberg form [^17]:
 
 $`
 \hspace{0.5cm} \displaystyle
@@ -183,7 +183,7 @@ where $`C(r)`$ is the velocity correlation function and $`\xi`$ is the correlati
 
 ### Active Matter Framework
 
-Birds, unlike passive particles, generate their own motion through wing beats. This self-propulsion places them in the category of active matter, systems that consume energy to move. Active matter theory shows these systems exhibit unique phase transitions and collective phenomena impossible in equilibrium systems [^19]. The Vicsek model, a cornerstone of this field, demonstrates how self-propelled particles with velocity alignment can spontaneously break symmetry and move collectively.
+Birds, unlike passive particles, generate their own motion through wing beats. This self-propulsion places them in the category of active matter, systems that consume energy to move. Active matter theory shows these systems exhibit unique phase transitions and collective phenomena impossible in equilibrium systems [^18]. The Vicsek model, a cornerstone of this field, demonstrates how self-propelled particles with velocity alignment can spontaneously break symmetry and move collectively.
 
 In our framework, each agent maintains its cruising speed through a restoring force:
 
@@ -280,7 +280,7 @@ The cubic denominator creates a force that grows rapidly as agents approach, eff
 
 ### The Kreisselmeier-Steinhauser Framework
 
-Thermal safety constraints guide agents away from dangerous temperature regions using smooth, differentiable penalty functions. The Kreisselmeier-Steinhauser (KS) formulation, developed for aerospace trajectory optimization [^14], provides gradient-based corrections that integrate seamlessly with neural network training while maintaining computational efficiency.
+Thermal safety constraints guide agents away from dangerous temperature regions using smooth, differentiable penalty functions. The Kreisselmeier-Steinhauser (KS) formulation, developed for systematic control design [^14], provides gradient-based corrections that integrate seamlessly with neural network training while maintaining computational efficiency.
 
 The thermal constraint function encodes safety requirements:
 
@@ -433,8 +433,8 @@ This framework transforms invisible thermal threats into visible motion patterns
 
 [^13]: Attanasi, Alessandro, et al. 2014. "Information Transfer and Behavioural Inertia in Starling Flocks." *Nature Physics* 10 (9): 691–696. https://doi.org/10.1038/nphys3035
 
-[^14]: Richards, Arthur. 2013. "Fast Model Predictive Control with Soft Constraints." *2013 European Control Conference (ECC)*, 1–6. https://doi.org/10.23919/ECC.2013.6669291
+[^14]: Kreisselmeier, G., and R. Steinhauser. 1979. "Systematic Control Design by Optimizing a Vector Performance Index." *IFAC Proceedings Volumes* 12 (7): 113–17. https://doi.org/10.1016/S1474-6670(17)65584-8
 
-[^18]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
+[^17]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
-[^19]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+[^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
