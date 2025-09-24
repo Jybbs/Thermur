@@ -104,14 +104,19 @@ class BaseMetric(MeanMetric):
         batch_id  = id(batch)
         B, N      = batch.num_graphs, self.agent_count
         cache     = BaseMetric._reshape_cache
-        normalize = lambda vecs: th.nn.functional.normalize(vecs, dim=-1)
+        corr      = lambda x: th.bmm(d := x - x.mean(1, keepdim=True), d.mT)
+        distances = lambda: th.cdist(p := reshape('position'), p)
         reshape   = lambda feat: self._reshape_features(batch, feat)[0]
-        spin      = lambda s=slice(None): normalize(reshape('velocity')[..., s])
+        spins     = lambda: th.nn.functional.normalize(reshape('velocity'), dim=-1)
+        triu      = lambda m: m[:, (t := th.triu_indices(N, N, 1))[0], t[1]]
         computed  = {
-            'distances'  : lambda: th.cdist(p := reshape('position'), p),
-            'spin_mean'  : lambda: spin().mean(dim=1, keepdim=True),
-            'spins'      : spin,
-            'spins_2d'   : lambda: spin(slice(2)),
+            'dist_triu'      : lambda: triu(distances()),
+            'distances'      : distances,
+            'spin_corr_triu' : lambda: triu(corr(spins())),
+            'spin_mean'      : lambda: spins().mean(dim=1, keepdim=True),
+            'spins'          : spins,
+            'spins_2d'       : lambda: spins()[..., :2],
+            'vel_corr_triu'  : lambda: triu(corr(reshape('velocity'))),
         }
 
         get_or_compute = lambda feat: (
@@ -963,36 +968,6 @@ class ScaleFreeCorrelation(BaseMetric):
             valid_bins
         )
 
-    def _compute_correlations(
-        self,
-        distances : Tensor,
-        spins     : Tensor
-    ) -> tuple[Tensor, Tensor]:
-        """
-        Compute velocity correlations for all agent pairs.
-
-        Calculates C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ where δ𝐯 = 𝐯 - ⟨𝐯⟩ are
-        velocity fluctuations from the mean. Returns upper triangular
-        elements only to avoid redundant pair computations.
-
-        Args:
-            distances : Pairwise distances    [B, N, N]
-            spins     : Normalized velocities [B, N, 3]
-
-        Returns:
-            Tuple of (unique_correlations, unique_distances) [B, N*(N-1)/2]
-        """
-        triu_idx  = th.triu_indices(self.agent_count, self.agent_count, 1)
-        corr_mats = th.bmm(
-            delta_spins := spins - spins.mean(dim=1, keepdim=True),
-            delta_spins.mT
-        )
-
-        return (
-            corr_mats[:, triu_idx[0], triu_idx[1]],
-            distances[:, triu_idx[0], triu_idx[1]]
-        )
-
     def _fit_power_laws(
         self,
         bin_means  : Tensor,
@@ -1007,7 +982,7 @@ class ScaleFreeCorrelation(BaseMetric):
 
         Args:
             bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
-            valid_bins : Mask of bins with sufficient data [B, n_bins]
+            valid_bins : Mask of bins with sufficient data       [B, n_bins]
 
         Returns:
             Power law exponents γ for batches with ≥3 valid bins
@@ -1038,9 +1013,7 @@ class ScaleFreeCorrelation(BaseMetric):
             batch       : PyG Batch containing position and velocity
             predictions : Predicted actions (unused)
         """
-        corrs, dists = self._compute_correlations(
-            *self._reshape_features(batch, "distances", "spins")
-        )
+        corrs, dists = self._reshape_features(batch, "spin_corr_triu", "dist_triu")
 
         if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
             return
@@ -1081,88 +1054,138 @@ class Susceptibility(BaseMetric):
     rapid information transfer across the entire flock.
     """
 
-    def __init__(self, agent_count: int):
+    def __init__(self, **kwargs):
         """
-        Initialize susceptibility metric.
+        Initialize susceptibility metric with adaptive binning.
+
+        Following empirical analysis in scale-free systems (Cavagna et al. 2010),
+        the number of bins scales as O(√N) to balance resolution with statistics.
+        This ensures adequate sampling while maintaining computational efficiency.
+        """
+        super().__init__(**kwargs)
+
+    def _bin_correlations(
+        self,
+        correlations : Tensor,
+        distances    : Tensor,
+        n_bins       : int
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Bin correlations by distance using logarithmic spacing.
+
+        Creates logarithmically-spaced bins to capture scale-free behavior
+        across multiple length scales. Uses fully vectorized binning to
+        process all batches simultaneously.
 
         Args:
-            agent_count: Number of agents in flock
-        """
-        super().__init__(agent_count)
-        self.num_bins = 20  # Number of distance bins for correlation function
-
-    def evaluate(self, batch: FlockBatch) -> Tensor:
-        """
-        Compute susceptibility as integrated velocity correlation.
-
-        Args:
-            batch: PyG Batch containing positions and velocities
+            correlations : Velocity correlations [B_valid, n_pairs]
+            distances    : Pairwise distances    [B_valid, n_pairs]
+            n_bins       : Number of logarithmic bins
 
         Returns:
-            Susceptibility values per batch
+            Tuple of (bin_means, valid_bins) for integration
         """
-        # Get reshaped features
-        positions, _ = self._reshape_features(batch, "position", "position")
-        velocities, _ = self._reshape_features(batch, "velocity", "velocity")
+        batch     = correlations.shape[0]
+        device    = distances.device
+        dist_mins = distances.amin(1, keepdim=True)
+        dist_maxs = distances.amax(1, keepdim=True)
 
-        # Compute velocity fluctuations: δ𝐯ᵢ = 𝐯ᵢ - ⟨𝐯⟩
-        mean_velocity = velocities.mean(dim=1, keepdim=True)
-        fluctuations = velocities - mean_velocity
+        normalized_bins = (
+            (distances.log10() - dist_mins.log10()) /
+            (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
+        ).long().clamp(0, n_bins - 1)
 
-        # Compute pairwise distances and correlations
-        distances = th.cdist(positions, positions, p=2)
+        batch_offsets = th.arange(batch, device=device).unsqueeze(1) * n_bins
+        bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
 
-        # Compute correlation matrix C_ij = δ𝐯ᵢ · δ𝐯ⱼ
-        correlation_matrix = th.bmm(fluctuations, fluctuations.transpose(1, 2))
+        bin_sums = th.zeros(batch * n_bins, 2, device=device).index_add_(
+            dim    = 0,
+            index  = bins_flat,
+            source = th.stack(
+                dim     = -1,
+                tensors = [correlations.reshape(-1), distances.reshape(-1)]
+            )
+        ).view(batch, n_bins, 2)
 
-        # Extract upper triangular (unique pairs)
-        B, N = positions.shape[:2]
-        triu_idx = th.triu_indices(N, N, offset=1)
+        counts = th.bincount(
+            input     = bins_flat,
+            minlength = batch * n_bins
+        ).view(batch, n_bins)
 
-        pair_distances = distances[:, triu_idx[0], triu_idx[1]]
-        pair_correlations = correlation_matrix[:, triu_idx[0], triu_idx[1]]
+        return (
+            th.where(
+                (valid_bins := counts > 0).unsqueeze(-1),
+                bin_sums / counts.clamp_min(1).unsqueeze(-1),
+                th.zeros_like(bin_sums)
+            ),
+            valid_bins
+        )
 
-        # Create logarithmically-spaced bins for better resolution
-        max_dist = pair_distances.max(dim=1, keepdim=True)[0]
-        min_dist = pair_distances.min(dim=1, keepdim=True)[0] + 1e-6
+    def _integrate_cumulative(
+        self,
+        bin_means  : Tensor,
+        valid_bins : Tensor
+    ) -> Tensor:
+        """
+        Integrate correlation function using trapezoidal rule.
 
-        log_bins = th.linspace(
-            min_dist.log().min().item(),
-            max_dist.log().max().item(),
-            self.num_bins + 1,
-            device=positions.device
-        ).exp()
+        Computes cumulative correlation Q(r) = ∫₀ʳ C(r')dr' via numerical
+        integration. The susceptibility χ is the maximum value of Q(r),
+        typically reached at the correlation length where C(r) → 0.
 
-        # Bin correlations by distance
-        susceptibilities = th.zeros(B, device=positions.device)
+        Args:
+            bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
+            valid_bins : Mask of bins with sufficient data       [B, n_bins]
 
-        for b in range(B):
-            # Compute correlation function C(r) for this batch
-            C_r = th.zeros(self.num_bins, device=positions.device)
-            r_centers = th.zeros(self.num_bins, device=positions.device)
+        Returns:
+            Susceptibility χ as maximum integrated correlation for batches
+            with at least 2 consecutive valid bins, empty tensor otherwise
+        """
+        consecutive = valid_bins[:, :-1] & valid_bins[:, 1:]
+        if not (mask := consecutive.any(1)).any():
+            return th.empty(0, device=bin_means.device)
 
-            for i in range(self.num_bins):
-                mask = (pair_distances[b] >= log_bins[i]) & (pair_distances[b] < log_bins[i+1])
-                if mask.sum() > 0:
-                    C_r[i] = pair_correlations[b, mask].mean()
-                    r_centers[i] = pair_distances[b, mask].mean()
+        correlations = bin_means[..., 0]
+        distances    = bin_means[..., 1]
+        cumulative   = th.zeros_like(correlations)
 
-            # Find where C(r) crosses zero (correlation length ξ)
-            valid_bins = C_r != 0
-            if valid_bins.sum() > 1:
-                # Integrate correlation function using trapezoidal rule
-                # Q(r) = ∫₀ʳ C(r')dr'
-                dr = r_centers[1:] - r_centers[:-1]
-                cumulative = th.zeros_like(C_r)
+        for i in range(1, bin_means.shape[1]):
+            both_valid = valid_bins[:, i] & valid_bins[:, i-1]
+            delta_r    = (distances[:, i] - distances[:, i-1]).abs()
+            trapz_area = 0.5 * (correlations[:, i] + correlations[:, i-1]) * delta_r
 
-                for i in range(1, len(C_r)):
-                    if valid_bins[i] and valid_bins[i-1]:
-                        cumulative[i] = cumulative[i-1] + 0.5 * (C_r[i] + C_r[i-1]) * dr[i-1].abs()
+            cumulative[:, i] = th.where(
+                both_valid,
+                cumulative[:, i-1] + trapz_area,
+                cumulative[:, i-1]
+            )
 
-                # Susceptibility is maximum of cumulative correlation
-                susceptibilities[b] = cumulative.abs().max()
+        return cumulative[mask].abs().amax(dim=1)
 
-        return susceptibilities
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with susceptibility measurement.
+
+        Override update directly since this metric conditionally computes values
+        only when there's sufficient data for meaningful integration.
+
+        Args:
+            batch       : PyG Batch containing position and velocity
+            predictions : Predicted actions (unused)
+        """
+        corrs, dists = self._reshape_features(batch, "vel_corr_triu", "dist_triu")
+
+        if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
+            return
+
+        if (susceptibilities := self._integrate_cumulative(
+            *self._bin_correlations(
+                correlations = corrs[valid_ids := th.where(valid_batch)[0]],
+                distances    = dists[valid_ids],
+                n_bins       = min(20, max(5, corrs.shape[1] // 10))
+            )
+        )).numel() > 0:
+            MeanMetric.update(self, susceptibilities)
 
 
 class Temperature(BaseMetric):
