@@ -30,38 +30,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Minimum of 8 ensures k-nearest neighbor connectivity with k=7."
         )
     )
-    alert_amplification: PositiveFloat = Field(
-        default     = 4.5,
-        description = (
-            "Amplification factor α for alert state noise. Alert birds experience "
-            "noise η_alert = η_base × (1 + α), placing them into the disordered "
-            "phase where they create perturbations that propagate through the flock. "
-            "Value of 4.5 ensures alert birds operate near the disorder transition, "
-            "generating variance that maintains elevated susceptibility."
-        )
-    )
-    alert_coupling_factor: float = Field(
-        default     = -1.3,
-        ge          = -2.0,
-        le          = 1.0,
-        description = (
-            "Coupling strength modifier for alert birds in Hamiltonian alignment. "
-            "J_alert = J_base × alert_coupling_factor. Value of -1.3 means alert "
-            "birds actively oppose alignment (negative coupling), creating the "
-            "oscillations and variance that maintain critical state dynamics. Based on "
-            "vigilance behavior where scanning birds prioritize threat detection "
-            "over flock following (Beauchamp 2015, Fernández-Juricic 2012)."
-        )
-    )
-    alert_to_relaxed_rate: PositiveFloat = Field(
-        default     = 0.05,
-        le          = 1.0,
-        description = (
-            "Transition rate μ from alert to relaxed state (per timestep). "
-            "Mean alert duration = 1/μ = 20 timesteps. Based on vigilance "
-            "bout durations observed in birds."
-        )
-    )
     communication_range: PositiveFloat = Field(
         default     = 50.0,
         description = (
@@ -100,14 +68,33 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "capture extended temporal dependencies in flocking behavior."
         )
     )
+    heterogeneity_mean: PositiveFloat = Field(
+        default     = 0.70,
+        description = (
+            "Mean μ of heterogeneous noise distribution η_i ~ N(μ, σ). "
+            "From Guisandez et al. (2018), the critical transition occurs at "
+            "μc ≈ 0.70 for σ = 0.20, where susceptibility is maximized. This "
+            "noise level ensures the flock operates at the order-disorder transition "
+            "necessary for murmuration patterns and scale-free correlations."
+        )
+    )
+    heterogeneity_std: PositiveFloat = Field(
+        default     = 0.20,
+        description = (
+            "Standard deviation σ of heterogeneous noise distribution η_i ~ N(μ, σ). "
+            "From Guisandez et al. (2018), σ = 0.20 creates continuous phase transitions "
+            "with critical exponents β = 0.69, γ = 1.7, ν = 1.56. This heterogeneity "
+            "naturally generates the behavioral variance necessary for scale-free "
+            "correlations and murmuration patterns without requiring explicit anti-alignment."
+        )
+    )
     j_base: PositiveFloat = Field(
         default     = 0.5,
         description = (
             "Base coupling strength J_0 in Hamiltonian formulation controlling "
             "velocity alignment between neighbors. Value of 0.5 balances cohesion "
-            "with flexibility, allowing perturbations from alert birds to propagate "
-            "through the flock while maintaining structural integrity. This enables "
-            "the variance generation needed to maintain critical state dynamics."
+            "with flexibility, allowing heterogeneous noise to create the variance "
+            "needed for critical state dynamics while maintaining structural integrity."
         )
     )
     k_neighbors: PositiveInt = Field(
@@ -124,23 +111,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "force computation to prevent singularities in U_sep = Σ 1/||𝐱_i - 𝐱_j||."
         )
     )
-    separation_strength: PositiveFloat = Field(
-        default     = 1.5,
-        description = (
-            "Weight coefficient for short-range separation forces that prevent "
-            "collisions between agents when metric distance < 3·ε_dist, implementing "
-            "F_sep = -w_sep · Σ (𝐱_j - 𝐱_i) / ||𝐱_j - 𝐱_i||³."
-        )
-    )
-    relaxed_to_alert_rate: PositiveFloat = Field(
-        default     = 0.021,
-        le          = 1.0,
-        description = (
-            "Transition rate λ from relaxed to alert state (per timestep). "
-            "Steady-state alert fraction = λ/(λ+μ) ≈ 0.30 matching the "
-            "~30% vigilance observed in bird flocks."
-        )
-    )
     self_propulsion_speed: PositiveFloat = Field(
         default     = 11.1,
         description = (
@@ -148,6 +118,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "the intrinsic cruising speed birds maintain. Empirical observations show "
             "starlings fly at 9-12 m/s during murmuration displays (Ballerini 2008). "
             "11.1 m/s represents a weighted average from empirical data."
+        )
+    )
+    separation_strength: PositiveFloat = Field(
+        default     = 1.5,
+        description = (
+            "Weight coefficient for short-range separation forces that prevent "
+            "collisions between agents when metric distance < 3·ε_dist, implementing "
+            "F_sep = -w_sep · Σ (𝐱_j - 𝐱_i) / ||𝐱_j - 𝐱_i||³."
         )
     )
     temperature_scaling: PositiveFloat = Field(
@@ -164,23 +142,13 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Determines the size of the offline dataset for expert trajectory collection."
         )
     )
-    velocity_noise_scale: PositiveFloat = Field(
-        default     = 0.2,
+    wind_coupling: PositiveFloat = Field(
+        default     = 0.3,
         description = (
-            "Noise amplitude η for velocity fluctuations in active matter models. "
-            "Value of 0.2 places the system near the critical point of the Vicsek "
-            "model (η_c ≈ 0.15-0.25), where susceptibility is maximized. Implements "
-            "stochastic perturbations via 𝐯' = v₀(𝐬 + η𝝃) where 𝝃 ~ N(0,1)."
-        )
-    )
-    velocity_relaxation_time: PositiveFloat = Field(
-        default     = 0.6,
-        description = (
-            "Time constant τ (in seconds) for velocity relaxation in self-propulsion "
-            "dynamics: F_prop = (v_target - v)/τ + η𝝃. Based on active matter theory "
-            "(Ginelli, 2016), values of 0.5-2.0s provide responsive yet smooth motion. "
-            "Value of 0.6s ensures quick response to perturbations while maintaining "
-            "realistic bird flight dynamics."
+            "Coupling coefficient for environmental wind field incorporation into "
+            "target velocity. Value of 0.3 means agents adjust their heading to include "
+            "30 percent of the local wind velocity, representing partial adaptation to wind "
+            "conditions while maintaining intended flight direction."
         )
     )
 

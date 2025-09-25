@@ -369,17 +369,17 @@ class HamiltonianEnergy(BaseMetric):
     Track Hamiltonian energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per timestep.
 
     Computes the interaction energy of the flock using physics-inspired
-    spin glass formulation where agents are spins with pairwise coupling:
+    spin glass formulation where agents are spins with uniform pairwise coupling:
 
-        H = -Σᵢⱼ J_{ij}^{alert} (v̂ᵢ · v̂ⱼ)
+        H = -Σᵢⱼ J_{ij} (v̂ᵢ · v̂ⱼ)
 
-    where J_{ij}^{alert} = κᵢ J₀ exp(-dᵢⱼ/λ) with:
-        - κᵢ = 1.0 for relaxed birds, α for alert birds
+    where J_{ij} = J₀ exp(-dᵢⱼ/λ) with:
+        - J₀ is the uniform base coupling strength
         - dᵢⱼ is topological distance from k-NN graph
         - λ is the coupling decay length
 
-    Energy minimization drives alignment (E < 0) while thermal fluctuations
-    (alert states) increase disorder, creating rich phase transitions.
+    Energy minimization drives alignment (E < 0) while heterogeneous noise
+    in individual dynamics creates the variance necessary for critical states.
     """
     _hop_cache  = {}
     _triu_cache = {}
@@ -455,20 +455,14 @@ class HamiltonianEnergy(BaseMetric):
         Returns:
             Hamiltonian energy values as tensor
         """
-        spins,   = self._reshape_features(batch, "spins")
-        hops     = self._compute_hops_per_graph(batch)
+        spins = self._reshape_features(batch, "spins")[0]
+        hops  = self._compute_hops_per_graph(batch)
+
         coupling = th.where(
             hops.isfinite(),
             self.j_base * (-hops / self.coupling_decay).exp(),
             th.zeros_like(hops)
         )
-
-        alert_mod = th.where(
-            batch.alert_states.view(-1, self.agent_count, 1) > 0.5,
-            self.alert_coupling_factor,
-            1.0
-        )
-        coupling *= alert_mod
 
         return -(
             coupling
@@ -616,6 +610,42 @@ class NeighborStability(BaseMetric):
         return (
             1.0 - intersection.float() / union.float()
             if union > 0 else th.tensor(0.0, device=batch.edge_index.device)
+        )
+
+
+class NoiseHeterogeneity(BaseMetric):
+    """
+    Monitor heterogeneity variance to ensure critical state maintenance.
+
+    Tracks the standard deviation of individual noise amplitudes η_i across
+    the flock, where heterogeneity creates the behavioral variance necessary
+    for murmuration patterns. From Guisandez et al. (2018), maintaining
+    σ(η) at the configured heterogeneity_std ensures continuous phase
+    transitions and scale-free correlations.
+
+    The metric computes:
+        Δσ = |σ(η_batch) - σ_target|
+
+    where σ(η_batch) is the measured standard deviation of noise amplitudes
+    and σ_target is the configured heterogeneity_std parameter.
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Measure deviation from target heterogeneity variance.
+
+        Args:
+            batch: PyG Batch containing heterogeneity values
+
+        Returns:
+            Mean absolute deviation from target σ across batch
+        """
+        return (
+            batch.heterogeneity.view(batch.num_graphs, self.agent_count)
+                .std(dim=1)
+                .sub(self.heterogeneity_std)
+                .abs()
+                .mean()
         )
 
 
@@ -1270,11 +1300,11 @@ class MetricsFactory:
         """
         self.cfg = {
             "agent_count"             : agent_count,
-            "alert_coupling_factor"   : murmuration.alert_coupling_factor,
             "correlation_exponent"    : metrics.correlation_exponent,
             "coupling_decay"          : murmuration.coupling_decay,
             "fiedler_shift"           : metrics.fiedler_shift,
             "gravity"                 : physics.gravity,
+            "heterogeneity_std"       : murmuration.heterogeneity_std,
             "j_base"                  : murmuration.j_base,
             "max_temperature"         : safety.max_temperature,
             "orientation_wave_radius" : metrics.orientation_wave_radius,
@@ -1297,6 +1327,7 @@ class MetricsFactory:
                 "hamiltonian_energy"     : make(HamiltonianEnergy),
                 "mae"                    : make(MAE),
                 "neighbor_stability"     : make(NeighborStability),
+                "noise_heterogeneity"    : make(NoiseHeterogeneity),
                 "orientation_coherence"  : make(OrientationCoherence),
                 "orientation_wave"       : make(OrientationWave),
                 "perturbation_response"  : make(PerturbationResponse),

@@ -26,29 +26,28 @@ class MurmurationController(th.nn.Module):
     This controller generates biologically-inspired flocking behavior based on
     starling murmurations, using topological neighborhoods (k-nearest neighbors)
     rather than metric distances. The flock maintains critical state dynamics
-    for rapid information propagation and exhibits distinct cruise/alert modes.
+    for rapid information propagation through heterogeneous behavioral variance.
 
     The controller implements a spin Hamiltonian from classical statistical
     mechanics, following the maximum entropy framework that Bialek et al. (2012)
-    applied to bird flocks. We extend this with heterogeneous coupling for alert states:
+    applied to bird flocks. Forces are derived from the energy functional,
+    with heterogeneous noise creating the behavioral variance necessary for
+    critical dynamics:
 
-        E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
+        E = -Σ_{<ij>} J_{ij} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
 
     where:
         - 𝐬_i = 𝐯_i / |𝐯_i| are normalized velocity vectors (spin variables)
-        - J_{ij}^{alert} = κ_i × J_0 exp(-d_{ij}/λ) with alert-dependent coupling
-        - κ_i = 1.0 for relaxed birds, alert_coupling_factor for alert birds
+        - J_{ij} = J_0 exp(-d_{ij}/λ) with uniform coupling strength
         - d_{ij} is the topological distance (minimum hop count)
         - 𝐡_i represents external fields (thermal gradients)
 
-    Forces are derived as 𝐮_i = -∂E/∂𝐱_i, yielding:
-
-        F_i = κ_i × Σ_j J_{ij} (𝐯_j - 𝐯_i)
-
-    With alert_coupling_factor = -1.3, alert birds actively oppose alignment,
-    creating oscillations that maintain elevated susceptibility χ proportional to N.
-    This heterogeneity, motivated by vigilance behavior (Beauchamp 2015), enables
-    scale-free correlations C(r) ~ r^{-1/3} and information speeds of 15-45 m/s
+    Heterogeneous noise η_i ~ N(μ, σ=0.20) following Guisandez et al. (2018)
+    creates a spectrum of behavioral responses, wherein agents with low η_i strongly
+    align while those with high η_i move independently. 
+    
+    This variance maintains elevated susceptibility χ ~ N and enables scale-free 
+    correlations C(r) ~ r^{-1/3} with information speeds of 15-45 m/s 
     (Attanasi et al. 2014, Cavagna et al. 2010).
     """
 
@@ -67,11 +66,10 @@ class MurmurationController(th.nn.Module):
             safety  : Safety configuration with thresholds and temperature limits
         """
         super().__init__()
-        self.mmm     = mmm
-        self.penalty = penalty
-        self.safety  = safety
-
-        self.alert_states_memory = {}
+        self.generator = th.Generator()
+        self.mmm       = mmm
+        self.penalty   = penalty
+        self.safety    = safety
 
     def _compute_density_wave(self, flock: Data):
         """
@@ -136,42 +134,23 @@ class MurmurationController(th.nn.Module):
 
     def _compute_hamiltonian_forces(self, flock: Data):
         """
-        Compute forces from Hamiltonian energy minimization with alert modulation.
+        Compute forces from Hamiltonian energy minimization.
 
-        Implements the classical Heisenberg Hamiltonian with our novel
-        heterogeneous coupling based on alert states:
+        Implements the classical Heisenberg Hamiltonian with uniform coupling
+        J_{ij} = J_0 exp(-d_{ij}/λ). The heterogeneity necessary for murmuration
+        patterns enters through individual noise levels η_i in self-propulsion.
 
-            E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
+        The alignment force on agent i:
 
-        where J_{ij}^{alert} = J_{ij} × κ_i, and κ_i is the alert coupling modifier:
-            - κ_i = 1.0 for relaxed birds (normal alignment)
-            - κ_i = alert_coupling_factor for alert birds
-
-        When alert_coupling_factor < 0, alert birds actively oppose alignment,
-        creating perturbations that increase polarization variance and maintain
-        elevated susceptibility χ ~ N characteristic of critical systems.
-
-        The modified alignment force on agent i becomes:
-
-            F_i^{align} = κ_i × Σ_j J_{ij} (𝐯_j - 𝐯_i)
-
-        This heterogeneity is biologically motivated by vigilance behavior where
-        scanning birds prioritize threat detection over flock following.
+            F_i^{align} = Σ_j J_{ij} (𝐯_j - 𝐯_i)
 
         Args:
-            flock: Data with positions, velocities, gradient, alert_states,
-                   edge indices, and hops matrix, updated with base_forces
+            flock: Data with edge indices, gradient, hops matrix, positions,
+                   and velocities, updated with base_forces
         """
-        flock.base_forces   = th.zeros_like(flock.position)
-        alert_states_source = flock.alert_states[flock.edge_source]
+        flock.base_forces = th.zeros_like(flock.position)
 
-        coupling_modifier = th.where(
-            alert_states_source > 0.5,
-            self.mmm.alert_coupling_factor,
-            1.0
-        )
-
-        j_edges = self.mmm.j_base * coupling_modifier * th.exp(
+        j_edges = self.mmm.j_base * th.exp(
             -flock.hops[flock.edge_source, flock.edge_target] /
             self.mmm.coupling_decay
         )
@@ -239,64 +218,46 @@ class MurmurationController(th.nn.Module):
 
         flock.hops = hops
 
-    def _compute_individual_alert_states(self, flock: Data):
+    def _compute_heterogeneity(self, timestep: int) -> Tensor:
         """
-        Compute alert states following two-state Markov dynamics.
+        Generate heterogeneous behavioral variance deterministically.
 
-        Implements vigilance state transitions as a continuous-time Markov
-        chain with asymmetric rates creating realistic bout durations:
+        Following Guisandez et al. (2018), individual heterogeneity values are
+        drawn from η_i ~ N(μ, σ=0.20). This heterogeneity creates the
+        behavioral variance necessary for murmuration patterns:
 
-            P(relaxed → alert) = λ
-            P(alert → relaxed) = μ
+        - Low η_i  : Strong alignment, follows neighbors closely
+        - High η_i : Weak alignment, moves independently
 
-        where λ is the relaxed-to-alert transition rate and μ is the
-        alert-to-relaxed rate. These rates are constant, reflecting the
-        intrinsic vigilance dynamics observed in bird flocks.
-
-        Steady-state             : π_alert = λ/(λ+μ)  ≈ 0.30
-        Mean alert bout duration : E[T_alert] = 1/μ   ≈ 20 timesteps
-        Mean relaxed duration    : E[T_relaxed] = 1/λ ≈ 47 timesteps
+        The variance in responses prevents homogeneous motion and enables
+        critical dynamics with continuous phase transitions.
 
         Args:
-            flock: Data updated with alert_states and alert_fraction
+            timestep: Current simulation timestep for deterministic seeding
+
+        Returns:
+            Heterogeneity values for each agent [N]
         """
-        traj_id = 0
-        device  = flock.position.device
-
-        if traj_id not in self.alert_states_memory:
-            steady_state = self.mmm.relaxed_to_alert_rate / (
-                self.mmm.relaxed_to_alert_rate + self.mmm.alert_to_relaxed_rate
-            )
-            self.alert_states_memory[traj_id] = th.bernoulli(
-                th.ones(self.mmm.agent_count, device=device) * steady_state
-            )
-
-        previous    = self.alert_states_memory[traj_id].to(device)
-        random_vals = th.rand(self.mmm.agent_count, device=device)
-        new_states  = th.where(
-            previous    > 0.5,
-            random_vals > self.mmm.alert_to_relaxed_rate,
-            random_vals < self.mmm.relaxed_to_alert_rate
-        ).float()
-
-        self.alert_states_memory[traj_id] = new_states
-        flock.alert_states   = new_states
-        flock.alert_fraction = new_states.mean()
+        self.generator.manual_seed(timestep)
+        return th.normal(
+            generator = self.generator,
+            mean      = self.mmm.heterogeneity_mean,
+            size      = (self.mmm.agent_count,),
+            std       = self.mmm.heterogeneity_std
+        )
 
     def _compute_self_propulsion(self, flock: Data):
         """
-        Compute self-propulsion forces following active matter dynamics.
+        Compute self-propulsion forces with heterogeneous noise.
 
         Implements self-propulsion where each agent maintains an intrinsic
-        velocity v₀ in its current heading direction with stochastic
-        fluctuations, based on active matter theory:
+        velocity v₀ with heterogeneous stochastic fluctuations:
 
-            F_prop = (v₀𝐬 - 𝐯) / τ + η𝝃
+            F_prop = (v₀𝐬 - 𝐯) / τ + η_i𝝃
 
-        where 𝐬 is the heading direction, τ is relaxation time, and 𝝃 is
-        Gaussian noise. Alert agents have noise amplitude that places them
-        at the order-disorder phase transition (η ≈ 0.4) while relaxed
-        agents remain in the ordered phase (η ≈ 0.1).
+        where 𝐬 is the heading direction, τ is relaxation time, 𝝃 is
+        unit Gaussian noise, and η_i ~ N(μ, σ=0.20) creates behavioral
+        heterogeneity.
 
         For agents with zero velocity (|𝐯| < ε), the heading direction 𝐬 is
         determined from:
@@ -306,8 +267,8 @@ class MurmurationController(th.nn.Module):
         This ensures the flock can bootstrap movement from rest states.
 
         Args:
-            flock: Data with velocities and alert_states, updated with
-                   self_propulsion forces
+            flock: Data with velocities, updated with heterogeneity
+                   and self_propulsion forces
         """
         speed = flock.velocity.norm(dim=-1, keepdim=True)
         wind  = getattr(flock, "wind", th.zeros_like(flock.velocity))
@@ -329,17 +290,27 @@ class MurmurationController(th.nn.Module):
             th.where(zero_vel, random_heading, velocity_heading)
         )
 
-        alert_states = flock.alert_states
-        noise_scale  = self.mmm.velocity_noise_scale * (
-            1.0 + self.mmm.alert_amplification * alert_states
+        flock.heterogeneity = self._compute_heterogeneity(flock.timestep)
+
+        self.generator.manual_seed(flock.timestep * self.mmm.agent_count)
+        noise_direction = th.randn(
+            device    = flock.velocity.device,
+            generator = self.generator,
+            size      = flock.velocity.shape
+        )
+        noise_direction = noise_direction / noise_direction.norm(
+            dim     = -1,
+            keepdim = True
+        ).clamp_min(1e-8)
+
+        target_velocity = (
+            heading * self.mmm.self_propulsion_speed
+            + wind  * self.mmm.wind_coupling
         )
 
-        target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
-        noise      = th.randn_like(flock.velocity) * noise_scale.unsqueeze(-1)
-
         flock.self_propulsion = (
-            (target_vel - flock.velocity) / self.mmm.velocity_relaxation_time +
-            noise
+            target_velocity - flock.velocity
+            + noise_direction * flock.heterogeneity.unsqueeze(-1)
         )
 
     def _compute_threats(self, flock: Data):
@@ -386,7 +357,6 @@ class MurmurationController(th.nn.Module):
         """
         for compute_fn in [
             self._update_graph_state,
-            self._compute_individual_alert_states,
             self._compute_hamiltonian_forces,
             self._compute_threats,
             self._compute_self_propulsion,
@@ -469,25 +439,24 @@ class MurmurationController(th.nn.Module):
 
         Returns:
             List of PyG Data objects, one per timestep, containing:
-                - action       : Expert control actions     [N, 3]
-                - alert_states : Binary vigilance states    [N]
-                - edge_index   : Topological connectivity   [2, E]
-                - gradient     : Temperature gradient       [N, 3]
-                - position     : Agent positions            [N, 3]
-                - temperature  : Temperature values         [N, 1]
-                - timestep     : Temporal index
-                - velocity     : Agent velocities           [N, 3]
-                - wind         : Wind field                 [N, 3]
-                - x            : Concatenated node features [N, 13]
+                - action        : Expert control actions      [N, 3]
+                - edge_index    : Topological connectivity    [2, E]
+                - gradient      : Temperature gradient        [N, 3]
+                - heterogeneity : Individual noise amplitudes [N]
+                - position      : Agent positions             [N, 3]
+                - temperature   : Temperature values          [N, 1]
+                - timestep      : Temporal index
+                - velocity      : Agent velocities            [N, 3]
+                - wind          : Wind field                  [N, 3]
+                - x             : Concatenated node features  [N, 13]
         """
-        self.alert_states_memory.clear()
         state      = generator.reset()
         trajectory = []
 
         for t in range(num_timesteps):
-            action = self.forward(state)
-
-            features = th.cat(
+            state.timestep = t
+            action         = self.forward(state)
+            features       = th.cat(
                 dim     = -1,
                 tensors = [
                     state.position,
@@ -500,16 +469,16 @@ class MurmurationController(th.nn.Module):
 
             trajectory.append(
                 Data(
-                    action       = action.clone(),
-                    alert_states = state.alert_states,
-                    edge_index   = state.edge_index,
-                    gradient     = state.gradient,
-                    position     = state.position,
-                    temperature  = state.temperature,
-                    timestep     = t,
-                    velocity     = state.velocity,
-                    wind         = state.wind,
-                    x            = features
+                    action        = action.clone(),
+                    edge_index    = state.edge_index,
+                    gradient      = state.gradient,
+                    heterogeneity = state.heterogeneity,
+                    position      = state.position,
+                    temperature   = state.temperature,
+                    timestep      = t,
+                    velocity      = state.velocity,
+                    wind          = state.wind,
+                    x             = features
                 )
             )
 
