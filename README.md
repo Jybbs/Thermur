@@ -82,7 +82,7 @@ flowchart TB
     subgraph Training["✨ <b>Training System</b>"]
         subgraph Expert["🕹️ <b>Expert Controller</b>"]
             direction TB
-            C["<b>Murmuration Dynamics</b><br/>η_i ~ N(0.15, 0.20) heterogeneity"]
+            C["<b>Murmuration Dynamics</b><br/>η_i ~ N(0.70, 0.20) heterogeneity"]
             D["<b>Hamiltonian Forces</b><br/>k = 7 topological neighbors"]
             E["<b>Thermal Safety Filter</b><br/>T < 475K maintained"]
             C --> E
@@ -122,7 +122,7 @@ flowchart TB
 
 ### Core Scientific Contributions
 
-1. **Heterogeneous Behavioral Variance**: Individual noise amplitudes drawn from $`\eta_i \sim N(\mu=0.15, \sigma=0.20)`$ create the behavioral heterogeneity necessary for critical state dynamics [^8]. This continuous spectrum of responses, ranging from strongly aligning agents with low $`\eta_i`$ to weakly aligning agents with high $`\eta_i`$, maintains elevated susceptibility $`\chi \sim N`$ [^9] and enables the scale-free correlations observed in natural murmurations [^10].
+1. **Heterogeneous Behavioral Variance**: Individual noise amplitudes drawn from $`\eta_i \sim N(\mu=0.70, \sigma=0.20)`$ create the behavioral heterogeneity necessary for critical state dynamics [^8]. This continuous spectrum of responses, ranging from strongly aligning agents with low $`\eta_i`$ to weakly aligning agents with high $`\eta_i`$, maintains elevated susceptibility $`\chi \sim N`$ [^9] and enables the scale-free correlations observed in natural murmurations [^10].
 
 2. **Topological Interactions**: Each agent responds to exactly $`k=7`$ nearest neighbors regardless of distance, matching empirical observations of starling behavior [^11] and enabling scale-free information transfer with propagation speeds of 15-45 m/s [^12].
 
@@ -351,7 +351,7 @@ penalty = ThermalPenalty(safety)
 expert = MurmurationController(
     mmm     = MurmurationModel(
         agent_count         = 30,    # Number of agents in flock
-        heterogeneity_mean  = 0.15,  # Mean noise amplitude μ
+        heterogeneity_mean  = 0.70,  # Mean noise amplitude μ
         heterogeneity_std   = 0.20,  # Noise heterogeneity σ
         communication_range = 50.0,  # Metric interaction radius
         k_neighbors         = 7,     # Topological interaction
