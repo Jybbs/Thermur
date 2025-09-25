@@ -193,7 +193,7 @@ $`
 `$  
 <br>
 
-The first term drives the agent toward its preferred speed $`v_0 = 12`$ m/s in direction $`\hat{\mathbf{s}}_i`$, with relaxation time $`\tau = 0.6`$ s determining how quickly it responds to deviations. The second term introduces stochastic fluctuations essential for maintaining criticality, with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ representing Gaussian white noise.
+The first term drives the agent toward its preferred speed $`v_0 = 11.1`$ m/s in direction $`\hat{\mathbf{s}}_i`$ [^21], with relaxation time $`\tau = 0.6`$ s determining how quickly it responds to deviations. The second term introduces stochastic fluctuations essential for maintaining criticality, with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ representing Gaussian white noise.
 
 ### State-Dependent Noise
 
@@ -438,3 +438,5 @@ This framework transforms invisible thermal threats into visible motion patterns
 [^17]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
 [^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+
+[^21]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004

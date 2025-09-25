@@ -271,9 +271,8 @@ class TrajectoryGenerator:
         )
 
         gradient, temperature = self.wrf.query_thermal(self.positions, self.timestep)
-
-        self.timestep += 1
-        self.time     += self.physics.timestep
+        self.time            += self.physics.timestep
+        self.timestep        += 1
 
         return Data(
             edge_index  = self._compute_edge_index(self.positions),

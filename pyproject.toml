@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "thermur"
-version         = "0.1.0"
+version         = "0.2.0"
 description     = "Thermally-constrained flocking and color-mapping for wildfires."
 authors         = [{ name = "James Parkington", email = "pongs.acreage.0o@icloud.com" }]
 readme          = "README.md"

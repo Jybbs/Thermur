@@ -479,9 +479,9 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 - **MAE/RMSE/R²**: Measure how accurately the policy reproduces expert actions, with MAE < 1.0 m/s² indicating excellent imitation
 
-- **Acceleration**: Tracks average control effort to ensure physically plausible forces (5-15 m/s² typical)
+- **Acceleration**: Tracks average control effort to ensure physically plausible forces
 
-- **Velocity**: Monitors mean flight speed remains realistic (10-20 m/s for starlings)
+- **Velocity**: Monitors mean flight speed remains realistic (9-12 m/s for starlings [^21])
 
 **Emergent Behavior Metrics:**
 
@@ -762,14 +762,16 @@ For the WRF-SFIRE dataset:
 
 [^20]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
 
-[^21]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
+[^21]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
 
-[^22]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
+[^22]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
 
-[^23]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
+[^23]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
 
-[^24]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
+[^24]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
 
-[^25]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
+[^25]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
+
+[^26]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
 
 ---

@@ -181,8 +181,7 @@ class Acceleration(BaseMetric):
     Track average acceleration magnitude across the flock.
 
     Monitors |𝐚|_avg to quantify control effort and energy expenditure during
-    flight maneuvers. Natural flocking exhibits acceleration in the range of
-    5-15 m/s², with higher values during evasive maneuvers or rapid turns.
+    flight maneuvers to ensure physically plausible control forces.
 
     Tracking this metric ensures the learned policy generates physically
     plausible control forces consistent with bird flight dynamics.
@@ -1220,9 +1219,9 @@ class Velocity(BaseMetric):
     Track average velocity magnitude across the flock.
 
     Monitors |𝐯|_avg to ensure realistic flight speeds are maintained during
-    collective motion. Empirical observations from Cavagna et al. (2010) show
-    starlings cruise at approximately 15 m/s, with speeds ranging from 10-20 m/s
-    depending on conditions.
+    collective motion. Empirical observations from Ballerini et al. (2008) show
+    starlings cruise at approximately 11.1 m/s, with speeds ranging from 9-12 m/s
+    during murmuration events.
 
     This metric validates that the learned policy preserves the characteristic
     speed regulation of self-propelled particles in active matter systems,

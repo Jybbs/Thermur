@@ -142,12 +142,12 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     self_propulsion_speed: PositiveFloat = Field(
-        default     = 12.0,
+        default     = 11.1,
         description = (
             "Self-propulsion speed v₀ in m/s from active matter theory, representing "
             "the intrinsic cruising speed birds maintain. Empirical observations show "
-            "starlings fly at 10-20 m/s during murmuration displays (Cavagna et al., 2010). "
-            "Value of 12 m/s represents typical cruising speed within observed range."
+            "starlings fly at 9-12 m/s during murmuration displays (Ballerini 2008). "
+            "11.1 m/s represents a weighted average from empirical data."
         )
     )
     temperature_scaling: PositiveFloat = Field(
