@@ -51,17 +51,16 @@ class TrajectoryGenerator:
             safety      : Safety thresholds (for reference, not enforced here)
             wrf         : WRF data source for environmental queries
         """
-        self.episode_time = 0.0
-        self.k_neighbors  = k_neighbors
-        self.mmm          = mmm
-        self.physics      = physics
-        self.positions    = th.zeros(mmm.agent_count, 3)
-        self.safety       = safety
-        self.velocities   = th.zeros(mmm.agent_count, 3)
-        self.wrf          = wrf
-
-        # Temporal tracking
-        self.timestep = 0
+        self.generator   = th.Generator()
+        self.k_neighbors = k_neighbors
+        self.mmm         = mmm
+        self.physics     = physics
+        self.positions   = th.zeros(mmm.agent_count, 3)
+        self.safety      = safety
+        self.time        = 0.0
+        self.timestep    = 0
+        self.velocities  = th.zeros(mmm.agent_count, 3)
+        self.wrf         = wrf
 
     def _compute_edge_index(self, position: Tensor) -> Tensor:
         """
@@ -218,21 +217,27 @@ class TrajectoryGenerator:
         )
         positions[:, 2] += self.physics.initial_altitude
 
-        self.episode_time     = 0.0
-        self.velocities       = th.randn_like(positions) * 2.0
-        self.positions        = positions.clone()
-        self.timestep         = 0
-        self.wrf.current_time = self.episode_time
-        gradient, temperature = self.wrf.query_thermal(self.positions)
-        wind                  = self.wrf.query_wind(self.positions)
+        self.time     = 0.0
+        self.timestep = 0
+
+        self.generator.manual_seed(self.timestep)
+        self.positions  = positions.clone()
+        self.velocities = th.randn(
+            generator = self.generator,
+            size      = positions.shape
+        ) * 2.0
+
+        self.wrf.time         = self.time
+        gradient, temperature = self.wrf.query_thermal(self.positions, self.timestep)
+        wind                  = self.wrf.query_wind(self.positions,    self.timestep)
 
         return Data(
-            edge_index   = self._compute_edge_index(self.positions),
-            position     = self.positions.clone(),
-            velocity     = self.velocities.clone(),
-            temperature  = temperature.clone(),
-            gradient     = gradient.clone(),
-            wind         = wind.clone()
+            edge_index  = self._compute_edge_index(self.positions),
+            gradient    = gradient.clone(),
+            position    = self.positions.clone(),
+            temperature = temperature.clone(),
+            velocity    = self.velocities.clone(),
+            wind        = wind.clone()
         )
 
     def step(self, action: Tensor) -> Data:
@@ -245,8 +250,8 @@ class TrajectoryGenerator:
         Returns:
             Next state as PyG Data object
         """
-        self.wrf.current_time = self.episode_time
-        wind                  = self.wrf.query_wind(self.positions)
+        self.wrf.time = self.time
+        wind          = self.wrf.query_wind(self.positions, self.timestep)
 
         acceleration = self._compute_forces(
             actions    = action,
@@ -265,16 +270,16 @@ class TrajectoryGenerator:
             velocities = self.velocities
         )
 
-        gradient, temperature = self.wrf.query_thermal(self.positions)
+        gradient, temperature = self.wrf.query_thermal(self.positions, self.timestep)
 
-        self.timestep     += 1
-        self.episode_time += self.physics.timestep
+        self.timestep += 1
+        self.time     += self.physics.timestep
 
         return Data(
-            edge_index   = self._compute_edge_index(self.positions),
-            position     = self.positions.clone(),
-            velocity     = self.velocities.clone(),
-            temperature  = temperature,
-            gradient     = gradient,
-            wind         = wind
+            edge_index  = self._compute_edge_index(self.positions),
+            gradient    = gradient,
+            position    = self.positions.clone(),
+            temperature = temperature,
+            velocity    = self.velocities.clone(),
+            wind        = wind
         )

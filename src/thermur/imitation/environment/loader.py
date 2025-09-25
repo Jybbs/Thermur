@@ -57,25 +57,27 @@ class WRFLoader:
         self.bounds_max            = th.tensor(physics.bounds_max)
         self.bounds_min            = th.tensor(physics.bounds_min)
         self.domain_randomization  = loader.domain_randomization
-        self.episode_time_offset   = loader.episode_time_offset
         self.fallback_temperature  = physics.fallback_temperature
+        self.generator             = th.Generator()
         self.interpolate_time      = loader.interpolate_time
         self.temperature_noise_std = loader.temperature_noise_std
         self.wind_noise_std        = loader.wind_noise_std
 
-    def _add_domain_noise(self, data: Tensor, noise_std: float) -> Tensor:
+    def _add_domain_noise(self, data: Tensor, noise_std: float, timestep: int) -> Tensor:
         """
         Add domain randomization noise if enabled.
 
         Args:
             data      : Tensor to add noise to
             noise_std : Standard deviation of Gaussian noise
+            timestep  : Current simulation timestep for seeding
 
         Returns:
             Tensor with noise added if domain randomization is enabled
         """
+        self.generator.manual_seed(timestep)
         return (
-            data + th.randn_like(data) * noise_std
+            data + th.randn(data.shape, generator=self.generator) * noise_std
             if self.domain_randomization and noise_std > 0
             else data
         )
@@ -128,7 +130,6 @@ class WRFLoader:
 
         return gradients
 
-
     def _extract_dataset_metadata(self):
         """
         Extract metadata from the current dataset for coordinate transformations.
@@ -136,9 +137,9 @@ class WRFLoader:
         Sets up coordinate variables, time steps, and grid dimensions needed
         for field interpolation and temporal navigation.
         """
-        self.coord_vars        = list(self.dataset.dims)
-        self.num_time_steps    = self.dataset.sizes.get('Time', 1)
-        self.wrf_time_interval = 300.0
+        self.coord_vars    = list(self.dataset.dims)
+        self.num_timesteps = self.dataset.sizes.get('Time', 1)
+        self.time_interval = 300.0
 
         self.grid_dims = {
             "west_east"   : self.dataset.sizes.get("west_east",   500),
@@ -197,14 +198,11 @@ class WRFLoader:
         Returns:
             Tuple (i₀, i₁, α) for linear time interpolation
         """
-        continuous_idx = (
-            (self.current_time + self.episode_time_offset) /
-            self.wrf_time_interval
-        ) % self.num_time_steps
+        continuous_idx = (self.time / self.time_interval) % self.num_timesteps
 
         return (
             (lower := int(continuous_idx)),
-            (lower + 1) % self.num_time_steps,
+            (lower + 1) % self.num_timesteps,
             continuous_idx - lower
         )
 
@@ -244,12 +242,11 @@ class WRFLoader:
         if "Time" not in data.dims:
             return interp(data)
 
-        if not self.interpolate_time or self.num_time_steps <= 1:
-            return interp(data.isel(
-                Time = int(
-                    (self.current_time + self.episode_time_offset) /
-                    self.wrf_time_interval
-                ) % self.num_time_steps)
+        if not self.interpolate_time or self.num_timesteps <= 1:
+            return interp(
+                data.isel(
+                    Time = int(self.time / self.time_interval) % self.num_timesteps
+                )
             )
 
         lower_idx, upper_idx, weight = self._get_time_indices()
@@ -310,8 +307,8 @@ class WRFLoader:
         ]
 
         if self.datasets:
-            self.current_time = 0.0
-            self.dataset      = self.datasets[0]
+            self.dataset = self.datasets[0]
+            self.time    = 0.0
             self._extract_dataset_metadata()
 
     def query_fire_heat_flux(self, positions: Tensor) -> Tensor:
@@ -353,7 +350,11 @@ class WRFLoader:
             nan = 0.0
         )
 
-    def query_thermal(self, positions: Tensor) -> tuple[Tensor, Tensor]:
+    def query_thermal(
+        self, 
+        positions : Tensor, 
+        timestep  : int
+    ) -> tuple[Tensor, Tensor]:
         """
         Query temperature and its gradient at agent positions.
 
@@ -370,7 +371,8 @@ class WRFLoader:
         sensor uncertainty and atmospheric turbulence.
 
         Args:
-            positions: Tensor [N, 3] of agent positions in meters
+            positions : Tensor [N, 3] of agent positions in meters
+            timestep  : Current simulation timestep for deterministic noise
 
         Returns:
             Tuple of (gradient, temperature) where:
@@ -391,10 +393,10 @@ class WRFLoader:
 
         return (
             in_bounds[0],
-            self._add_domain_noise(in_bounds[1], self.temperature_noise_std),
+            self._add_domain_noise(in_bounds[1], self.temperature_noise_std, timestep),
         )
 
-    def query_wind(self, positions: Tensor) -> Tensor:
+    def query_wind(self, positions: Tensor, timestep: int) -> Tensor:
         """
         Query wind velocity vectors at agent positions.
 
@@ -410,7 +412,8 @@ class WRFLoader:
         Domain randomization adds noise ε ~ N(0, σ_w²) to simulate turbulence.
 
         Args:
-            positions: Tensor [N, 3] of agent positions in meters
+            positions : Tensor [N, 3] of agent positions in meters
+            timestep  : Current simulation timestep for deterministic noise
 
         Returns:
             Tensor [N, 3] of wind velocity vectors 𝐮 = [u, v, w] in m/s
@@ -440,4 +443,4 @@ class WRFLoader:
             for var in ["U", "V", "W"]
         ], dim=1)
 
-        return self._add_domain_noise(wind_values, self.wind_noise_std)
+        return self._add_domain_noise(wind_values, self.wind_noise_std, timestep)
