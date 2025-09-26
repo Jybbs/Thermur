@@ -28,11 +28,11 @@ class MurmurationController(th.nn.Module):
     rather than metric distances. The flock maintains critical state dynamics
     for rapid information propagation through heterogeneous behavioral variance.
 
-    The controller implements a spin Hamiltonian from classical statistical
-    mechanics, following the maximum entropy framework that Bialek et al. (2012)
-    applied to bird flocks. Forces are derived from the energy functional,
-    with heterogeneous noise creating the behavioral variance necessary for
-    critical dynamics:
+    The controller implements the maximum entropy formulation from Bialek et
+    al. (2012), who derive an effective energy function for bird flocks using
+    statistical inference. This approach infers interaction parameters from
+    observed correlations, yielding an energy landscape that captures
+    collective behavior without assuming underlying mechanics:
 
         E = -Σ_{<ij>} J_{ij} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
 
@@ -66,10 +66,12 @@ class MurmurationController(th.nn.Module):
             safety  : Safety configuration with thresholds and temperature limits
         """
         super().__init__()
-        self.generator = th.Generator()
-        self.mmm       = mmm
-        self.penalty   = penalty
-        self.safety    = safety
+        self.heading_rng       = th.Generator()
+        self.heterogeneity_rng = th.Generator()
+        self.mmm               = mmm
+        self.noise_rng         = th.Generator()
+        self.penalty           = penalty
+        self.safety            = safety
 
     def _compute_density_wave(self, flock: Data):
         """
@@ -132,17 +134,17 @@ class MurmurationController(th.nn.Module):
             threat_amplification
         )
 
-    def _compute_hamiltonian_forces(self, flock: Data):
+    def _compute_energy_forces(self, flock: Data):
         """
-        Compute forces from Hamiltonian energy minimization.
+        Compute interaction forces from maximum entropy energy function.
 
-        Implements the classical Heisenberg Hamiltonian with uniform coupling
-        J_{ij} = J_0 exp(-d_{ij}/λ). The heterogeneity necessary for murmuration
-        patterns enters through individual noise levels η_i in self-propulsion.
-
-        The alignment force on agent i:
+        Following Bialek et al. (2012), we use a spin-glass energy formulation
+        where normalized velocities act as spins. While not derived from
+        canonical mechanics, this generates biologically realistic alignment:
 
             F_i^{align} = Σ_j J_{ij} (𝐯_j - 𝐯_i)
+
+        with J_{ij} = J_0 exp(-d_{ij}/λ) for topological coupling
 
         Args:
             flock: Data with edge indices, gradient, hops matrix, positions,
@@ -238,9 +240,9 @@ class MurmurationController(th.nn.Module):
         Returns:
             Heterogeneity values for each agent [N]
         """
-        self.generator.manual_seed(timestep)
+        self.heterogeneity_rng.manual_seed(timestep)
         return th.normal(
-            generator = self.generator,
+            generator = self.heterogeneity_rng,
             mean      = self.mmm.heterogeneity_mean,
             size      = (self.mmm.agent_count,),
             std       = self.mmm.heterogeneity_std
@@ -264,7 +266,9 @@ class MurmurationController(th.nn.Module):
             1. Negative temperature gradient direction: 𝐬 = -∇T/|∇T| (if |∇T| > δ)
             2. Random unit vector: 𝐬 = 𝝃/|𝝃| where 𝝃 ~ N(0, I) (fallback)
 
-        This ensures the flock can bootstrap movement from rest states.
+        This ensures the flock can bootstrap movement from rest states. All random
+        operations use independent generators seeded deterministically with the
+        timestep, guaranteeing reproducible behavior across runs.
 
         Args:
             flock: Data with velocities, updated with heterogeneity
@@ -275,8 +279,15 @@ class MurmurationController(th.nn.Module):
 
         velocity_heading = flock.velocity / speed.clamp_min(1e-8)
         gradient_heading = -th.nn.functional.normalize(flock.gradient, dim=-1)
-        random_heading   = th.nn.functional.normalize(
-            th.randn_like(flock.velocity), dim=-1
+
+        self.heading_rng.manual_seed(flock.timestep)
+        random_heading = th.nn.functional.normalize(
+            dim   = -1,
+            input = th.randn(
+                device    = flock.velocity.device,
+                generator = self.heading_rng,
+                size      = flock.velocity.shape
+            )
         )
 
         zero_vel = (speed < 1e-6).expand_as(flock.velocity)
@@ -292,10 +303,10 @@ class MurmurationController(th.nn.Module):
 
         flock.heterogeneity = self._compute_heterogeneity(flock.timestep)
 
-        self.generator.manual_seed(flock.timestep * self.mmm.agent_count)
+        self.noise_rng.manual_seed(flock.timestep)
         noise_direction = th.randn(
             device    = flock.velocity.device,
-            generator = self.generator,
+            generator = self.noise_rng,
             size      = flock.velocity.shape
         )
         noise_direction = noise_direction / noise_direction.norm(
@@ -346,7 +357,7 @@ class MurmurationController(th.nn.Module):
 
         The pipeline computes:
         1. Graph topology and temperature gradients
-        2. Base Hamiltonian forces from energy minimization
+        2. Alignment forces from maximum entropy energy minimization
         3. Critical state metrics (susceptibility, information speed)
         4. Threat response components (density waves, alert mode)
         5. Final action combining all force components
@@ -357,7 +368,7 @@ class MurmurationController(th.nn.Module):
         """
         for compute_fn in [
             self._update_graph_state,
-            self._compute_hamiltonian_forces,
+            self._compute_energy_forces,
             self._compute_threats,
             self._compute_self_propulsion,
             self._compute_density_wave,
@@ -377,7 +388,7 @@ class MurmurationController(th.nn.Module):
         Update graph connectivity from provided edge topology.
 
         Extracts edge_source and edge_target from the edge_index tensor
-        and computes hop distances for the Hamiltonian forces.
+        and computes hop distances for the alignment forces.
 
         Args:
             flock: Data containing edge_index from TrajectoryGenerator
@@ -393,8 +404,8 @@ class MurmurationController(th.nn.Module):
         Compute expert control actions from PyG Data flock state.
 
         Orchestrates the full murmuration dynamics pipeline including
-        Hamiltonian forces, density waves, threat response, and thermal
-        gradient following.
+        maximum entropy alignment forces, density waves, threat response,
+        and thermal gradient following.
 
         Args:
             flock: PyG Data with position, velocity, temperature, gradient,

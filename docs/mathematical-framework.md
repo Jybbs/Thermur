@@ -62,7 +62,7 @@ where the nominal control:
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{v_0 \hat{\mathbf{s}}_i + \alpha_w \mathbf{w}_i - \mathbf{v}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Hamiltonian alignment}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{v_0 \hat{\mathbf{s}}_i + \alpha_w \mathbf{w}_i - \mathbf{v}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -70,13 +70,13 @@ $`
 
 produces emergent dynamics satisfying all biological and safety constraints.
 
-## Hamiltonian Alignment
+## Maximum Entropy Alignment
 
 ### Energy Formulation
 
-Statistical mechanics provides a powerful framework for understanding collective motion. Research has demonstrated starling flocks can be modeled as maximum entropy systems [^7], where bird velocities act analogously to spins in magnetic materials. This connection to physics reveals deep principles, with flocks transitioning between coordinated movement and scattered chaos just as magnets exhibit phase transitions between ordered and disordered states.
+Statistical inference provides a powerful framework for understanding collective motion. Research has demonstrated starling flocks can be modeled as maximum entropy systems [^7], where bird velocities act analogously to spins in magnetic materials. By inferring the simplest probability distribution consistent with observed correlations, this approach reveals an effective energy function without assuming underlying mechanics.
 
-The system's energy takes the Heisenberg form [^16]:
+The inferred energy takes the Heisenberg form [^16]:
 
 $`
 \hspace{0.5cm} \displaystyle

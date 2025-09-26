@@ -91,7 +91,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
     j_base: PositiveFloat = Field(
         default     = 0.5,
         description = (
-            "Base coupling strength J_0 in Hamiltonian formulation controlling "
+            "Base coupling strength J_0 in maximum entropy formulation controlling "
             "velocity alignment between neighbors. Value of 0.5 balances cohesion "
             "with flexibility, allowing heterogeneous noise to create the variance "
             "needed for critical state dynamics while maintaining structural integrity."

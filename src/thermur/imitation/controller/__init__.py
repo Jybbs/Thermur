@@ -6,15 +6,15 @@ generates demonstrations for imitation learning. The core algorithm uses
 topological interactions (k-nearest neighbors) rather than metric distances,
 maintaining critical state dynamics for rapid information propagation.
 
-The murmuration controller implements an enhanced Hamiltonian formulation:
+The murmuration controller implements the maximum entropy formulation from
+Bialek et al. (2012), inferring an effective energy function:
 
     E = -Σ J_ij 𝐬_i · 𝐬_j - Σ 𝐡_i · 𝐬_i
 
 where 𝐬_i are normalized velocities and J_ij decay with topological distance.
 
-The flock exhibits two distinct modes:
-- Cruise : Standard murmuration dynamics with susceptibility-modulated alignment
-- Alert  : Enhanced correlation and density for rapid threat response
+The flock operates at criticality through heterogeneous noise η_i ~ N(0.70, 0.20),
+creating behavioral variance for scale-free correlations and rapid response.
 
 Key components:
 - DemonstrationsDataset : PyG InMemoryDataset for offline expert trajectories

@@ -83,7 +83,7 @@ flowchart TB
         subgraph Expert["🕹️ <b>Expert Controller</b>"]
             direction TB
             C["<b>Murmuration Dynamics</b><br/>η_i ~ N(0.70, 0.20) heterogeneity"]
-            D["<b>Hamiltonian Forces</b><br/>k = 7 topological neighbors"]
+            D["<b>Maximum Entropy Alignment</b><br/>k = 7 topological neighbors"]
             E["<b>Thermal Safety Filter</b><br/>T < 475K maintained"]
             C --> E
             D --> E
@@ -152,7 +152,7 @@ where the nominal control orchestrates multiple biologically-inspired components
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{v_0 \hat{\mathbf{s}}_i - \mathbf{v}_i}{\tau} + \eta_i \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Hamiltonian alignment [^16]}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{v_0 \hat{\mathbf{s}}_i - \mathbf{v}_i}{\tau} + \eta_i \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment [^16]}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -489,7 +489,7 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 - **Fiedler Value $`\lambda_2`$**: Quantifies algebraic connectivity via the second smallest eigenvalue of the graph Laplacian, computed efficiently using adaptive Lanczos iteration. Positive values ensure flock cohesion.
 
-- **Hamiltonian Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the spin-glass energy with uniform coupling, where behavioral variance from heterogeneous noise drives phase transitions.
+- **Effective Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the maximum entropy energy function with uniform coupling, where behavioral variance from heterogeneous noise drives phase transitions.
 
 - **Scale-Free Correlation**: Verifies velocity correlations follow the power law $`C(r) \sim r^{-1/3}`$ characteristic of natural murmurations through binned correlation analysis.
 

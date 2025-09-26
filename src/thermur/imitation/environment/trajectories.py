@@ -51,16 +51,16 @@ class TrajectoryGenerator:
             safety      : Safety thresholds (for reference, not enforced here)
             wrf         : WRF data source for environmental queries
         """
-        self.generator   = th.Generator()
-        self.k_neighbors = k_neighbors
-        self.mmm         = mmm
-        self.physics     = physics
-        self.positions   = th.zeros(mmm.agent_count, 3)
-        self.safety      = safety
-        self.time        = 0.0
-        self.timestep    = 0
-        self.velocities  = th.zeros(mmm.agent_count, 3)
-        self.wrf         = wrf
+        self.k_neighbors  = k_neighbors
+        self.mmm          = mmm
+        self.physics      = physics
+        self.positions    = th.zeros(mmm.agent_count, 3)
+        self.safety       = safety
+        self.time         = 0.0
+        self.timestep     = 0
+        self.velocities   = th.zeros(mmm.agent_count, 3)
+        self.velocity_rng = th.Generator()
+        self.wrf          = wrf
 
     def _compute_edge_index(self, position: Tensor) -> Tensor:
         """
@@ -220,10 +220,10 @@ class TrajectoryGenerator:
         self.time     = 0.0
         self.timestep = 0
 
-        self.generator.manual_seed(self.timestep)
+        self.velocity_rng.manual_seed(self.timestep)
         self.positions  = positions.clone()
         self.velocities = th.randn(
-            generator = self.generator,
+            generator = self.velocity_rng,
             size      = positions.shape
         ) * 2.0
 

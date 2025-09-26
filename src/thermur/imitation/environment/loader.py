@@ -56,9 +56,9 @@ class WRFLoader:
         """
         self.bounds_max            = th.tensor(physics.bounds_max)
         self.bounds_min            = th.tensor(physics.bounds_min)
+        self.domain_noise_rng      = th.Generator()
         self.domain_randomization  = loader.domain_randomization
         self.fallback_temperature  = physics.fallback_temperature
-        self.generator             = th.Generator()
         self.interpolate_time      = loader.interpolate_time
         self.temperature_noise_std = loader.temperature_noise_std
         self.wind_noise_std        = loader.wind_noise_std
@@ -75,9 +75,9 @@ class WRFLoader:
         Returns:
             Tensor with noise added if domain randomization is enabled
         """
-        self.generator.manual_seed(timestep)
+        self.domain_noise_rng.manual_seed(timestep)
         return (
-            data + th.randn(data.shape, generator=self.generator) * noise_std
+            data + th.randn(data.shape, generator=self.domain_noise_rng) * noise_std
             if self.domain_randomization and noise_std > 0
             else data
         )

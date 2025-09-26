@@ -364,22 +364,77 @@ class FiedlerValue(BaseMetric):
         return len(fiedler) / fiedler.reciprocal().sum()
 
 
-class HamiltonianEnergy(BaseMetric):
+class MAE(MeanMetric):
     """
-    Track Hamiltonian energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per timestep.
+    Mean Absolute Error for action predictions.
 
-    Computes the interaction energy of the flock using physics-inspired
-    spin glass formulation where agents are spins with uniform pairwise coupling:
+    Measures the average absolute difference between predicted and expert
+    actions in m/s² units. MAE is more robust to outliers than MSE/RMSE,
+    providing a complementary view of prediction accuracy.
 
-        H = -Σᵢⱼ J_{ij} (v̂ᵢ · v̂ⱼ)
+    Performance interpretation:
+        - MAE < 1.0 m/s²  : Excellent - near-expert performance
+        - MAE ∈ [1, 2]    : Good      - effective imitation
+        - MAE ∈ [2, 4]    : Moderate  - functional but imprecise
+        - MAE > 4.0 m/s²  : Poor      - significant prediction errors
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Initialize MAE metric.
+
+        Args:
+            **kwargs: Configuration including agent_count
+        """
+        super().__init__()
+        self.metric = MeanAbsoluteError()
+        self.kwargs = kwargs
+
+    def compute(self) -> th.Tensor:
+        """
+        Compute the metric value.
+
+        Returns:
+            Computed MAE value as scalar tensor, with 0.0 if no updates yet
+        """
+        if not self.metric._update_called:
+            return th.tensor(0.0)
+        return self.metric.compute()
+
+    def reset(self):
+        """
+        Reset metric state.
+        """
+        super().reset()
+        self.metric.reset()
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with predictions and targets.
+
+        Args:
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
+        """
+        self.metric.update(predictions, batch.action)
+
+
+class MaxEntropyEnergy(BaseMetric):
+    """
+    Track effective energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per timestep.
+
+    Computes the interaction energy from the maximum entropy formulation
+    following Bialek et al. (2012), where velocities act as spin variables:
+
+        E = -Σᵢⱼ J_{ij} (v̂ᵢ · v̂ⱼ)
 
     where J_{ij} = J₀ exp(-dᵢⱼ/λ) with:
         - J₀ is the uniform base coupling strength
         - dᵢⱼ is topological distance from k-NN graph
         - λ is the coupling decay length
 
-    Energy minimization drives alignment (E < 0) while heterogeneous noise
-    in individual dynamics creates the variance necessary for critical states.
+    This energy function emerges from statistical inference rather than
+    mechanics, with heterogeneous noise creating critical state variance.
     """
     _hop_cache  = {}
     _triu_cache = {}
@@ -443,7 +498,7 @@ class HamiltonianEnergy(BaseMetric):
 
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Compute Hamiltonian energy using topological interactions.
+        Compute effective energy using topological interactions.
 
         Computes spin-spin interactions based on hop distances in each graph's
         unique k-NN topology, following Ballerini et al. (2008) findings that
@@ -453,7 +508,7 @@ class HamiltonianEnergy(BaseMetric):
             batch: PyG Batch with edge_index and velocity tensors
 
         Returns:
-            Hamiltonian energy values as tensor
+            Effective energy values as tensor
         """
         spins = self._reshape_features(batch, "spins")[0]
         hops  = self._compute_hops_per_graph(batch)
@@ -469,61 +524,6 @@ class HamiltonianEnergy(BaseMetric):
             * th.bmm(spins, spins.mT)
             * self._get_triu_mask(spins.device)
         ).sum(dim=(1, 2)) * 2
-
-
-class MAE(MeanMetric):
-    """
-    Mean Absolute Error for action predictions.
-
-    Measures the average absolute difference between predicted and expert
-    actions in m/s² units. MAE is more robust to outliers than MSE/RMSE,
-    providing a complementary view of prediction accuracy.
-
-    Performance interpretation:
-        - MAE < 1.0 m/s²  : Excellent - near-expert performance
-        - MAE ∈ [1, 2]    : Good      - effective imitation
-        - MAE ∈ [2, 4]    : Moderate  - functional but imprecise
-        - MAE > 4.0 m/s²  : Poor      - significant prediction errors
-    """
-
-    def __init__(self, **kwargs):
-        """
-        Initialize MAE metric.
-
-        Args:
-            **kwargs: Configuration including agent_count
-        """
-        super().__init__()
-        self.metric = MeanAbsoluteError()
-        self.kwargs = kwargs
-
-    def compute(self) -> th.Tensor:
-        """
-        Compute the metric value.
-
-        Returns:
-            Computed MAE value as scalar tensor, with 0.0 if no updates yet
-        """
-        if not self.metric._update_called:
-            return th.tensor(0.0)
-        return self.metric.compute()
-
-    def reset(self):
-        """
-        Reset metric state.
-        """
-        super().reset()
-        self.metric.reset()
-
-    def update(self, batch: FlockBatch, predictions: Tensor):
-        """
-        Update metric with predictions and targets.
-
-        Args:
-            batch       : PyG Batch containing target actions
-            predictions : Predicted actions from the policy
-        """
-        self.metric.update(predictions, batch.action)
 
 
 class NeighborStability(BaseMetric):
@@ -1324,7 +1324,7 @@ class MetricsFactory:
             metrics = {
                 "acceleration"           : make(Acceleration),
                 "fiedler_value"          : make(FiedlerValue),
-                "hamiltonian_energy"     : make(HamiltonianEnergy),
+                "max_entropy_energy"     : make(MaxEntropyEnergy),
                 "mae"                    : make(MAE),
                 "neighbor_stability"     : make(NeighborStability),
                 "noise_heterogeneity"    : make(NoiseHeterogeneity),
