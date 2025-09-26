@@ -90,7 +90,8 @@ class ThermalPenalty:
             * (self.safety.max_temperature - flock.temperature.squeeze())
         )
 
-        if constraint := (flock.gradient * u_nominal).sum(dim=1) + barrier_term:
+        constraint = (flock.gradient * u_nominal).sum(dim=1) + barrier_term
+        if constraint.any():
             self.violation_count += (constraint < 0).sum().item()
             self.total_queries   += flock.position.shape[0]
 

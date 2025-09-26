@@ -91,7 +91,7 @@ class BaseMetric(MeanMetric):
         - 'spins_2d'  : Unit-normalized 2D velocity projections     [B, N, 2]
 
         The cache uses batch object IDs as keys, ensuring automatic invalidation when
-        processing new batches. The cache is cleared after each training step via
+        processing new batches. The cache is cleared after each training frame via
         BaseMetric.clear_cache() to prevent memory growth.
 
         Args:
@@ -421,7 +421,7 @@ class MAE(MeanMetric):
 
 class MaxEntropyEnergy(BaseMetric):
     """
-    Track effective energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per timestep.
+    Track effective energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per frame.
 
     Computes the interaction energy from the maximum entropy formulation
     following Bialek et al. (2012), where velocities act as spin variables:
@@ -530,7 +530,7 @@ class NeighborStability(BaseMetric):
     """
     Quantify topological stability of the communication graph.
 
-    Measures the Jaccard distance between consecutive graph snapshots to
+    Measures the Jaccard distance between consecutive graph states to
     track neighborhood relationship changes over time. The metric computes:
 
         Δ_topo = 1 - J(E_t, E_{t-1}) = |E_t ∆ E_{t-1}| / |E_t ∪ E_{t-1}|
@@ -755,7 +755,7 @@ class PerturbationResponse(BaseMetric):
 
         χ_thermal = ⟨|Δ𝐯_safe|⟩ / ⟨|Δ𝐯_threat|⟩
 
-    where Δ𝐯 = 𝐯(t) - 𝐯(t-Δt) represents velocity changes between timesteps.
+    where Δ𝐯 = 𝐯(t) - 𝐯(t-Δt) represents velocity changes between frames.
 
     This susceptibility metric quantifies the flock's ability to amplify and
     propagate threat information through the interaction network, critical

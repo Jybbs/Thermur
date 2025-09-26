@@ -416,8 +416,8 @@ class DemonstrationsDataset(InMemoryDataset):
         for _ in range(total_episodes):
             # Each trajectory contains graph-structured states and expert actions
             trajectory = self.murmuration.generate_trajectories(
-                generator     = self.generator,
-                num_timesteps = self.frames_per_episode
+                generator  = self.generator,
+                num_frames = self.frames_per_episode
             )
             # Each trajectory is list of Data(x=[N,13], action=[N,3], edge_index=[2,E])
             data_list.extend(trajectory)
@@ -499,7 +499,7 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 - **Orientation Wave**: Detects density waves by measuring spatial gradients in heading angles (0.15-0.40 rad/m during murmurations)
 
-- **Neighbor Stability**: Tracks topological changes via Jaccard distance of edge sets between timesteps
+- **Neighbor Stability**: Tracks topological changes via Jaccard distance of edge sets between frames
 
 - **Perturbation Response**: Measures threat information propagation across the heterogeneous flock
 

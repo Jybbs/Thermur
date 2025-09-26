@@ -61,7 +61,7 @@ class CheckpointModel(BaseModel, extra="forbid"):
     every_n_train_steps: PositiveInt = Field(
         default     = 25_000,
         description = (
-            "Step interval between checkpoint saves, balancing storage costs with "
+            "Frame interval between checkpoint saves, balancing storage costs with "
             "recovery granularity for long training runs on large datasets."
         )
     )
@@ -168,8 +168,8 @@ class OptimizerModel(BaseModel, extra="forbid"):
         default     = 256,
         ge          = 16,
         description = (
-            "Number of graph snapshots per training batch. Each snapshot contains "
-            "the full flock state at a single timestep. Larger batches improve "
+            "Number of graph states per training batch. Each state contains "
+            "the full flock state at a single frame. Larger batches improve "
             "gradient stability but require more memory."
         )
     )
@@ -190,15 +190,15 @@ class OptimizerModel(BaseModel, extra="forbid"):
     learning_rate: PositiveFloat = Field(
         default     = 2e-3,
         description = (
-            "Initial learning rate α for AdamW optimizer, controlling step size "
-            "in parameter space during gradient descent optimization."
+            "Initial learning rate α for AdamW optimizer, controlling gradient step "
+            "size in parameter space during gradient descent optimization."
         )
     )
     log_every_n_steps: PositiveInt = Field(
         default     = 1,
         description = (
             "How often to log metrics during training (every N batches). "
-            "Set to 1 for logging every step, useful when training with few batches."
+            "Set to 1 for logging every frame, useful when training with few batches."
         )
     )
     lr_factor: PositiveFloat = Field(
@@ -241,7 +241,8 @@ class OptimizerModel(BaseModel, extra="forbid"):
         le          = 0.95,
         description = (
             "Fraction of data reserved for training, with remainder for validation. "
-            "Split occurs randomly across all timesteps to ensure diverse validation."
+            "Split occurs randomly across all frames to ensure diverse data when "
+            "validating."
         )
     )
     val_check_interval: float = Field(

@@ -21,7 +21,7 @@ The Moisseeva & Stull *(2020)* dataset was selected for factors that align with 
 
 3. **Safety Training Data**: The dataset's temperature fields reach $`T > 600\text{K}`$ in plume cores, well beyond drone survival limits. This provides training data for Control Barrier Functions to learn hard thermal boundaries, analogous to how starlings maintain minimum separation distances.
 
-4. **Temporal Dynamics**: The 15-second timesteps capture the rapid evolution of fire plumes, allowing our Graph Neural Networks to learn temporal patterns in thermal threat propagation, much like how information cascades through a murmuration.
+4. **Temporal Dynamics**: The 15-second sampling interval captures the rapid evolution of fire plumes, allowing our Graph Neural Networks to learn temporal patterns in thermal threat propagation, much like how information cascades through a murmuration.
 
 5. **Validated Physics**: Published in peer-reviewed repositories with accompanying methodology papers, this dataset ensures we're training on scientifically accurate fire behavior, not approximations or empirical models.
 

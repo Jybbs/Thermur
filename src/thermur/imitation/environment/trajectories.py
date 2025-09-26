@@ -51,13 +51,13 @@ class TrajectoryGenerator:
             safety      : Safety thresholds (for reference, not enforced here)
             wrf         : WRF data source for environmental queries
         """
+        self.frame        = 0
         self.k_neighbors  = k_neighbors
         self.mmm          = mmm
         self.physics      = physics
         self.positions    = th.zeros(mmm.agent_count, 3)
         self.safety       = safety
         self.time         = 0.0
-        self.timestep     = 0
         self.velocities   = th.zeros(mmm.agent_count, 3)
         self.velocity_rng = th.Generator()
         self.wrf          = wrf
@@ -140,7 +140,7 @@ class TrajectoryGenerator:
     def _integrate_positions(
         self,
         positions  : Tensor,
-        timestep   : float,
+        timeframe  : float,
         velocities : Tensor,
     ) -> Tensor:
         """
@@ -150,13 +150,13 @@ class TrajectoryGenerator:
 
         Args:
             positions  : Current positions [N, 3]
-            timestep   : Integration timestep
+            timeframe  : Integration timeframe
             velocities : Current velocities [N, 3]
 
         Returns:
             Updated positions [N, 3]
         """
-        new_positions = positions + velocities * timestep
+        new_positions = positions + velocities * timeframe
 
         bounds_min    = th.as_tensor(self.physics.bounds_min, device=positions.device)
         bounds_max    = th.as_tensor(self.physics.bounds_max, device=positions.device)
@@ -174,7 +174,7 @@ class TrajectoryGenerator:
     def _integrate_velocities(
         self,
         acceleration : Tensor,
-        timestep     : float,
+        timeframe    : float,
         velocities   : Tensor,
     ) -> Tensor:
         """
@@ -182,13 +182,13 @@ class TrajectoryGenerator:
 
         Args:
             acceleration : Total accelerations [N, 3]
-            timestep     : Integration timestep
+            timeframe    : Integration timeframe
             velocities   : Current velocities  [N, 3]
 
         Returns:
             Updated velocities [N, 3]
         """
-        new_velocities = velocities + acceleration * timestep
+        new_velocities = velocities + acceleration * timeframe
 
         # Apply maximum speed constraint
         speed = new_velocities.norm(dim=-1, keepdim=True)
@@ -217,10 +217,10 @@ class TrajectoryGenerator:
         )
         positions[:, 2] += self.physics.initial_altitude
 
-        self.time     = 0.0
-        self.timestep = 0
+        self.frame = 0
+        self.time  = 0.0
 
-        self.velocity_rng.manual_seed(self.timestep)
+        self.velocity_rng.manual_seed(self.frame)
         self.positions  = positions.clone()
         self.velocities = th.randn(
             generator = self.velocity_rng,
@@ -228,11 +228,12 @@ class TrajectoryGenerator:
         ) * 2.0
 
         self.wrf.time         = self.time
-        gradient, temperature = self.wrf.query_thermal(self.positions, self.timestep)
-        wind                  = self.wrf.query_wind(self.positions,    self.timestep)
+        gradient, temperature = self.wrf.query_thermal(self.frame, self.positions)
+        wind                  = self.wrf.query_wind(self.frame,    self.positions)
 
         return Data(
             edge_index  = self._compute_edge_index(self.positions),
+            frame       = self.frame,
             gradient    = gradient.clone(),
             position    = self.positions.clone(),
             temperature = temperature.clone(),
@@ -242,7 +243,7 @@ class TrajectoryGenerator:
 
     def step(self, action: Tensor) -> Data:
         """
-        Advance the simulation by one timestep.
+        Advance the simulation by one frame.
 
         Args:
             action: Control actions (accelerations) [N, 3]
@@ -251,7 +252,7 @@ class TrajectoryGenerator:
             Next state as PyG Data object
         """
         self.wrf.time = self.time
-        wind          = self.wrf.query_wind(self.positions, self.timestep)
+        wind          = self.wrf.query_wind(self.frame, self.positions)
 
         acceleration = self._compute_forces(
             actions    = action,
@@ -260,22 +261,23 @@ class TrajectoryGenerator:
         )
         self.velocities = self._integrate_velocities(
             acceleration = acceleration,
-            timestep     = self.physics.timestep,
+            timeframe    = self.physics.timeframe,
             velocities   = self.velocities
         )
 
         self.positions = self._integrate_positions(
             positions  = self.positions,
-            timestep   = self.physics.timestep,
+            timeframe  = self.physics.timeframe,
             velocities = self.velocities
         )
 
-        gradient, temperature = self.wrf.query_thermal(self.positions, self.timestep)
-        self.time            += self.physics.timestep
-        self.timestep        += 1
+        gradient, temperature = self.wrf.query_thermal(self.frame, self.positions)
+        self.frame += 1
+        self.time  += self.physics.timeframe
 
         return Data(
             edge_index  = self._compute_edge_index(self.positions),
+            frame       = self.frame,
             gradient    = gradient,
             position    = self.positions.clone(),
             temperature = temperature,

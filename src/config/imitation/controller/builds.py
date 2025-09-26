@@ -39,7 +39,6 @@ CONTROLLER_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "thermal_penalty": builds(
         ThermalPenalty,
-        mmm                     = "${controller.mmm}",
         safety                  = "${controller.safety}",
         populate_full_signature = True
     )

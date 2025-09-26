@@ -220,7 +220,7 @@ class MurmurationController(th.nn.Module):
 
         flock.hops = hops
 
-    def _compute_heterogeneity(self, timestep: int) -> Tensor:
+    def _compute_heterogeneity(self, frame: int) -> Tensor:
         """
         Generate heterogeneous behavioral variance deterministically.
 
@@ -235,12 +235,12 @@ class MurmurationController(th.nn.Module):
         critical dynamics with continuous phase transitions.
 
         Args:
-            timestep: Current simulation timestep for deterministic seeding
+            frame: Current simulation frame for deterministic seeding
 
         Returns:
             Heterogeneity values for each agent [N]
         """
-        self.heterogeneity_rng.manual_seed(timestep)
+        self.heterogeneity_rng.manual_seed(frame)
         return th.normal(
             generator = self.heterogeneity_rng,
             mean      = self.mmm.heterogeneity_mean,
@@ -268,19 +268,17 @@ class MurmurationController(th.nn.Module):
 
         This ensures the flock can bootstrap movement from rest states. All random
         operations use independent generators seeded deterministically with the
-        timestep, guaranteeing reproducible behavior across runs.
+        frame, guaranteeing reproducible behavior across runs.
 
         Args:
             flock: Data with velocities, updated with heterogeneity
                    and self_propulsion forces
         """
-        speed = flock.velocity.norm(dim=-1, keepdim=True)
-        wind  = getattr(flock, "wind", th.zeros_like(flock.velocity))
-
+        speed            = flock.velocity.norm(dim=-1, keepdim=True)
         velocity_heading = flock.velocity / speed.clamp_min(1e-8)
         gradient_heading = -th.nn.functional.normalize(flock.gradient, dim=-1)
 
-        self.heading_rng.manual_seed(flock.timestep)
+        self.heading_rng.manual_seed(flock.frame)
         random_heading = th.nn.functional.normalize(
             dim   = -1,
             input = th.randn(
@@ -301,9 +299,9 @@ class MurmurationController(th.nn.Module):
             th.where(zero_vel, random_heading, velocity_heading)
         )
 
-        flock.heterogeneity = self._compute_heterogeneity(flock.timestep)
+        flock.heterogeneity = self._compute_heterogeneity(flock.frame)
 
-        self.noise_rng.manual_seed(flock.timestep)
+        self.noise_rng.manual_seed(flock.frame)
         noise_direction = th.randn(
             device    = flock.velocity.device,
             generator = self.noise_rng,
@@ -316,7 +314,7 @@ class MurmurationController(th.nn.Module):
 
         target_velocity = (
             heading * self.mmm.self_propulsion_speed
-            + wind  * self.mmm.wind_coupling
+            + flock.wind * self.mmm.wind_coupling
         )
 
         flock.self_propulsion = (
@@ -419,14 +417,14 @@ class MurmurationController(th.nn.Module):
 
     def generate_trajectories(
         self,
-        generator     : TrajectoryGenerator,
-        num_timesteps : int
+        generator  : TrajectoryGenerator,
+        num_frames : int
     ) -> list[Data]:
         """
         Generate expert demonstration trajectory as PyG Data objects.
 
-        Produces a sequence of graph snapshots representing the flock's evolution
-        under expert control. Each timestep captures the full state (positions,
+        Produces a sequence of graph states representing the flock's evolution
+        under expert control. Each frame captures the full state (positions,
         velocities, environmental data) and the expert's action, creating a dataset
         suitable for behavioral cloning.
 
@@ -439,24 +437,24 @@ class MurmurationController(th.nn.Module):
 
         This 13-dimensional representation matches the GNN policy's expected input.
 
-        Action tensors are cloned when constructing trajectory snapshots to preserve
-        the computed values at each timestep. Since the controller modifies the state
+        Action tensors are cloned when constructing trajectory states to preserve
+        the computed values at each frame. Since the controller modifies the state
         object in-place by adding an action attribute, cloning ensures each saved
-        snapshot maintains an independent copy of its action values.
+        state maintains an independent copy of its action values.
 
         Args:
-            generator     : Trajectory generator providing physics simulation
-            num_timesteps : Number of simulation steps to generate
+            generator  : Trajectory generator providing physics simulation
+            num_frames : Number of simulation frames to generate
 
         Returns:
-            List of PyG Data objects, one per timestep, containing:
+            List of PyG Data objects, one per frame, containing:
                 - action        : Expert control actions      [N, 3]
                 - edge_index    : Topological connectivity    [2, E]
+                - frame         : Temporal index
                 - gradient      : Temperature gradient        [N, 3]
                 - heterogeneity : Individual noise amplitudes [N]
                 - position      : Agent positions             [N, 3]
                 - temperature   : Temperature values          [N, 1]
-                - timestep      : Temporal index
                 - velocity      : Agent velocities            [N, 3]
                 - wind          : Wind field                  [N, 3]
                 - x             : Concatenated node features  [N, 13]
@@ -464,10 +462,10 @@ class MurmurationController(th.nn.Module):
         state      = generator.reset()
         trajectory = []
 
-        for t in range(num_timesteps):
-            state.timestep = t
-            action         = self.forward(state)
-            features       = th.cat(
+        for frame in range(num_frames):
+            state.frame = frame
+            action      = self.forward(state)
+            features    = th.cat(
                 dim     = -1,
                 tensors = [
                     state.position,
@@ -482,11 +480,11 @@ class MurmurationController(th.nn.Module):
                 Data(
                     action        = action.clone(),
                     edge_index    = state.edge_index,
+                    frame         = frame,
                     gradient      = state.gradient,
                     heterogeneity = state.heterogeneity,
                     position      = state.position,
                     temperature   = state.temperature,
-                    timestep      = t,
                     velocity      = state.velocity,
                     wind          = state.wind,
                     x             = features

@@ -51,7 +51,7 @@ class DemonstrationsDataset(InMemoryDataset):
         Args:
             controller         : Controller configuration for cache invalidation
             environment        : Environment configuration for cache invalidation
-            frames_per_episode : Number of timesteps per demonstration episode
+            frames_per_episode : Number of frames per demonstration episode
             generator          : Trajectory generator for physics simulation
             murmuration        : Expert controller for trajectory generation
             sample_url         : URL for downloading sample WRF dataset
@@ -160,7 +160,7 @@ class DemonstrationsDataset(InMemoryDataset):
         shuffling, and multi-GPU distribution automatically.
 
         Args:
-            batch_size  : Number of graph snapshots per training batch
+            batch_size  : Number of graph states per training batch
             controller  : Controller configuration
             environment : Environment configuration
             generator   : Trajectory generator for physics simulation
@@ -263,8 +263,8 @@ class DemonstrationsDataset(InMemoryDataset):
             for _ in range(self.total_frames // self.frames_per_episode):
                 data_list.extend(
                     self.murmuration.generate_trajectories(
-                        generator     = self.generator,
-                        num_timesteps = self.frames_per_episode
+                        generator  = self.generator,
+                        num_frames = self.frames_per_episode
                     )
                 )
                 progress.update(task, advance=self.frames_per_episode)

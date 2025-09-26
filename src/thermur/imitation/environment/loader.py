@@ -63,19 +63,24 @@ class WRFLoader:
         self.temperature_noise_std = loader.temperature_noise_std
         self.wind_noise_std        = loader.wind_noise_std
 
-    def _add_domain_noise(self, data: Tensor, noise_std: float, timestep: int) -> Tensor:
+    def _add_domain_noise(
+        self, 
+        data      : Tensor, 
+        noise_std : float, 
+        frame     : int
+    ) -> Tensor:
         """
         Add domain randomization noise if enabled.
 
         Args:
             data      : Tensor to add noise to
             noise_std : Standard deviation of Gaussian noise
-            timestep  : Current simulation timestep for seeding
+            frame     : Current simulation frame for seeding
 
         Returns:
             Tensor with noise added if domain randomization is enabled
         """
-        self.domain_noise_rng.manual_seed(timestep)
+        self.domain_noise_rng.manual_seed(frame)
         return (
             data + th.randn(data.shape, generator=self.domain_noise_rng) * noise_std
             if self.domain_randomization and noise_std > 0
@@ -134,11 +139,11 @@ class WRFLoader:
         """
         Extract metadata from the current dataset for coordinate transformations.
 
-        Sets up coordinate variables, time steps, and grid dimensions needed
+        Sets up coordinate variables, temporal snapshots, and grid dimensions needed
         for field interpolation and temporal navigation.
         """
         self.coord_vars    = list(self.dataset.dims)
-        self.num_timesteps = self.dataset.sizes.get('Time', 1)
+        self.num_snapshots = self.dataset.sizes.get('Time', 1)
         self.time_interval = 300.0
 
         self.grid_dims = {
@@ -193,16 +198,16 @@ class WRFLoader:
             i₁ = (i₀ + 1) mod N
             α = t_continuous - i₀
 
-        where N is the number of time steps and Δt_wrf is the WRF output interval.
+        where N is the number of temporal snapshots and Δt_wrf is the WRF output interval.
 
         Returns:
             Tuple (i₀, i₁, α) for linear time interpolation
         """
-        continuous_idx = (self.time / self.time_interval) % self.num_timesteps
+        continuous_idx = (self.time / self.time_interval) % self.num_snapshots
 
         return (
             (lower := int(continuous_idx)),
-            (lower + 1) % self.num_timesteps,
+            (lower + 1) % self.num_snapshots,
             continuous_idx - lower
         )
 
@@ -242,10 +247,10 @@ class WRFLoader:
         if "Time" not in data.dims:
             return interp(data)
 
-        if not self.interpolate_time or self.num_timesteps <= 1:
+        if not self.interpolate_time or self.num_snapshots <= 1:
             return interp(
                 data.isel(
-                    Time = int(self.time / self.time_interval) % self.num_timesteps
+                    Time = int(self.time / self.time_interval) % self.num_snapshots
                 )
             )
 
@@ -351,9 +356,9 @@ class WRFLoader:
         )
 
     def query_thermal(
-        self, 
-        positions : Tensor, 
-        timestep  : int
+        self,
+        frame     : int,
+        positions : Tensor
     ) -> tuple[Tensor, Tensor]:
         """
         Query temperature and its gradient at agent positions.
@@ -371,8 +376,8 @@ class WRFLoader:
         sensor uncertainty and atmospheric turbulence.
 
         Args:
+            frame     : Current simulation frame for deterministic noise
             positions : Tensor [N, 3] of agent positions in meters
-            timestep  : Current simulation timestep for deterministic noise
 
         Returns:
             Tuple of (gradient, temperature) where:
@@ -393,10 +398,10 @@ class WRFLoader:
 
         return (
             in_bounds[0],
-            self._add_domain_noise(in_bounds[1], self.temperature_noise_std, timestep),
+            self._add_domain_noise(in_bounds[1], self.temperature_noise_std, frame),
         )
 
-    def query_wind(self, positions: Tensor, timestep: int) -> Tensor:
+    def query_wind(self, frame: int, positions: Tensor) -> Tensor:
         """
         Query wind velocity vectors at agent positions.
 
@@ -412,8 +417,8 @@ class WRFLoader:
         Domain randomization adds noise ε ~ N(0, σ_w²) to simulate turbulence.
 
         Args:
+            frame     : Current simulation frame for deterministic noise
             positions : Tensor [N, 3] of agent positions in meters
-            timestep  : Current simulation timestep for deterministic noise
 
         Returns:
             Tensor [N, 3] of wind velocity vectors 𝐮 = [u, v, w] in m/s
@@ -443,4 +448,4 @@ class WRFLoader:
             for var in ["U", "V", "W"]
         ], dim=1)
 
-        return self._add_domain_noise(wind_values, self.wind_noise_std, timestep)
+        return self._add_domain_noise(wind_values, self.wind_noise_std, frame)

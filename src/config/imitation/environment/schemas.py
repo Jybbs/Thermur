@@ -28,9 +28,9 @@ class LoaderModel(BaseModel, extra="forbid"):
     interpolate_time: bool = Field(
         default     = True,
         description = (
-            "Enable smooth temporal interpolation between WRF time steps. When False, "
-            "uses nearest time step (discrete jumps). When True, linearly interpolates "
-            "between adjacent time steps for continuous evolution."
+            "Enable smooth temporal interpolation between WRF snapshots. When False, "
+            "uses nearest snapshot (discrete jumps). When True, linearly interpolates "
+            "between adjacent snapshots for continuous evolution."
         )
     )
     sample_url: str = Field(
@@ -63,10 +63,10 @@ class PhysicsModel(BaseModel, extra="forbid"):
     """
     Unified physics and environmental simulation configuration.
 
-    Controls the physics simulation settings, timestep, spatial bounds,
+    Controls the physics simulation settings, timeframe, spatial bounds,
     and thermal field interpolation parameters used throughout the system.
 
-    The simulation operates on a discrete timestep Δt, advancing the
+    The simulation operates on a discrete timeframe Δt, advancing the
     physics state using Euler integration. The thermal field
     provides spatially-varying temperature data T(𝐱) through
     interpolation of gridded measurements.
@@ -133,10 +133,10 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "representing physical limitations of drone propulsion systems."
         )
     )
-    timestep: PositiveFloat = Field(
+    timeframe: PositiveFloat = Field(
         default     = 0.05,
         description = (
-            "Integration timestep Δt in seconds for Euler physics integration, "
+            "Integration timeframe Δt in seconds for Euler physics integration, "
             "balancing accuracy with real-time computational constraints."
         )
     )

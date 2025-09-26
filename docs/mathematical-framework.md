@@ -321,7 +321,7 @@ $`
 `$  
 <br>
 
-with timestep $`\Delta t = 0.1`$ s chosen to balance computational efficiency with numerical stability.
+with timeframe $`\Delta t = 0.1`$ s chosen to balance computational efficiency with numerical stability.
 
 ## Summary
 
