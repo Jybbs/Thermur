@@ -131,7 +131,7 @@ class MurmurationController(th.nn.Module):
         flock.density_wave = (
             -self.mmm.density_diffusion *
             density_gradient            *
-            threat_amplification
+            threat_amplification.unsqueeze(-1)
         )
 
     def _compute_energy_forces(self, flock: Data):
@@ -296,12 +296,12 @@ class MurmurationController(th.nn.Module):
             th.where(is_stationary, random_heading, heading)
         )
 
-        target_squared = self.mmm.self_propulsion_speed ** 2
-        speed_force    = (
-            -4
-            * (self.mmm.j_base * self.mmm.speed_regulation_ratio)
-            * ((speed ** 2 - target_squared) ** 3) / (target_squared ** 3)
-            * speed
+        speed_normalized = speed / self.mmm.self_propulsion_speed
+        deviation_cubed  = (speed_normalized ** 2 - 1) ** 3
+        lambda_effective = self.mmm.j_base * self.mmm.speed_regulation_ratio
+        speed_force      = (
+            -4 * lambda_effective * deviation_cubed *
+            speed_normalized * self.mmm.self_propulsion_speed
         )
 
         self.noise_rng.manual_seed(flock.frame)

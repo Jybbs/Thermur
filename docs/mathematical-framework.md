@@ -96,7 +96,7 @@ J_{ij} = J_0 \exp(-d_{ij}/\lambda)
 `$
 <br>
 
-where the topological distance $`d_{ij}`$ counts the minimum number of neighbor-to-neighbor hops between agents, and $`J_0 = 0.5`$ is the uniform baseline coupling strength. This uniform coupling ensures that behavioral diversity emerges from heterogeneous noise amplitudes rather than coupling heterogeneity.
+where the topological distance $`d_{ij}`$ counts the minimum number of neighbor-to-neighbor hops between agents, and $`J_0 = 1.6`$ is the optimized uniform baseline coupling strength. This uniform coupling ensures that behavioral diversity emerges from heterogeneous noise amplitudes rather than coupling heterogeneity.
 
 The alignment force emerges from the energy gradient:
 
@@ -168,7 +168,15 @@ $`
 `$
 <br>
 
-Each agent maintains a cruising speed of $`v_0 = 11.1`$ m/s [^21] through the quartic force, while incorporating environmental wind $`\mathbf{w}_i`$ with coupling $`\alpha_w = 0.3`$. The confinement parameter $`\lambda = r_s \cdot J_0`$ where the speed regulation ratio $`r_s \in [0.5, 2.0]`$ balances individual regulation against collective alignment. When $`r_s < 1`$, collective forces dominate and speeds may drift; when $`r_s > 1`$, individual speed control strengthens but reduces collective responsiveness. Stochastic fluctuations $`\eta_i(t) \boldsymbol{\xi}_i`$ with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ maintain the behavioral diversity described in the heterogeneous noise model below.
+Each agent maintains a cruising speed of $`v_0 = 11.1`$ m/s [^21] through the quartic force, while incorporating environmental wind $`\mathbf{w}_i`$ with coupling $`\alpha_w = 0.3`$. In practice, numerical instability arises from the $`v_0^6 \approx 1.88 \times 10^6`$ term in the denominator, necessitating a dimensionless formulation for computational stability. By introducing the normalized speed $`s_i = |\mathbf{v}_i|/v_0`$, we can express the force as
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{F}_{\text{speed}} = -4\lambda_\text{eff}(s_i^2 - 1)^3 s_i v_0 \hat{\mathbf{v}}_i
+`$
+<br>
+
+wherein $`\lambda_\text{eff} = J_0 \cdot r_s`$ represents the effective confinement strength and $`\hat{\mathbf{v}}_i = \mathbf{v}_i/|\mathbf{v}_i|`$ denotes the velocity direction. This formulation preserves mathematical equivalence to the original while ensuring numerical stability, such that the speed regulation ratio $`r_s \in [0.01, 0.3]`$ balances individual regulation against collective alignment. When $`r_s < 0.1`$, collective forces dominate and speeds may drift, whereas values exceeding $`r_s > 0.2`$ strengthen individual speed control but reduce collective responsiveness. Stochastic fluctuations $`\eta_i(t) \boldsymbol{\xi}_i`$ with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ maintain the behavioral diversity described in the heterogeneous noise model below.
 
 ### Heterogeneous Noise Model
 
@@ -176,7 +184,7 @@ Individual noise amplitudes vary temporally, drawn from:
 
 $`
 \hspace{0.5cm} \displaystyle
-\eta_i(t) \sim \mathcal{N}(0.70, 0.20)
+\eta_i(t) \sim \mathcal{N}(0.33, 0.20)
 `$
 <br>
 

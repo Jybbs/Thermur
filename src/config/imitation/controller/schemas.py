@@ -39,23 +39,23 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     coupling_decay: PositiveFloat = Field(
-        default     = 0.3,
+        default     = 0.48,
         description = (
             "Exponential decay rate λ for topological interaction strength "
-            "J_ij = J_0 exp(-d_ij/λ). Value of 0.3 ensures influence is primarily "
+            "J_ij = J_0 exp(-d_ij/λ). Value of 0.48 ensures influence is primarily "
             "limited to k-nearest topological neighbors, creating local interactions "
             "that allow heterogeneous patterns to emerge rather than global synchronization."
         )
     )
     density_bandwidth: PositiveFloat = Field(
-        default     = 5.0,
+        default     = 8.6,
         description = (
             "Spatial scale σ for Gaussian kernel density estimation in meters, "
             "determining the effective radius of local density calculations."
         )
     )
     density_diffusion: PositiveFloat = Field(
-        default     = 0.1,
+        default     = 0.435,
         description = (
             "Diffusion coefficient D in density wave equation ∂ρ/∂t + ∇·(ρv) = D∇²ρ, "
             "controlling how density perturbations spread through the flock."
@@ -69,13 +69,11 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     heterogeneity_mean: PositiveFloat = Field(
-        default     = 0.70,
+        default     = 0.33,
         description = (
             "Mean μ of heterogeneous noise distribution η_i ~ N(μ, σ). "
-            "From Guisandez et al. (2018), the critical transition occurs at "
-            "μc ≈ 0.70 for σ = 0.20, where susceptibility is maximized. This "
-            "noise level ensures the flock operates at the order-disorder transition "
-            "necessary for murmuration patterns and scale-free correlations."
+            "Value of 0.33 optimizes the flock behavior at the order-disorder "
+            "transition necessary for murmuration patterns and scale-free correlations."
         )
     )
     heterogeneity_std: PositiveFloat = Field(
@@ -89,10 +87,10 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     j_base: PositiveFloat = Field(
-        default     = 0.5,
+        default     = 1.6,
         description = (
             "Base coupling strength J_0 in maximum entropy formulation controlling "
-            "velocity alignment between neighbors. Value of 0.5 balances cohesion "
+            "velocity alignment between neighbors. Value of 1.6 balances cohesion "
             "with flexibility, allowing heterogeneous noise to create the variance "
             "needed for critical state dynamics while maintaining structural integrity."
         )
@@ -121,7 +119,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     separation_strength: PositiveFloat = Field(
-        default     = 1.5,
+        default     = 0.17,
         description = (
             "Weight coefficient for short-range separation forces that prevent "
             "collisions between agents when metric distance < 3·ε_dist, implementing "
@@ -129,7 +127,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     speed_regulation_ratio: PositiveFloat = Field(
-        default     = 1.0,
+        default     = 0.22,
         description = (
             "Ratio λ/J controlling balance between individual speed regulation (λ) and "
             "collective alignment (J) in the marginal speed confinement framework. "
@@ -138,7 +136,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     temperature_scaling: PositiveFloat = Field(
-        default     = 1.0,
+        default     = 0.375,
         description = (
             "Multiplicative factor λ_thermal adjusting thermal avoidance strength "
             "relative to murmuration forces, balancing safety versus cohesive behavior."
@@ -152,11 +150,11 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     wind_coupling: PositiveFloat = Field(
-        default     = 0.3,
+        default     = 0.45,
         description = (
             "Coupling coefficient for environmental wind field incorporation into "
-            "target velocity. Value of 0.3 means agents adjust their heading to include "
-            "30 percent of the local wind velocity, representing partial adaptation to wind "
+            "target velocity. Value of 0.45 means agents adjust their heading to include "
+            "45 percent of the local wind velocity, representing partial adaptation to wind "
             "conditions while maintaining intended flight direction."
         )
     )
