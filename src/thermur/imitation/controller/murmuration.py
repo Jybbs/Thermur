@@ -131,7 +131,7 @@ class MurmurationController(th.nn.Module):
         flock.density_wave = (
             -self.mmm.density_diffusion *
             density_gradient            *
-            threat_amplification.unsqueeze(-1)
+            threat_amplification
         )
 
     def _compute_energy_forces(self, flock: Data):

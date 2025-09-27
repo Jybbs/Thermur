@@ -19,6 +19,7 @@ dependencies    = [
     "pyarrow",
     "questionary",
     "rich",
+    "scipy",
     "torch",
     "torch-geometric",
     "torchmetrics",
