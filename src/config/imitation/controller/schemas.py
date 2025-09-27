@@ -128,6 +128,15 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "F_sep = -w_sep · Σ (𝐱_j - 𝐱_i) / ||𝐱_j - 𝐱_i||³."
         )
     )
+    speed_regulation_ratio: PositiveFloat = Field(
+        default     = 1.0,
+        description = (
+            "Ratio λ/J controlling balance between individual speed regulation (λ) and "
+            "collective alignment (J) in the marginal speed confinement framework. "
+            "From Cavagna et al. (2022), this determines the quartic potential strength "
+            "λ = J × ratio for force F = -4λ/v₀⁶ · (s² - v₀²)³ · s."
+        )
+    )
     temperature_scaling: PositiveFloat = Field(
         default     = 1.0,
         description = (

@@ -62,7 +62,7 @@ where the nominal control:
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{v_0 \hat{\mathbf{s}}_i + \alpha_w \mathbf{w}_i - \mathbf{v}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{-\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \alpha_w \mathbf{w}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Marginal speed confinement}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -76,7 +76,7 @@ produces emergent dynamics satisfying all biological and safety constraints.
 
 Statistical inference provides a powerful framework for understanding collective motion. Research has demonstrated starling flocks can be modeled as maximum entropy systems [^7], where bird velocities act analogously to spins in magnetic materials. By inferring the simplest probability distribution consistent with observed correlations, this approach reveals an effective energy function without assuming underlying mechanics.
 
-The inferred energy takes the Heisenberg form [^16]:
+The inferred energy takes the Heisenberg form [^17]:
 
 $`
 \hspace{0.5cm} \displaystyle
@@ -124,17 +124,51 @@ where $`C(r)`$ is the velocity correlation function and $`\xi`$ is the correlati
 
 ### Active Matter Framework
 
-Birds, unlike passive particles, generate their own motion through wing beats. This self-propulsion places them in the category of active matter, systems that consume energy to move. Active matter theory shows these systems exhibit unique phase transitions and collective phenomena impossible in equilibrium systems [^17]. The Vicsek model demonstrates how self-propelled particles with velocity alignment can spontaneously break symmetry and move collectively.
+Birds, unlike passive particles, generate their own motion through wing beats. This self-propulsion places them in the category of active matter, systems that consume energy to move. Active matter theory shows these systems exhibit unique phase transitions and collective phenomena impossible in equilibrium systems [^18]. The Vicsek model demonstrates how self-propelled particles with velocity alignment can spontaneously break symmetry and move collectively.
 
-In our framework, each agent maintains its cruising speed through:
+For self-propelled particles, the phase transition between disordered and ordered motion depends on the noise-to-speed ratio $`\eta/v_0`$ and density $`\rho`$. The order parameter (polarization) follows:
 
 $`
 \hspace{0.5cm} \displaystyle
-\mathbf{F}_{\text{prop}} = v_0 \hat{\mathbf{s}}_i + \alpha_w \mathbf{w}_i - \mathbf{v}_i + \eta_i \boldsymbol{\xi}_i
+\Phi = \frac{1}{N} \left| \sum_i \hat{\mathbf{v}}_i \right|
 `$
 <br>
 
-Each agent seeks to maintain a cruising speed of $`v_0 = 11.1`$ m/s [^20] in its preferred direction $`\hat{\mathbf{s}}_i`$, while incorporating environmental wind $`\mathbf{w}_i`$ with coupling strength $`\alpha_w = 0.3`$. Speed regulation emerges from the velocity correction term $`-\mathbf{v}_i`$, and stochastic fluctuations $`\eta_i \boldsymbol{\xi}_i`$ maintain behavioral diversity, where $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ represents Gaussian white noise.
+where $`\Phi \approx 0`$ indicates disordered motion and $`\Phi \approx 1`$ represents collective alignment. At the critical point, fluctuations exhibit scaling behavior $`\delta\Phi^2 \sim N^{-\alpha}`$ with $`\alpha < 1`$, indicating long-range correlations.
+
+### Marginal Speed Confinement
+
+Natural flocks maintain stable cruising speeds while preserving the scale-free correlations necessary for collective response. The marginal speed confinement framework [^16] resolves this apparent conflict through a quartic potential that regulates individual speeds without damping fluctuations:
+
+$`
+\hspace{0.5cm} \displaystyle
+V(\mathbf{v}_i) = \frac{\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^4
+`$
+<br>
+
+The potential is marginal at the reference speed, meaning its second derivative vanishes at $`v_0`$. This mathematical property eliminates quadratic restoring forces that would otherwise destroy scale-free correlations, since a harmonic potential would create exponentially decaying correlations rather than the observed power-law behavior.
+
+The force on each agent emerges as the negative gradient:
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{F}_{\text{speed}} = -\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i
+`$
+<br>
+
+This force exhibits asymmetric behavior around $`v_0`$. Near the cruising speed where $`|\mathbf{v}_i| \approx v_0`$, the cubic term $(|\mathbf{v}_i|^2 - v_0^2)^3 \approx 0$ creates minimal resistance, allowing natural speed variations of ±2 m/s observed in starling flocks. For extreme deviations, the force grows as the seventh power of velocity, providing strong confinement within biomechanical limits.
+
+### Complete Self-Propulsion Force
+
+The full self-propulsion force combines speed regulation with environmental coupling and stochastic noise:
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{F}_{\text{prop}} = -\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \alpha_w \mathbf{w}_i + \eta_i(t) \boldsymbol{\xi}_i
+`$
+<br>
+
+Each agent maintains a cruising speed of $`v_0 = 11.1`$ m/s [^21] through the quartic force, while incorporating environmental wind $`\mathbf{w}_i`$ with coupling $`\alpha_w = 0.3`$. The confinement parameter $`\lambda = r_s \cdot J_0`$ where the speed regulation ratio $`r_s \in [0.5, 2.0]`$ balances individual regulation against collective alignment. When $`r_s < 1`$, collective forces dominate and speeds may drift; when $`r_s > 1`$, individual speed control strengthens but reduces collective responsiveness. Stochastic fluctuations $`\eta_i(t) \boldsymbol{\xi}_i`$ with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ maintain the behavioral diversity described in the heterogeneous noise model below.
 
 ### Heterogeneous Noise Model
 
@@ -361,10 +395,12 @@ This framework transforms invisible thermal threats into visible motion patterns
 
 [^13]: Kreisselmeier, G., and R. Steinhauser. 1979. "Systematic Control Design by Optimizing a Vector Performance Index." *IFAC Proceedings Volumes* 12 (7): 113–17. https://doi.org/10.1016/S1474-6670(17)65584-8
 
-[^16]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
+[^16]: Cavagna, Andrea, Antonio Culla, Xiao Feng, Irene Giardina, Tomas S. Grigera, Willow Kion-Crosby, Stefania Melillo, Giulia Pisegna, Lorena Postiglione, and Pablo Villegas. 2022. "Marginal Speed Confinement Resolves the Conflict Between Correlation and Control in Collective Behaviour." *Nature Communications* 13 (1): 2315. https://doi.org/10.1038/s41467-022-29883-4
 
-[^17]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+[^17]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
-[^20]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
+[^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+
+[^21]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
 
 

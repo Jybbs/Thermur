@@ -250,33 +250,30 @@ class MurmurationController(th.nn.Module):
 
     def _compute_self_propulsion(self, flock: Data):
         """
-        Compute self-propulsion forces with heterogeneous noise.
+        Compute self-propulsion with marginal speed confinement.
 
-        Implements self-propulsion where each agent maintains an intrinsic
-        velocity v₀ with heterogeneous stochastic fluctuations:
+        Implements quartic speed confinement from Cavagna et al. (2022) where
+        individual speeds are regulated through potential V = (λ/v₀⁶)(|vᵢ|² - v₀²)⁴
+        producing force:
 
-            F_prop = (v₀𝐬 - 𝐯) / τ + η_i𝝃
+            Fᵢ = -4λ/v₀⁶ · (|vᵢ|² - v₀²)³ · vᵢ
 
-        where 𝐬 is the heading direction, τ is relaxation time, 𝝃 is
-        unit Gaussian noise, and η_i ~ N(μ, σ=0.20) creates behavioral
-        heterogeneity.
+        This marginal confinement:
+        - Weakly constrains small deviations (enables natural fluctuations)
+        - Strongly suppresses large deviations (enforces biomechanical limits)
+        - Preserves scale-free correlations across the flock
 
-        For agents with zero velocity (|𝐯| < ε), the heading direction 𝐬 is
+        For agents with zero velocity (|v| < ε), the heading direction is
         determined from:
-            1. Negative temperature gradient direction: 𝐬 = -∇T/|∇T| (if |∇T| > δ)
-            2. Random unit vector: 𝐬 = 𝝃/|𝝃| where 𝝃 ~ N(0, I) (fallback)
-
-        This ensures the flock can bootstrap movement from rest states. All random
-        operations use independent generators seeded deterministically with the
-        frame, guaranteeing reproducible behavior across runs.
+            1. Negative temperature gradient direction: -∇T/|∇T| (if |∇T| > δ)
+            2. Random unit vector: ξ/|ξ| where ξ ~ N(0, I) (fallback)
 
         Args:
             flock: Data with velocities, updated with heterogeneity
                    and self_propulsion forces
         """
-        speed            = flock.velocity.norm(dim=-1, keepdim=True)
-        velocity_heading = flock.velocity / speed.clamp_min(1e-8)
-        gradient_heading = -th.nn.functional.normalize(flock.gradient, dim=-1)
+        speed   = flock.velocity.norm(dim=-1, keepdim=True)
+        heading = flock.velocity / speed.clamp_min(1e-8)
 
         self.heading_rng.manual_seed(flock.frame)
         random_heading = th.nn.functional.normalize(
@@ -288,38 +285,39 @@ class MurmurationController(th.nn.Module):
             )
         )
 
-        zero_vel = (speed < 1e-6).expand_as(flock.velocity)
-        use_grad = (
+        is_stationary = (speed < 1e-6).expand_as(flock.velocity)
+        has_gradient  = (
             flock.gradient.norm(dim=-1, keepdim=True) > 0.01
         ).expand_as(flock.velocity)
 
         heading = th.where(
-            zero_vel & use_grad,
-            gradient_heading,
-            th.where(zero_vel, random_heading, velocity_heading)
+            is_stationary & has_gradient,
+            -th.nn.functional.normalize(flock.gradient, dim=-1),
+            th.where(is_stationary, random_heading, heading)
         )
 
-        flock.heterogeneity = self._compute_heterogeneity(flock.frame)
+        target_squared = self.mmm.self_propulsion_speed ** 2
+        speed_force    = (
+            -4
+            * (self.mmm.j_base * self.mmm.speed_regulation_ratio)
+            * ((speed ** 2 - target_squared) ** 3) / (target_squared ** 3)
+            * speed
+        )
 
         self.noise_rng.manual_seed(flock.frame)
-        noise_direction = th.randn(
-            device    = flock.velocity.device,
-            generator = self.noise_rng,
-            size      = flock.velocity.shape
+        noise_direction = th.nn.functional.normalize(
+            dim   = -1,
+            input = th.randn(
+                device    = flock.velocity.device,
+                generator = self.noise_rng,
+                size      = flock.velocity.shape
+            )
         )
-        noise_direction = noise_direction / noise_direction.norm(
-            dim     = -1,
-            keepdim = True
-        ).clamp_min(1e-8)
-
-        target_velocity = (
-            heading * self.mmm.self_propulsion_speed
-            + flock.wind * self.mmm.wind_coupling
-        )
-
+        flock.heterogeneity   = self._compute_heterogeneity(flock.frame)
         flock.self_propulsion = (
-            target_velocity - flock.velocity
+            heading * speed_force
             + noise_direction * flock.heterogeneity.unsqueeze(-1)
+            + flock.wind      * self.mmm.wind_coupling
         )
 
     def _compute_threats(self, flock: Data):

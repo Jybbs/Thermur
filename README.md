@@ -152,7 +152,7 @@ where the nominal control orchestrates multiple biologically-inspired components
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{v_0 \hat{\mathbf{s}}_i - \mathbf{v}_i}{\tau} + \eta_i \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment [^16]}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{-\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \eta_i \boldsymbol{\xi}_i}_{\text{Quartic speed confinement [^16]}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment [^17]}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -165,6 +165,12 @@ In bird flocks, individuals exhibit varying degrees of alignment with their neig
 Agents with low noise amplitudes strongly align with their neighbors, while those with high amplitudes move more independently. This continuous spectrum of behaviors rather than discrete states creates the variance necessary for critical dynamics. The resulting susceptibility $`\chi`$ scales with flock size $`N`$, confirming the system remains at criticality without requiring explicit anti-alignment mechanisms.
 
 Each agent watches exactly 7 nearest neighbors regardless of distance [^11]. This "topological" rule means information spreads the same way whether the flock is spread out or compressed, enabling rapid response across the entire group.
+
+### Speed Regulation Through Marginal Confinement
+
+Natural flocks maintain remarkably stable cruising speeds despite constant interactions and perturbations. Cavagna et al. [^16] discovered this emerges from "marginal speed confinement," wherein agents experience minimal resistance near their preferred speed but strong forces prevent extreme deviations. This quartic potential approach resolves a fundamental conflict in collective behavior, since it allows natural speed fluctuations necessary for information transfer while preventing the flock from dispersing or stalling. 
+
+Our implementation uses this biologically-validated mechanism instead of artificial damping, ensuring agents achieve their full cruising speed of 11.1 m/s rather than being artificially capped at lower velocities.
 
 ### Density Waves and Thermal Response
 
@@ -180,7 +186,7 @@ This guarantees agents never exceed 475 K, the maximum safe temperature for the 
 
 ### Emergent Properties
 
-The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics [^17]:
+The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics [^18]:
 
 - **Critical State**: Maintained through heterogeneous noise $`\eta_i \sim N(\mu, \sigma=0.20)`$ creating behavioral variance
 - **Rapid Response**: Information propagates at 15-45 m/s through topological networks
@@ -300,12 +306,12 @@ All training runs are automatically logged to our [WandB project](https://wandb.
 
 ### WRF-SFIRE Dataset
 
-The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^18]:
+The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^19]:
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
 | **Wind Speed** | 3-12 m/s | Initial wind conditions |
-| **Fuel Type** | 13 categories | Anderson fuel models [^19] |
+| **Fuel Type** | 13 categories | Anderson fuel models [^20] |
 | **Domain** | 40m resolution | LES with 4m fire mesh |
 | **Duration** | 20-30 minutes | Full plume development |
 | **Temperature** | Up to 600K | Includes extreme heating |
@@ -481,7 +487,7 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 - **Acceleration**: Tracks average control effort to ensure physically plausible forces
 
-- **Velocity**: Monitors mean flight speed remains realistic (9-12 m/s for starlings [^20])
+- **Velocity**: Monitors mean flight speed remains realistic (9-12 m/s for starlings [^21])
 
 **Emergent Behavior Metrics:**
 
@@ -752,24 +758,26 @@ For the WRF-SFIRE dataset:
 
 [^15]: Fey, Matthias, and Jan E. Lenssen. 2019. "Fast Graph Representation Learning with PyTorch Geometric." *arXiv* 1903.02428. https://doi.org/10.48550/arXiv.1903.02428
 
-[^16]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
+[^16]: Cavagna, Andrea, Antonio Culla, Xiao Feng, Irene Giardina, Tomas S. Grigera, Willow Kion-Crosby, Stefania Melillo, Giulia Pisegna, Lorena Postiglione, and Pablo Villegas. 2022. "Marginal Speed Confinement Resolves the Conflict Between Correlation and Control in Collective Behaviour." *Nature Communications* 13 (1): 2315. https://doi.org/10.1038/s41467-022-29883-4
 
-[^17]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+[^17]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
-[^18]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
+[^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
 
-[^19]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
+[^19]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
 
-[^20]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
+[^20]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
 
-[^21]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
+[^21]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
 
-[^22]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
+[^22]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
 
-[^23]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
+[^23]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
 
-[^24]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
+[^24]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
 
-[^25]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
+[^25]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
+
+[^26]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
 
 ---
