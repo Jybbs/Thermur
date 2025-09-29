@@ -8,7 +8,6 @@ PyG Data objects suitable for offline imitation learning.
 from __future__           import annotations
 from torch                import Tensor
 from torch_geometric.data import Data
-from torch_geometric.nn   import knn_graph
 from typing               import TYPE_CHECKING
 
 import torch as th
@@ -59,26 +58,25 @@ class TrajectoryGenerator:
         self.velocity_rng        = th.Generator()
         self.wrf                 = wrf
 
-    def _compute_edge_index(self, positions: Tensor) -> Tensor:
+    def _compute_edge_index(self, distances: Tensor) -> Tensor:
         """
         Compute topological k-nearest neighbor connectivity.
 
         Following Ballerini et al. (2008), builds graph connectivity based on
-        k-nearest neighbors rather than metric distance. Uses PyG's optimized
-        knn_graph which avoids computing the full distance matrix.
+        k-nearest neighbors rather than metric distance.
 
         Args:
-            positions: Agent positions [N, 3]
+            distances: Pairwise distance matrix [N, N]
 
         Returns:
             Edge index tensor [2, E] for PyG Data objects
         """
-        return knn_graph(
-            batch = None,
-            k     = self.k_neighbors,
-            loop  = False,
-            x     = positions
-        )
+        _, indices = distances.topk(self.k_neighbors + 1, largest=False)
+
+        return th.stack([
+            th.arange(self.agent_count).repeat_interleave(self.k_neighbors),
+            indices[:, 1:].flatten()
+        ])
 
     def _compute_forces(
         self,
@@ -230,10 +228,11 @@ class TrajectoryGenerator:
         ) * 2.0
 
         gradient, temperature = self.wrf.query_thermal(self.positions)
+        distances = th.cdist(self.positions, self.positions)
 
         return Data(
-            distances   = th.cdist(self.positions, self.positions),
-            edge_index  = self._compute_edge_index(self.positions),
+            distances   = distances,
+            edge_index  = self._compute_edge_index(distances),
             frame       = self.frame,
             gradient    = gradient,
             position    = self.positions.clone(),
@@ -272,12 +271,13 @@ class TrajectoryGenerator:
         )
 
         gradient, temperature = self.wrf.query_thermal(self.positions)
+        distances   = th.cdist(self.positions, self.positions)
         self.frame += 1
         self.time  += self.physics.timeframe
 
         return Data(
-            distances   = th.cdist(self.positions, self.positions),
-            edge_index  = self._compute_edge_index(self.positions),
+            distances   = distances,
+            edge_index  = self._compute_edge_index(distances),
             frame       = self.frame,
             gradient    = gradient,
             position    = self.positions.clone(),

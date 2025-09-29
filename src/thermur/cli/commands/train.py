@@ -11,6 +11,7 @@ from omegaconf   import OmegaConf
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
+from torch       import compile as th_compile
 from typer       import Argument, Exit, Option
 from typing      import Any, Callable, TYPE_CHECKING
 
@@ -474,6 +475,13 @@ class TrainCommand:
             msg_type = "thermal"
         )
         self.ui.console.print()
+
+        if cfg.training.architecture.compile:
+            components["policy"] = th_compile(
+                fullgraph = True,
+                mode      = 'default',
+                model     = components["policy"]
+            )
 
         components["trainer"].fit(
             ckpt_path  = str(self.resume) if self.resume else None,
