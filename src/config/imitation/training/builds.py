@@ -4,31 +4,29 @@ Training domain builds for hydra-zen configuration.
 This module provides pre-built components for the training infrastructure:
 
 Training Components:
-- DemonstrationsDataset  : PyG InMemoryDataset that generates and caches expert
-                           trajectories with automatic WRF data discovery.
-- GNNPolicy              : Graph Neural Network policy that processes agent
-                           observations and produces control actions using attention
-                           mechanisms.
-- Trainer                : PyTorch Lightning trainer with hardware configuration,
-                           gradient clipping, distributed training support, and
-                           callback management.
+- ExpertDataset       : PyG InMemoryDataset that generates and caches expert
+                        trajectories with automatic WRF data discovery.
+- GNNPolicy           : Graph Neural Network policy that processes agent
+                        observations and produces control actions.
+- Trainer             : PyTorch Lightning trainer with hardware configuration,
+                        gradient clipping, distributed training, and callbacks.
 
 Optimization:
-- AdamW                  : Adaptive optimizer with weight decay for training the
-                           policy network.
-- ReduceLROnPlateau      : Learning rate scheduler that reduces LR when validation
-                           metrics plateau.
+- AdamW               : Adaptive optimizer with weight decay for training the policy
+                        network.
+- ReduceLROnPlateau   : Learning rate scheduler that reduces LR when validation
+                        metrics plateau.
 
 Callbacks:
-- ModelCheckpoint        : Saves model checkpoints based on validation metrics with
-                           configurable retention policies.
-- EarlyStopping          : Monitors validation metrics and stops training when no
-                           improvement is detected.
-- LearningRateMonitor    : Tracks and logs learning rate changes during training.
+- ModelCheckpoint     : Saves model checkpoints based on validation metrics with
+                        configurable retention policies.
+- EarlyStopping       : Monitors validation metrics and stops training when no
+                        improvement is detected.
+- LearningRateMonitor : Tracks and logs learning rate changes during training.
 
 Logging:
-- WandbLogger            : Weights & Biases integration for experiment tracking and
-                           metric visualization.
+- WandbLogger         : Weights & Biases integration for experiment tracking and
+                        metric visualization.
 """
 from __future__                   import annotations
 from .schemas                     import *
@@ -37,7 +35,7 @@ from hydra_zen                    import builds, make_config
 from pytorch_lightning            import Trainer
 from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers    import WandbLogger
-from thermur.imitation.controller import DemonstrationsDataset
+from thermur.imitation.controller import ExpertDataset
 from thermur.imitation.training   import CallbackFactory, GNNPolicy, MetricsFactory
 from torch.optim                  import AdamW
 from torch.optim.lr_scheduler     import ReduceLROnPlateau
@@ -72,7 +70,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     ),
 
     "datamodule": builds(
-        DemonstrationsDataset.as_lightning_datamodule,
+        ExpertDataset.as_lightning_datamodule,
         batch_size              = "${training.optimizer.batch_size}",
         controller              = "${controller}",
         environment             = "${environment}",

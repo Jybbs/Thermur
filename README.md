@@ -336,7 +336,7 @@ For details on the WRF-SFIRE dataset and data procurement, see [`docs/data-procu
 
 The imitation learning pipeline leverages [PyTorch Lightning](https://lightning.ai/) for training orchestration and [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) for graph-based learning:
 
-#### 1. Expert Demonstration Generation
+#### 1. Expert Trajectory Generation
 
 The physics-based controller generates optimal trajectories using [Pydantic](https://pydantic.dev/)-validated configuration:
 
@@ -403,7 +403,7 @@ class GNNPolicy(LightningModule):
         return loss
 ```
 
-#### 3. Demonstration Generation
+#### 3. Dataset Generation
 
 Using [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) for efficient graph-based learning from offline trajectories:
 
@@ -411,22 +411,30 @@ Using [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) for efficie
 from torch_geometric.data           import Data, InMemoryDataset
 from torch_geometric.data.lightning import LightningDataset
 
-class DemonstrationsDataset(InMemoryDataset):
+class ExpertDataset(InMemoryDataset):
     ...
 
     def process(self):
-        # Generate demonstrations using the expert controller
-        total_episodes = self.total_frames // self.frames_per_episode
+        # Generate expert trajectories using stratified sampling across snapshots
+        self.generator.wrf.load_datasets(self.raw_paths)
+
+        trajectory_frames  = int(
+            self.trajectory_duration / self.generator.physics.timeframe
+        )
+        n_snapshots        = self.generator.wrf.n_snapshots
+        total_trajectories = n_snapshots * self.trajectories_per_snapshot
 
         data_list = []
-        for _ in range(total_episodes):
-            # Each trajectory contains graph-structured states and expert actions
-            trajectory = self.murmuration.generate_trajectories(
-                generator  = self.generator,
-                num_frames = self.frames_per_episode
-            )
-            # Each trajectory is list of Data(x=[N,13], action=[N,3], edge_index=[2,E])
-            data_list.extend(trajectory)
+        for snapshot_idx in range(n_snapshots):
+            for _ in range(self.trajectories_per_snapshot):
+                # Each trajectory uses consistent environmental conditions
+                trajectory = self.murmuration.generate_trajectory(
+                    generator    = self.generator,
+                    num_frames   = trajectory_frames,
+                    snapshot_idx = snapshot_idx
+                )
+                # Each trajectory is list of Data(x=[N,13], action=[N,3], edge_index=[2,E])
+                data_list.extend(trajectory)
 
         self.save(self.collate(data_list), self.processed_paths[0])
 
@@ -444,14 +452,14 @@ class DemonstrationsDataset(InMemoryDataset):
     ) -> LightningDataset:
         # Create dataset with all necessary components for generation
         dataset = cls(
-            controller         = controller,
-            environment        = environment,
-            frames_per_episode = environment.dataset.frames_per_episode,
-            generator          = generator,
-            murmuration        = murmuration,
-            sample_url         = environment.dataset.sample_url,
-            total_frames       = environment.dataset.total_frames,
-            ui                 = ui
+            controller                = controller,
+            environment               = environment,
+            generator                 = generator,
+            murmuration               = murmuration,
+            sample_url                = environment.dataset.sample_url,
+            trajectories_per_snapshot = environment.dataset.trajectories_per_snapshot,
+            trajectory_duration       = environment.dataset.trajectory_duration,
+            ui                        = ui
         )
 
         # Random train/val split with PyG's index_select
@@ -587,60 +595,60 @@ The codebase uses a deliberate two-pronged architecture separating configuration
 ```
 thermur/
 ├── src/
-│   ├── config/                       # Lightweight configuration layer (fast imports)
+│   ├── config/                     # Lightweight configuration layer (fast imports)
 │   │   ├── cli/
-│   │   │   ├── builds.py             # Hydra-zen builds
-│   │   │   └── schemas.py            # Pydantic models for CLI
+│   │   │   ├── builds.py           # Hydra-zen builds
+│   │   │   └── schemas.py          # Pydantic models for CLI
 │   │   └── imitation/
 │   │       ├── controller/
-│   │       │   ├── builds.py         # Controller component builds
-│   │       │   └── schemas.py        # FlockModel, MurmurationModel, SafetyModel
+│   │       │   ├── builds.py       # Controller component builds
+│   │       │   └── schemas.py      # FlockModel, MurmurationModel, SafetyModel
 │   │       ├── environment/
-│   │       │   ├── builds.py         # Environment builds
-│   │       │   └── schemas.py        # Physics and world models
+│   │       │   ├── builds.py       # Environment builds
+│   │       │   └── schemas.py      # Physics and world models
 │   │       └── training/
-│   │           ├── builds.py         # Trainer, callbacks, loggers
-│   │           └── schemas.py        # Training hyperparameters
+│   │           ├── builds.py       # Trainer, callbacks, loggers
+│   │           └── schemas.py      # Training hyperparameters
 │   │
-│   └── thermur/                      # Core implementation (heavy dependencies)
+│   └── thermur/                    # Core implementation (heavy dependencies)
 │       ├── cli/
-│       │   ├── app.py                # Application context
-│       │   ├── cli.py                # Main entry point
+│       │   ├── app.py              # Application context
+│       │   ├── cli.py              # Main entry point
 │       │   ├── commands/
-│       │   │   ├── info.py           # System information
-│       │   │   ├── monitor.py        # WandB dashboard
-│       │   │   ├── runs.py           # Run history management
-│       │   │   ├── train.py          # Training orchestration
-│       │   │   └── validate.py       # System verification
+│       │   │   ├── info.py         # System information
+│       │   │   ├── monitor.py      # WandB dashboard
+│       │   │   ├── runs.py         # Run history management
+│       │   │   ├── train.py        # Training orchestration
+│       │   │   └── validate.py     # System verification
 │       │   └── helpers/
-│       │       ├── prompts.py        # Interactive configuration
-│       │       ├── system.py         # System utilities
-│       │       └── ui.py             # Rich console formatting
+│       │       ├── prompts.py      # Interactive configuration
+│       │       ├── system.py       # System utilities
+│       │       └── ui.py           # Rich console formatting
 │       │
 │       └── imitation/
 │           ├── controller/
-│           │   ├── demonstrations.py # Offline trajectory generation
-│           │   ├── murmuration.py    # Biomimetic flocking (critical state)
-│           │   └── safety.py         # Thermal safety penalties
+│           │   ├── dataset.py      # Expert dataset with stratified sampling
+│           │   ├── murmuration.py  # Biomimetic flocking (critical state)
+│           │   └── safety.py       # Thermal safety penalties
 │           ├── environment/
-│           │   ├── loader.py         # WRF-SFIRE data interface
-│           │   └── trajectories.py   # Physics simulation for offline data
+│           │   ├── generator.py    # Physics simulation for trajectories
+│           │   └── loader.py       # WRF-SFIRE data interface
 │           └── training/
-│               ├── callbacks.py      # Rich progress bar & model summary
-│               ├── metrics.py        # TorchMetrics-based evaluation suite
-│               └── policy.py         # GNN policy with PyG message passing
+│               ├── callbacks.py    # Rich progress bar & model summary
+│               ├── metrics.py      # TorchMetrics-based evaluation suite
+│               └── policy.py       # GNN policy with PyG message passing
 │
 ├── data/
-│   ├── processed/                    # Cached PyG demonstrations
-│   └── raw/                          # NetCDF files from WRF-SFIRE
+│   ├── processed/                  # Cached PyG expert trajectories
+│   └── raw/                        # NetCDF files from WRF-SFIRE
 │
 ├── docs/
-│   ├── data-procurement.md          # Dataset acquisition guide
-│   └── mathematical-framework.md    # Complete mathematical formulation
+│   ├── data-procurement.md         # Dataset acquisition guide
+│   └── mathematical-framework.md   # Complete mathematical formulation
 │
-├── wandb/                            # Experiment tracking
-├── pyproject.toml                    # Package configuration
-└── uv.lock                           # Locked dependencies
+├── wandb/                          # Experiment tracking
+├── pyproject.toml                  # Package configuration
+└── uv.lock                         # Locked dependencies
 ```
 
 ---

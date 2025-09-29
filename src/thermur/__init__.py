@@ -7,7 +7,7 @@ to navigate wildfire scenarios using graph neural networks and behavioral clonin
 Key components:
 - cli/       : Command-line interface for training, validation, monitoring, and run management
 - imitation/ : Complete imitation learning pipeline including:
-  - controller/  : Offline expert demonstration generation with murmuration behaviors and thermal safety
+  - controller/  : Expert trajectory generation with murmuration dynamics and thermal safety
   - environment/ : WRF-Fire NetCDF data loading and flock physics trajectory simulation
   - training/    : GNN policy networks (π_θ) with PyTorch Lightning modules and metrics tracking
 

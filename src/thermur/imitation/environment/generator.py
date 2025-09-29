@@ -19,17 +19,12 @@ if TYPE_CHECKING:
 
 class TrajectoryGenerator:
     """
-    Generates expert demonstration trajectories for offline training.
+    Generates expert trajectories for behavioral cloning.
 
-    This class provides physics simulation for drone flocks without the
-    overhead of a full RL environment. It manages agent positions, velocities,
-    and environmental interactions, returning PyG Data objects suitable for
-    behavioral cloning.
-
-    Unlike the previous TorchRL environment, this generator:
-    - Returns PyG Data objects directly (no TensorDict)
-    - Focuses solely on trajectory generation (no rewards/done flags)
-    - Simplified API for offline demonstration collection
+    Provides lightweight physics simulation for drone flocks, managing agent
+    positions, velocities, and environmental interactions. Returns PyG Data
+    objects suitable for imitation learning without reinforcement learning
+    overhead like rewards or termination flags.
     """
 
     def __init__(
@@ -193,9 +188,16 @@ class TrajectoryGenerator:
 
         return new_velocities * scale.clamp(max=1.0)
 
-    def reset(self) -> Data:
+    def reset(self, snapshot_idx: int) -> Data:
         """
         Reset the trajectory generator to initial conditions.
+
+        Pins the WRF loader to the specified snapshot index, ensuring all
+        environmental queries throughout the trajectory use consistent
+        conditions.
+
+        Args:
+            snapshot_idx: WRF snapshot index for this trajectory
 
         Returns:
             Initial state as PyG Data object with:
@@ -206,7 +208,8 @@ class TrajectoryGenerator:
                 - gradient    : Temperature gradient     [N, 3]
                 - wind        : Wind field at positions  [N, 3]
         """
-        # Generate initial positions using Fibonacci lattice
+        self.wrf.snapshot_idx = snapshot_idx
+
         positions = self._fibonacci_lattice()
         positions *= (
             self.communication_range *
@@ -224,7 +227,7 @@ class TrajectoryGenerator:
             size      = positions.shape
         ) * 2.0
 
-        gradient, temperature = self.wrf.query_thermal(self.positions, self.time)
+        gradient, temperature = self.wrf.query_thermal(self.positions)
         distances = th.cdist(self.positions, self.positions)
 
         return Data(
@@ -235,7 +238,7 @@ class TrajectoryGenerator:
             position    = self.positions.clone(),
             temperature = temperature,
             velocity    = self.velocities.clone(),
-            wind        = self.wrf.query_wind(self.positions, self.time)
+            wind        = self.wrf.query_wind(self.positions)
         )
 
     def step(self, action: Tensor) -> Data:
@@ -248,7 +251,7 @@ class TrajectoryGenerator:
         Returns:
             Next state as PyG Data object
         """
-        wind         = self.wrf.query_wind(self.positions, self.time)
+        wind         = self.wrf.query_wind(self.positions)
         acceleration = self._compute_forces(
             actions    = action,
             velocities = self.velocities,
@@ -267,7 +270,7 @@ class TrajectoryGenerator:
             velocities = self.velocities
         )
 
-        gradient, temperature = self.wrf.query_thermal(self.positions, self.time)
+        gradient, temperature = self.wrf.query_thermal(self.positions)
         distances   = th.cdist(self.positions, self.positions)
         self.frame += 1
         self.time  += self.physics.timeframe

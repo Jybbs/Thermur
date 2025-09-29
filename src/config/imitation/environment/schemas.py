@@ -10,33 +10,39 @@ from pydantic import NonNegativeFloat, PositiveFloat, PositiveInt
 
 class DatasetModel(BaseModel, extra="forbid"):
     """
-    Configuration for dataset generation and data sources.
+    Configuration for offline expert dataset generation.
 
-    This model defines parameters for generating offline demonstration datasets
-    including episode structure, data sources, and generation scope.
+    Defines parameters for generating expert trajectories from WRF-SFIRE data.
+    Each trajectory maintains consistent environmental conditions by using a
+    single WRF snapshot for its entire duration, preventing mid-trajectory
+    discontinuities while ensuring dataset diversity across snapshots.
     """
-    frames_per_episode: PositiveInt = Field(
-        default     = 1000,
-        description = (
-            "Number of frames per demonstration episode. Longer episodes "
-            "capture extended temporal dependencies in flocking behavior."
-        )
-    )
     sample_url: str = Field(
         default     = (
             "https://huggingface.co/datasets/Jybbs/sfire-samples/"
             "resolve/main/samples.tar.gz"
         ),
         description = (
-            "URL for downloading sample WRF-SFIRE dataset when no local data exists. "
-            "Points to a curated 1.5GB sample containing moderate intensity scenarios."
+            "URL for downloading sample WRF-SFIRE dataset when no local "
+            "data exists. Points to a curated 1.5GB sample containing "
+            "moderate intensity fire scenarios."
         )
     )
-    total_frames: PositiveInt = Field(
-        default     = 200_000,
+    trajectories_per_snapshot: PositiveInt = Field(
+        default     = 100,
         description = (
-            "Total demonstration frames to generate across all scenarios. "
-            "Determines the size of the offline dataset for expert trajectory collection."
+            "Number of expert trajectories to generate per WRF snapshot. "
+            "Each trajectory uses different initial conditions (agent "
+            "positions and velocities) but the same environmental snapshot, "
+            "ensuring physically consistent conditions throughout."
+        )
+    )
+    trajectory_duration: PositiveFloat = Field(
+        default     = 60.0,
+        description = (
+            "Duration of each continuous trajectory in seconds. Longer "
+            "trajectories capture extended temporal dynamics of collective "
+            "flocking behavior under consistent environmental conditions."
         )
     )
 

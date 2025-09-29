@@ -38,7 +38,8 @@ class WRFLoader:
         Initialize WRF data source for environmental field queries.
 
         Creates a data source that provides temperature and wind fields from
-        WRF-SFIRE NetCDF outputs.
+        WRF-SFIRE NetCDF outputs. Supports pinning to a specific snapshot for
+        trajectory generation with consistent environmental conditions.
 
         Args:
             bounds_min : Lower bounds [x_min, y_min, z_min] for interpolation
@@ -47,23 +48,7 @@ class WRFLoader:
         self.bounds_max  = tensor(bounds_max)
         self.bounds_min  = tensor(bounds_min)
         self.n_snapshots = 0
-
-    def _get_snapshot(self, time: float) -> int:
-        """
-        Map simulation time to WRF snapshot index.
-
-        Computes which WRF timestep to use based on simulation time,
-        cycling through available snapshots as time progresses. WRF-SFIRE
-        typically outputs snapshots at 15-second intervals for high-resolution
-        fire simulations.
-
-        Args:
-            time: Simulation time in seconds
-
-        Returns:
-            Index into the time dimension of temperature/wind tensors
-        """
-        return int(time / 15.0) % self.n_snapshots
+        self.snapshot_idx = 0
 
     def _interpolate(self, field: Tensor, positions: Tensor) -> Tensor:
         """
@@ -123,22 +108,17 @@ class WRFLoader:
                 dim = 1
             )
 
-    def query_thermal(
-        self,
-        positions : Tensor,
-        time      : float
-    )-> tuple[Tensor, Tensor]:
+    def query_thermal(self, positions: Tensor) -> tuple[Tensor, Tensor]:
         """
         Query temperature and its gradient at agent positions.
 
         Uses pre-loaded tensor data and batched interpolation for efficiency.
-        Gradients are computed via automatic differentiation using nested lambdas:
-        - p: positions tensor for gradient computation
-        - t: interpolated temperature values
+        Gradients are computed via automatic differentiation using nested
+        lambdas, where p is the positions tensor and t is the interpolated
+        temperature values.
 
         Args:
-            positions : Tensor [N, 3] of agent positions in meters
-            time      : Simulation time in seconds
+            positions: Tensor [N, 3] of agent positions in meters
 
         Returns:
             Tuple of (gradients, temperatures) where:
@@ -149,31 +129,22 @@ class WRFLoader:
             lambda p: (lambda t: (t.sum(), t))
             (
                 self._interpolate(
-                    self.temperature[self._get_snapshot(time)].unsqueeze(0), 
-                    p
+                    self.temperature[self.snapshot_idx].unsqueeze(0), p
                 )
             ),
             has_aux = True
         )(positions)
 
-    def query_wind(
-        self, 
-        positions : Tensor, 
-        time      : float
-    ) -> Tensor:
+    def query_wind(self, positions: Tensor) -> Tensor:
         """
         Query wind velocity vectors at agent positions.
 
         Samples the WRF wind field 𝐮(𝐱) = [U, V, W] using batched interpolation.
 
         Args:
-            positions : Tensor [N, 3] of agent positions in meters
-            time      : Simulation time in seconds
+            positions: Tensor [N, 3] of agent positions in meters
 
         Returns:
             Tensor [N, 3] of wind velocity vectors 𝐮 = [u, v, w] in m/s
         """
-        return self._interpolate(
-            self.wind[self._get_snapshot(time)],
-            positions
-        )
+        return self._interpolate(self.wind[self.snapshot_idx], positions)

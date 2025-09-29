@@ -423,18 +423,18 @@ class MurmurationController(th.nn.Module):
         self._design_nominal_action(flock)
         return flock.action
 
-    def generate_trajectories(
+    def generate_trajectory(
         self,
-        generator  : TrajectoryGenerator,
-        num_frames : int
+        generator    : TrajectoryGenerator,
+        num_frames   : int,
+        snapshot_idx : int
     ) -> list[Data]:
         """
-        Generate expert demonstration trajectory as PyG Data objects.
+        Generate expert trajectory as PyG Data objects.
 
         Produces a sequence of graph states representing the flock's evolution
-        under expert control. Each frame captures the full state (positions,
-        velocities, environmental data) and the expert's action, creating a dataset
-        suitable for behavioral cloning.
+        under expert control with consistent environmental conditions. Each
+        frame captures the full state and expert action for behavioral cloning.
 
         The feature vector for each agent concatenates:
         - Position             (3D)
@@ -443,16 +443,12 @@ class MurmurationController(th.nn.Module):
         - Temperature gradient (3D)
         - Wind field           (3D)
 
-        This 13-dimensional representation matches the GNN policy's expected input.
-
-        Action tensors are cloned when constructing trajectory states to preserve
-        the computed values at each frame. Since the controller modifies the state
-        object in-place by adding an action attribute, cloning ensures each saved
-        state maintains an independent copy of its action values.
+        This 13-dimensional representation matches the GNN policy input.
 
         Args:
-            generator  : Trajectory generator providing physics simulation
-            num_frames : Number of simulation frames to generate
+            generator    : Trajectory generator providing physics simulation
+            num_frames   : Number of simulation frames to generate
+            snapshot_idx : WRF snapshot index for consistent conditions
 
         Returns:
             List of PyG Data objects, one per frame, containing:
@@ -467,7 +463,7 @@ class MurmurationController(th.nn.Module):
                 - wind          : Wind field                  [N, 3]
                 - x             : Concatenated node features  [N, 13]
         """
-        state      = generator.reset()
+        state      = generator.reset(snapshot_idx)
         trajectory = []
 
         for frame in range(num_frames):

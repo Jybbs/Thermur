@@ -17,14 +17,14 @@ The flock operates at criticality through heterogeneous noise η_i ~ N(0.70, 0.2
 creating behavioral variance for scale-free correlations and rapid response.
 
 Key components:
-- DemonstrationsDataset : PyG InMemoryDataset for offline expert trajectories
+- ExpertDataset         : PyG InMemoryDataset for offline expert trajectories
 - MurmurationController : Expert controller implementing murmuration dynamics
 - ThermalPenalty        : Thermal safety constraints using KS penalties
 
-The demonstrations dataset generates and caches expert trajectories for
-behavioral cloning, providing a PyTorch Lightning datamodule interface for
-efficient batched training.
+The expert dataset generates and caches expert trajectories for behavioral
+cloning, providing a PyTorch Lightning datamodule interface for efficient
+batched training.
 """
-from .demonstrations import *
-from .murmuration    import *
-from .safety         import *
+from .dataset     import *
+from .murmuration import *
+from .safety      import *

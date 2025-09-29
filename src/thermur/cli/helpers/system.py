@@ -71,9 +71,9 @@ class SystemInspector:
         Returns:
             Dictionary with dataset_size in GB and dataset_count.
         """
-        from thermur.imitation.controller import DemonstrationsDataset
+        from thermur.imitation.controller import ExpertDataset
 
-        relative_paths = DemonstrationsDataset._find_netcdf_files()
+        relative_paths = ExpertDataset._find_netcdf_files()
 
         if relative_paths:
             total_size = sum(

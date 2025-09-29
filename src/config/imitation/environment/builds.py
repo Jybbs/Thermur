@@ -6,7 +6,7 @@ environmental data access:
 
 - TrajectoryGenerator : Lightweight physics simulation for offline trajectory
                         generation. Manages flock dynamics and returns PyG Data
-                        objects without TorchRL overhead.
+                        objects for behavioral cloning.
 
 - WRFLoader           : Weather Research and Forecasting (WRF) model data loader
                         that provides wind fields, temperature, and gradient data

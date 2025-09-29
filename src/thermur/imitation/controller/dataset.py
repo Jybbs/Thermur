@@ -1,8 +1,10 @@
 """
-Offline demonstration dataset with automatic caching.
+Offline expert dataset with automatic caching.
 
-Provides a PyG InMemoryDataset that generates and caches expert demonstrations.
-Automatically regenerates when configuration changes via hash-based filenames.
+Provides a PyG InMemoryDataset that generates and caches expert trajectories
+for behavioral cloning. Automatically regenerates when configuration changes
+via hash-based filenames. Uses stratified sampling to ensure equal
+representation across all WRF snapshots.
 """
 from __future__                     import annotations
 from hashlib                        import file_digest, sha256
@@ -24,49 +26,50 @@ if TYPE_CHECKING:
     from thermur.cli.helpers       import ThermurUI
 
 
-class DemonstrationsDataset(InMemoryDataset):
+class ExpertDataset(InMemoryDataset):
     """
-    PyG InMemoryDataset for expert demonstrations.
+    PyG InMemoryDataset for expert trajectories.
 
-    Generates demonstrations on first access and caches them. Automatically
-    regenerates when configuration changes via hash-based filename.
+    Generates trajectories on first access and caches them. Automatically
+    regenerates when configuration changes via hash-based filenames. Uses
+    stratified sampling across WRF snapshots for balanced dataset diversity.
 
     Registers PyG Data class as safe for PyTorch 2.6+ compatibility.
     """
 
     def __init__(
         self,
-        controller         : DictConfig,
-        environment        : DictConfig,
-        frames_per_episode : int,
-        generator          : TrajectoryGenerator,
-        murmuration        : MurmurationController,
-        sample_url         : str,
-        total_frames       : int,
-        ui                 : ThermurUI
+        controller                : DictConfig,
+        environment               : DictConfig,
+        generator                 : TrajectoryGenerator,
+        murmuration               : MurmurationController,
+        sample_url                : str,
+        trajectories_per_snapshot : int,
+        trajectory_duration       : float,
+        ui                        : ThermurUI
     ):
         """
-        Initialize the demonstrations dataset.
+        Initialize the expert dataset.
 
         Args:
-            controller         : Controller configuration for cache invalidation
-            environment        : Environment configuration for cache invalidation
-            frames_per_episode : Number of frames per demonstration episode
-            generator          : Trajectory generator for physics simulation
-            murmuration        : Expert controller for trajectory generation
-            sample_url         : URL for downloading sample WRF dataset
-            total_frames       : Total demonstration frames to generate
-            ui                 : CLI UI instance for progress display
+            controller                : Controller configuration
+            environment               : Environment configuration
+            generator                 : Trajectory generator for physics simulation
+            murmuration               : Expert controller for demonstrations
+            sample_url                : URL for downloading sample WRF dataset
+            trajectories_per_snapshot : Number of trajectories per 15s WRF snapshot
+            trajectory_duration       : Duration of each trajectory in seconds
+            ui                        : CLI UI instance for progress display
         """
-        self.controller         = controller
-        self.environment        = environment
-        self.frames_per_episode = frames_per_episode
-        self.generator          = generator
-        self.hash               = None
-        self.murmuration        = murmuration
-        self.sample_url         = sample_url
-        self.total_frames       = total_frames
-        self.ui                 = ui
+        self.controller                = controller
+        self.environment               = environment
+        self.generator                 = generator
+        self.hash                      = None
+        self.murmuration               = murmuration
+        self.sample_url                = sample_url
+        self.trajectories_per_snapshot = trajectories_per_snapshot
+        self.trajectory_duration       = trajectory_duration
+        self.ui                        = ui
         th.serialization.add_safe_globals([Data])
 
         super().__init__("data")
@@ -154,10 +157,11 @@ class DemonstrationsDataset(InMemoryDataset):
         ui          : ThermurUI
     ) -> LightningDataset:
         """
-        Factory method that creates a PyTorch Lightning DataModule with automatic
-        train/val splitting, first-time generation detection, and configuration-based
-        cache invalidation. The resulting LightningDataset handles all batching,
-        shuffling, and multi-GPU distribution automatically.
+        Factory method creating a PyTorch Lightning DataModule with automatic
+        train/val splitting and configuration-based cache invalidation.
+
+        The resulting LightningDataset handles batching, shuffling, and
+        multi-GPU distribution automatically.
 
         Args:
             batch_size  : Number of graph states per training batch
@@ -165,7 +169,7 @@ class DemonstrationsDataset(InMemoryDataset):
             environment : Environment configuration
             generator   : Trajectory generator for physics simulation
             hardware    : Hardware configuration for dataloader settings
-            murmuration : Expert controller for trajectory generation
+            murmuration : Expert controller for demonstrations
             train_split : Fraction of data reserved for training
             ui          : CLI UI instance for progress display
 
@@ -173,14 +177,14 @@ class DemonstrationsDataset(InMemoryDataset):
             LightningDataset configured with train/val splits
         """
         dataset = cls(
-            controller         = controller,
-            environment        = environment,
-            frames_per_episode = environment.dataset.frames_per_episode,
-            generator          = generator,
-            murmuration        = murmuration,
-            sample_url         = environment.dataset.sample_url,
-            total_frames       = environment.dataset.total_frames,
-            ui                 = ui
+            controller                = controller,
+            environment               = environment,
+            generator                 = generator,
+            murmuration               = murmuration,
+            sample_url                = environment.dataset.sample_url,
+            trajectories_per_snapshot = environment.dataset.trajectories_per_snapshot,
+            trajectory_duration       = environment.dataset.trajectory_duration,
+            ui                        = ui
         )
 
         train_size = int(len(dataset) * train_split)
@@ -245,31 +249,40 @@ class DemonstrationsDataset(InMemoryDataset):
 
     def process(self):
         """
-        Generate demonstrations and save to cache.
+        Generate demonstrations using stratified sampling across snapshots.
 
-        Called automatically by PyG when processed file doesn't exist.
-        Generates expert trajectories across WRF scenarios until
-        total_frames reached.
+        Called automatically by PyG when processed file does not exist.
+        Generates expert trajectories with consistent environmental conditions
+        by sampling each WRF snapshot equally, ensuring dataset diversity.
         """
         self.generator.wrf.load_datasets(self.raw_paths)
 
+        trajectory_frames  = int(
+            self.trajectory_duration / self.generator.physics.timeframe
+        )
+        n_snapshots        = self.generator.wrf.n_snapshots
+        total_trajectories = n_snapshots * self.trajectories_per_snapshot
+        total_frames       = total_trajectories * trajectory_frames
+
         with self.ui.create_thermal_progress() as progress:
             task = progress.add_task(
-                description = "Generating expert demonstrations",
-                total       = self.total_frames
+                description = "Generating expert trajectories",
+                total       = total_frames
             )
 
             data_list = []
-            for _ in range(self.total_frames // self.frames_per_episode):
-                data_list.extend(
-                    self.murmuration.generate_trajectories(
-                        generator  = self.generator,
-                        num_frames = self.frames_per_episode
+            for snapshot_idx in range(n_snapshots):
+                for _ in range(self.trajectories_per_snapshot):
+                    data_list.extend(
+                        self.murmuration.generate_trajectory(
+                            generator    = self.generator,
+                            num_frames   = trajectory_frames,
+                            snapshot_idx = snapshot_idx
+                        )
                     )
-                )
-                progress.update(task, advance=self.frames_per_episode)
+                    progress.update(task, advance=trajectory_frames)
 
-        self.ui.print_message("Saving demonstrations to cache...", "info")
+        self.ui.print_message("Saving expert trajectories to cache...", "info")
         self.save(data_list, self.processed_paths[0])
 
     @property
