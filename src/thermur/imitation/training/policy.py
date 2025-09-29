@@ -69,7 +69,7 @@ class GNNPolicy(LightningModule):
             scheduler    : Pre-configured scheduler partial from hydra-zen.
         """
         super().__init__()
-        self.save_hyperparameters(ignore=["metrics"])
+        self.save_hyperparameters(ignore=["metrics", "optimizer", "scheduler"])
 
         dim, n = architecture.hidden_dim, architecture.num_layers
         layers = lambda m: ModuleList([m(dim, dim) for _ in range(n)])
@@ -83,6 +83,9 @@ class GNNPolicy(LightningModule):
         self.scheduler     = scheduler
         self.train_metrics = metrics.create_training_metrics()
         self.val_metrics   = metrics.create_validation_metrics()
+
+        if architecture.compile:
+            self.forward = compile(self.forward, fullgraph=True, mode="default")
 
     def _step(
         self,

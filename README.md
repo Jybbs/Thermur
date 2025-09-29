@@ -602,7 +602,7 @@ thermur/
 │   │   └── imitation/
 │   │       ├── controller/
 │   │       │   ├── builds.py       # Controller component builds
-│   │       │   └── schemas.py      # FlockModel, MurmurationModel, SafetyModel
+│   │       │   └── schemas.py      # MurmurationModel, SafetyModel
 │   │       ├── environment/
 │   │       │   ├── builds.py       # Environment builds
 │   │       │   └── schemas.py      # Physics and world models

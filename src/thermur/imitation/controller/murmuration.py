@@ -6,9 +6,10 @@ murmurations, using topological neighborhoods (k-nearest neighbors) rather
 than metric distances. The flock maintains critical state dynamics for
 rapid information propagation and exhibits distinct cruise/alert modes.
 """
-from __future__           import annotations
-from torch_geometric.data import Data
-from typing               import TYPE_CHECKING
+from __future__            import annotations
+from torch_geometric.data  import Data
+from torch_geometric.utils import scatter
+from typing                import TYPE_CHECKING
 
 import torch as th
 
@@ -128,8 +129,7 @@ class MurmurationController(th.nn.Module):
         )
 
         threat_amplification = (1 + flock.threats * 2)
-
-        flock.density_wave = (
+        flock.density_wave   = (
             -self.mmm.density_diffusion *
             density_gradient            *
             threat_amplification
@@ -147,43 +147,53 @@ class MurmurationController(th.nn.Module):
 
         with J_{ij} = J_0 exp(-d_{ij}/λ) for topological coupling
 
+        Uses PyG scatter operations for efficient edge-to-node aggregation.
+
         Args:
             flock: Data with edge indices, gradient, hops matrix, positions,
                    and velocities, updated with base_forces
         """
-        flock.base_forces = th.zeros_like(flock.position)
-
-        j_edges = self.mmm.j_base * th.exp(
+        coupling_weights = self.mmm.j_base * th.exp(
             -flock.hops[flock.edge_source, flock.edge_target] /
             self.mmm.coupling_decay
         )
 
-        force_contrib = j_edges.unsqueeze(1) * (
+        alignment_forces = coupling_weights.unsqueeze(1) * (
             flock.velocity[flock.edge_target] -
             flock.velocity[flock.edge_source]
         )
-        flock.base_forces.index_add_(0, flock.edge_source, force_contrib)
 
-        mask = (
+        flock.base_forces = scatter(
+            dim      = 0,
+            dim_size = flock.position.size(0),
+            index    = flock.edge_source,
+            reduce   = 'sum',
+            src      = alignment_forces
+        )
+
+        collision_mask = (
             (flock.distances < self.mmm.min_distance * 3) &
             (flock.distances > 0)
         )
 
-        if mask.any():
-            i_idx, j_idx = mask.nonzero(as_tuple=True)
-            displacement = flock.position[j_idx] - flock.position[i_idx]
-            soft_distance = displacement.norm(
+        if collision_mask.any():
+            source_idx, target_idx = collision_mask.nonzero(as_tuple=True)
+            displacement = flock.position[target_idx] - flock.position[source_idx]
+            distance     = displacement.norm(
                 dim     = 1,
                 keepdim = True
             ).clamp_min(self.mmm.min_distance)
 
-            flock.base_forces.index_add_(
-                dim    = 0,
-                index  = i_idx,
-                source = (
-                    -self.mmm.separation_strength * displacement /
-                    soft_distance ** 3
-                )
+            repulsion_forces = (
+                -self.mmm.separation_strength * displacement / distance ** 3
+            )
+
+            flock.base_forces += scatter(
+                dim      = 0,
+                dim_size = flock.position.size(0),
+                index    = source_idx,
+                reduce   = 'sum',
+                src      = repulsion_forces
             )
 
         flock.base_forces -= self.mmm.temperature_scaling * flock.gradient

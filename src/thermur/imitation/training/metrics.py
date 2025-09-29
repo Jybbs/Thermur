@@ -105,13 +105,12 @@ class BaseMetric(MeanMetric):
         B, N      = batch.num_graphs, self.agent_count
         cache     = BaseMetric._reshape_cache
         corr      = lambda x: th.bmm(d := x - x.mean(1, keepdim=True), d.mT)
-        distances = lambda: th.cdist(p := reshape('position'), p)
         reshape   = lambda feat: self._reshape_features(batch, feat)[0]
         spins     = lambda: th.nn.functional.normalize(reshape('velocity'), dim=-1)
         triu      = lambda m: m[:, (t := th.triu_indices(N, N, 1))[0], t[1]]
         computed  = {
-            'dist_triu'      : lambda: triu(distances()),
-            'distances'      : distances,
+            'dist_triu'      : lambda: triu(reshape('distances')),
+            'distances'      : lambda: reshape('distances'),
             'spin_corr_triu' : lambda: triu(corr(spins())),
             'spin_mean'      : lambda: spins().mean(dim=1, keepdim=True),
             'spins'          : spins,

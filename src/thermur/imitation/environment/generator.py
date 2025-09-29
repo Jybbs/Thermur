@@ -8,6 +8,7 @@ PyG Data objects suitable for offline imitation learning.
 from __future__           import annotations
 from torch                import Tensor
 from torch_geometric.data import Data
+from torch_geometric.nn   import knn_graph
 from typing               import TYPE_CHECKING
 
 import torch as th
@@ -46,6 +47,8 @@ class TrajectoryGenerator:
             wrf                 : WRF data source for environmental queries
         """
         self.agent_count         = agent_count
+        self.bounds_max          = th.as_tensor(physics.bounds_max)
+        self.bounds_min          = th.as_tensor(physics.bounds_min)
         self.communication_range = communication_range
         self.frame               = 0
         self.k_neighbors         = k_neighbors
@@ -56,25 +59,26 @@ class TrajectoryGenerator:
         self.velocity_rng        = th.Generator()
         self.wrf                 = wrf
 
-    def _compute_edge_index(self, distances: Tensor) -> Tensor:
+    def _compute_edge_index(self, positions: Tensor) -> Tensor:
         """
         Compute topological k-nearest neighbor connectivity.
 
         Following Ballerini et al. (2008), builds graph connectivity based on
-        k-nearest neighbors rather than metric distance.
+        k-nearest neighbors rather than metric distance. Uses PyG's optimized
+        knn_graph which avoids computing the full distance matrix.
 
         Args:
-            distances: Pairwise distance matrix [N, N]
+            positions: Agent positions [N, 3]
 
         Returns:
             Edge index tensor [2, E] for PyG Data objects
         """
-        _, indices = distances.topk(self.k_neighbors + 1, largest=False)
-
-        return th.stack([
-            th.arange(self.agent_count).repeat_interleave(self.k_neighbors),
-            indices[:, 1:].flatten()
-        ])
+        return knn_graph(
+            batch = None,
+            k     = self.k_neighbors,
+            loop  = False,
+            x     = positions
+        )
 
     def _compute_forces(
         self,
@@ -149,16 +153,14 @@ class TrajectoryGenerator:
         Returns:
             Updated positions [N, 3]
         """
-        new_positions = positions + velocities * timeframe
-        bounds_min    = th.as_tensor(self.physics.bounds_min, device=positions.device)
-        bounds_max    = th.as_tensor(self.physics.bounds_max, device=positions.device)
-        new_positions = new_positions.clamp(bounds_min, bounds_max)
+        bounds_min = self.bounds_min.to(positions.device)
+        bounds_max = self.bounds_max.to(positions.device)
 
-        # Zero velocities at boundaries
-        at_bounds = (
-            (new_positions == bounds_min) |
-            (new_positions == bounds_max)
+        new_positions = (positions + velocities * timeframe).clamp(
+            bounds_min, bounds_max
         )
+
+        at_bounds = (new_positions == bounds_min) | (new_positions == bounds_max)
         velocities.masked_fill_(at_bounds, 0.0)
 
         return new_positions
@@ -228,11 +230,10 @@ class TrajectoryGenerator:
         ) * 2.0
 
         gradient, temperature = self.wrf.query_thermal(self.positions)
-        distances = th.cdist(self.positions, self.positions)
 
         return Data(
-            distances   = distances,
-            edge_index  = self._compute_edge_index(distances),
+            distances   = th.cdist(self.positions, self.positions),
+            edge_index  = self._compute_edge_index(self.positions),
             frame       = self.frame,
             gradient    = gradient,
             position    = self.positions.clone(),
@@ -271,13 +272,12 @@ class TrajectoryGenerator:
         )
 
         gradient, temperature = self.wrf.query_thermal(self.positions)
-        distances   = th.cdist(self.positions, self.positions)
         self.frame += 1
         self.time  += self.physics.timeframe
 
         return Data(
-            distances   = distances,
-            edge_index  = self._compute_edge_index(distances),
+            distances   = th.cdist(self.positions, self.positions),
+            edge_index  = self._compute_edge_index(self.positions),
             frame       = self.frame,
             gradient    = gradient,
             position    = self.positions.clone(),

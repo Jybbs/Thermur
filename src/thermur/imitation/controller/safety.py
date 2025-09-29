@@ -8,8 +8,7 @@ training.
 """
 from __future__ import annotations
 from typing     import TYPE_CHECKING
-
-import torch as th
+from torch      import sigmoid
 
 if TYPE_CHECKING:
     from config.imitation.controller import SafetyModel
@@ -97,7 +96,7 @@ class ThermalPenalty:
 
             return u_nominal - (
                 self.safety.ks_kappa * flock.gradient
-                * th.sigmoid(-self.safety.ks_rho * constraint).unsqueeze(1)
+                * sigmoid(-self.safety.ks_rho * constraint).unsqueeze(1)
             )
 
         return u_nominal

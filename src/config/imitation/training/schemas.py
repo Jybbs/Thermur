@@ -28,6 +28,13 @@ class ArchitectureModel(BaseModel, extra="forbid"):
             "passing MLPs, with SiLU providing smooth gradients for stable training."
         )
     )
+    compile: bool = Field(
+        default     = True,
+        description = (
+            "Enable torch.compile for 4-5x training speedup on MPS/CUDA. Uses 'default' "
+            "mode with fullgraph=True for optimal graph neural network performance."
+        )
+    )
     hidden_dim: PositiveInt = Field(
         default     = 64,
         description = (
