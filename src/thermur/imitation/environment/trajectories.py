@@ -155,7 +155,6 @@ class TrajectoryGenerator:
             Updated positions [N, 3]
         """
         new_positions = positions + velocities * timeframe
-
         bounds_min    = th.as_tensor(self.physics.bounds_min, device=positions.device)
         bounds_max    = th.as_tensor(self.physics.bounds_max, device=positions.device)
         new_positions = new_positions.clamp(bounds_min, bounds_max)

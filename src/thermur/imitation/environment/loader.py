@@ -6,7 +6,8 @@ handling temperature, wind, and fire-specific variables with efficient
 interpolation and gradient computation.
 """
 from __future__          import annotations
-from torch               import as_tensor, autograd, stack, tensor
+from torch               import as_tensor, stack, tensor
+from torch.func          import grad
 from torch.nn.functional import grid_sample
 from typing              import TYPE_CHECKING
 from xarray              import open_dataset
@@ -112,7 +113,7 @@ class WRFLoader:
             filename_or_obj = file_paths[0]
         ) as ds:
             self.n_snapshots = ds.sizes['Time']
-            self.temperature = as_tensor(ds['T'].values + 300.0).requires_grad_(True)
+            self.temperature = as_tensor(ds['T'].values + 300.0)
             self.wind        = stack(
                 [
                     as_tensor(ds['U'].values[..., :-1]),
@@ -123,15 +124,17 @@ class WRFLoader:
             )
 
     def query_thermal(
-        self, 
-        positions : Tensor, 
+        self,
+        positions : Tensor,
         time      : float
     )-> tuple[Tensor, Tensor]:
         """
         Query temperature and its gradient at agent positions.
 
         Uses pre-loaded tensor data and batched interpolation for efficiency.
-        Gradients are computed via automatic differentiation.
+        Gradients are computed via automatic differentiation using nested lambdas:
+        - p: positions tensor for gradient computation
+        - t: interpolated temperature values
 
         Args:
             positions : Tensor [N, 3] of agent positions in meters
@@ -142,16 +145,16 @@ class WRFLoader:
             - gradients    : Tensor [N, 3] of temperature gradients ∇T
             - temperatures : Tensor [N, 1] of temperature values in Kelvin
         """
-        grad_positions = positions.requires_grad_(True)
-        temperatures   = self._interpolate(
-            self.temperature[self._get_snapshot(time)].unsqueeze(0),
-            grad_positions
-        )
-
-        return (
-            autograd.grad(temperatures.sum(), grad_positions)[0], 
-            temperatures
-        )
+        return grad(
+            lambda p: (lambda t: (t.sum(), t))
+            (
+                self._interpolate(
+                    self.temperature[self._get_snapshot(time)].unsqueeze(0), 
+                    p
+                )
+            ),
+            has_aux = True
+        )(positions)
 
     def query_wind(
         self, 
