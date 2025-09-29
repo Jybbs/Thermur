@@ -33,6 +33,7 @@ class FlockBatch(Protocol):
     """
     action        : Tensor  # Expert actions            [B*N, 3]
     batch         : Tensor  # Node to graph assignment  [B*N]
+    distances     : Tensor  # Pairwise distances        [B*N, N]
     edge_index    : Tensor  # Graph edges               [2, E]
     gradient      : Tensor  # Temperature gradients     [B*N, 3]
     heterogeneity : Tensor  # Noise amplitudes η_i      [B*N]

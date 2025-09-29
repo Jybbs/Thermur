@@ -110,7 +110,6 @@ class BaseMetric(MeanMetric):
         triu      = lambda m: m[:, (t := th.triu_indices(N, N, 1))[0], t[1]]
         computed  = {
             'dist_triu'      : lambda: triu(reshape('distances')),
-            'distances'      : lambda: reshape('distances'),
             'spin_corr_triu' : lambda: triu(corr(spins())),
             'spin_mean'      : lambda: spins().mean(dim=1, keepdim=True),
             'spins'          : spins,

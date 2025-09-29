@@ -493,6 +493,7 @@ class MurmurationController(th.nn.Module):
             trajectory.append(
                 Data(
                     action        = action,
+                    distances     = state.distances,
                     edge_index    = state.edge_index,
                     frame         = frame,
                     gradient      = state.gradient,

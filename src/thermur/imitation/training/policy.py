@@ -12,12 +12,15 @@ PyG Batch observations.
 """
 from __future__          import annotations
 from .metrics            import BaseMetric
+from functools           import partial
 from pytorch_lightning   import LightningModule
 from torch               import nn
 from torch.nn            import GRUCell, Linear, ModuleList
 from torch.nn.functional import mse_loss
 from torch_geometric.nn  import GCNConv
 from typing              import Callable, TYPE_CHECKING
+
+import torch as th
 
 if TYPE_CHECKING:
     from .metrics                          import MetricsFactory
@@ -75,7 +78,7 @@ class GNNPolicy(LightningModule):
         layers = lambda m: ModuleList([m(dim, dim) for _ in range(n)])
 
         self.activation    = getattr(nn, architecture.activation)()
-        self.convs         = layers(GCNConv)
+        self.convs         = layers(partial(GCNConv, add_self_loops=False))
         self.decoder       = Linear(dim, 3)
         self.encoder       = Linear(13, dim)
         self.grus          = layers(GRUCell)
@@ -147,6 +150,7 @@ class GNNPolicy(LightningModule):
             }
         }
 
+    @th.compile(fullgraph=True, mode='default')
     def forward(self, batch: FlockBatch) -> Tensor:
         """
         Performs the forward pass through the GNN.

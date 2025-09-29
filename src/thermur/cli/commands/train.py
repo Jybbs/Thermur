@@ -481,6 +481,8 @@ class TrainCommand:
             model      = components["policy"]
         )
 
+        components["trainer"]._teardown()
+
         self.ui.print_header("Training Complete 🎉")
         self._offer_cfg_viewing()
 
