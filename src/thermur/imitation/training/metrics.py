@@ -463,7 +463,6 @@ class MaxEntropyEnergy(BaseMetric):
 
         hops = th.full(
             device     = device,
-            dtype      = th.float32,
             fill_value = float('inf'),
             size       = (B, N, N)
         )

@@ -5,32 +5,21 @@ This module consolidates all simulation configuration models including
 physics settings, data loading, and environment parameters.
 """
 from pydantic import BaseModel, Field
-from pydantic import NonNegativeFloat, PositiveFloat
+from pydantic import NonNegativeFloat, PositiveFloat, PositiveInt
 
 
-class LoaderModel(BaseModel, extra="forbid"):
+class DatasetModel(BaseModel, extra="forbid"):
     """
-    Configuration for WRF data loader.
+    Configuration for dataset generation and data sources.
 
-    This model defines data structure parameters (variable names, processing
-    options) and caching configuration for the Moisseeva (2020) dataset.
-
-    The dataset contains 147 NetCDF files totaling 5.33 TB. The simulation
-    uses staggered grids where U, V, W wind components are offset from cell centers.
+    This model defines parameters for generating offline demonstration datasets
+    including episode structure, data sources, and generation scope.
     """
-    domain_randomization: bool = Field(
-        default     = True,
+    frames_per_episode: PositiveInt = Field(
+        default     = 1000,
         description = (
-            "Enable stochastic environmental variations including wind perturbations "
-            "and temperature noise to improve policy generalization."
-        )
-    )
-    interpolate_time: bool = Field(
-        default     = True,
-        description = (
-            "Enable smooth temporal interpolation between WRF snapshots. When False, "
-            "uses nearest snapshot (discrete jumps). When True, linearly interpolates "
-            "between adjacent snapshots for continuous evolution."
+            "Number of frames per demonstration episode. Longer episodes "
+            "capture extended temporal dependencies in flocking behavior."
         )
     )
     sample_url: str = Field(
@@ -43,18 +32,11 @@ class LoaderModel(BaseModel, extra="forbid"):
             "Points to a curated 1.5GB sample containing moderate intensity scenarios."
         )
     )
-    temperature_noise_std: NonNegativeFloat = Field(
-        default     = 0.5,
+    total_frames: PositiveInt = Field(
+        default     = 200_000,
         description = (
-            "Temperature noise standard deviation σ_T in Kelvin for domain "
-            "randomization, simulating measurement uncertainty and turbulence."
-        )
-    )
-    wind_noise_std: NonNegativeFloat = Field(
-        default     = 0.1,
-        description = (
-            "Wind noise standard deviation σ_w in m/s for stochastic perturbations, "
-            "modeling atmospheric turbulence and measurement uncertainty."
+            "Total demonstration frames to generate across all scenarios. "
+            "Determines the size of the offline dataset for expert trajectory collection."
         )
     )
 
@@ -96,13 +78,6 @@ class PhysicsModel(BaseModel, extra="forbid"):
         description = (
             "Quadratic drag coefficient Cd for aerodynamic resistance modeling, "
             "where F_drag = -Cd * v * |v| simulates air resistance effects."
-        )
-    )
-    fallback_temperature: float = Field(
-        default     = 20.0,
-        description = (
-            "Fallback temperature T_default in Celsius used when interpolation "
-            "fails outside data bounds or during initialization."
         )
     )
     gravity: PositiveFloat = Field(

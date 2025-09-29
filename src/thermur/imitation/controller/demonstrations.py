@@ -175,11 +175,11 @@ class DemonstrationsDataset(InMemoryDataset):
         dataset = cls(
             controller         = controller,
             environment        = environment,
-            frames_per_episode = controller.mmm.frames_per_episode,
+            frames_per_episode = environment.dataset.frames_per_episode,
             generator          = generator,
             murmuration        = murmuration,
-            sample_url         = environment.loader.sample_url,
-            total_frames       = controller.mmm.total_frames,
+            sample_url         = environment.dataset.sample_url,
+            total_frames       = environment.dataset.total_frames,
             ui                 = ui
         )
 

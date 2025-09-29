@@ -66,6 +66,8 @@ class MurmurationController(th.nn.Module):
             safety  : Safety configuration with thresholds and temperature limits
         """
         super().__init__()
+        self.cached_edges      = th.empty(0)
+        self.cached_hops       = th.empty(0)
         self.heading_rng       = th.Generator()
         self.heterogeneity_rng = th.Generator()
         self.mmm               = mmm
@@ -111,8 +113,7 @@ class MurmurationController(th.nn.Module):
             flock: Data with position 𝐱 ∈ ℝ^(N×3), threats θ ∈ [0,1]^N,
                    updated with density_wave forces 𝐅 ∈ ℝ^(N×3) [m/s²]
         """
-        dists   = th.cdist(flock.position, flock.position, p=2)
-        weights = th.exp(-dists**2 / (2 * self.mmm.density_bandwidth**2))
+        weights = th.exp(-flock.distances**2 / (2 * self.mmm.density_bandwidth**2))
         weights.fill_diagonal_(0)
 
         local_density = weights.sum(dim=1, keepdim=True)
@@ -163,10 +164,9 @@ class MurmurationController(th.nn.Module):
         )
         flock.base_forces.index_add_(0, flock.edge_source, force_contrib)
 
-        metric_distances = th.cdist(flock.position, flock.position)
         mask = (
-            (metric_distances < self.mmm.min_distance * 3) &
-            (metric_distances > 0)
+            (flock.distances < self.mmm.min_distance * 3) &
+            (flock.distances > 0)
         )
 
         if mask.any():
@@ -190,7 +190,7 @@ class MurmurationController(th.nn.Module):
 
     def _compute_hops(self, flock: Data):
         """
-        Compute minimum hop counts between all agent pairs.
+        Compute minimum hop counts between all agent pairs with caching.
 
         Uses Floyd-Warshall to find shortest paths through the k-NN graph,
         capturing the topological distance d_{ij} for coupling decay:
@@ -201,12 +201,20 @@ class MurmurationController(th.nn.Module):
 
             d_{ij}^{(k+1)} = min(d_{ij}^{(k)}, d_{ik}^{(k)} + d_{kj}^{(k)})
 
+        This implementation caches the result and only recomputes when the
+        edge structure changes, avoiding redundant O(N³) computations.
+
         Args:
             flock: Data with edge indices, updated with hops matrix
         """
+        edges = th.stack([flock.edge_source, flock.edge_target])
+
+        if th.equal(self.cached_edges, edges):
+            flock.hops = self.cached_hops
+            return
+
         hops = th.full(
             device     = flock.position.device,
-            dtype      = th.float32,
             fill_value = float('inf'),
             size       = (self.mmm.agent_count, self.mmm.agent_count)
         )
@@ -218,7 +226,9 @@ class MurmurationController(th.nn.Module):
         for k in range(self.mmm.agent_count):
             hops = th.minimum(hops, hops[:, k:k+1] + hops[k:k+1, :])
 
-        flock.hops = hops
+        self.cached_edges = edges
+        self.cached_hops  = hops
+        flock.hops        = hops
 
     def _compute_heterogeneity(self, frame: int) -> Tensor:
         """
@@ -476,7 +486,7 @@ class MurmurationController(th.nn.Module):
 
             trajectory.append(
                 Data(
-                    action        = action.clone(),
+                    action        = action,
                     edge_index    = state.edge_index,
                     frame         = frame,
                     gradient      = state.gradient,

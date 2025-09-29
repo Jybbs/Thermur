@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 ENVIRONMENT_USER_CONFIG = make_config(
-    loader  = LoaderModel(),
+    dataset = DatasetModel(),
     physics = PhysicsModel()
 )
 
@@ -31,18 +31,18 @@ ENVIRONMENT_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
 
     "trajectory_generator": builds(
         TrajectoryGenerator,
+        agent_count             = "${controller.mmm.agent_count}",
+        communication_range     = "${controller.mmm.communication_range}",
         k_neighbors             = "${controller.mmm.k_neighbors}",
-        mmm                     = "${controller.mmm}",
         physics                 = "${environment.physics}",
-        safety                  = "${controller.safety}",
         wrf                     = "${_system.wrf}",
         populate_full_signature = True
     ),
 
     "wrf": builds(
         WRFLoader,
-        loader                  = "${environment.loader}",
-        physics                 = "${environment.physics}",
+        bounds_min              = "${environment.physics.bounds_min}",
+        bounds_max              = "${environment.physics.bounds_max}",
         populate_full_signature = True
     )
 

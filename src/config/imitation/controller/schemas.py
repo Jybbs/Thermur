@@ -61,13 +61,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "controlling how density perturbations spread through the flock."
         )
     )
-    frames_per_episode: PositiveInt = Field(
-        default     = 1000,
-        description = (
-            "Number of frames per demonstration episode. Longer episodes "
-            "capture extended temporal dependencies in flocking behavior."
-        )
-    )
     heterogeneity_mean: PositiveFloat = Field(
         default     = 0.33,
         description = (
@@ -140,13 +133,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Multiplicative factor λ_thermal adjusting thermal avoidance strength "
             "relative to murmuration forces, balancing safety versus cohesive behavior."
-        )
-    )
-    total_frames: PositiveInt = Field(
-        default     = 200_000,
-        description = (
-            "Total demonstration frames to generate across all scenarios. "
-            "Determines the size of the offline dataset for expert trajectory collection."
         )
     )
     wind_coupling: PositiveFloat = Field(

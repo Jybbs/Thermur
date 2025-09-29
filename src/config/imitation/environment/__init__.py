@@ -1,7 +1,7 @@
 """
-Simulation configuration domain.
+Environment configuration domain.
 
-Provides schemas for simulation environment components including
-physics settings, data loading, and environment configuration.
+Provides schemas for environment components including dataset
+generation parameters and physics simulation settings.
 """
 from .schemas import *

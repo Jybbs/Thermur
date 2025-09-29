@@ -14,7 +14,6 @@ import torch as th
 
 if TYPE_CHECKING:
     from .loader                      import WRFLoader
-    from config.imitation.controller  import MurmurationModel, SafetyModel
     from config.imitation.environment import PhysicsModel
 
 
@@ -35,34 +34,34 @@ class TrajectoryGenerator:
 
     def __init__(
         self,
-        k_neighbors : int,
-        mmm         : MurmurationModel,
-        physics     : PhysicsModel,
-        safety      : SafetyModel,
-        wrf         : WRFLoader,
+        agent_count         : int,
+        communication_range : float,
+        k_neighbors         : int,
+        physics             : PhysicsModel,
+        wrf                 : WRFLoader,
     ):
         """
         Initialize the trajectory generator.
 
         Args:
-            k_neighbors : Number of topological neighbors for connectivity
-            mmm         : Murmuration model with agent count and parameters
-            physics     : Physics simulation parameters
-            safety      : Safety thresholds (for reference, not enforced here)
-            wrf         : WRF data source for environmental queries
+            agent_count         : Number of agents in the flock
+            communication_range : Metric interaction radius for initial spacing
+            k_neighbors         : Number of topological neighbors for connectivity
+            physics             : Physics simulation parameters
+            wrf                 : WRF data source for environmental queries
         """
-        self.frame        = 0
-        self.k_neighbors  = k_neighbors
-        self.mmm          = mmm
-        self.physics      = physics
-        self.positions    = th.zeros(mmm.agent_count, 3)
-        self.safety       = safety
-        self.time         = 0.0
-        self.velocities   = th.zeros(mmm.agent_count, 3)
-        self.velocity_rng = th.Generator()
-        self.wrf          = wrf
+        self.agent_count         = agent_count
+        self.communication_range = communication_range
+        self.frame               = 0
+        self.k_neighbors         = k_neighbors
+        self.physics             = physics
+        self.positions           = th.zeros(agent_count, 3)
+        self.time                = 0.0
+        self.velocities          = th.zeros(agent_count, 3)
+        self.velocity_rng        = th.Generator()
+        self.wrf                 = wrf
 
-    def _compute_edge_index(self, position: Tensor) -> Tensor:
+    def _compute_edge_index(self, distances: Tensor) -> Tensor:
         """
         Compute topological k-nearest neighbor connectivity.
 
@@ -70,16 +69,15 @@ class TrajectoryGenerator:
         k-nearest neighbors rather than metric distance.
 
         Args:
-            position: Node positions [N, 3]
+            distances: Pairwise distance matrix [N, N]
 
         Returns:
             Edge index tensor [2, E] for PyG Data objects
         """
-        distances  = th.cdist(position, position)
         _, indices = distances.topk(self.k_neighbors + 1, largest=False)
 
         return th.stack([
-            th.arange(self.mmm.agent_count).repeat_interleave(self.k_neighbors),
+            th.arange(self.agent_count).repeat_interleave(self.k_neighbors),
             indices[:, 1:].flatten()
         ])
 
@@ -122,8 +120,8 @@ class TrajectoryGenerator:
         Returns:
             Initial positions [N, 3]
         """
-        indices      = th.arange(self.mmm.agent_count, dtype=th.float32)
-        z            = 1 - (2 * indices) / (self.mmm.agent_count - 1)
+        indices      = th.linspace(0, self.agent_count - 1, self.agent_count)
+        z            = 1 - (2 * indices) / (self.agent_count - 1)
         radius       = th.sqrt(1 - z*z)
         golden_angle = th.pi * (3. - (5.**0.5))
         theta        = golden_angle * indices
@@ -212,7 +210,7 @@ class TrajectoryGenerator:
         # Generate initial positions using Fibonacci lattice
         positions = self._fibonacci_lattice()
         positions *= (
-            self.mmm.communication_range *
+            self.communication_range *
             self.physics.initial_spacing_factor
         )
         positions[:, 2] += self.physics.initial_altitude
@@ -221,24 +219,24 @@ class TrajectoryGenerator:
         self.time  = 0.0
 
         self.velocity_rng.manual_seed(self.frame)
-        self.positions  = positions.clone()
+        self.positions  = positions
         self.velocities = th.randn(
             generator = self.velocity_rng,
             size      = positions.shape
         ) * 2.0
 
-        self.wrf.time         = self.time
-        gradient, temperature = self.wrf.query_thermal(self.frame, self.positions)
-        wind                  = self.wrf.query_wind(self.frame,    self.positions)
+        gradient, temperature = self.wrf.query_thermal(self.positions, self.time)
+        distances = th.cdist(self.positions, self.positions)
 
         return Data(
-            edge_index  = self._compute_edge_index(self.positions),
+            distances   = distances,
+            edge_index  = self._compute_edge_index(distances),
             frame       = self.frame,
-            gradient    = gradient.clone(),
+            gradient    = gradient,
             position    = self.positions.clone(),
-            temperature = temperature.clone(),
+            temperature = temperature,
             velocity    = self.velocities.clone(),
-            wind        = wind.clone()
+            wind        = self.wrf.query_wind(self.positions, self.time)
         )
 
     def step(self, action: Tensor) -> Data:
@@ -251,14 +249,13 @@ class TrajectoryGenerator:
         Returns:
             Next state as PyG Data object
         """
-        self.wrf.time = self.time
-        wind          = self.wrf.query_wind(self.frame, self.positions)
-
+        wind         = self.wrf.query_wind(self.positions, self.time)
         acceleration = self._compute_forces(
             actions    = action,
             velocities = self.velocities,
             wind       = wind
         )
+
         self.velocities = self._integrate_velocities(
             acceleration = acceleration,
             timeframe    = self.physics.timeframe,
@@ -271,12 +268,14 @@ class TrajectoryGenerator:
             velocities = self.velocities
         )
 
-        gradient, temperature = self.wrf.query_thermal(self.frame, self.positions)
+        gradient, temperature = self.wrf.query_thermal(self.positions, self.time)
+        distances   = th.cdist(self.positions, self.positions)
         self.frame += 1
         self.time  += self.physics.timeframe
 
         return Data(
-            edge_index  = self._compute_edge_index(self.positions),
+            distances   = distances,
+            edge_index  = self._compute_edge_index(distances),
             frame       = self.frame,
             gradient    = gradient,
             position    = self.positions.clone(),
