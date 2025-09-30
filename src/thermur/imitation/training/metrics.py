@@ -397,7 +397,9 @@ class MAE(MeanMetric):
         """
         if not self.metric._update_called:
             return th.tensor(0.0)
-        return self.metric.compute()
+        value = self.metric.compute()
+        self.metric.reset()
+        return value
 
     def reset(self):
         """
@@ -681,15 +683,15 @@ class OrientationCoherence(BaseMetric):
             batch: PyG Batch containing velocity [B*N, 3] flattened
 
         Returns:
-            Coherence values as tensor
+            Mean coherence across batch as scalar tensor
         """
         headings  = self._reshape_features(batch, "spins_2d")[0]
         alignment = th.bmm(headings, headings.mT)
 
         return (
-            (alignment.sum(dim=(1, 2)) - batch.num_graphs * self.agent_count) /
+            (alignment.sum(dim=(1, 2)) - self.agent_count) /
             (self.agent_count * (self.agent_count - 1))
-        )
+        ).mean()
 
 
 class OrientationWave(BaseMetric):
@@ -846,7 +848,9 @@ class R2(MeanMetric):
         """
         if not self.metric._update_called:
             return th.tensor(0.0)
-        return self.metric.compute()
+        value = self.metric.compute()
+        self.metric.reset()
+        return value
 
     def reset(self):
         """
@@ -904,7 +908,9 @@ class RMSE(MeanMetric):
         """
         if not self.metric._update_called:
             return th.tensor(0.0)
-        return self.metric.compute()
+        value = self.metric.compute()
+        self.metric.reset()
+        return value
 
     def reset(self):
         """

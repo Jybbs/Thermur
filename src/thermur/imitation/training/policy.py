@@ -96,8 +96,9 @@ class GNNPolicy(LightningModule):
         """
         Shared step logic for training and validation.
 
-        Logs MSE and all metrics at step level. For validation, MSE is also
-        aggregated at epoch level to support early stopping callbacks.
+        Uses Lightning's default logging behavior: training logs at step-level,
+        validation logs at epoch-level. This produces clean metric names without
+        suffixes in wandb.
 
         Args:
             batch   : PyG Batch containing observations and expert actions
@@ -114,17 +115,15 @@ class GNNPolicy(LightningModule):
         self.log(
             batch_size = batch.num_graphs,
             name       = f'{prefix}/mse',
-            on_epoch   = prefix == 'validation',
-            on_step    = True,
             prog_bar   = True,
+            sync_dist  = False,
             value      = mse
         )
 
         self.log_dict(
             batch_size = batch.num_graphs,
             dictionary = metrics.compute(),
-            on_epoch   = False,
-            on_step    = True
+            sync_dist  = False
         )
 
         return mse
@@ -228,6 +227,15 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar MSE loss tensor for automatic backpropagation
         """
+        if self.global_step % 100 == 0:
+            predictions = self(batch)
+            self.log('debug/pred_mean', predictions.mean())
+            self.log('debug/pred_std', predictions.std())
+            self.log('debug/pred_max', predictions.abs().max())
+            self.log('debug/target_mean', batch.action.mean())
+            self.log('debug/target_std', batch.action.std())
+            self.log('debug/target_max', batch.action.abs().max())
+
         return self._step(batch, self.train_metrics, 'training')
 
     def validation_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
