@@ -12,7 +12,7 @@ used directly in LightningModules without a separate collector.
 from __future__            import annotations
 from torch_geometric.utils import to_dense_adj
 from torchmetrics          import MeanAbsoluteError, MeanMetric, MeanSquaredError
-from torchmetrics          import MetricCollection, R2Score
+from torchmetrics          import Metric, MetricCollection, R2Score
 from typing                import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -362,7 +362,7 @@ class FiedlerValue(BaseMetric):
         return len(fiedler) / fiedler.reciprocal().sum()
 
 
-class MAE(MeanMetric):
+class MAE(Metric):
     """
     Mean Absolute Error for action predictions.
 
@@ -382,30 +382,24 @@ class MAE(MeanMetric):
         Initialize MAE metric.
 
         Args:
-            **kwargs: Configuration including agent_count
+            **kwargs: Unused, accepted for factory compatibility
         """
         super().__init__()
         self.metric = MeanAbsoluteError()
-        self.kwargs = kwargs
 
     def compute(self) -> th.Tensor:
         """
         Compute the metric value.
 
         Returns:
-            Computed MAE value as scalar tensor, with 0.0 if no updates yet
+            Computed MAE value as scalar tensor
         """
-        if not self.metric._update_called:
-            return th.tensor(0.0)
-        value = self.metric.compute()
-        self.metric.reset()
-        return value
+        return self.metric.compute()
 
     def reset(self):
         """
         Reset metric state.
         """
-        super().reset()
         self.metric.reset()
 
     def update(self, batch: FlockBatch, predictions: Tensor):
@@ -811,7 +805,7 @@ class PerturbationResponse(BaseMetric):
         return response_ratio
 
 
-class R2(MeanMetric):
+class R2(Metric):
     """
     R-squared score for action predictions.
 
@@ -833,30 +827,24 @@ class R2(MeanMetric):
         Initialize R² score metric.
 
         Args:
-            **kwargs: Configuration including agent_count
+            **kwargs: Unused, accepted for factory compatibility
         """
         super().__init__()
         self.metric = R2Score()
-        self.kwargs = kwargs
 
     def compute(self) -> th.Tensor:
         """
         Compute the metric value.
 
         Returns:
-            Computed R² value as scalar tensor, with 0.0 if no updates yet
+            Computed R² value as scalar tensor
         """
-        if not self.metric._update_called:
-            return th.tensor(0.0)
-        value = self.metric.compute()
-        self.metric.reset()
-        return value
+        return self.metric.compute()
 
     def reset(self):
         """
         Reset metric state.
         """
-        super().reset()
         self.metric.reset()
 
     def update(self, batch: FlockBatch, predictions: Tensor):
@@ -870,7 +858,7 @@ class R2(MeanMetric):
         self.metric.update(predictions, batch.action)
 
 
-class RMSE(MeanMetric):
+class RMSE(Metric):
     """
     Root Mean Squared Error for action predictions.
 
@@ -893,30 +881,24 @@ class RMSE(MeanMetric):
         squared error rather than mean squared error.
 
         Args:
-            **kwargs: Configuration including agent_count
+            **kwargs: Unused, accepted for factory compatibility
         """
         super().__init__()
         self.metric = MeanSquaredError(squared=False)
-        self.kwargs = kwargs
 
     def compute(self) -> th.Tensor:
         """
         Compute the metric value.
 
         Returns:
-            Computed RMSE value as scalar tensor, with 0.0 if no updates yet
+            Computed RMSE value as scalar tensor
         """
-        if not self.metric._update_called:
-            return th.tensor(0.0)
-        value = self.metric.compute()
-        self.metric.reset()
-        return value
+        return self.metric.compute()
 
     def reset(self):
         """
         Reset metric state.
         """
-        super().reset()
         self.metric.reset()
 
     def update(self, batch: FlockBatch, predictions: Tensor):

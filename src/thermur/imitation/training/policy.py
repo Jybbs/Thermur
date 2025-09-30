@@ -227,15 +227,6 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar MSE loss tensor for automatic backpropagation
         """
-        if self.global_step % 100 == 0:
-            predictions = self(batch)
-            self.log('debug/pred_mean', predictions.mean())
-            self.log('debug/pred_std', predictions.std())
-            self.log('debug/pred_max', predictions.abs().max())
-            self.log('debug/target_mean', batch.action.mean())
-            self.log('debug/target_std', batch.action.std())
-            self.log('debug/target_max', batch.action.abs().max())
-
         return self._step(batch, self.train_metrics, 'training')
 
     def validation_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
