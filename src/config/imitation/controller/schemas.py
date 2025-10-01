@@ -22,7 +22,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
     while maintaining cohesion through topological neighbor tracking.
     """
     agent_count: PositiveInt = Field(
-        default     = 30,
+        default     = 50,
         ge          = 8,
         description = (
             "Total number of agents N in the multi-agent system, determining "

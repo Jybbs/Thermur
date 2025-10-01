@@ -52,10 +52,17 @@ class CheckpointModel(BaseModel, extra="forbid"):
     enabling recovery from interruptions and model selection.
     """
     dirpath: str = Field(
-        default     = "checkpoints",
+        default     = "data/checkpoints",
         description = (
             "Directory path for saving model checkpoints during training, enabling "
             "recovery from interruptions and model comparison across runs."
+        )
+    )
+    enabled: bool = Field(
+        default     = False,
+        description = (
+            "Enable or disable checkpoint saving during training. When disabled, "
+            "no checkpoints will be saved regardless of other checkpoint settings."
         )
     )
     every_n_train_steps: PositiveInt = Field(

@@ -165,6 +165,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         ],
         detect_anomaly          = "${training.hardware.detect_anomaly}",
         deterministic           = "${training.hardware.deterministic}",
+        enable_checkpointing    = "${training.checkpoint.enabled}",
         enable_model_summary    = False,
         devices                 = "${training.hardware.devices}",
         gradient_clip_val       = "${training.optimizer.gradient_clip_val}",
