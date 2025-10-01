@@ -12,10 +12,9 @@ PyG Batch observations.
 """
 from __future__          import annotations
 from .metrics            import BaseMetric
-from functools           import partial
 from pytorch_lightning   import LightningModule
 from torch               import nn
-from torch.nn            import GRUCell, Linear, ModuleList
+from torch.nn            import GRUCell, LayerNorm, Linear, ModuleList, Sequential
 from torch.nn.functional import mse_loss
 from torch_geometric.nn  import GCNConv
 from typing              import Callable, TYPE_CHECKING
@@ -30,7 +29,62 @@ if TYPE_CHECKING:
     from torch                             import Tensor
     from torch.optim                       import Optimizer
     from torch.optim.lr_scheduler          import LRScheduler
+    from torch_geometric.typing            import Adj
     from torchmetrics                      import MetricCollection
+
+
+class GRUBlock(nn.Module):
+    """
+    Graph Recurrent Unit block combining GCN convolution with GRU recurrence.
+
+    This module encapsulates the processing pattern used in each layer of the
+    GNN policy: message passing via graph convolution, followed by recurrent
+    state update via GRU, with normalization for training stability.
+
+    The forward pass implements:
+
+        hₗ₊₁ = LN(GRU(σ(GCN(hₗ, E)), hₗ))
+
+    This design provides:
+    - Spatial aggregation via GCN for neighbor information
+    - Temporal memory via GRU, which stabilizes control over time
+    - Output normalization via LayerNorm, which prevents explosion
+
+    Args:
+        dim            : Hidden dimension for all layers
+        activation     : Activation function class (e.g., nn.ReLU)
+        add_self_loops : Whether GCN includes self-loops
+        normalize      : Whether to apply LayerNorm to output
+    """
+    def __init__(
+        self,
+        dim            : int,
+        activation     : type[nn.Module],
+        add_self_loops : bool = False,
+        normalize      : bool = True
+    ):
+        super().__init__()
+        self.conv       = GCNConv(dim, dim, add_self_loops=add_self_loops)
+        self.gru        = GRUCell(dim, dim)
+        self.activation = activation()
+        self.norm       = LayerNorm(dim) if normalize else nn.Identity()
+
+    def forward(
+        self, 
+        h          : th.Tensor, 
+        edge_index : Adj
+    ) -> th.Tensor:
+        """
+        Process node features through graph convolution and recurrent update.
+
+        Args:
+            h          : Node hidden states [num_nodes, dim]
+            edge_index : Graph connectivity [2, num_edges]
+
+        Returns:
+            Updated node hidden states [num_nodes, dim]
+        """
+        return self.norm(self.gru(self.activation(self.conv(h, edge_index)), h))
 
 
 class GNNPolicy(LightningModule):
@@ -74,18 +128,16 @@ class GNNPolicy(LightningModule):
         super().__init__()
         self.save_hyperparameters(ignore=["metrics", "optimizer", "scheduler"])
 
-        dim, n = architecture.hidden_dim, architecture.num_layers
-        layers = lambda m: ModuleList([m(dim, dim) for _ in range(n)])
+        dim, n     = architecture.hidden_dim, architecture.num_layers
+        activation = getattr(nn, architecture.activation)
 
-        self.activation    = getattr(nn, architecture.activation)()
-        self.convs         = layers(partial(GCNConv, add_self_loops=False))
-        self.decoder       = Linear(dim, 3)
-        self.encoder       = Linear(13, dim)
-        self.grus          = layers(GRUCell)
-        self.optimizer     = optimizer
-        self.scheduler     = scheduler
-        self.train_metrics = metrics.create_training_metrics()
-        self.val_metrics   = metrics.create_validation_metrics()
+        self.encoder   = Sequential(Linear(13, dim), activation(), LayerNorm(dim))
+        self.layers    = ModuleList([GRUBlock(dim, activation) for _ in range(n)])
+        self.decoder   = Linear(dim, 3)
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.t_metrics = metrics.create_training_metrics()
+        self.v_metrics = metrics.create_validation_metrics()
 
     def _step(
         self,
@@ -163,18 +215,19 @@ class GNNPolicy(LightningModule):
             command for each agent in the batch.
 
         The forward pass follows the sequence:
-            x → encoder → h → [GCN → activation → GRU → h]ₗ → decoder → u_nom
+            x  → encoder(Linear → activation → LayerNorm) → h₀
+            h₀ → [GCN → activation → GRU → LayerNorm → hₗ]ₗ → decoder → u_nom
 
         where:
-            - x: Input node features (position, velocity, temperature, etc.)
-            - h: Hidden state representations of each agent
-            - l: Layer index from 1 to num_layers
-            - u_nom: Nominal velocity command output
+            - x     : Input node features (position, velocity, temperature, etc.)
+            - hₗ     : Hidden state after layer l, normalized to prevent explosion
+            - l     : Layer index from 1 to num_layers
+            - u_nom : Nominal velocity command output
         """
-        h = self.activation(self.encoder(batch.x))
+        h = self.encoder(batch.x)
 
-        for conv, gru in zip(self.convs, self.grus, strict=True):
-            h = gru(self.activation(conv(h, batch.edge_index)), h)
+        for layer in self.layers:
+            h = layer(h, batch.edge_index)
 
         return self.decoder(h)
 
@@ -227,7 +280,7 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar MSE loss tensor for automatic backpropagation
         """
-        return self._step(batch, self.train_metrics, 'training')
+        return self._step(batch, self.t_metrics, 'training')
 
     def validation_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """
@@ -242,4 +295,4 @@ class GNNPolicy(LightningModule):
         Returns:
             Scalar validation MSE loss for automatic metric aggregation
         """
-        return self._step(batch, self.val_metrics, 'validation')
+        return self._step(batch, self.v_metrics, 'validation')

@@ -188,7 +188,7 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     learning_rate: PositiveFloat = Field(
-        default     = 2e-3,
+        default     = 5e-4,
         description = (
             "Initial learning rate α for AdamW optimizer, controlling gradient step "
             "size in parameter space during gradient descent optimization."
