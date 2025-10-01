@@ -495,7 +495,6 @@ class MurmurationController(th.nn.Module):
                     action        = action,
                     distances     = state.distances,
                     edge_index    = state.edge_index,
-                    frame         = frame,
                     gradient      = state.gradient,
                     heterogeneity = state.heterogeneity,
                     position      = state.position,

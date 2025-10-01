@@ -39,11 +39,7 @@ class BaseMetric(MeanMetric):
        - BaseMetric.update() calls evaluate() and passes result to MeanMetric
        - Examples: FiedlerValueMetric, SusceptibilityMetric
 
-    2. Conditional metrics with zero defaults: Override evaluate() returning Tensor
-       - Returns 0 when conditions not met (0 is semantically meaningful)
-       - Example: PerturbationResponseMetric (0 = no propagation)
-
-    3. Conditional metrics without meaningful defaults: Override update() directly
+    2. Conditional metrics without meaningful defaults: Override update() directly
        - Skip super().update() when computation impossible or invalid
        - Example: ScaleFreeCorrelationMetric (no value when fitting fails)
     """
@@ -101,31 +97,35 @@ class BaseMetric(MeanMetric):
         Returns:
             Tuple of reshaped tensors in requested order, excluding None values
         """
-        batch_id  = id(batch)
-        B, N      = batch.num_graphs, self.agent_count
-        cache     = BaseMetric._reshape_cache
-        corr      = lambda x: th.bmm(d := x - x.mean(1, keepdim=True), d.mT)
-        reshape   = lambda feat: self._reshape_features(batch, feat)[0]
-        spins     = lambda: th.nn.functional.normalize(reshape('velocity'), dim=-1)
-        triu      = lambda m: m[:, (t := th.triu_indices(N, N, 1))[0], t[1]]
-        computed  = {
+        b_id    = id(batch)
+        B, E, N = batch.num_graphs, batch.edge_index, self.agent_count
+        cache   = BaseMetric._reshape_cache
+        adj     = lambda: to_dense_adj(E, batch.batch, max_num_nodes=N)
+        corr    = lambda x: th.bmm(d := x - x.mean(1, keepdim=True), d.mT)
+        reshape = lambda feat: self._reshape_features(batch, feat)[0]
+        spins   = lambda: th.nn.functional.normalize(reshape('velocity'), dim=-1)
+        triu    = lambda m: m[:, (t := th.triu_indices(N, N, 1))[0], t[1]]
+
+        computed = {
+            'adjacency'      : lambda: ((A := adj()) + A.mT).sign(),
             'dist_triu'      : lambda: triu(reshape('distances')),
             'spin_corr_triu' : lambda: triu(corr(spins())),
             'spin_mean'      : lambda: spins().mean(dim=1, keepdim=True),
             'spins'          : spins,
             'spins_2d'       : lambda: spins()[..., :2],
             'vel_corr_triu'  : lambda: triu(corr(reshape('velocity'))),
+            'vel_mag'        : lambda: reshape('velocity').norm(dim=-1),
         }
 
         get_or_compute = lambda feat: (
-            cache[(batch_id, feat)] if (batch_id, feat) in cache
+            cache[(b_id, feat)] if (b_id, feat) in cache
             else
                 (v := (
                     computed[feat]()                if feat in computed
                     else batch[feat].view(B, N, -1) if feat in batch
                     else None
                 ),
-                cache.update({(batch_id, feat): v}), v)[2]
+                cache.update({(b_id, feat): v}), v)[2]
         )
 
         return tuple(
@@ -198,6 +198,64 @@ class Acceleration(BaseMetric):
         return batch.action.norm(dim=-1).mean()
 
 
+class ClusteringCoefficient(BaseMetric):
+    """
+    Measure local neighborhood cohesion via clustering coefficient.
+
+    Quantifies the degree to which nodes cluster together by computing the
+    ratio of closed triangles to possible triangles in each node's neighborhood.
+    The clustering coefficient C ranges from 0 to 1:
+
+        C = (3 × number of triangles) / (number of connected triples)
+
+    Higher values (C → 1) indicate stable, cohesive local neighborhoods where
+    an agent's neighbors are also connected to each other. Lower values (C → 0)
+    suggest sparse or reconfiguring topologies typical of dynamic maneuvers.
+
+    This instantaneous metric captures topological stability without requiring
+    temporal comparisons, making it suitable for shuffled training data.
+
+    Expected ranges:
+        - Stable cruising    : C ∈ [0.6, 1.0]
+        - Active maneuvering : C ∈ [0.3, 0.6]
+        - Sparse/fragmented  : C ∈ [0.0, 0.3]
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute average clustering coefficient across all graphs.
+
+        Uses batched dense adjacency matrices for vectorized triangle counting.
+        For each node, computes the fraction of its neighbors that are also
+        connected to each other, then averages across all nodes and graphs.
+
+        The computation follows:
+            1. Convert edge_index to symmetrized dense adjacency [B, N, N]
+            2. Binarize to {0, 1} since symmetrization can create values of 2
+            3. Count triangles via A ⊙ A² where ⊙ is element-wise product
+            4. Compute C_i = triangles_i / (k_i * (k_i - 1)) for degree k_i
+
+        Args:
+            batch: PyG Batch containing edge_index [2, E] and batch assignment
+
+        Returns:
+            Mean clustering coefficient as scalar tensor
+        """
+        A, = self._reshape_features(batch, 'adjacency')
+
+        degree         = A.sum(dim=2)
+        triangles      = (A @ A * A).sum(dim=2)
+        possible_pairs = degree * (degree - 1)
+
+        valid_mask = possible_pairs > 0
+        clustering = th.zeros_like(degree, dtype=th.float)
+        clustering[valid_mask] = (
+            triangles[valid_mask] / possible_pairs[valid_mask].float()
+        )
+
+        return clustering.mean()
+
+
 class FiedlerValue(BaseMetric):
     """
     Compute Fiedler value λ₂ using adaptive Lanczos iteration.
@@ -232,24 +290,14 @@ class FiedlerValue(BaseMetric):
         encode graph connectivity properties, with λ₂ (Fiedler value) measuring
         algebraic connectivity.
 
-        Symmetrization ensures undirected edges and binarization removes edge
-        weights, critical for consistent Fiedler value computation.
-
         Args:
             batch: PyG Batch containing edge_index and batch assignment
 
         Returns:
             Laplacian matrices [B, N, N] for each graph in the batch
         """
-        A = (
-            adj := to_dense_adj(
-                batch         = batch.batch,
-                edge_index    = batch.edge_index,
-                max_num_nodes = self.agent_count
-                )
-        ) + adj.mT
-
-        return th.diag_embed(A.sign_().sum(dim=-1)) - A
+        A, = self._reshape_features(batch, 'adjacency')
+        return th.diag_embed(A.sum(dim=-1)) - A
 
     def _compute_fiedler(
         self,
@@ -519,93 +567,6 @@ class MaxEntropyEnergy(BaseMetric):
         ).sum(dim=(1, 2)) * 2
 
 
-class NeighborStability(BaseMetric):
-    """
-    Quantify topological stability of the communication graph.
-
-    Measures the Jaccard distance between consecutive graph states to
-    track neighborhood relationship changes over time. The metric computes:
-
-        Δ_topo = 1 - J(E_t, E_{t-1}) = |E_t ∆ E_{t-1}| / |E_t ∪ E_{t-1}|
-
-    where E_t is the edge set at time t and ∆ denotes symmetric difference.
-
-    Lower values (Δ_topo → 0) indicate stable flocking structure with
-    persistent neighborhoods, while higher values (Δ_topo → 1) suggest
-    rapid reconfiguration typical of threat evasion or murmuration waves.
-
-    Expected ranges:
-        - Cruising flight  : Δ_topo ∈ [0.0, 0.1]
-        - Turning maneuver : Δ_topo ∈ [0.1, 0.3]
-        - Threat response  : Δ_topo ∈ [0.3, 0.6]
-        - Murmuration      : Δ_topo ∈ [0.4, 0.8]
-    """
-
-    def __init__(self, **kwargs):
-        """
-        Initialize neighbor stability metric.
-
-        Tracks edge set evolution via symmetric adjacency matrices to quantify
-        topological changes in the flocking graph over time.
-        """
-        super().__init__(**kwargs)
-        self.add_state(
-            default = th.zeros(self.agent_count, self.agent_count, dtype=th.bool),
-            name    = "last_adjacency"
-        )
-
-    def evaluate(self, batch: FlockBatch) -> Tensor:
-        """
-        Measure topological stability via edge set evolution.
-
-        Tracks how rapidly neighborhoods reconfigure, distinguishing stable
-        cruising (persistent edges) from dynamic maneuvers (edge churn).
-        The Jaccard distance quantifies this topological change:
-
-            Δ_topo = 1 - |E_t ∩ E_{t-1}| / |E_t ∪ E_{t-1}|
-
-        where:
-            - E_t : Edge set at time t (undirected)
-            - |·| : Cardinality of edge set
-            - Δ_topo ∈ [0, 1] : 0 = identical topology, 1 = disjoint
-
-        Args:
-            batch: PyG Batch containing edge_index [2, E] in COO format
-
-        Returns:
-            Jaccard distance as scalar tensor
-        """
-        adjacency = th.zeros(
-            self.agent_count * self.agent_count,
-            device = batch.edge_index.device,
-            dtype  = th.bool
-        )
-
-        flat_indices = th.cat([
-            batch.edge_index[0] * self.agent_count + batch.edge_index[1],
-            batch.edge_index[1] * self.agent_count + batch.edge_index[0]
-        ])
-        adjacency[flat_indices] = True
-        adjacency = adjacency.view(self.agent_count, self.agent_count)
-        triu_idx  = th.triu_indices(
-            col    = self.agent_count,
-            device = batch.edge_index.device,
-            offset = 1,
-            row    = self.agent_count
-        )
-
-        current_edges       = adjacency[triu_idx[0], triu_idx[1]]
-        last_edges          = self.last_adjacency[triu_idx[0], triu_idx[1]]
-        self.last_adjacency = adjacency
-        intersection        = (current_edges & last_edges).sum()
-        union               = (current_edges | last_edges).sum()
-
-        return (
-            1.0 - intersection.float() / union.float()
-            if union > 0 else th.tensor(0.0, device=batch.edge_index.device)
-        )
-
-
 class NoiseHeterogeneity(BaseMetric):
     """
     Monitor heterogeneity variance to ensure critical state maintenance.
@@ -737,72 +698,6 @@ class OrientationWave(BaseMetric):
         ).masked_fill(~mask, 0)
 
         return gradients.sum(dim=(1, 2)).mean(dim=0, keepdim=True)
-
-
-class PerturbationResponse(BaseMetric):
-    """
-    Quantify collective response to thermal perturbations χ_thermal.
-
-    Measures information propagation efficiency by tracking velocity response
-    amplification from threatened to safe agents:
-
-        χ_thermal = ⟨|Δ𝐯_safe|⟩ / ⟨|Δ𝐯_threat|⟩
-
-    where Δ𝐯 = 𝐯(t) - 𝐯(t-Δt) represents velocity changes between frames.
-
-    This susceptibility metric quantifies the flock's ability to amplify and
-    propagate threat information through the interaction network, critical
-    for collective evasion maneuvers.
-
-    Expected response ratios:
-        - No propagation       : χ ∈ [0.0, 0.1]
-        - Weak coupling        : χ ∈ [0.1, 0.3]
-        - Critical regime      : χ ∈ [0.3, 0.7]
-        - Strong amplification : χ ∈ [0.7, 1.5]
-    """
-
-    def __init__(self, **kwargs):
-        """
-        Initialize perturbation response metric.
-
-        Stores last velocity for computing response ratios.
-        """
-        super().__init__(**kwargs)
-        self.add_state("last_velocity", th.empty(0))
-        self.add_state("zero_response", th.tensor(0.0))
-
-    def evaluate(self, batch: FlockBatch) -> Tensor:
-        """
-        Compute threat response measurement.
-
-        Measures information propagation efficiency by tracking velocity response
-        amplification from threatened to safe agents. Returns 0 when no propagation.
-
-        Args:
-            batch: PyG Batch with velocity [B*N, 3] and temperature [B*N, 1]
-
-        Returns:
-            Response ratio as scalar tensor, 0 if no threat propagation
-        """
-        response_ratio = th.tensor(0.0, device=batch.velocity.device)
-
-        if (
-            self.last_velocity is not None
-            and batch.velocity.shape == self.last_velocity.shape
-            and (mask := batch.temperature.squeeze(-1) > self.max_temperature).any()
-            and (~mask).any()
-        ):
-            vel_changes     = (batch.velocity - self.last_velocity).norm(dim=-1)
-            threat_response = vel_changes[mask].mean().unsqueeze(0)
-
-            if (threat_response > 1e-3).any():
-                response_ratio = (
-                    vel_changes[~mask].mean().unsqueeze(0) /
-                    threat_response
-                )
-
-        self.last_velocity = batch.velocity.detach().clone()
-        return response_ratio
 
 
 class R2(Metric):
@@ -1229,6 +1124,59 @@ class Temperature(BaseMetric):
         return batch.temperature.mean()
 
 
+class ThermalReactivity(BaseMetric):
+    """
+    Measure collective thermal response via velocity-temperature correlation.
+
+    Quantifies how agent velocity magnitudes spatially correlate with local
+    temperature, capturing the flock's instantaneous responsiveness to thermal
+    threats. The Pearson correlation coefficient ρ ranges from -1 to 1:
+
+        ρ(|v|, T) = Cov(|v|, T) / (σ_|v| · σ_T)
+
+    Strong negative correlation (ρ → -1) indicates agents actively flee hot zones,
+    demonstrating collective threat response. Weak or positive correlation suggests
+    thermal threats are being ignored or approached.
+
+    This instantaneous metric provides a snapshot of threat responsiveness without
+    requiring temporal comparisons, making it suitable for shuffled training data.
+
+    Expected ranges:
+        - Strong evasion    : ρ ∈ [-1.0, -0.5]
+        - Moderate response : ρ ∈ [-0.5, -0.2]
+        - Weak response     : ρ ∈ [-0.2,  0.2]
+        - Approaching heat  : ρ ∈ [ 0.2,  1.0]
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute Pearson correlation between velocity magnitude and temperature.
+
+        Uses cached velocity magnitude for efficient computation. Calculates
+        Pearson correlation using the standard formula:
+
+            ρ = Cov(X, Y) / (σ_X · σ_Y)
+
+        Args:
+            batch: PyG Batch with velocity [B*N, 3] and temperature [B*N, 1]
+
+        Returns:
+            Mean correlation coefficient as scalar tensor
+        """
+        vel_mag,      = self._reshape_features(batch, 'vel_mag')
+        temperature,  = self._reshape_features(batch, 'temperature')
+        vel_centered  = vel_mag - vel_mag.mean(dim=1, keepdim=True)
+        temp_centered = (
+            (temp := temperature.squeeze(-1))
+            - temp.mean(dim=1, keepdim=True)
+        )
+
+        return (
+            (vel_centered * temp_centered).mean(dim=1) /
+            (vel_mag.std(dim=1) * temp.std(dim=1) + 1e-8)
+        ).mean()
+
+
 class Velocity(BaseMetric):
     """
     Track average velocity magnitude across the flock.
@@ -1247,13 +1195,17 @@ class Velocity(BaseMetric):
         """
         Compute mean velocity magnitude.
 
+        Uses cached velocity magnitude for efficiency when computed alongside
+        other metrics like ThermalReactivity.
+
         Args:
             batch: PyG Batch containing velocity tensor [B*N, 3]
 
         Returns:
             Mean velocity magnitude as scalar tensor
         """
-        return batch.velocity.norm(dim=-1).mean()
+        vel_mag, = self._reshape_features(batch, 'vel_mag')
+        return vel_mag.mean()
 
 
 class MetricsFactory:
@@ -1308,19 +1260,19 @@ class MetricsFactory:
         return MetricCollection(
             metrics = {
                 "acceleration"           : make(Acceleration),
+                "clustering_coefficient" : make(ClusteringCoefficient),
                 "fiedler_value"          : make(FiedlerValue),
                 "max_entropy_energy"     : make(MaxEntropyEnergy),
                 "mae"                    : make(MAE),
-                "neighbor_stability"     : make(NeighborStability),
                 "noise_heterogeneity"    : make(NoiseHeterogeneity),
                 "orientation_coherence"  : make(OrientationCoherence),
                 "orientation_wave"       : make(OrientationWave),
-                "perturbation_response"  : make(PerturbationResponse),
                 "r2"                     : make(R2),
                 "rmse"                   : make(RMSE),
                 "scale_free_correlation" : make(ScaleFreeCorrelation),
                 "susceptibility"         : make(Susceptibility),
                 "temperature"            : make(Temperature),
+                "thermal_reactivity"     : make(ThermalReactivity),
                 "velocity"               : make(Velocity),
             },
             prefix = "training/"

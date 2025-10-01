@@ -491,31 +491,33 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 **Imitation Learning Metrics:**
 
-- **MAE/RMSE/R²**: Measure how accurately the policy reproduces expert actions, with MAE < 1.0 m/s² indicating excellent imitation
-
 - **Acceleration**: Tracks average control effort to ensure physically plausible forces
+
+- **MAE/RMSE/R²**: Measure how accurately the policy reproduces expert actions, with MAE < 1.0 m/s² indicating excellent imitation
 
 - **Velocity**: Monitors mean flight speed remains realistic (9-12 m/s for starlings [^21])
 
 **Emergent Behavior Metrics:**
 
-- **Susceptibility $`\chi`$**: Measures collective responsiveness through integrated velocity correlations. In critical systems, $`\chi`$ scales with flock size $`N`$ without saturation, enabling rapid information transfer [^10] [^9].
+- **Effective Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the maximum entropy energy function with uniform coupling, where behavioral variance from heterogeneous noise drives phase transitions.
 
 - **Fiedler Value $`\lambda_2`$**: Quantifies algebraic connectivity via the second smallest eigenvalue of the graph Laplacian, computed efficiently using adaptive Lanczos iteration. Positive values ensure flock cohesion.
 
-- **Effective Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the maximum entropy energy function with uniform coupling, where behavioral variance from heterogeneous noise drives phase transitions.
+- **Noise Heterogeneity**: Monitors variance in individual noise amplitudes to maintain critical dynamics
 
 - **Scale-Free Correlation**: Verifies velocity correlations follow the power law $`C(r) \sim r^{-1/3}`$ characteristic of natural murmurations through binned correlation analysis.
 
+- **Susceptibility $`\chi`$**: Measures collective responsiveness through integrated velocity correlations. In critical systems, $`\chi`$ scales with flock size $`N`$ without saturation, enabling rapid information transfer [^10] [^9].
+
 **Dynamic Response Metrics:**
+
+- **Clustering Coefficient**: Measures local neighborhood cohesion via ratio of closed triangles to possible triangles
 
 - **Orientation Coherence**: Quantifies alignment via polarization order parameter $`\Phi = |\sum_i \hat{\mathbf{v}}_i|/N`$
 
 - **Orientation Wave**: Detects density waves by measuring spatial gradients in heading angles (0.15-0.40 rad/m during murmurations)
 
-- **Neighbor Stability**: Tracks topological changes via Jaccard distance of edge sets between frames
-
-- **Perturbation Response**: Measures threat information propagation across the heterogeneous flock
+- **Thermal Reactivity**: Quantifies collective threat response via velocity-temperature spatial correlation
 
 **Safety Metrics:**
 
