@@ -72,7 +72,7 @@ class ExpertDataset(InMemoryDataset):
         self.ui                        = ui
         th.serialization.add_safe_globals([Data])
 
-        super().__init__("data")
+        super().__init__("data", transform=None, pre_transform=None)
         self.load(self.processed_paths[0])
         self._make_picklable()
 

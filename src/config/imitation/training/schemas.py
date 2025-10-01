@@ -58,13 +58,6 @@ class CheckpointModel(BaseModel, extra="forbid"):
             "recovery from interruptions and model comparison across runs."
         )
     )
-    enabled: bool = Field(
-        default     = False,
-        description = (
-            "Enable or disable checkpoint saving during training. When disabled, "
-            "no checkpoints will be saved regardless of other checkpoint settings."
-        )
-    )
     every_n_train_steps: PositiveInt = Field(
         default     = 25_000,
         description = (
@@ -73,14 +66,14 @@ class CheckpointModel(BaseModel, extra="forbid"):
         )
     )
     save_last: bool = Field(
-        default     = True,
+        default     = False,
         description = (
             "Always save the final model checkpoint at training completion regardless "
             "of whether it achieved the best validation metric."
         )
     )
     save_top_k: int = Field(
-        default     = 3,
+        default     = 0,
         description = (
             "Number of best model checkpoints to keep based on monitored metric. "
             "Use -1 to keep all checkpoints, 0 to disable best model saving."
