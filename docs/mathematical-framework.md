@@ -367,7 +367,7 @@ with timeframe $`\Delta t = 0.1`$ s chosen to balance computational efficiency w
 
 ## Summary
 
-The unified control law achieves biological murmuration dynamics through orchestrated interactions between multiple components. Heterogeneous noise amplitudes maintain criticality. Topological interactions enable scale-free correlations. Self-propulsion with wind coupling and individualized noise creates realistic flight dynamics. Environmental responses translate thermal threats into coordinated evasion. Thermal penalties enforce safety through smooth gradient corrections.
+The unified control law achieves biological murmuration dynamics through orchestrated interactions between multiple components. Heterogeneous noise amplitudes maintain the system at criticality, while topological interactions enable scale-free correlations across the flock. Self-propulsion with individualized noise creates realistic flight dynamics that match empirical observations. Environmental responses translate thermal threats into coordinated evasion maneuvers, with thermal penalties ensuring safety through smooth gradient corrections.
 
 The resulting system exhibits properties matching empirical observations:
 
