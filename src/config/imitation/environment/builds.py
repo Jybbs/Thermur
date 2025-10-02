@@ -32,7 +32,7 @@ ENVIRONMENT_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "trajectory_generator": builds(
         TrajectoryGenerator,
         agent_count             = "${controller.mmm.agent_count}",
-        communication_range     = "${controller.mmm.communication_range}",
+        initial_spacing         = "${controller.mmm.initial_spacing}",
         k_neighbors             = "${controller.mmm.k_neighbors}",
         physics                 = "${environment.physics}",
         wrf                     = "${_system.wrf}",

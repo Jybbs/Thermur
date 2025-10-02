@@ -30,14 +30,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Minimum of 8 ensures k-nearest neighbor connectivity with k=7."
         )
     )
-    communication_range: PositiveFloat = Field(
-        default     = 50.0,
-        description = (
-            "Metric interaction radius R_comm in meters defining the spatial scale of "
-            "the flock. While murmuration control uses topological k-NN, this radius "
-            "sets initial agent spacing and safety boundaries where ||𝐱_i - 𝐱_j|| ≤ R_comm."
-        )
-    )
     coupling_decay: PositiveFloat = Field(
         default     = 0.48,
         description = (
@@ -77,6 +69,14 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "with critical exponents β = 0.69, γ = 1.7, ν = 1.56. This heterogeneity "
             "naturally generates the behavioral variance necessary for scale-free "
             "correlations and murmuration patterns without requiring explicit anti-alignment."
+        )
+    )
+    initial_spacing: PositiveFloat = Field(
+        default     = 1.0,
+        ge          = 0.3,
+        description = (
+            "Spacing between agents in meters when initializing trajectory positions. "
+            "Scales the Fibonacci lattice arrangement used for starting configurations."
         )
     )
     j_base: PositiveFloat = Field(
@@ -133,15 +133,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
         description = (
             "Multiplicative factor λ_thermal adjusting thermal avoidance strength "
             "relative to murmuration forces, balancing safety versus cohesive behavior."
-        )
-    )
-    wind_coupling: PositiveFloat = Field(
-        default     = 0.45,
-        description = (
-            "Coupling coefficient for environmental wind field incorporation into "
-            "target velocity. Value of 0.45 means agents adjust their heading to include "
-            "45 percent of the local wind velocity, representing partial adaptation to wind "
-            "conditions while maintaining intended flight direction."
         )
     )
 

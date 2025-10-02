@@ -30,7 +30,7 @@ class TrajectoryGenerator:
     def __init__(
         self,
         agent_count         : int,
-        communication_range : float,
+        initial_spacing     : float,
         k_neighbors         : int,
         physics             : PhysicsModel,
         wrf                 : WRFLoader,
@@ -40,7 +40,7 @@ class TrajectoryGenerator:
 
         Args:
             agent_count         : Number of agents in the flock
-            communication_range : Metric interaction radius for initial spacing
+            initial_spacing     : Spacing between agents in initial positions
             k_neighbors         : Number of topological neighbors for connectivity
             physics             : Physics simulation parameters
             wrf                 : WRF data source for environmental queries
@@ -48,7 +48,7 @@ class TrajectoryGenerator:
         self.agent_count         = agent_count
         self.bounds_max          = th.as_tensor(physics.bounds_max)
         self.bounds_min          = th.as_tensor(physics.bounds_min)
-        self.communication_range = communication_range
+        self.initial_spacing     = initial_spacing
         self.frame               = 0
         self.k_neighbors         = k_neighbors
         self.physics             = physics
@@ -103,9 +103,8 @@ class TrajectoryGenerator:
 
         speed      = velocities.norm(dim=-1, keepdim=True).clamp(min=1e-6)
         drag_force = -self.physics.drag_coefficient * velocities * speed
-        wind_force = self.physics.wind_coupling_coefficient * (wind - velocities)
 
-        return actions + gravity + drag_force + wind_force
+        return actions + gravity + drag_force
 
     def _fibonacci_lattice(self) -> Tensor:
         """
@@ -211,10 +210,7 @@ class TrajectoryGenerator:
         self.wrf.snapshot_idx = snapshot_idx
 
         positions = self._fibonacci_lattice()
-        positions *= (
-            self.communication_range *
-            self.physics.initial_spacing_factor
-        )
+        positions *= self.initial_spacing
         positions[:, 2] += self.physics.initial_altitude
 
         self.frame = 0

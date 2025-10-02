@@ -32,7 +32,7 @@ where:
 
 - $`\nabla T_i \in \mathbb{R}^3`$ — Temperature gradient [K/m]
 
-- $`\mathbf{w}_i \in \mathbb{R}^3`$ — Local wind velocity [m/s]
+- $`\mathbf{w}_i \in \mathbb{R}^3`$ — Local wind velocity from WRF data [m/s]
 
 ### Dynamic Graph Topology
 
@@ -62,7 +62,7 @@ where the nominal control:
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{-\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \alpha_w \mathbf{w}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Marginal speed confinement}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{-\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Marginal speed confinement}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -160,15 +160,15 @@ This force exhibits asymmetric behavior around $`v_0`$. Near the cruising speed 
 
 ### Complete Self-Propulsion Force
 
-The full self-propulsion force combines speed regulation with environmental coupling and stochastic noise:
+The full self-propulsion force combines speed regulation with stochastic noise:
 
 $`
 \hspace{0.5cm} \displaystyle
-\mathbf{F}_{\text{prop}} = -\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \alpha_w \mathbf{w}_i + \eta_i(t) \boldsymbol{\xi}_i
+\mathbf{F}_{\text{prop}} = -\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \eta_i(t) \boldsymbol{\xi}_i
 `$
 <br>
 
-Each agent maintains a cruising speed of $`v_0 = 11.1`$ m/s [^21] through the quartic force, while incorporating environmental wind $`\mathbf{w}_i`$ with coupling $`\alpha_w = 0.3`$. In practice, numerical instability arises from the $`v_0^6 \approx 1.88 \times 10^6`$ term in the denominator, necessitating a dimensionless formulation for computational stability. By introducing the normalized speed $`s_i = |\mathbf{v}_i|/v_0`$, we can express the force as
+Each agent maintains a cruising speed of $`v_0 = 11.1`$ m/s [^21] through the quartic force. In practice, numerical instability arises from the $`v_0^6 \approx 1.88 \times 10^6`$ term in the denominator, necessitating a dimensionless formulation for computational stability. By introducing the normalized speed $`s_i = |\mathbf{v}_i|/v_0`$, we can express the force as
 
 $`
 \hspace{0.5cm} \displaystyle

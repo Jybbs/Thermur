@@ -100,13 +100,6 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "at this height above ground level to simulate aerial murmuration."
         )
     )
-    initial_spacing_factor: PositiveFloat = Field(
-        default     = 0.1,
-        description = (
-            "Multiplicative factor for initial Fibonacci lattice spacing relative to "
-            "communication range, ensuring strong initial k-NN connectivity."
-        )
-    )
     max_speed: PositiveFloat = Field(
         default     = 20.0,
         description = (
@@ -119,13 +112,5 @@ class PhysicsModel(BaseModel, extra="forbid"):
         description = (
             "Integration timeframe Δt in seconds for Euler physics integration, "
             "balancing accuracy with real-time computational constraints."
-        )
-    )
-    wind_coupling_coefficient: NonNegativeFloat = Field(
-        default     = 0.05,
-        description = (
-            "Wind coupling coefficient Cw for aerodynamic force from relative wind, "
-            "where F_wind = Cw * (v_wind - v_agent). Reduced from drag coefficient "
-            "to model partial sheltering effects within the flock formation."
         )
     )

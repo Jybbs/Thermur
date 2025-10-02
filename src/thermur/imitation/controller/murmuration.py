@@ -337,7 +337,6 @@ class MurmurationController(th.nn.Module):
         flock.self_propulsion = (
             heading * speed_force
             + noise_direction * flock.heterogeneity.unsqueeze(-1)
-            + flock.wind      * self.mmm.wind_coupling
         )
 
     def _compute_threats(self, flock: Data):
