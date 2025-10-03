@@ -96,7 +96,7 @@ class PhysicsModel(BaseModel, extra="forbid"):
         )
     )
     drag_coefficient: NonNegativeFloat = Field(
-        default     = 0.05,
+        default     = 0.075,
         description = (
             "Dimensionless drag coefficient C_d for aerodynamic force calculation. "
             "Mid-range value for birds in cruising flight per aerodynamic literature."

@@ -31,34 +31,34 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     coupling_decay: PositiveFloat = Field(
-        default     = 0.48,
+        default     = 0.75,
         description = (
             "Exponential decay rate λ for topological interaction strength "
-            "J_ij = J_0 exp(-d_ij/λ). Value of 0.48 ensures influence is primarily "
-            "limited to k-nearest topological neighbors, creating local interactions "
-            "that allow heterogeneous patterns to emerge rather than global synchronization."
+            "J_ij = J_0 exp(-d_ij/λ). Value of 0.75 extends influence beyond "
+            "immediate neighbors while maintaining local interaction structure "
+            "that allows heterogeneous patterns to emerge."
         )
     )
     density_bandwidth: PositiveFloat = Field(
-        default     = 8.6,
+        default     = 10.0,
         description = (
             "Spatial scale σ for Gaussian kernel density estimation in meters, "
             "determining the effective radius of local density calculations."
         )
     )
     density_diffusion: PositiveFloat = Field(
-        default     = 0.435,
+        default     = 0.5,
         description = (
             "Diffusion coefficient D in density wave equation ∂ρ/∂t + ∇·(ρv) = D∇²ρ, "
             "controlling how density perturbations spread through the flock."
         )
     )
     heterogeneity_mean: PositiveFloat = Field(
-        default     = 0.33,
+        default     = 0.7,
         description = (
             "Mean μ of heterogeneous noise distribution η_i ~ N(μ, σ). "
-            "Value of 0.33 optimizes the flock behavior at the order-disorder "
-            "transition necessary for murmuration patterns and scale-free correlations."
+            "Value of 0.7 creates stronger heterogeneity that drives critical "
+            "dynamics for murmuration patterns and scale-free correlations."
         )
     )
     heterogeneity_std: PositiveFloat = Field(
@@ -72,7 +72,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     initial_spacing: PositiveFloat = Field(
-        default     = 1.0,
+        default     = 0.75,
         ge          = 0.3,
         description = (
             "Spacing between agents in meters when initializing trajectory positions. "
@@ -80,12 +80,12 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     j_base: PositiveFloat = Field(
-        default     = 1.6,
+        default     = 2.5,
         description = (
             "Base coupling strength J_0 in maximum entropy formulation controlling "
-            "velocity alignment between neighbors. Value of 1.6 balances cohesion "
-            "with flexibility, allowing heterogeneous noise to create the variance "
-            "needed for critical state dynamics while maintaining structural integrity."
+            "velocity alignment between neighbors. Value of 2.5 provides moderate "
+            "coupling strength, balancing cohesion with flexibility to allow "
+            "heterogeneous noise to create variance for critical state dynamics."
         )
     )
     k_neighbors: PositiveInt = Field(
@@ -96,7 +96,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     marginal_amplitude: PositiveFloat = Field(
-        default     = 0.35,
+        default     = 1.95,
         description = (
             "Amplitude λ for marginal speed confinement quartic potential. "
             "From Cavagna et al. (2022), controls individual speed regulation via "
@@ -121,7 +121,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     separation_strength: PositiveFloat = Field(
-        default     = 0.17,
+        default     = 0.45,
         description = (
             "Weight coefficient for short-range separation forces that prevent "
             "collisions between agents when metric distance < 3·ε_dist, implementing "
@@ -129,7 +129,7 @@ class MurmurationModel(BaseModel, extra="forbid"):
         )
     )
     temperature_scaling: PositiveFloat = Field(
-        default     = 0.375,
+        default     = 0.15,
         description = (
             "Multiplicative factor λ_thermal adjusting thermal avoidance strength "
             "relative to murmuration forces, balancing safety versus cohesive behavior."

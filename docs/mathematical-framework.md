@@ -96,7 +96,7 @@ J_{ij} = J_0 \exp(-d_{ij}/\lambda)
 `$
 <br>
 
-where the topological distance $`d_{ij}`$ counts the minimum number of neighbor-to-neighbor hops between agents, and $`J_0 = 1.6`$ is the optimized uniform baseline coupling strength. This uniform coupling ensures that behavioral diversity emerges from heterogeneous noise amplitudes rather than coupling heterogeneity.
+where the topological distance $`d_{ij}`$ counts the minimum number of neighbor-to-neighbor hops between agents, and $`J_0 = 2.5`$ is the optimized uniform baseline coupling strength. This uniform coupling ensures that behavioral diversity emerges from heterogeneous noise amplitudes rather than coupling heterogeneity.
 
 The alignment force emerges from the energy gradient:
 
@@ -176,7 +176,7 @@ Individual noise amplitudes vary temporally, drawn from:
 
 $`
 \hspace{0.5cm} \displaystyle
-\eta_i(t) \sim \mathcal{N}(0.33, 0.20)
+\eta_i(t) \sim \mathcal{N}(0.7, 0.20)
 `$
 <br>
 
@@ -317,7 +317,7 @@ $`
 `$  
 <br>
 
-The cubic denominator creates a force that grows rapidly as agents approach, effectively creating a "hard sphere" repulsion. The threshold distance $`3\epsilon`$ with $`\epsilon = 0.1`$ m ensures separation forces activate before actual contact, while the weight $`w_{\text{sep}} = 1.5`$ balances collision avoidance against other behavioral imperatives.
+The cubic denominator creates a force that grows rapidly as agents approach, effectively creating a "hard sphere" repulsion. The threshold distance $`3\epsilon`$ with $`\epsilon = 0.1`$ m ensures separation forces activate before actual contact, while the weight $`w_{\text{sep}} = 0.45`$ balances collision avoidance against other behavioral imperatives.
 
 ## Thermal Safety Through Soft Penalties
 
@@ -420,7 +420,7 @@ $`
 `$  
 <br>
 
-with timeframe $`\Delta t = 0.1`$ s chosen to balance computational efficiency with numerical stability.
+with timeframe $`\Delta t = 0.05`$ s chosen to balance computational efficiency with numerical stability.
 
 ## Summary
 
