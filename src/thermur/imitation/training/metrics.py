@@ -545,26 +545,35 @@ class MaxEntropyEnergy(BaseMetric):
         unique k-NN topology, following Ballerini et al. (2008) findings that
         starling flocks use topological rather than metric interactions.
 
+        The energy is calculated as the sum of pairwise couplings for each
+        agent, then averaged across agents within each batch, providing a
+        mean energy per agent that is independent of flock size.
+
         Args:
             batch: PyG Batch with edge_index and velocity tensors
 
         Returns:
-            Effective energy values as tensor
+            Mean energy per agent as scalar tensor
         """
-        spins = self._reshape_features(batch, "spins")[0]
-        hops  = self._compute_hops_per_graph(batch)
-
+        spins    = self._reshape_features(batch, "spins")[0]
+        hops     = self._compute_hops_per_graph(batch)
         coupling = th.where(
             hops.isfinite(),
             self.j_base * (-hops / self.coupling_decay).exp(),
             th.zeros_like(hops)
         )
 
-        return -(
+        pairwise_energies = -(
             coupling
             * th.bmm(spins, spins.mT)
             * self._get_triu_mask(spins.device)
-        ).sum(dim=(1, 2)) * 2
+        ) * 2
+
+        return (
+            pairwise_energies.sum(dim=-1)
+                .mean(dim=1, keepdim=True)
+                .mean(dim=0, keepdim=True)
+        )
 
 
 class NoiseHeterogeneity(BaseMetric):
@@ -707,8 +716,8 @@ class OrientationWave(BaseMetric):
 
         return (
             mean_grad_per_agent
-            .mean(dim=1, keepdim=True)
-            .mean(dim=0, keepdim=True)
+                .mean(dim=1, keepdim=True)
+                .mean(dim=0, keepdim=True)
         )
 
 
