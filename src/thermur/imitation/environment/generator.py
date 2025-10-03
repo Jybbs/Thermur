@@ -29,34 +29,34 @@ class TrajectoryGenerator:
 
     def __init__(
         self,
-        agent_count         : int,
-        initial_spacing     : float,
-        k_neighbors         : int,
-        physics             : PhysicsModel,
-        wrf                 : WRFLoader,
+        agent_count     : int,
+        initial_spacing : float,
+        k_neighbors     : int,
+        physics         : PhysicsModel,
+        wrf             : WRFLoader,
     ):
         """
         Initialize the trajectory generator.
 
         Args:
-            agent_count         : Number of agents in the flock
-            initial_spacing     : Spacing between agents in initial positions
-            k_neighbors         : Number of topological neighbors for connectivity
-            physics             : Physics simulation parameters
-            wrf                 : WRF data source for environmental queries
+            agent_count     : Number of agents in the flock
+            initial_spacing : Spacing between agents in initial positions
+            k_neighbors     : Number of topological neighbors for connectivity
+            physics         : Physics simulation parameters
+            wrf             : WRF data source for environmental queries
         """
-        self.agent_count         = agent_count
-        self.bounds_max          = th.as_tensor(physics.bounds_max)
-        self.bounds_min          = th.as_tensor(physics.bounds_min)
-        self.initial_spacing     = initial_spacing
-        self.frame               = 0
-        self.k_neighbors         = k_neighbors
-        self.physics             = physics
-        self.positions           = th.zeros(agent_count, 3)
-        self.time                = 0.0
-        self.velocities          = th.zeros(agent_count, 3)
-        self.velocity_rng        = th.Generator()
-        self.wrf                 = wrf
+        self.agent_count     = agent_count
+        self.bounds_max      = th.as_tensor(physics.bounds_max)
+        self.bounds_min      = th.as_tensor(physics.bounds_min)
+        self.initial_spacing = initial_spacing
+        self.frame           = 0
+        self.k_neighbors     = k_neighbors
+        self.physics         = physics
+        self.positions       = th.zeros(agent_count, 3)
+        self.time            = 0.0
+        self.velocities      = th.zeros(agent_count, 3)
+        self.velocity_rng    = th.Generator()
+        self.wrf             = wrf
 
     def _compute_edge_index(self, distances: Tensor) -> Tensor:
         """
@@ -82,7 +82,6 @@ class TrajectoryGenerator:
         self,
         actions    : Tensor,
         velocities : Tensor,
-        wind       : Tensor,
     ) -> Tensor:
         """
         Compute total acceleration from control and environmental forces.
@@ -93,7 +92,6 @@ class TrajectoryGenerator:
         Args:
             actions    : Control accelerations    [N, 3]
             velocities : Agent velocities         [N, 3]
-            wind       : Environmental wind field [N, 3]
 
         Returns:
             Total accelerations [N, 3]
@@ -247,11 +245,9 @@ class TrajectoryGenerator:
         Returns:
             Next state as PyG Data object
         """
-        wind         = self.wrf.query_wind(self.positions)
         acceleration = self._compute_forces(
             actions    = action,
             velocities = self.velocities,
-            wind       = wind
         )
 
         self.velocities = self._integrate_velocities(
@@ -279,5 +275,5 @@ class TrajectoryGenerator:
             position    = self.positions.clone(),
             temperature = temperature,
             velocity    = self.velocities.clone(),
-            wind        = wind
+            wind        = self.wrf.query_wind(self.positions)
         )

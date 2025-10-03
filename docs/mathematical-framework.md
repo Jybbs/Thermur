@@ -62,7 +62,7 @@ where the nominal control:
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{-\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Marginal speed confinement}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{8\lambda}{v_0^6}(v_0^2 - |\mathbf{v}_i|^2)^3\hat{\mathbf{v}}_i + \eta_i(t) \boldsymbol{\xi}_i}_{\text{Marginal speed confinement}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -148,35 +148,27 @@ V(\mathbf{v}_i) = \frac{\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^4
 
 The potential is marginal at the reference speed, meaning its second derivative vanishes at $`v_0`$. This mathematical property eliminates quadratic restoring forces that would otherwise destroy scale-free correlations, since a harmonic potential would create exponentially decaying correlations rather than the observed power-law behavior.
 
-The force on each agent emerges as the negative gradient:
+The complete self-propulsion force combines this potential gradient with stochastic noise [^16]:
 
 $`
 \hspace{0.5cm} \displaystyle
-\mathbf{F}_{\text{speed}} = -\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i
+\mathbf{F}_{\text{prop}} = \frac{8\lambda}{v_0^6}(v_0^2 - |\mathbf{v}_i|^2)^3\hat{\mathbf{v}}_i + \eta_i(t) \boldsymbol{\xi}_i
 `$
 <br>
 
-This force exhibits asymmetric behavior around $`v_0`$. Near the cruising speed where $`|\mathbf{v}_i| \approx v_0`$, the cubic term $(|\mathbf{v}_i|^2 - v_0^2)^3 \approx 0$ creates minimal resistance, allowing natural speed variations of ±2 m/s observed in starling flocks. For extreme deviations, the force grows as the seventh power of velocity, providing strong confinement within biomechanical limits.
+where $`\hat{\mathbf{v}}_i = \mathbf{v}_i/|\mathbf{v}_i|`$ is the heading direction. The force magnitude automatically has the correct sign from the $(v_0^2 - |\mathbf{v}_i|^2)^3$ term: when $`|\mathbf{v}_i| < v_0`$ the force accelerates the agent, and when $`|\mathbf{v}_i| > v_0`$ it decelerates.
 
-### Complete Self-Propulsion Force
-
-The full self-propulsion force combines speed regulation with stochastic noise:
-
-$`
-\hspace{0.5cm} \displaystyle
-\mathbf{F}_{\text{prop}} = -\frac{4\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^3\mathbf{v}_i + \eta_i(t) \boldsymbol{\xi}_i
-`$
-<br>
+This force exhibits asymmetric behavior around $`v_0`$. Near the cruising speed where $`|\mathbf{v}_i| \approx v_0`$, the cubic term $(v_0^2 - |\mathbf{v}_i|^2)^3 \approx 0$ creates minimal resistance, allowing natural speed variations of ±2 m/s observed in starling flocks. For extreme deviations, the force grows as the seventh power of velocity deviation, providing strong confinement within biomechanical limits.
 
 Each agent maintains a cruising speed of $`v_0 = 11.1`$ m/s [^21] through the quartic force. In practice, numerical instability arises from the $`v_0^6 \approx 1.88 \times 10^6`$ term in the denominator, necessitating a dimensionless formulation for computational stability. By introducing the normalized speed $`s_i = |\mathbf{v}_i|/v_0`$, we can express the force as
 
 $`
 \hspace{0.5cm} \displaystyle
-\mathbf{F}_{\text{speed}} = -4\lambda_\text{eff}(s_i^2 - 1)^3 s_i v_0 \hat{\mathbf{v}}_i
+\mathbf{F}_{\text{speed}} = 8\lambda(1 - s_i^2)^3 s_i v_0 \hat{\mathbf{v}}_i
 `$
 <br>
 
-wherein $`\lambda_\text{eff} = J_0 \cdot r_s`$ represents the effective confinement strength and $`\hat{\mathbf{v}}_i = \mathbf{v}_i/|\mathbf{v}_i|`$ denotes the velocity direction. This formulation preserves mathematical equivalence to the original while ensuring numerical stability, such that the speed regulation ratio $`r_s \in [0.01, 0.3]`$ balances individual regulation against collective alignment. When $`r_s < 0.1`$, collective forces dominate and speeds may drift, whereas values exceeding $`r_s > 0.2`$ strengthen individual speed control but reduce collective responsiveness. Stochastic fluctuations $`\eta_i(t) \boldsymbol{\xi}_i`$ with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ maintain the behavioral diversity described in the heterogeneous noise model below.
+wherein $`\lambda`$ represents the marginal amplitude parameter (independent of alignment coupling $`J_0`$). This formulation preserves mathematical equivalence to the original while ensuring numerical stability. Stochastic fluctuations $`\eta_i(t) \boldsymbol{\xi}_i`$ with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ maintain the behavioral diversity described in the heterogeneous noise model below.
 
 ### Heterogeneous Noise Model
 

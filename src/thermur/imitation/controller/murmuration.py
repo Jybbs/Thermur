@@ -276,7 +276,12 @@ class MurmurationController(th.nn.Module):
         individual speeds are regulated through potential V = (λ/v₀⁶)(|vᵢ|² - v₀²)⁴
         producing force:
 
-            Fᵢ = -4λ/v₀⁶ · (|vᵢ|² - v₀²)³ · vᵢ
+            Fᵢ = +8λ/v₀⁶ · (v₀² - vᵢ²)³ · v̂ᵢ
+
+        where v̂ᵢ = vᵢ/|vᵢ| is the heading direction. The force magnitude automatically
+        has the correct sign from the (v₀² - v²)³ term:
+        - When v < v₀: force > 0 (accelerates)
+        - When v > v₀: force < 0 (decelerates)
 
         This marginal confinement:
         - Weakly constrains small deviations (enables natural fluctuations)
@@ -316,12 +321,10 @@ class MurmurationController(th.nn.Module):
             th.where(is_stationary, random_heading, heading)
         )
 
-        speed_normalized = speed / self.mmm.self_propulsion_speed
-        deviation_cubed  = (speed_normalized ** 2 - 1) ** 3
-        lambda_effective = self.mmm.j_base * self.mmm.speed_regulation_ratio
-        speed_force      = (
-            -4 * lambda_effective * deviation_cubed *
-            speed_normalized * self.mmm.self_propulsion_speed
+        force_potential = (self.mmm.self_propulsion_speed ** 2 - speed ** 2) ** 3
+        speed_magnitude = (
+            8 * self.mmm.marginal_amplitude / (self.mmm.self_propulsion_speed ** 6)
+            * force_potential
         )
 
         self.noise_rng.manual_seed(flock.frame)
@@ -335,8 +338,8 @@ class MurmurationController(th.nn.Module):
         )
         flock.heterogeneity   = self._compute_heterogeneity(flock.frame)
         flock.self_propulsion = (
-            heading * speed_force
-            + noise_direction * flock.heterogeneity.unsqueeze(-1)
+            speed_magnitude * heading +
+            noise_direction * flock.heterogeneity.unsqueeze(-1)
         )
 
     def _compute_threats(self, flock: Data):

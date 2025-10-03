@@ -95,6 +95,15 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "empirical observations of 6-7 neighbors in real starling flocks."
         )
     )
+    marginal_amplitude: PositiveFloat = Field(
+        default     = 0.35,
+        description = (
+            "Amplitude λ for marginal speed confinement quartic potential. "
+            "From Cavagna et al. (2022), controls individual speed regulation via "
+            "V = (λ/v₀⁶)(|v|² - v₀²)⁴ producing F = -4λ/v₀⁶ · (|v|² - v₀²)³ · v. "
+            "Independent parameter with same physical dimensions as J_0."
+        )
+    )
     min_distance: PositiveFloat = Field(
         default     = 0.1,
         description = (
@@ -117,15 +126,6 @@ class MurmurationModel(BaseModel, extra="forbid"):
             "Weight coefficient for short-range separation forces that prevent "
             "collisions between agents when metric distance < 3·ε_dist, implementing "
             "F_sep = -w_sep · Σ (𝐱_j - 𝐱_i) / ||𝐱_j - 𝐱_i||³."
-        )
-    )
-    speed_regulation_ratio: PositiveFloat = Field(
-        default     = 0.22,
-        description = (
-            "Ratio λ/J controlling balance between individual speed regulation (λ) and "
-            "collective alignment (J) in the marginal speed confinement framework. "
-            "From Cavagna et al. (2022), this determines the quartic potential strength "
-            "λ = J × ratio for force F = -4λ/v₀⁶ · (s² - v₀²)³ · s."
         )
     )
     temperature_scaling: PositiveFloat = Field(
