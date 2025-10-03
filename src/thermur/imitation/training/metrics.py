@@ -676,6 +676,11 @@ class OrientationWave(BaseMetric):
         """
         Compute wave amplitude measurement.
 
+        Computes the mean local gradient of heading angles |dθ/dr|
+        averaged first over each agent's neighbors within radius R_wave,
+        then across all agents in the flock. This properly normalizes
+        the metric to be independent of neighbor count.
+
         Uses vectorized distance computations and masked operations for
         efficient gradient calculation on MPS/GPU.
 
@@ -683,7 +688,7 @@ class OrientationWave(BaseMetric):
             batch: PyG Batch with position and velocity [B*N, 3] flattened
 
         Returns:
-            Wave amplitude as scalar tensor
+            Wave amplitude as scalar tensor (rad/m)
         """
         velocities, distances = self._reshape_features(batch, "velocity", "distances")
         headings  = th.atan2(velocities[..., 1], velocities[..., 0])
@@ -697,7 +702,14 @@ class OrientationWave(BaseMetric):
             heading_diffs.abs() / distances.clamp_min(1e-3)
         ).masked_fill(~mask, 0)
 
-        return gradients.sum(dim=(1, 2)).mean(dim=0, keepdim=True)
+        valid_neighbors     = mask.sum(dim=-1).clamp_min(1)
+        mean_grad_per_agent = gradients.sum(dim=-1) / valid_neighbors
+
+        return (
+            mean_grad_per_agent
+            .mean(dim=1, keepdim=True)
+            .mean(dim=0, keepdim=True)
+        )
 
 
 class R2(Metric):
