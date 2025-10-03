@@ -1,18 +1,17 @@
 """
-Training algorithms for imitation learning.
+Offline imitation learning for flocking control.
 
-This package implements the behavioral cloning pipeline for training the GNN
-policy from expert demonstrations. The training process involves:
+This package provides expert demonstrations and training infrastructure for
+imitation learning of murmuration dynamics. The pipeline uses PyTorch Geometric
+for efficient graph-based learning from offline trajectories.
 
-1. Collecting trajectories using the murmuration controller
-2. Storing experiences in a replay buffer for sampling
-3. Minimizing the MSE loss between policy and expert actions
-4. Periodic evaluation and checkpointing
+Key components:
+- controller/  : Expert murmuration controller with topological interactions
+- environment/ : Trajectory generation and WRF environmental data loading
+- training/    : PyTorch Lightning modules for behavioral cloning
 
-The package is organized into:
-- controller/    : Murmuration controller with topological interactions
-- simulation/    : Environment and physics simulation with Euler integration
-- training/      : Training infrastructure, metrics, and PyTorch Lightning modules
-
-Import components directly from their respective submodules.
+The training process:
+1. Generate offline trajectories using the expert controller
+2. Train GNN policy via behavioral cloning on PyG Data objects
+3. Evaluate policy performance against expert demonstrations
 """

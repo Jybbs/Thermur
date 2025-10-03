@@ -8,27 +8,83 @@ output a nominal velocity command, 𝐮_nom, for each agent.
 
 The architecture is explicitly designed to be configurable and to consume
 `torch_geometric.data.Data` objects, which are generated from the environment's
-`TensorDict` observations.
+PyG Batch observations.
 """
-from __future__            import annotations
-from pytorch_lightning     import LightningModule
-from torch.nn              import GRUCell, Linear, ModuleList
-from torch.nn.functional   import mse_loss
-from torch_geometric.data  import Batch, Data
-from torch_geometric.nn    import GCNConv
-from typing                import Callable, Type, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .metrics                          import MetricsCollector
-    from config.imitation.training         import ArchitectureModel
-    from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig, STEP_OUTPUT
-    from tensordict                        import TensorDictBase
-    from torch                             import Tensor
-    from torch.nn                          import Module
-    from torch.optim                       import Optimizer
-    from torch.optim.lr_scheduler          import LRScheduler
+from __future__          import annotations
+from .metrics            import BaseMetric
+from pytorch_lightning   import LightningModule
+from torch               import nn
+from torch.nn            import GRUCell, LayerNorm, Linear, ModuleList, Sequential
+from torch.nn.functional import mse_loss
+from torch_geometric.nn  import GCNConv
+from typing              import Callable, TYPE_CHECKING
 
 import torch as th
+
+if TYPE_CHECKING:
+    from .metrics                          import MetricsFactory
+    from config.imitation.training         import ArchitectureModel
+    from config.types                      import FlockBatch
+    from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig, STEP_OUTPUT
+    from torch                             import Tensor
+    from torch.optim                       import Optimizer
+    from torch.optim.lr_scheduler          import LRScheduler
+    from torch_geometric.typing            import Adj
+    from torchmetrics                      import MetricCollection
+
+
+class GRUBlock(nn.Module):
+    """
+    Graph Recurrent Unit block combining GCN convolution with GRU recurrence.
+
+    This module encapsulates the processing pattern used in each layer of the
+    GNN policy: message passing via graph convolution, followed by recurrent
+    state update via GRU, with normalization for training stability.
+
+    The forward pass implements:
+
+        hₗ₊₁ = LN(GRU(σ(GCN(hₗ, E)), hₗ))
+
+    This design provides:
+    - Spatial aggregation via GCN for neighbor information
+    - Temporal memory via GRU, which stabilizes control over time
+    - Output normalization via LayerNorm, which prevents explosion
+
+    Args:
+        dim            : Hidden dimension for all layers
+        activation     : Activation function class (e.g., nn.ReLU)
+        add_self_loops : Whether GCN includes self-loops
+        normalize      : Whether to apply LayerNorm to output
+    """
+    def __init__(
+        self,
+        dim            : int,
+        activation     : type[nn.Module],
+        add_self_loops : bool = False,
+        normalize      : bool = True
+    ):
+        super().__init__()
+        self.conv       = GCNConv(dim, dim, add_self_loops=add_self_loops)
+        self.gru        = GRUCell(dim, dim)
+        self.activation = activation()
+        self.norm       = LayerNorm(dim) if normalize else nn.Identity()
+
+    def forward(
+        self, 
+        h          : th.Tensor, 
+        edge_index : Adj
+    ) -> th.Tensor:
+        """
+        Process node features through graph convolution and recurrent update.
+
+        Args:
+            h          : Node hidden states [num_nodes, dim]
+            edge_index : Graph connectivity [2, num_edges]
+
+        Returns:
+            Updated node hidden states [num_nodes, dim]
+        """
+        return self.norm(self.gru(self.activation(self.conv(h, edge_index)), h))
 
 
 class GNNPolicy(LightningModule):
@@ -53,198 +109,76 @@ class GNNPolicy(LightningModule):
     """
     def __init__(
         self,
-        architecture     : ArchitectureModel,
-        collector        : MetricsCollector,
-        optimizer        : Callable[..., Optimizer],
-        scheduler        : Callable[..., LRScheduler],
-        scheduler_metric : str,
-        training_metric  : str
+        architecture : ArchitectureModel,
+        metrics      : MetricsFactory,
+        optimizer    : Callable[..., Optimizer],
+        scheduler    : Callable[..., LRScheduler]
     ):
         """
         Initializes the GNN policy network.
 
         Args:
-            architecture     : Configuration for GNN architecture including hidden
-                               dimensions, number of layers, activation function, and
-                               I/O dimensions.
-            collector        : Centralized metrics collection and management system.
-            optimizer        : Pre-configured optimizer partial from hydra-zen.
-            scheduler        : Pre-configured scheduler partial from hydra-zen.
-            scheduler_metric : Metric name for learning rate scheduler to monitor.
-            training_metric  : Metric name to monitor for training loss.
+            architecture : Configuration for GNN architecture including hidden
+                           dimensions, number of layers, activation function, and
+                           I/O dimensions.
+            metrics      : Factory for creating metric collections.
+            optimizer    : Pre-configured optimizer partial from hydra-zen.
+            scheduler    : Pre-configured scheduler partial from hydra-zen.
         """
         super().__init__()
-        self.architecture     = architecture
-        self.collector        = collector
-        self.optimizer        = optimizer
-        self.scheduler        = scheduler
-        self.scheduler_metric = scheduler_metric
-        self.training_metric  = training_metric
+        self.save_hyperparameters(ignore=["metrics", "optimizer", "scheduler"])
 
-        self.save_hyperparameters(ignore=["collector"])
-        self.activation = getattr(th.nn, architecture.activation)()
-        self.convs      = self._build_module_list(architecture, GCNConv)
-        self.grus       = self._build_module_list(architecture, GRUCell)
-        self.decoder    = Linear(architecture.hidden_dim, 3)
-        self.encoder    = Linear(13, architecture.hidden_dim)
-        
-        self._edge_offset_cache      = {}
-        self._batch_assignment_cache = {}
+        dim, n     = architecture.hidden_dim, architecture.num_layers
+        activation = getattr(nn, architecture.activation)
 
-    @th.jit.ignore(drop=True)
-    def _batch_to_data(self, batch: TensorDictBase) -> Batch:
-        """
-        Convert TensorDict batch to PyTorch Geometric graph format.
+        self.encoder   = Sequential(Linear(13, dim), activation(), LayerNorm(dim))
+        self.layers    = ModuleList([GRUBlock(dim, activation) for _ in range(n)])
+        self.decoder   = Linear(dim, 3)
+        self.optimizer = optimizer
+        self.scheduler = scheduler
+        self.t_metrics = metrics.create_training_metrics()
+        self.v_metrics = metrics.create_validation_metrics()
 
-        Transforms agent-based observations into graph representations suitable for
-        GNN processing. Creates a disjoint union of graphs with proper node indexing
-        for batch processing.
-
-        The node feature vector 𝐱ᵢ ∈ ℝ¹³ for agent i consists of:
-            𝐱ᵢ = [𝐩ᵢ; 𝐯ᵢ; θᵢ; ∇θᵢ; 𝐰ᵢ]
-        
-        where:
-            - 𝐩ᵢ ∈ ℝ³  : Position vector
-            - 𝐯ᵢ ∈ ℝ³  : Velocity vector  
-            - θᵢ ∈ ℝ   : Temperature scalar
-            - ∇θᵢ ∈ ℝ³ : Temperature gradient
-            - 𝐰ᵢ ∈ ℝ³  : Wind velocity
-
-        Args:
-            batch: TensorDict containing flock observations with shapes [B, N, d]
-                   where B is batch size, N is number of agents, d is feature dimension
-
-        Returns:
-            PyG Batch containing all graphs with concatenated node features and edges
-        """
-        features       = ["position", "velocity", "temperature", "gradient", "wind"]
-        batch_size     = batch["position"].shape[0]
-        num_agents     = batch["position"].shape[1]
-        agent_features = th.cat([batch[f] for f in features], dim=-1)
-        x, _           = self._flatten_agent_batch(agent_features)
-        cache_key      = (batch_size, num_agents, x.device.type)
-        
-        offsets = self._edge_offset_cache.setdefault(
-            cache_key,
-            th.arange(batch_size, device=x.device).unsqueeze(1) * num_agents
-        )
-        batch_assignment = self._batch_assignment_cache.setdefault(
-            cache_key,
-            th.arange(batch_size, device=x.device).repeat_interleave(num_agents)
-        )
-        edge_indices = batch["edge_index"]
-        
-        if (edge_indices.numel() > 0) and (edge_indices.shape[-1] > 0):
-            adjusted_edges = edge_indices + offsets.unsqueeze(1)
-            edge_index     = adjusted_edges.transpose(0, 1).reshape(2, -1)
-        else:
-            edge_index     = th.empty((2, 0), dtype=th.long, device=x.device)
-        
-        return Batch(
-            batch      = batch_assignment,
-            edge_index = edge_index, 
-            x          = x, 
-        )
-
-    def _build_module_list(
+    def _step(
         self,
-        architecture : ArchitectureModel,
-        module_type  : Type[Module]
-    ) -> ModuleList:
+        batch   : FlockBatch,
+        metrics : MetricCollection,
+        prefix  : str
+    ) -> STEP_OUTPUT:
         """
-        Creates a stack of neural network modules of the specified type.
+        Shared step logic for training and validation.
 
-        This method unifies the creation of both convolutional and recurrent
-        layers, reducing code duplication. For GCN layers, it performs message
-        passing: h_i^(l+1) = σ(W^(l) · Σ_j∈N(i) h_j^(l) / |N(i)|). For GRU
-        cells, it maintains temporal state with gating mechanisms.
+        Uses Lightning's default logging behavior: training logs at step-level,
+        validation logs at epoch-level. This produces clean metric names without
+        suffixes in wandb.
 
         Args:
-            module_type : The class of module to instantiate (GCNConv or GRUCell)
-            learning    : Configuration containing architecture parameters
+            batch   : PyG Batch containing observations and expert actions
+            metrics : Metric collection to update
+            prefix  : Logging prefix ('training' or 'validation')
 
         Returns:
-            ModuleList containing num_layers of the specified module type
+            Scalar loss tensor for backpropagation
         """
-        dim = architecture.hidden_dim
-        return ModuleList([
-            module_type(dim, dim) for _ in range(architecture.num_layers)
-        ])
+        predictions = self(batch)
+        mse         = mse_loss(predictions, batch.action)
 
-    def _compute_loss_and_log(
-        self,
-        batch       : TensorDictBase,
-        is_training : bool
-    ) -> Tensor:
-        """
-        Compute behavioral cloning loss and update metrics.
-
-        Implements the imitation learning objective:
-         
-            ℒ(θ) = 𝔼[(π_θ(s) - a*)²]
-        where π_θ represents the learned policy and a* the expert demonstrations.
-        
-        The loss computation operates over all agents in the batch, with targets
-        reshaped from [B, N, 3] to [B*N, 3] to match PyTorch Geometric's 
-        concatenated node format.
-
-        Args:
-            batch       : TensorDict containing graph observations and expert actions
-            is_training : Whether this is training (True) or validation (False)
-
-        Returns:
-            Scalar MSE loss for gradient computation
-        """
-        data        = self._batch_to_data(batch)
-        predictions = self(data)
-        targets     = batch["action"].reshape(-1, 3)
-        loss        = mse_loss(predictions, targets)
-
-        self.collector.update_imitation_metrics(
-            batch       = batch,
-            is_training = is_training,
-            predictions = predictions,
-            targets     = targets
+        metrics.update(batch, predictions)
+        self.log(
+            batch_size = batch.num_graphs,
+            name       = f'{prefix}/mse',
+            prog_bar   = True,
+            sync_dist  = False,
+            value      = mse
         )
 
-        self.collector.log_all_metrics(
-            is_training = is_training,
-            module      = self,
-            step_data   = {
-                "loss"        : loss,
-                "predictions" : predictions,
-                "targets"     : targets
-            }
+        self.log_dict(
+            batch_size = batch.num_graphs,
+            dictionary = metrics.compute(),
+            sync_dist  = False
         )
 
-        return loss
-    
-    def _flatten_agent_batch(self, tensor: Tensor) -> tuple[Tensor, int]:
-        """
-        Flatten hierarchical agent batches for node-level processing.
-        
-        Transforms multi-agent batch tensors from [batch, agents, features]
-        format used by replay buffers to [batch*agents, features] format
-        required by graph neural networks.
-        
-        Args:
-            tensor: Input with shape [batch, agents, features] for batched
-                    trajectories, [agents, features] for single timesteps,
-                    or [features] for single agents
-        
-        Returns:
-            Tuple of (flattened_tensor, n_samples) where flattened has shape
-            [total_samples, features] and n_samples counts individual agents
-        """
-        if tensor.dim() == 3:
-            shape = tensor.shape
-            return tensor.reshape(-1, shape[2]), shape[0] * shape[1]
-        
-        elif tensor.dim() == 2:
-            return tensor, tensor.shape[0]
-        
-        else:
-            return tensor.unsqueeze(0), 1
+        return mse
 
     def configure_optimizers(self) -> OptimizerLRSchedulerConfig:
         """
@@ -257,105 +191,108 @@ class GNNPolicy(LightningModule):
         Returns:
             Configuration for optimizer and learning rate scheduler
         """
-        optimizer: Optimizer   = self.optimizer(params=self.parameters())
-        scheduler: LRScheduler = self.scheduler(optimizer=optimizer)
+        optimizer = self.optimizer(params=self.parameters())
 
-        config: OptimizerLRSchedulerConfig = {
+        return {
             "optimizer"    : optimizer,
             "lr_scheduler" : {
-                "scheduler" : scheduler,
-                "monitor"   : self.scheduler_metric
+                "scheduler" : self.scheduler(optimizer=optimizer),
+                "monitor"   : "validation/mse"
             }
         }
-        return config
 
-    def forward(self, data: Data) -> Tensor:
+    @th.compile(fullgraph=True, mode='default')
+    def forward(self, batch: FlockBatch) -> Tensor:
         """
         Performs the forward pass through the GNN.
 
         Args:
-            data: A `torch_geometric.data.Data` object containing the batched
-                  graph state of the flock, with `x` (node features) and
-                  `edge_index` (connectivity).
+            batch: PyG Batch containing the batched graph state of the flock,
+                   with `x` (node features) and `edge_index` (connectivity).
 
         Returns:
-            A tensor of shape (num_nodes, out_dim) representing the nominal
-            velocity command for each agent in the batch.
+            A tensor of shape [B*N, 3] representing the nominal velocity
+            command for each agent in the batch.
 
         The forward pass follows the sequence:
-            x → encoder → h → [GCN → activation → GRU → h]ₗ → decoder → u_nom
+            x  → encoder(Linear → activation → LayerNorm) → h₀
+            h₀ → [GCN → activation → GRU → LayerNorm → hₗ]ₗ → decoder → u_nom
 
         where:
-            - x: Input node features (position, velocity, temperature, etc.)
-            - h: Hidden state representations of each agent
-            - l: Layer index from 1 to num_layers
-            - u_nom: Nominal velocity command output
+            - x     : Input node features (position, velocity, temperature, etc.)
+            - hₗ     : Hidden state after layer l, normalized to prevent explosion
+            - l     : Layer index from 1 to num_layers
+            - u_nom : Nominal velocity command output
         """
-        x          = data.x
-        edge_index = data.edge_index
-        assert x is not None
-        
-        if x.dim() == 2 and x.device.type == 'mps':
-            x = x.contiguous(th.channels_last) if x.shape[-1] % 4 == 0 else x
-        
-        h = self.activation(self.encoder(x))
+        h = self.encoder(batch.x)
 
-        for conv, gru in zip(self.convs, self.grus, strict=True):
-            conv_out = conv(h, edge_index)
-            h        = gru(self.activation(conv_out), h)
+        for layer in self.layers:
+            h = layer(h, batch.edge_index)
 
         return self.decoder(h)
-    
-    def on_fit_start(self):
-        """
-        Lightning lifecycle hook called at the beginning of training.
-        
-        Ensures all metric collections are on the same device as the model
-        to prevent device mismatch errors during metric computation. This is
-        necessary because TorchMetrics creates metrics on CPU by default,
-        but Lightning may move the model to GPU/MPS.
-        """
-        for metric_name in [
-            'train_imitation',  'val_imitation', 
-            'train_evaluation', 'val_evaluation'
-        ]:
-            metrics = getattr(self.collector, metric_name, None)
-            if metrics is None:
-                raise AttributeError(
-                    f"MetricsCollector missing required '{metric_name}' metrics"
-                )
-            setattr(self.collector, metric_name, metrics.to(self.device))
 
-    def training_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
+    def on_train_batch_end(
+        self,
+        outputs   : STEP_OUTPUT,
+        batch     : FlockBatch,
+        batch_idx : int
+    ):
         """
-        Executes a single training step using behavioral cloning loss.
+        Clear metric cache after each training batch.
 
+        Prevents memory growth from cached computations in BaseMetric.
+
+        Args:
+            outputs   : Training step outputs (loss tensor)
+            batch     : Current training batch containing graph data
+            batch_idx : Index of current batch
+        """
+        BaseMetric.clear_cache()
+
+    def on_validation_batch_end(
+        self,
+        outputs   : STEP_OUTPUT,
+        batch     : FlockBatch,
+        batch_idx : int
+    ):
+        """
+        Clear metric cache after each validation batch.
+
+        Prevents memory growth from cached computations in BaseMetric.
+
+        Args:
+            outputs   : Validation step outputs (loss tensor)
+            batch     : Current validation batch containing graph data
+            batch_idx : Index of current batch
+        """
+        BaseMetric.clear_cache()
+
+    def training_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
+        """
         In PyTorch Lightning, the model defines its own training logic. This is
         Lightning's standard pattern, in that the model knows how to train itself,
         eliminating the need for external training loops.
 
         Args:
-            batch     : TensorDict containing graph observations and expert actions
-            batch_idx : Current batch index (automatically provided by Lightning)
+            batch : PyG Batch containing graph observations and expert actions
+            idx   : Current batch index (automatically provided by Lightning)
 
         Returns:
-            Scalar loss tensor for automatic backpropagation
+            Scalar MSE loss tensor for automatic backpropagation
         """
-        return self._compute_loss_and_log(batch, True)
+        return self._step(batch, self.t_metrics, 'training')
 
-    def validation_step(self, batch: TensorDictBase, batch_idx: int) -> STEP_OUTPUT:
+    def validation_step(self, batch: FlockBatch, idx: int) -> STEP_OUTPUT:
         """
-        Executes validation step for model evaluation.
-
         Lightning calls this method during validation to assess the model's
         performance on held-out data. This helps monitor generalization and
         detect overfitting during training.
 
         Args:
-            batch     : TensorDict containing validation observations and actions
-            batch_idx : Current batch index (automatically provided by Lightning)
+            batch : PyG Batch containing validation observations and actions
+            idx   : Current batch index (automatically provided by Lightning)
 
         Returns:
-            Scalar validation loss for automatic metric aggregation
+            Scalar validation MSE loss for automatic metric aggregation
         """
-        return self._compute_loss_and_log(batch, False)
+        return self._step(batch, self.v_metrics, 'validation')

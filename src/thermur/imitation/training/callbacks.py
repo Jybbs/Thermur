@@ -1,147 +1,183 @@
 """
-Lightning callbacks for monitoring and evaluation.
+Rich progress bar and model summary callbacks with Thermur styling.
 
-This module provides PyTorch Lightning callbacks that integrate various systems
-into the training loop:
-- MonitoringCallback: Integrates metrics collection
+This module provides customized PyTorch Lightning callbacks that integrate
+with the Thermur UI design system for consistent visual output during training.
 """
-
-from __future__        import annotations
-from pytorch_lightning import Callback
-from typing            import TYPE_CHECKING
+from __future__                           import annotations
+from config.types                         import TableColumn
+from pytorch_lightning.callbacks          import RichModelSummary, RichProgressBar
+from pytorch_lightning.callbacks.progress import rich_progress as rp
+from rich                                 import get_console
+from thermur.cli.helpers                  import ThermurUI
+from typing                               import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .metrics                          import MetricsCollector
-    from pytorch_lightning                 import LightningModule, Trainer
-    from pytorch_lightning.utilities.types import STEP_OUTPUT
-    from tensordict                        import TensorDictBase
+    from config.cli.schemas import DisplayModel
+    from pytorch_lightning  import LightningModule, Trainer
+    from rich.progress      import ProgressColumn
 
 
-class MonitoringCallback(Callback):
+class CallbackFactory:
     """
-    Unified monitoring callback for metrics tracking.
+    Factory for creating Lightning callbacks with Thermur styling.
 
-    Consolidates metric collection into a single callback, reducing code
-    duplication and simplifying the training pipeline integration. Updates
-    metrics during batch processing and manages state resets at epoch boundaries.
+    Provides methods to instantiate customized callbacks that integrate
+    with the Thermur UI design system for consistent visual output.
     """
 
-    def __init__(
-        self,
-        collector : MetricsCollector | None = None
-    ):
+    @staticmethod
+    def create_model_summary(display: DisplayModel) -> ThermurModelSummary:
         """
-        Configure monitoring components for training lifecycle integration.
+        Create a model summary with Thermur's table styling.
+
+        Uses the thermal color scheme and table formatting consistent
+        with the rest of the CLI for the model architecture display.
 
         Args:
-            collector : Optional metrics collector for performance tracking
+            display: Display configuration with styles and settings
+
+        Returns:
+            ThermurModelSummary configured with display settings
         """
+        return ThermurModelSummary(display)
+
+    @staticmethod
+    def create_progress_bar(display: DisplayModel) -> ThermurProgressBar:
+        """
+        Create a progress bar using Thermur's display configuration.
+
+        Uses the same thermal styling, progress bar length, and color scheme
+        as the rest of the Thermur CLI for visual consistency.
+
+        Args:
+            display: Display configuration with styles and settings
+
+        Returns:
+            ThermurProgressBar configured with display settings
+        """
+        return ThermurProgressBar(display)
+
+
+class ThermurModelSummary(RichModelSummary):
+    """
+    Custom RichModelSummary that uses Thermur's table styling.
+
+    Overrides the summary display to use our thermal color scheme
+    and table formatting conventions.
+    """
+
+    def __init__(self, display: DisplayModel):
+        """
+        Initialize with Thermur display configuration.
+
+        Args:
+            display: Display configuration with styles and settings
+        """
+        self.display = display
+        self.ui      = ThermurUI(display)
         super().__init__()
-        self.collector = collector
 
-    def on_fit_end(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule
-    ):
+    def on_fit_start(self, trainer: Trainer, pl_module: LightningModule):
         """
-        Clean up resources when training completes.
+        Called when fit begins to display the model summary.
 
-        Args:
-            trainer   : PyTorch Lightning trainer coordinating the training process
-            pl_module : Lightning module instance
-        """
-        pass
-
-    def on_train_batch_end(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule,
-        outputs   : STEP_OUTPUT,
-        batch     : TensorDictBase,
-        batch_idx : int
-    ):
-        """
-        Process training batch for metrics.
-
-        Updates evaluation metrics from the training batch.
-
-        Args:
-            trainer   : PyTorch Lightning trainer managing the training loop
-            pl_module : Lightning module containing the policy network
-            outputs   : Model outputs from the training step
-            batch     : TensorDict containing agent states and environment data
-            batch_idx : Index of the current batch within the epoch
-        """
-        if self.collector:
-
-            if not hasattr(self, '_metrics_synced'):
-                for name in ['train_evaluation', 'val_evaluation', 'train_imitation', 'val_imitation']:
-                    metrics = getattr(self.collector, name)
-                    setattr(self.collector, name, metrics.to(pl_module.device))
-                self._metrics_synced = True
-            self.collector.update_evaluation_metrics(batch,  True)
-
-    def on_train_epoch_end(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule
-    ):
-        """
-        Reset per-epoch counters and log summary statistics.
-
-        Logs summary metrics for the completed epoch.
+        Overrides to use our custom table styling for the model summary.
 
         Args:
             trainer   : PyTorch Lightning trainer instance
-            pl_module : Lightning module for state management
+            pl_module : Lightning module being trained
         """
-        pass
+        if not self._max_depth:
+            return
 
-    def on_validation_batch_end(
-        self,
-        trainer        : Trainer,
-        pl_module      : LightningModule,
-        outputs        : STEP_OUTPUT,
-        batch          : TensorDictBase,
-        batch_idx      : int,
-        dataloader_idx : int = 0
-    ):
+        summary = self._summary(trainer, pl_module)._get_summary_data()
+        table   = self.ui.create_aligned_table(
+            columns = [
+                TableColumn("left",  self.display.styles['bright'],  "Layer",  25),
+                TableColumn("left",  self.display.styles['flock'],   "Type",   30),
+                TableColumn("right", self.display.styles['success'], "Params", 15)
+            ],
+            title = "Model Architecture"
+        )
+
+        [
+            table.add_row(layer, type, "–"
+            if (p := str(params).strip()) == "0" else p)
+            for layer, type, params
+            in zip(*(row[1] for row in summary[1:4]))
+        ]
+
+        get_console().print(table)
+
+
+class ThermurProgressBar(RichProgressBar):
+    """
+    Custom RichProgressBar that uses Thermur's display configuration.
+
+    Overrides column configuration to match the progress bar width
+    and styling used throughout the Thermur CLI.
+    """
+
+    def __init__(self, display: DisplayModel):
         """
-        Update metrics during validation.
-
-        Tracks the same metrics as training but without updating
-        model parameters, providing unbiased performance estimates.
+        Initialize with Thermur display configuration.
 
         Args:
-            trainer        : PyTorch Lightning trainer instance
-            pl_module      : Lightning module being validated
-            outputs        : Model outputs from the validation step
-            batch          : TensorDict containing validation batch data
-            batch_idx      : Index of the current validation batch
-            dataloader_idx : Index of the dataloader for multi-dataloader setups
+            display: Display configuration with styles and bar settings
         """
-        if self.collector:
-            self.collector.update_evaluation_metrics(batch, False)
+        self.display = display
 
-    def on_validation_epoch_end(
-        self,
-        trainer   : Trainer,
-        pl_module : LightningModule
-    ):
-        """
-        Aggregate and log validation metrics for epoch-level tracking.
-
-        Computes final metric values across all validation batches
-        for monitoring training progress and early stopping decisions.
-
-        Args:
-            trainer   : PyTorch Lightning trainer managing validation
-            pl_module : Lightning module containing metrics to log
-        """
-        if self.collector:
-            self.collector.log_all_metrics(
-                is_training = False,
-                module      = pl_module,
-                step_data   = None
+        super().__init__(
+            console_kwargs = {"stderr": True},
+            leave          = False,
+            refresh_rate   = 20,
+            theme          = rp.RichProgressBarTheme(
+                batch_progress         = display.styles['muted'],
+                description            = display.styles['bright'],
+                metrics                = display.styles['flock'],
+                metrics_format         = ".3e",
+                metrics_text_delimiter = " • ",
+                processing_speed       = display.styles['muted'],
+                progress_bar           = display.styles['thermal'],
+                progress_bar_finished  = display.styles['success'],
+                progress_bar_pulse     = display.styles['warning'],
+                time                   = display.styles['muted']
             )
+        )
+
+    def configure_columns(self, trainer: Trainer) -> list[ProgressColumn]:
+        """
+        Configure progress bar columns with Thermur styling.
+
+        Overrides the default columns to use our configured bar width
+        and maintain visual consistency.
+
+        Args:
+            trainer: PyTorch Lightning trainer instance
+
+        Returns:
+            List of configured Rich progress columns
+        """
+        return [
+            rp.CustomBarColumn(
+                bar_width      = self.display.progress_bar_length,
+                complete_style = self.display.styles['thermal'],
+                finished_style = self.display.styles['success'],
+                pulse_style    = self.display.styles['thermal']
+            ) if isinstance(c, rp.CustomBarColumn) else c
+            for c in super().configure_columns(trainer)
+        ]
+
+    def on_train_start(self, trainer: Trainer, pl_module: LightningModule):
+        """
+        Called when training starts.
+
+        Adds a line break before starting the progress bar display.
+
+        Args:
+            trainer   : PyTorch Lightning trainer instance
+            pl_module : Lightning module being trained
+        """
+        get_console().print()
+        super().on_train_start(trainer, pl_module)

@@ -17,9 +17,7 @@ class CLIConfiguration(BaseModel):
     Uses Pydantic BaseModel with pre-instantiated config objects to provide
     type safety and validation while maintaining fast CLI startup times.
     """
-    display  : DisplayModel  = DisplayModel()
-    download : DownloadModel = DownloadModel()
-    secrets  : GlobusSecrets = GlobusSecrets()
-    wandb    : WandbModel    = WandbModel()
+    display : DisplayModel = DisplayModel()
+    wandb   : WandbModel   = WandbModel()
 
 cfg = CLIConfiguration()

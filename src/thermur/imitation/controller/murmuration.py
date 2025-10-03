@@ -6,15 +6,17 @@ murmurations, using topological neighborhoods (k-nearest neighbors) rather
 than metric distances. The flock maintains critical state dynamics for
 rapid information propagation and exhibits distinct cruise/alert modes.
 """
-from __future__  import annotations
-from typing      import TYPE_CHECKING
+from __future__            import annotations
+from torch_geometric.data  import Data
+from torch_geometric.utils import scatter
+from typing                import TYPE_CHECKING
 
 import torch as th
 
 if TYPE_CHECKING:
-    from .safety                     import CBFSafetyFilter
-    from config.imitation.controller import FlockModel, MurmurationModel, SafetyModel
-    from tensordict                  import TensorDictBase
+    from ..environment               import TrajectoryGenerator
+    from .safety                     import ThermalPenalty
+    from config.imitation.controller import MurmurationModel, SafetyModel
     from torch                       import Tensor
 
 
@@ -25,70 +27,70 @@ class MurmurationController(th.nn.Module):
     This controller generates biologically-inspired flocking behavior based on
     starling murmurations, using topological neighborhoods (k-nearest neighbors)
     rather than metric distances. The flock maintains critical state dynamics
-    for rapid information propagation and exhibits distinct cruise/alert modes.
+    for rapid information propagation through heterogeneous behavioral variance.
 
-    The controller implements a modified Hamiltonian formulation based on 
-    Bialek et al. (2012) with heterogeneous coupling for alert states:
+    The controller implements the maximum entropy formulation from Bialek et
+    al. (2012), who derive an effective energy function for bird flocks using
+    statistical inference. This approach infers interaction parameters from
+    observed correlations, yielding an energy landscape that captures
+    collective behavior without assuming underlying mechanics:
 
-        E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
+        E = -Σ_{<ij>} J_{ij} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
 
     where:
         - 𝐬_i = 𝐯_i / |𝐯_i| are normalized velocity vectors (spin variables)
-        - J_{ij}^{alert} = κ_i × J_0 exp(-d_{ij}/λ) with alert-dependent coupling
-        - κ_i = 1.0 for relaxed birds, alert_coupling_factor for alert birds
+        - J_{ij} = J_0 exp(-d_{ij}/λ) with uniform coupling strength
         - d_{ij} is the topological distance (minimum hop count)
         - 𝐡_i represents external fields (thermal gradients)
 
-    Forces are derived as 𝐮_i = -∂E/∂𝐱_i, yielding:
-
-        F_i = κ_i × Σ_j J_{ij} (𝐯_j - 𝐯_i)
-
-    With alert_coupling_factor = -1.3, alert birds actively oppose alignment,
-    creating oscillations that maintain critical state susceptibility χ = N·Var[Φ] ≥ 5.
-    This heterogeneity, motivated by vigilance behavior (Beauchamp 2015), enables
-    scale-free correlations C(r) ~ r^{-1/3} and information speeds of 15-45 m/s
-    (Attanasi et al. 2014).
+    Heterogeneous noise η_i ~ N(μ, σ=0.20) following Guisandez et al. (2018)
+    creates a spectrum of behavioral responses, wherein agents with low η_i strongly
+    align while those with high η_i move independently. 
+    
+    This variance maintains elevated susceptibility χ ~ N and enables scale-free 
+    correlations C(r) ~ r^{-1/3} with information speeds of 15-45 m/s 
+    (Attanasi et al. 2014, Cavagna et al. 2010).
     """
 
     def __init__(
         self,
-        cbf    : CBFSafetyFilter | None,
-        flock  : FlockModel,
-        mmm    : MurmurationModel,
-        safety : SafetyModel
+        mmm     : MurmurationModel,
+        penalty : ThermalPenalty,
+        safety  : SafetyModel
     ):
         """
         Initializes the controller with the necessary configuration models.
 
         Args:
-            cbf    : Optional Control Barrier Function filter for safety.
-                     If None, no safety filtering is applied
-            flock  : Flock configuration containing agent properties
-            mmm    : Murmuration model with dynamics and weight parameters
-            safety : Safety configuration with thresholds and CBF parameters
+            mmm     : Murmuration model with dynamics and weight parameters
+            penalty : Thermal safety penalty layer for gradient-based constraints
+            safety  : Safety configuration with thresholds and temperature limits
         """
         super().__init__()
-        self.cbf    = cbf
-        self.flock  = flock
-        self.mmm    = mmm
-        self.safety = safety
-        self.alert_states_memory = {}
+        self.cached_edges      = th.empty(0)
+        self.cached_hops       = th.empty(0)
+        self.heading_rng       = th.Generator()
+        self.heterogeneity_rng = th.Generator()
+        self.mmm               = mmm
+        self.noise_rng         = th.Generator()
+        self.penalty           = penalty
+        self.safety            = safety
 
-    def _compute_density_wave(self, flock: TensorDictBase):
+    def _compute_density_wave(self, flock: Data):
         """
         Compute density wave forces from continuum density field dynamics.
 
         Implements a simplified reaction-diffusion model for density perturbations
-        that propagate through the flock, creating the characteristic "ink-like" 
+        that propagate through the flock, creating the characteristic "ink-like"
         evasion patterns observed in starling murmurations under predator attack.
 
         The density field ρ(𝐱,t) evolves according to:
 
             ∂ρ/∂t + ∇·(ρ𝐯) = D∇²ρ + S(θ)
-        
+
         where:
             - ρ(𝐱,t) : Local agent density at position 𝐱 and time t
-            - 𝐯(𝐱,t) : Velocity field of the flock  
+            - 𝐯(𝐱,t) : Velocity field of the flock
             - D      : Diffusion coefficient controlling wave propagation speed
             - S(θ)   : Source term modulated by threat level θ ∈ [0,1]
 
@@ -96,7 +98,7 @@ class MurmurationController(th.nn.Module):
         kernel density estimation with Gaussian kernels:
 
             ρ(𝐱ᵢ) = Σⱼ K(|𝐱ᵢ - 𝐱ⱼ|; σ)
-        
+
         where K(r; σ) = exp(-r²/2σ²) is the Gaussian kernel with bandwidth σ.
 
         The resulting force on agent i opposes density gradients:
@@ -104,237 +106,243 @@ class MurmurationController(th.nn.Module):
             𝐅ᵢ = -D·∇ρ(𝐱ᵢ)·(1 + 2θᵢ)
 
         This creates an effective pressure that disperses high-density regions,
-        with the effect amplified under threat conditions (high θ).
+        with the effect amplified under threat conditions (high θ). The local
+        density is clamped to a minimum of 1e-8 when computing gradients to
+        prevent division by zero.
 
         Args:
-            flock: TensorDict containing:
-                - position     : Agent positions 𝐱 ∈ ℝ^(N×3) [m]
-                - threats      : Normalized threat levels θ ∈ [0,1]^(N×1)
-                - density_wave : Dispersive forces 𝐅 ∈ ℝ^(N×3) [m/s²]
+            flock: Data with position 𝐱 ∈ ℝ^(N×3), threats θ ∈ [0,1]^N,
+                   updated with density_wave forces 𝐅 ∈ ℝ^(N×3) [m/s²]
         """
-        if self.flock.agent_count < 2:
-            flock["density_wave"] = th.zeros_like(flock["position"])
-            return
-        
-        dists   = th.cdist(flock["position"], flock["position"], p=2)
-        weights = th.exp(-dists**2 / (2 * self.mmm.density_bandwidth**2))
+        weights = th.exp(-flock.distances**2 / (2 * self.mmm.density_bandwidth**2))
         weights.fill_diagonal_(0)
-        
+
         local_density = weights.sum(dim=1, keepdim=True)
         displacements = (
-            flock["position"].unsqueeze(1) -  # [N, 1, 3]
-            flock["position"].unsqueeze(0)    # [1, N, 3]
+            flock.position.unsqueeze(1) -  # [N, 1, 3]
+            flock.position.unsqueeze(0)    # [1, N, 3]
         )
-        
+
         density_gradient = (
             (weights.unsqueeze(2) * displacements).sum(dim=1) /
-            local_density.clamp_min(self.mmm.epsilon)
+            local_density.clamp_min(1e-8)
         )
-        
-        threats = flock["threats"]
-        # Handle case where threats might be [N, 1] instead of [N]
-        if threats.dim() == 2 and threats.shape[1] == 1:
-            threats = threats.squeeze(1)
-        
-        threat_amplification  = 1 + threats * 2  # [N]
-        
-        if density_gradient.dim() == 2:  # [N, 3]
-            threat_amplification = threat_amplification.unsqueeze(-1)  # [N, 1]
-        
-        flock["density_wave"] = (
+
+        threat_amplification = (1 + flock.threats * 2)
+        flock.density_wave   = (
             -self.mmm.density_diffusion *
             density_gradient            *
             threat_amplification
         )
-    
-    def _compute_hamiltonian_forces(self, flock: TensorDictBase):
+
+    def _compute_energy_forces(self, flock: Data):
         """
-        Compute forces from Hamiltonian energy minimization with alert modulation.
+        Compute interaction forces from maximum entropy energy function.
 
-        Implements the Hamiltonian formulation from Bialek et al. (2012) with
-        heterogeneous coupling based on alert states:
+        Following Bialek et al. (2012), we use a spin-glass energy formulation
+        where normalized velocities act as spins. While not derived from
+        canonical mechanics, this generates biologically realistic alignment:
 
-            E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j - Σ_i 𝐡_i · 𝐬_i
+            F_i^{align} = Σ_j J_{ij} (𝐯_j - 𝐯_i)
 
-        where J_{ij}^{alert} = J_{ij} × κ_i, and κ_i is the alert coupling modifier:
-            - κ_i = 1.0 for relaxed birds (normal alignment)
-            - κ_i = alert_coupling_factor for alert birds
-        
-        When alert_coupling_factor < 0, alert birds actively oppose alignment,
-        creating perturbations that increase polarization variance and maintain
-        critical state susceptibility χ = N·Var[Φ] ≥ 5.
+        with J_{ij} = J_0 exp(-d_{ij}/λ) for topological coupling
 
-        The modified alignment force on agent i becomes:
-
-            F_i^{align} = κ_i × Σ_j J_{ij} (𝐯_j - 𝐯_i)
-
-        This heterogeneity is biologically motivated by vigilance behavior where
-        scanning birds prioritize threat detection over flock following.
+        Uses PyG scatter operations for efficient edge-to-node aggregation.
 
         Args:
-            flock: TensorDict containing positions, velocities, gradient, alert_states,
-                   edge indices, and topo_distances, updated with base_forces
+            flock: Data with edge indices, gradient, hops matrix, positions,
+                   and velocities, updated with base_forces
         """
-        flock["base_forces"] = th.zeros_like(flock["position"])
-        
-        if "edge_source" in flock and flock["edge_source"].numel() > 0:
-            alert_states_source = flock["alert_states"][flock["edge_source"]]
-            
-            coupling_modifier = th.where(
-                alert_states_source > 0.5,
-                self.mmm.alert_coupling_factor,
-                1.0
-            )
-            
-            j_edges = self.mmm.j_base * coupling_modifier * th.exp(
-                -flock["topo_distances"][
-                    flock["edge_source"], flock["edge_target"]
-                ] / self.mmm.coupling_decay
-            )
-
-            force_contrib = j_edges.unsqueeze(1) * (
-                flock["velocity"][flock["edge_target"]] - 
-                flock["velocity"][flock["edge_source"]]
-            )
-            flock["base_forces"].index_add_(0, flock["edge_source"], force_contrib)
-        
-        metric_distances = th.cdist(flock["position"], flock["position"])
-        mask = (
-            (metric_distances < self.mmm.min_distance * 3) & 
-            (metric_distances > 0)
+        coupling_weights = self.mmm.j_base * th.exp(
+            -flock.hops[flock.edge_source, flock.edge_target] /
+            self.mmm.coupling_decay
         )
 
-        if mask.any():
-            i_idx, j_idx = mask.nonzero(as_tuple=True)
-            displacement = flock["position"][j_idx] - flock["position"][i_idx]
-            soft_distance = displacement.norm(
-                dim     = 1, 
+        alignment_forces = coupling_weights.unsqueeze(1) * (
+            flock.velocity[flock.edge_target] -
+            flock.velocity[flock.edge_source]
+        )
+
+        flock.base_forces = scatter(
+            dim      = 0,
+            dim_size = flock.position.size(0),
+            index    = flock.edge_source,
+            reduce   = 'sum',
+            src      = alignment_forces
+        )
+
+        collision_mask = (
+            (flock.distances < self.mmm.min_distance * 3) &
+            (flock.distances > 0)
+        )
+
+        if collision_mask.any():
+            source_idx, target_idx = collision_mask.nonzero(as_tuple=True)
+            displacement = flock.position[target_idx] - flock.position[source_idx]
+            distance     = displacement.norm(
+                dim     = 1,
                 keepdim = True
             ).clamp_min(self.mmm.min_distance)
 
-            flock["base_forces"].index_add_(
-                dim    = 0, 
-                index  = i_idx, 
-                source = (
-                    -self.mmm.separation_strength * displacement / 
-                    soft_distance ** 3
-                )
+            repulsion_forces = (
+                -self.mmm.separation_strength * displacement / distance ** 3
             )
-        
-        flock["base_forces"] -= self.mmm.temperature_scaling * flock["gradient"]
 
-    def _compute_individual_alert_states(self, flock: TensorDictBase):
+            flock.base_forces += scatter(
+                dim      = 0,
+                dim_size = flock.position.size(0),
+                index    = source_idx,
+                reduce   = 'sum',
+                src      = repulsion_forces
+            )
+
+        flock.base_forces -= self.mmm.temperature_scaling * flock.gradient
+
+    def _compute_hops(self, flock: Data):
         """
-        Compute alert states following two-state Markov dynamics.
-        
-        Implements vigilance state transitions as a continuous-time Markov
-        chain with asymmetric rates creating realistic bout durations:
-        
-            P(relaxed → alert) = λ
-            P(alert → relaxed) = μ
-            
-        where λ is the relaxed-to-alert transition rate and μ is the 
-        alert-to-relaxed rate. These rates are constant, reflecting the
-        intrinsic vigilance dynamics observed in bird flocks.
-        
-        Steady-state             : π_alert = λ/(λ+μ)  ≈ 0.30
-        Mean alert bout duration : E[T_alert] = 1/μ   ≈ 20 timesteps
-        Mean relaxed duration    : E[T_relaxed] = 1/λ ≈ 47 timesteps
-        
+        Compute minimum hop counts between all agent pairs with caching.
+
+        Uses Floyd-Warshall to find shortest paths through the k-NN graph,
+        capturing the topological distance d_{ij} for coupling decay:
+
+            J_{ij} = J_0 exp(-d_{ij}/λ)
+
+        The algorithm iteratively relaxes hop counts:
+
+            d_{ij}^{(k+1)} = min(d_{ij}^{(k)}, d_{ik}^{(k)} + d_{kj}^{(k)})
+
+        This implementation caches the result and only recomputes when the
+        edge structure changes, avoiding redundant O(N³) computations.
+
         Args:
-            flock: TensorDict updated with alert_states and alert_fraction
+            flock: Data with edge indices, updated with hops matrix
         """
-        traj_id = 0
-        if "trajectory_id" in flock:
-            traj_id = (
-                flock["trajectory_id"].item()
-                if hasattr(flock["trajectory_id"], 'item')
-                else int(flock["trajectory_id"])
-            )
-        
-        device   = flock["position"].device
-        n_agents = self.flock.agent_count
-        
-        if traj_id not in self.alert_states_memory:
-            steady_state = self.mmm.relaxed_to_alert_rate / (
-                self.mmm.relaxed_to_alert_rate + self.mmm.alert_to_relaxed_rate
-            )
-            self.alert_states_memory[traj_id] = th.bernoulli(
-                th.ones(n_agents, device=device) * steady_state
-            )
-        
-        previous    = self.alert_states_memory[traj_id].to(device)
-        random_vals = th.rand(n_agents, device=device)
-        new_states  = th.where(
-            previous    > 0.5,
-            random_vals > self.mmm.alert_to_relaxed_rate,
-            random_vals < self.mmm.relaxed_to_alert_rate
-        ).float()
-        
-        self.alert_states_memory[traj_id] = new_states
-        flock["alert_states"]   = new_states
-        flock["alert_fraction"] = new_states.mean()
-    
-    def _compute_self_propulsion(self, flock: TensorDictBase):
+        edges = th.stack([flock.edge_source, flock.edge_target])
+
+        if th.equal(self.cached_edges, edges):
+            flock.hops = self.cached_hops
+            return
+
+        hops = th.full(
+            device     = flock.position.device,
+            fill_value = float('inf'),
+            size       = (self.mmm.agent_count, self.mmm.agent_count)
+        )
+        hops.fill_diagonal_(0)
+
+        hops[flock.edge_source, flock.edge_target] = 1
+        hops[flock.edge_target, flock.edge_source] = 1
+
+        for k in range(self.mmm.agent_count):
+            hops = th.minimum(hops, hops[:, k:k+1] + hops[k:k+1, :])
+
+        self.cached_edges = edges
+        self.cached_hops  = hops
+        flock.hops        = hops
+
+    def _compute_heterogeneity(self, frame: int) -> Tensor:
         """
-        Compute self-propulsion forces following active matter dynamics.
-        
-        Implements self-propulsion where each agent maintains an intrinsic
-        velocity v₀ in its current heading direction with stochastic
-        fluctuations, based on active matter theory:
-        
-            F_prop = (v₀𝐬 - 𝐯) / τ + η𝝃
-        
-        where 𝐬 is the heading direction, τ is relaxation time, and 𝝃 is
-        Gaussian noise. Alert agents have noise amplitude that places them
-        at the order-disorder phase transition (η ≈ 0.4) while relaxed 
-        agents remain in the ordered phase (η ≈ 0.1).
-        
-        For agents with zero velocity (|𝐯| < ε), the heading direction 𝐬 is
+        Generate heterogeneous behavioral variance deterministically.
+
+        Following Guisandez et al. (2018), individual heterogeneity values are
+        drawn from η_i ~ N(μ, σ=0.20). This heterogeneity creates the
+        behavioral variance necessary for murmuration patterns:
+
+        - Low η_i  : Strong alignment, follows neighbors closely
+        - High η_i : Weak alignment, moves independently
+
+        The variance in responses prevents homogeneous motion and enables
+        critical dynamics with continuous phase transitions.
+
+        Args:
+            frame: Current simulation frame for deterministic seeding
+
+        Returns:
+            Heterogeneity values for each agent [N]
+        """
+        self.heterogeneity_rng.manual_seed(frame)
+        return th.normal(
+            generator = self.heterogeneity_rng,
+            mean      = self.mmm.heterogeneity_mean,
+            size      = (self.mmm.agent_count,),
+            std       = self.mmm.heterogeneity_std
+        )
+
+    def _compute_self_propulsion(self, flock: Data):
+        """
+        Compute self-propulsion with marginal speed confinement.
+
+        Implements quartic speed confinement from Cavagna et al. (2022) where
+        individual speeds are regulated through potential V = (λ/v₀⁶)(|vᵢ|² - v₀²)⁴
+        producing force:
+
+            Fᵢ = +8λ/v₀⁶ · (v₀² - vᵢ²)³ · v̂ᵢ
+
+        where v̂ᵢ = vᵢ/|vᵢ| is the heading direction. The force magnitude automatically
+        has the correct sign from the (v₀² - v²)³ term:
+        - When v < v₀: force > 0 (accelerates)
+        - When v > v₀: force < 0 (decelerates)
+
+        This marginal confinement:
+        - Weakly constrains small deviations (enables natural fluctuations)
+        - Strongly suppresses large deviations (enforces biomechanical limits)
+        - Preserves scale-free correlations across the flock
+
+        For agents with zero velocity (|v| < ε), the heading direction is
         determined from:
-            1. Negative temperature gradient direction: 𝐬 = -∇T/|∇T| (if |∇T| > δ)
-            2. Random unit vector: 𝐬 = 𝝃/|𝝃| where 𝝃 ~ N(0, I) (fallback)
-        
-        This ensures the flock can bootstrap movement from rest states.
-        
+            1. Negative temperature gradient direction: -∇T/|∇T| (if |∇T| > δ)
+            2. Random unit vector: ξ/|ξ| where ξ ~ N(0, I) (fallback)
+
         Args:
-            flock: TensorDict containing velocities and alert_states,
-                   updated with self_propulsion forces
+            flock: Data with velocities, updated with heterogeneity
+                   and self_propulsion forces
         """
-        speed = flock["velocity"].norm(dim=-1, keepdim=True)
-        wind  = flock.get("wind", th.zeros_like(flock["velocity"]))
-        
-        velocity_heading = flock["velocity"] / speed.clamp_min(1e-8)
-        gradient_heading = -th.nn.functional.normalize(flock["gradient"], dim=-1)
-        random_heading   = th.nn.functional.normalize(
-            th.randn_like(flock["velocity"]), dim=-1
+        speed   = flock.velocity.norm(dim=-1, keepdim=True)
+        heading = flock.velocity / speed.clamp_min(1e-8)
+
+        self.heading_rng.manual_seed(flock.frame)
+        random_heading = th.nn.functional.normalize(
+            dim   = -1,
+            input = th.randn(
+                device    = flock.velocity.device,
+                generator = self.heading_rng,
+                size      = flock.velocity.shape
+            )
         )
-        
-        zero_vel = (speed < 1e-6).expand_as(flock["velocity"])
-        use_grad = (
-            flock["gradient"].norm(dim=-1, keepdim=True) > 0.01
-        ).expand_as(flock["velocity"])
-        
+
+        is_stationary = (speed < 1e-6).expand_as(flock.velocity)
+        has_gradient  = (
+            flock.gradient.norm(dim=-1, keepdim=True) > 0.01
+        ).expand_as(flock.velocity)
+
         heading = th.where(
-            zero_vel & use_grad,
-            gradient_heading,
-            th.where(zero_vel, random_heading, velocity_heading)
+            is_stationary & has_gradient,
+            -th.nn.functional.normalize(flock.gradient, dim=-1),
+            th.where(is_stationary, random_heading, heading)
         )
-        
-        alert_states = flock.get("alert_states", th.zeros(self.flock.agent_count))
-        noise_scale  = self.mmm.velocity_noise_scale * (
-            1.0 + self.mmm.alert_amplification * alert_states
+
+        force_potential = (self.mmm.self_propulsion_speed ** 2 - speed ** 2) ** 3
+        speed_magnitude = (
+            8 * self.mmm.marginal_amplitude / (self.mmm.self_propulsion_speed ** 6)
+            * force_potential
         )
-        
-        target_vel = heading * self.mmm.self_propulsion_speed + wind * 0.3
-        noise      = th.randn_like(flock["velocity"]) * noise_scale.unsqueeze(-1)
-        
-        flock["self_propulsion"] = (
-            (target_vel - flock["velocity"]) / self.mmm.velocity_relaxation_time +
-            noise
+
+        self.noise_rng.manual_seed(flock.frame)
+        noise_direction = th.nn.functional.normalize(
+            dim   = -1,
+            input = th.randn(
+                device    = flock.velocity.device,
+                generator = self.noise_rng,
+                size      = flock.velocity.shape
+            )
         )
-    
-    def _compute_threats(self, flock: TensorDictBase):
+        flock.heterogeneity   = self._compute_heterogeneity(flock.frame)
+        flock.self_propulsion = (
+            speed_magnitude * heading +
+            noise_direction * flock.heterogeneity.unsqueeze(-1)
+        )
+
+    def _compute_threats(self, flock: Data):
         """
         Compute normalized threat level for mode switching.
 
@@ -346,249 +354,159 @@ class MurmurationController(th.nn.Module):
         temperature is reached.
 
         Args:
-            flock: TensorDict containing temperatures, updated with threat levels
+            flock: Data with temperatures, updated with threat levels
 
         """
-        flock["threats"] = (
+        flock.threats = (
             (
-                flock["temperature"] 
-                - self.safety.max_temperature * self.safety.threat_ratio
+                flock.temperature
+                - self.safety.max_temperature * self.safety.threat_onset_ratio
             ) /
-            (self.safety.max_temperature * self.safety.threat_range_ratio)
+            (self.safety.max_temperature * self.safety.threat_transition_width)
         ).clamp(0, 1)
-    
-    def _compute_topological_distances(self, flock: TensorDictBase):
-        """
-        Compute minimum hop distances between all pairs of agents.
 
-        Uses Floyd-Warshall algorithm to find shortest paths in the k-NN graph.
-        This captures the topological distance metric d_{ij} used in the
-        coupling strength decay J_{ij} = J_0 exp(-d_{ij}/λ).
-
-        The algorithm iteratively relaxes distances:
-            d_{ij}^{(k+1)} = min(d_{ij}^{(k)}, d_{ik}^{(k)} + d_{kj}^{(k)})
-
-        Args:
-            flock: TensorDict with edge indices, updated with topo_distances
-        """
-        device = flock["position"].device
-        n      = self.flock.agent_count
-        
-        dist = th.full(
-            device     = device,
-            dtype      = th.float32,
-            fill_value = float('inf'),
-            size       = (n, n)
-        )
-        dist.fill_diagonal_(0)
-
-        if "edge_source" in flock and flock["edge_source"].numel() > 0:
-            dist[flock["edge_source"], flock["edge_target"]] = 1
-            dist[flock["edge_target"], flock["edge_source"]] = 1
-
-        for k in range(n):
-            dist = th.minimum(dist, dist[:, k:k+1] + dist[k:k+1, :])
-
-        flock["topo_distances"] = dist
-    
-    def _compute_topological_neighbors(self, flock: TensorDictBase):
-        """
-        Compute k-nearest neighbors for each agent and store in TensorDict.
-
-        Following Ballerini et al. (2008), each agent tracks exactly 6-7
-        nearest neighbors regardless of metric distance. This topological
-        interaction rule is key to achieving scale-free correlations.
-
-        Args:
-            flock: TensorDict containing positions, updated with edge indices
-        """
-        distances  = th.cdist(flock["position"], flock["position"])
-        _, indices = distances.topk(self.mmm.k_neighbors + 1, largest=False)
-        n          = self.flock.agent_count
-
-        flock["edge_source"] = th.arange(n).repeat_interleave(self.mmm.k_neighbors)
-        flock["edge_target"] = indices[:, 1:].flatten()
-
-    def _design_nominal_action(self, flock: TensorDictBase):
+    def _design_nominal_action(self, flock: Data):
         """
         Pipeline that computes murmuration dynamics and builds final action.
 
-        Orchestrates the computation of all physics components through a 
-        series of transformations on the flock TensorDict, then combines
-        them into the final control action.
+        Orchestrates the computation of all physics components through a
+        series of transformations on the flock state, then combines them
+        into the final control action.
 
         The pipeline computes:
         1. Graph topology and temperature gradients
-        2. Base Hamiltonian forces from energy minimization
+        2. Alignment forces from maximum entropy energy minimization
         3. Critical state metrics (susceptibility, information speed)
         4. Threat response components (density waves, alert mode)
         5. Final action combining all force components
 
         Args:
-            flock: TensorDict containing positions, velocities, temperatures,
+            flock: Data containing positions, velocities, temperatures,
                    updated with computed physics and final action
         """
         for compute_fn in [
             self._update_graph_state,
-            self._estimate_gradient,
-            self._compute_individual_alert_states,
-            self._compute_hamiltonian_forces,
+            self._compute_energy_forces,
             self._compute_threats,
             self._compute_self_propulsion,
             self._compute_density_wave,
         ]:
             compute_fn(flock)
-        
-        flock["action"] = (
-            flock["self_propulsion"] +
-            flock["base_forces"]     +
-            flock["density_wave"]
+
+        flock.action = (
+            flock.self_propulsion +
+            flock.base_forces     +
+            flock.density_wave
         )
 
-        if self.cbf is not None:
-            flock["action"] = self.cbf.filter(flock, flock["action"])
+        flock.action = self.penalty.filter(flock, flock.action)
 
-    def _ensure_1d_temperature(self, temperature: Tensor) -> Tensor:
+    def _update_graph_state(self, flock: Data):
         """
-        Ensures temperature tensor is 1D by squeezing if it's [N, 1].
+        Update graph connectivity from provided edge topology.
+
+        Extracts edge_source and edge_target from the edge_index tensor
+        and computes hop distances for the alignment forces.
 
         Args:
-            temperature: Tensor [N] or [N, 1] containing temperatures
+            flock: Data containing edge_index from TrajectoryGenerator
+        """
+        assert flock.edge_index is not None
+        flock.edge_source = flock.edge_index[0]
+        flock.edge_target = flock.edge_index[1]
+
+        self._compute_hops(flock)
+
+    def forward(self, flock: Data) -> Tensor:
+        """
+        Compute expert control actions from PyG Data flock state.
+
+        Orchestrates the full murmuration dynamics pipeline including
+        maximum entropy alignment forces, density waves, threat response,
+        and thermal gradient following.
+
+        Args:
+            flock: PyG Data with position, velocity, temperature, gradient,
+                   wind, and edge_index
 
         Returns:
-            Tensor [N] with any singleton dimensions removed
-        """
-        return (
-            temperature.squeeze(1)
-            if temperature.ndim > 1 and temperature.shape[1] == 1
-            else temperature
-        )
-
-    def _estimate_gradient(self, flock: TensorDictBase):
-        """
-        Uses provided gradient or estimates if not available.
-
-        Prioritizes using the gradient provided by the environment (which has
-        access to the full temperature field). Falls back to estimation using
-        finite differences only if gradient is not provided:
-
-            ∇T_i ≈ Σ_j (T_j - T_i)(𝐱_j - 𝐱_i) / |𝐱_j - 𝐱_i|²
-
-        Args:
-            flock: TensorDict containing gradient or positions/temperatures,
-                   ensures gradient field is present
-
-        """
-        if "gradient" in flock and flock["gradient"] is not None:
-            return
-        
-        temperature = self._ensure_1d_temperature(flock["temperature"])
-
-        if "edge_source" not in flock or not flock["edge_source"].numel():
-            flock["gradient"] = self._vertical_heat_gradient(flock)
-            return
-
-        position_diff = (
-            flock["position"][flock["edge_target"]] - 
-            flock["position"][flock["edge_source"]]
-        )
-        temperature_diff = (
-            temperature[flock["edge_target"]] - 
-            temperature[flock["edge_source"]]
-        )
-
-        significant_mask = th.abs(temperature_diff) > self.mmm.epsilon
-        gradient_sum     = th.zeros_like(flock["position"])
-        neighbor_counts  = th.bincount(
-            input     = flock["edge_source"][significant_mask],
-            minlength = self.flock.agent_count
-        ).float()
-
-        gradient_sum.index_add_(
-            dim    = 0,
-            index  = flock["edge_source"][significant_mask],
-            source = position_diff[significant_mask] * temperature_diff[
-                significant_mask
-            ].unsqueeze(dim=1)
-        )
-        gradient_estimate = (
-            gradient_sum / 
-            neighbor_counts.clamp_min(1).unsqueeze(dim=1)
-        )
-
-        flock["gradient"] = th.where(
-            condition = (neighbor_counts == 0).unsqueeze(dim=1),
-            input     = self._vertical_heat_gradient(flock),
-            other     = gradient_estimate
-        )
-
-    def _update_graph_state(self, flock: TensorDictBase):
-        """
-        Update graph connectivity using provided or computed topology.
-
-        Uses provided edge topology if available (from environment), otherwise
-        computes k-nearest neighbor topology. This ensures consistency between
-        expert demonstrations and learned policy.
-
-        Args:
-            flock: TensorDict containing positions and optionally edge_index,
-                   updated with graph state
-        """
-        if "edge_index" in flock and flock["edge_index"] is not None:
-            edge_idx = flock["edge_index"]
-            edge_idx = edge_idx[0] if edge_idx.dim() == 3 else edge_idx
-            flock["edge_source"] = edge_idx[0]
-            flock["edge_target"] = edge_idx[1]
-        else:
-            self._compute_topological_neighbors(flock)
-        
-        self._compute_topological_distances(flock)
-
-    def _vertical_heat_gradient(self, flock: TensorDictBase) -> Tensor:
-        """
-        Creates a default vertical temperature gradient.
-
-        Models natural convection where heat rises, creating a vertical gradient:
-
-            ∇T = (T/T_max) 𝐞_z
-
-        This fallback is used when agents are isolated or in uniform temperature
-        fields where neighbor-based estimation is unavailable.
-
-        Args:
-            flock: TensorDict containing positions and temperatures
-
-        Returns:
-            Tensor [N, d] containing vertical gradient vectors
-        """
-        num_agents, dimension = flock["position"].shape
-
-        vertical_direction = th.zeros(
-            device = flock["position"].device,
-            size   = (num_agents, dimension)
-        )
-        vertical_direction[:, -1] = 1.0
-
-        normalized_temperature = (
-            self._ensure_1d_temperature(flock["temperature"]) / 
-            self.safety.max_temperature
-        )
-
-        return vertical_direction * normalized_temperature.unsqueeze(1)
-
-    def forward(self, flock: TensorDictBase) -> TensorDictBase:
-        """
-        Compute control actions in TorchRL-compatible format.
-
-        This method makes MurmurationController compatible with TorchRL's
-        expected policy interface by wrapping the nominal action
-        computation and returning a TensorDict with the action.
-
-        Args:
-            flock: TensorDict containing the current flock state
-
-        Returns:
-            TensorDict with the computed action added
+            Control actions (accelerations) [N, 3]
         """
         self._design_nominal_action(flock)
-        return flock.set("action", flock["action"])
+        return flock.action
+
+    def generate_trajectory(
+        self,
+        generator    : TrajectoryGenerator,
+        num_frames   : int,
+        snapshot_idx : int
+    ) -> list[Data]:
+        """
+        Generate expert trajectory as PyG Data objects.
+
+        Produces a sequence of graph states representing the flock's evolution
+        under expert control with consistent environmental conditions. Each
+        frame captures the full state and expert action for behavioral cloning.
+
+        The feature vector for each agent concatenates:
+        - Position             (3D)
+        - Velocity             (3D)
+        - Temperature          (1D)
+        - Temperature gradient (3D)
+        - Wind field           (3D)
+
+        This 13-dimensional representation matches the GNN policy input.
+
+        Args:
+            generator    : Trajectory generator providing physics simulation
+            num_frames   : Number of simulation frames to generate
+            snapshot_idx : WRF snapshot index for consistent conditions
+
+        Returns:
+            List of PyG Data objects, one per frame, containing:
+                - action        : Expert control actions      [N, 3]
+                - edge_index    : Topological connectivity    [2, E]
+                - frame         : Temporal index
+                - gradient      : Temperature gradient        [N, 3]
+                - heterogeneity : Individual noise amplitudes [N]
+                - position      : Agent positions             [N, 3]
+                - temperature   : Temperature values          [N, 1]
+                - velocity      : Agent velocities            [N, 3]
+                - wind          : Wind field                  [N, 3]
+                - x             : Concatenated node features  [N, 13]
+        """
+        state      = generator.reset(snapshot_idx)
+        trajectory = []
+
+        for frame in range(num_frames):
+            state.frame = frame
+            action      = self.forward(state)
+            features    = th.cat(
+                dim     = -1,
+                tensors = [
+                    state.position,
+                    state.velocity,
+                    state.temperature,
+                    state.gradient,
+                    state.wind
+                ]
+            )
+
+            trajectory.append(
+                Data(
+                    action        = action,
+                    distances     = state.distances,
+                    edge_index    = state.edge_index,
+                    gradient      = state.gradient,
+                    heterogeneity = state.heterogeneity,
+                    position      = state.position,
+                    temperature   = state.temperature,
+                    velocity      = state.velocity,
+                    wind          = state.wind,
+                    x             = features
+                )
+            )
+
+            state = generator.step(action)
+
+        return trajectory

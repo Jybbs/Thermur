@@ -4,28 +4,25 @@ build-backend = "hatchling.build"
 
 [project]
 name            = "thermur"
-version         = "0.1.0"
+version         = "0.2.0"
 description     = "Thermally-constrained flocking and color-mapping for wildfires."
 authors         = [{ name = "James Parkington", email = "pongs.acreage.0o@icloud.com" }]
 readme          = "README.md"
 requires-python = ">=3.13"
 license         = { text = "MIT" }
-dependencies    = [ 
-    "globus-sdk",
-    "gymnasium",
+dependencies    = [
     "hydra-zen",
     "lightning",
     "netcdf4",
     "pydantic",
     "pydantic-settings",
     "pyarrow",
-    "qpth",
     "questionary",
     "rich",
+    "scipy",
     "torch",
     "torch-geometric",
     "torchmetrics",
-    "torchrl",
     "typer",
     "wandb[media]",
     "xarray"

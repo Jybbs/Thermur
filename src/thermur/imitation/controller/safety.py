@@ -1,138 +1,117 @@
 """
-Implements the Control Barrier Function (CBF) based safety filter.
+Implements thermal safety constraints using Kreisselmeier-Steinhauser penalties.
 
-This module is responsible for ensuring that the flock operates within its
-defined safety constraints, specifically the maximum thermal limit. It achieves
-this by solving a Quadratic Program (QP) at each timestep using the torch-native
-`qpth` library.
+This module provides gradient-based thermal safety enforcement without requiring
+optimization solvers. Using smooth penalty functions, it guides agents away from
+dangerous thermal regions while maintaining differentiability for neural network
+training.
 """
 from __future__ import annotations
-from qpth.qp    import QPFunction
 from typing     import TYPE_CHECKING
-
-import torch as th
-
+from torch      import sigmoid
 
 if TYPE_CHECKING:
-    from config.imitation.controller import FlockModel, SafetyModel
-    from tensordict                  import TensorDictBase
+    from config.imitation.controller import SafetyModel
     from torch                       import Tensor
+    from torch_geometric.data        import Data
 
 
-class CBFSafetyFilter:
+class ThermalPenalty:
     """
-    A safety layer that uses a thermal CBF to filter unsafe control actions.
+    A thermal safety layer using Kreisselmeier-Steinhauser soft penalties.
 
-    This class formulates and solves the real-time Quadratic Program:
-        u* = argmin ||u - u_nom||²
-        s.t.  ∇h(x) · u ≥ -α · h(x)
+    This class implements smooth thermal constraints that prevent agents from
+    exceeding temperature limits. Unlike hard constraint methods, this approach
+    uses differentiable penalties that are compatible with gradient-based learning.
 
-    This ensures the control action u* does not lead the agent out of the
-    pre-defined safe set C = {x | h(x) ≥ 0}, where h(s) = T_max - T(s)
-    creates a safety boundary at the maximum survivable temperature.
+    The Kreisselmeier-Steinhauser (KS) function provides a smooth approximation
+    to max(0, violation) that maintains differentiability everywhere:
+
+        p(c) = (κ/ρ)·ln(1 + exp(-ρ·c))
+
+    where c(𝐱,𝐮) = ∇T(𝐱)ᵀ𝐮 + α·(T_max - T(𝐱)) is the thermal constraint.
+
+    As ρ → ∞, the penalty approaches hard constraint behavior while maintaining
+    numerical stability. The gradient ∇p provides smooth correction directions
+    that guide actions toward thermal safety.
     """
 
-    def __init__(
-        self,
-        flock  : FlockModel,
-        safety : SafetyModel
-    ):
+    def __init__(self, safety: SafetyModel):
         """
-        Initializes the safety filter with thermal barrier configuration.
-
-        Unlike OSQP, `qpth` is stateless, so no solver setup is needed here.
-        We pre-construct the constant identity matrix `Q` for efficiency.
+        Initializes the thermal penalty layer with configuration parameters.
 
         Args:
-            flock  : Flock configuration model containing agent properties
-            safety : Safety configuration with CBF parameters and thresholds
+            safety : Safety configuration with KS parameters and temperature limits
         """
-        self.activation_count     = 0
-        self.activation_tolerance = safety.cbf_tolerance
-        self.agent_count          = flock.agent_count
-        self.max_temperature      = safety.max_temperature
-        self.safety               = safety
-        self.total_queries        = 0
-        self.Q                    = th.eye(3, dtype=th.float32)
-
-    def _log_activation(self, is_active: Tensor):
-        """
-        Records barrier function activations for debugging and monitoring.
-
-        Args:
-            is_active: Boolean tensor indicating which agents had the CBF
-                       actively modify their control input.
-        """
-        self.activation_count += is_active.sum().item()
-        self.total_queries    += is_active.shape[0]
+        self.safety          = safety
+        self.total_queries   = 0
+        self.violation_count = 0
 
     def filter(
         self,
-        flock     : TensorDictBase,
+        flock     : Data,
         u_nominal : Tensor
     ) -> Tensor:
         """
-        Filters a nominal control action to ensure safety using `qpth`.
+        Applies thermal safety penalties to nominal control actions.
 
-        This method translates the CBF safety constraint, ∇h(x) · u ≥ -αh(x),
-        into a batch of standard Quadratic Programs (QPs) and solves them to
-        find the safe action `u*` that is minimally distant from the desired
-        nominal action `u_nom`.
+        Uses the Kreisselmeier-Steinhauser function to create smooth penalties
+        for constraint violations. The gradient of this penalty provides a
+        correction direction that guides actions toward safety.
 
-        The objective `min ||u - u_nom||²` and the CBF inequality are encoded
-        into the QP matrices `Q`, `p`, `G`, and `h` for the `qpth` solver.
+        The thermal constraint is:
+
+            c(𝐱,𝐮) = ∇T(𝐱)ᵀ𝐮 + α·(T_max - T(𝐱))
+
+        where c ≥ 0 represents thermally safe actions. When c < 0 (violation),
+        the KS penalty activates smoothly via:
+
+            ∇p/∇𝐮 = κ·σ(-ρ·c)·∇T
+
+        where σ is the sigmoid function. The correction is then:
+
+            𝐮_safe = 𝐮_nom - ∇p/∇𝐮
+
+        The sigmoid ensures smooth activation:
+            - As c → -∞ (larger violations): σ(-ρ·c) → 1, applying full correction
+            - As c → 0⁺ (safe region): σ(-ρ·c) → 0, applying no correction
 
         Args:
-            flock     : The current observation data for the flock containing
-                        gradient and temperature tensors.
-            u_nominal : The desired control action from the policy network.
+            flock     : Current observation data containing gradient ∇T and
+                        temperature T tensors
+            u_nominal : Desired control actions from the policy network
 
         Returns:
-            The batch of safe control actions `u*`.
+            Batch of safety-adjusted control actions
         """
-        agent_count = self.agent_count
-        device      = u_nominal.device
-        h_grads     = -flock["gradient"]
-        h_values    = self.max_temperature - flock["temperature"]
-        solver      = QPFunction(
-            eps     = self.safety.qp_eps,
-            maxIter = self.safety.qp_max_iter,
-            verbose = -1  # Suppress warnings
+        barrier_term = (
+            self.safety.thermal_alpha
+            * (self.safety.max_temperature - flock.temperature.squeeze())
         )
 
-        try:
-            if h_values.dim() == 2 and h_values.shape[1] == 1:
-                h_values = h_values.squeeze(-1)  # [N, 1] -> [N]
-            
-            Q = self.Q.to(device).expand(agent_count, -1, -1)     # [N, 3, 3]
-            p = -u_nominal                                        # [N, 3]
-            G = -h_grads.unsqueeze(1)                             # [N, 1, 3]
-            h = (self.safety.cbf_alpha * h_values).unsqueeze(-1)  # [N, 1]
-            A = th.empty(agent_count, 0, 3, device=device)
-            b = th.empty(agent_count, 0, device=device)
-            
-            u_safe = solver(Q, p, G, h, A, b)
+        constraint = (flock.gradient * u_nominal).sum(dim=1) + barrier_term
+        if constraint.any():
+            self.violation_count += (constraint < 0).sum().item()
+            self.total_queries   += flock.position.shape[0]
 
-            assert u_safe is not None
-            delta     = u_safe - u_nominal
-            is_active = delta.norm(dim=1) > self.activation_tolerance
-            self._log_activation(is_active)
-            return u_safe.view_as(u_nominal)
-
-        except Exception:
-            return (
-                u_nominal if self.safety.qp_on_failure == "nominal"
-                else th.zeros_like(u_nominal)
+            return u_nominal - (
+                self.safety.ks_kappa * flock.gradient
+                * sigmoid(-self.safety.ks_rho * constraint).unsqueeze(1)
             )
 
-    def get_activation_rate(self) -> float:
+        return u_nominal
+
+    def get_violation_rate(self) -> float:
         """
-        Returns the percentage of queries where the CBF was active.
+        Returns the percentage of queries where thermal constraints were violated.
+
+        This metric helps monitor safety performance during training. Lower rates
+        indicate better constraint satisfaction.
 
         Returns:
-            The activation rate as a percentage.
+            Violation rate as a percentage [0, 100]
         """
         return (
             0.0 if self.total_queries == 0
-            else (self.activation_count / self.total_queries) * 100.0
+            else (self.violation_count / self.total_queries) * 100.0
         )

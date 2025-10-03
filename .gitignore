@@ -1,67 +1,17 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*.so
-
-# Build artifacts
-*.egg-info/
+# Development
 *.lock
-build/
-checkpoints/
-dist/
-
-# Class materials
-requirements.pdf
-notes.md
-final/
-
-# Data directory
-data/
-
-# Jupyter
+.claude
+.DS_Store
 .ipynb_checkpoints
-.profile_default/
-.ipython/
+.venv
 
-# Logs and temporary files
-*.log
-*.tmp
-*.swp
-*.swo
-*.bak
-*.old
-outputs/
-logs/
+# Project-specific
+checkpoints/
+data/
+notes/
 wandb/
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# pyenv and Python-specific files
-.python-version
-pip-wheel-metadata/
-*.manifest
-
-# Testing
-htmlcov/
-.coverage
-.cache
-.nox/
-tox/
-.pytest_cache/
-pyrightconfig.json
-
-# Virtual environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# VS Code & extensions
-.vscode/
-.claude/
+# Python
+*.py[cod]
+*.so
+__pycache__/

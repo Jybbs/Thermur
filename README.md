@@ -23,22 +23,11 @@ Get Thermur running in under a minute:
 # Install from PyPI
 pip install thermur
 
-# Start training with sample data
-thermur train --sample
+# Start training (auto-downloads sample data on first run)
+thermur train
 
 # Monitor training progress in real-time
 thermur monitor  # Opens WandB dashboard
-```
-
-For the full wildfire dataset experience:
-
-```bash
-# Download WRF-SFIRE simulations (requires Globus)
-thermur download
-
-# Train with custom configuration
-thermur train controller.flock.agent_count=50 \
-              training.optimizer.learning_rate=0.001
 ```
 
 ---
@@ -75,57 +64,55 @@ Thermur orchestrates biomimetic flocking through a sophisticated machine learnin
 |-----------|------------|---------|
 | **Configuration** | [Hydra-zen](https://github.com/mit-ll-responsible-ai/hydra-zen) + [Pydantic](https://pydantic.dev/) | Composable configs with runtime validation and type safety |
 | **Training** | [PyTorch Lightning](https://lightning.ai/) | Distributed training orchestration with automatic mixed precision |
-| **Environment** | [TorchRL](https://pytorch.org/rl/) | Multi-agent simulation interfacing with WRF-Fire data |
+| **Environment** | [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) | Offline trajectory generation with WRF-Fire data |
 | **Policy Network** | [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) | Graph Neural Networks for topological neighbor interactions |
-| **Safety System** | [QPTh](https://github.com/locuslab/qpth) + CBF | Control Barrier Functions with differentiable QP solvers |
 | **CLI** | [Typer](https://typer.tiangolo.com/) + [Rich](https://rich.readthedocs.io/) | Beautiful terminal interface with fire gradient effects |
 | **Monitoring** | [Weights & Biases](https://wandb.ai/) | Real-time metrics ([view project](https://wandb.ai/Thermur/thermur-imitation/workspace)) |
-| **Data Transfer** | [Globus SDK](https://www.globus.org/) | High-performance scientific data transfer |
 
 ### System Architecture
 
 ```mermaid
 flowchart TB
     subgraph Data["🌐 <b>Data Pipeline</b>"]
-        A["<b>WRF-SFIRE Dataset</b><br/>147 Simulations • 5.33 TB"] 
+        A["<b>WRF-SFIRE Dataset</b><br/>147 Simulations • 5.33 TB"]
         B["<b>NetCDF → Tensors</b><br/>Batched Episodes"]
         A --> B
     end
-    
+
     subgraph Training["✨ <b>Training System</b>"]
         subgraph Expert["🕹️ <b>Expert Controller</b>"]
             direction TB
-            C["<b>Murmuration Dynamics</b><br/>κ = -1.3 alert coupling"]
-            D["<b>Hamiltonian Forces</b><br/>k = 7 neighbors"]
-            E["<b>CBF Safety Filter</b><br/>T < 475K"]
+            C["<b>Murmuration Dynamics</b><br/>η_i ~ N(0.70, 0.20) heterogeneity"]
+            D["<b>Maximum Entropy Alignment</b><br/>k = 7 topological neighbors"]
+            E["<b>Thermal Safety Filter</b><br/>T < 475K maintained"]
             C --> E
             D --> E
         end
-        
-        subgraph Learning["🧠 <b>Neural Policy</b>"]
+
+        subgraph Learning["🧠 <b>Imitation Learning</b>"]
             direction TB
-            F["<b>Experience Buffer</b><br/>10K trajectories"]
-            G["<b>GNN Policy π₀</b><br/>Message Passing"]
-            H["<b>Behavioral Cloning</b><br/>ℒ = MSE(a, a*)"]
+            F["<b>Offline Demonstrations</b><br/>10K trajectories"]
+            G["<b>GNN Policy</b><br/>PyG Message Passing"]
+            H["<b>Behavioral Cloning</b><br/>MSE(π(s), a*)"]
             F --> G
             F --> H
         end
-        
+
         E ==> F
-        H -.-> C
+        H -.-> G
     end
-    
-    subgraph Monitor["🪄 <b>Monitoring</b>"]
-        I["<b>Metrics:</b> χ ≥ 5, λ₂, SSIM"]
+
+    subgraph Monitor["🎨 <b>Monitoring</b>"]
+        I["<b>Metrics:</b> χ, λ₂, Energy, R²"]
         J["<b>WandB Logger</b>"]
         K["<b>Live Dashboard</b>"]
         I --> J
         J --> K
     end
-    
+
     Data ==> Training
     Training ==> Monitor
-    
+
     style Data fill:#0b393b,stroke:#052123,color:#fff
     style Training fill:#495057,stroke:#343a40,color:#fff
     style Expert fill:#002958,stroke:#001a39,color:#fff
@@ -135,13 +122,13 @@ flowchart TB
 
 ### Core Scientific Contributions
 
-1. **Heterogeneous Alert States**: ~30% of agents maintain heightened alertness with negative coupling ($`\kappa = -1.3`$), creating the variance necessary for critical state susceptibility $`\chi \geq 5`$. This mechanism, inspired by vigilance behavior in bird flocks [^8] [^9], enables the scale-free correlations observed in natural murmurations [^10].
+1. **Heterogeneous Behavioral Variance**: Individual noise amplitudes drawn from $`\eta_i \sim N(\mu=0.7, \sigma=0.20)`$ create the behavioral heterogeneity necessary for critical state dynamics. Based on the framework from [^8] with an optimized mean value, this continuous spectrum of responses, ranging from strongly aligning agents with low $`\eta_i`$ to weakly aligning agents with high $`\eta_i`$, maintains elevated susceptibility $`\chi \sim N`$ [^9] and enables the scale-free correlations observed in natural murmurations [^10].
 
 2. **Topological Interactions**: Each agent responds to exactly $`k=7`$ nearest neighbors regardless of distance, matching empirical observations of starling behavior [^11] and enabling scale-free information transfer with propagation speeds of 15-45 m/s [^12].
 
-3. **Control Barrier Functions**: Mathematically guaranteed safety through real-time quadratic programming [^13] solved efficiently with OSQP [^14], ensuring no agent exceeds thermal limits ($`T < 475K`$) via Control Barrier Function constraints [^15].
+3. **Thermal Safety Constraints**: Smooth penalty-based safety using the Kreisselmeier-Steinhauser formulation [^13], ensuring agents avoid thermal limits ($`T < 475K`$) through gradient-based corrections that integrate seamlessly with neural network training.
 
-4. **Graph Neural Networks**: Permutation-equivariant architecture [^16] that naturally handles dynamic flock topologies through message-passing on k-nearest neighbor graphs, implemented with PyTorch Geometric [^17].
+4. **Graph Neural Networks**: Permutation-equivariant architecture [^14] that naturally handles dynamic flock topologies through message-passing on k-nearest neighbor graphs, implemented with PyTorch Geometric [^15].
 
 ---
 
@@ -151,13 +138,13 @@ The system bridges biological observation with robotic control through a unified
 
 ### Unified Murmuration Control Theorem
 
-Natural starling flocks achieve near-instantaneous information propagation through a delicate phase transition between order and disorder. We engineer this criticality through heterogeneous alert states, where approximately 30% of agents actively oppose local alignment. This opposition, inspired by vigilance behavior in birds [^32][^33], creates the variance necessary for scale-free correlations.
+Natural starling flocks achieve near-instantaneous information propagation through a delicate phase transition between order and disorder. We engineer this criticality through heterogeneous behavioral variance, where individual noise amplitudes $`\eta_i \sim N(\mu, \sigma=0.20)`$ create a continuous spectrum of responses [^8]. This heterogeneity, wherein some agents strongly align while others move more independently, generates the variance necessary for scale-free correlations.
 
 Given $`N`$ agents with positions $`\mathbf{x}_i \in \mathbb{R}^3`$ and velocities $`\mathbf{v}_i \in \mathbb{R}^3`$, the control law:
 
 $`
 \hspace{0.5cm} \displaystyle
-\mathbf{u}_i^* = \text{CBF}\left[\mathbf{u}_i^{\text{nom}}\right]
+\mathbf{u}_i^* = \mathbf{u}_i^{\text{nom}} - \kappa \cdot \nabla T \cdot \sigma(-\rho c)
 `$  
 <br>
 
@@ -165,7 +152,7 @@ where the nominal control orchestrates multiple biologically-inspired components
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{v_0 \hat{\mathbf{s}}_i - \mathbf{v}_i}{\tau} + \eta_i \boldsymbol{\xi}_i}_{\text{Self-propulsion}} + \underbrace{\kappa_i \sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Hamiltonian alignment}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{8\lambda}{v_0^6}(v_0^2 - |\mathbf{v}_i|^2)^3\hat{\mathbf{v}}_i + \eta_i \boldsymbol{\xi}_i}_{\text{Quartic speed confinement [^16]}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment [^17]}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
@@ -173,39 +160,49 @@ $`
 
 ### The Mechanism of Criticality
 
-In bird flocks, some individuals scan for predators while others focus on following their neighbors. This creates a natural tension in the system. We model this by having agents randomly switch between "alert" and "relaxed" states, with about 30% alert at any given time, matching what biologists observe in real flocks.
+In bird flocks, individuals exhibit varying degrees of alignment with their neighbors, creating a natural heterogeneity in the system. We model this through individual noise amplitudes drawn from a Gaussian distribution $`\eta_i \sim N(\mu, \sigma=0.20)`$, which enables continuous phase transitions [^8].
 
-While relaxed birds align with their neighbors (using positive coupling), alert birds do the opposite with negative coupling ($`\kappa = -1.3`$) [^7]. This means alert birds actively turn away from the average direction of their neighbors, like contrarians in a group. This opposition creates the variance needed to keep the flock responsive, measured by susceptibility $`\chi \geq 5`$, which indicates the system is at criticality.
+Agents with low noise amplitudes strongly align with their neighbors, while those with high amplitudes move more independently. This continuous spectrum of behaviors rather than discrete states creates the variance necessary for critical dynamics. The resulting susceptibility $`\chi`$ scales with flock size $`N`$, confirming the system remains at criticality without requiring explicit anti-alignment mechanisms.
 
-Each agent watches exactly 7 nearest neighbors regardless of distance [^8]. This "topological" rule means information spreads the same way whether the flock is spread out or compressed, enabling rapid response across the entire group.
+Each agent watches exactly 7 nearest neighbors regardless of distance [^11]. This "topological" rule means information spreads the same way whether the flock is spread out or compressed, enabling rapid response across the entire group.
+
+### Speed Regulation Through Marginal Confinement
+
+Natural flocks maintain remarkably stable cruising speeds despite constant interactions and perturbations. This stability emerges from marginal speed confinement [^16], a mechanism where birds experience minimal resistance near their preferred velocity but increasingly strong restoring forces as they deviate further from it. The quartic potential structure, rather than the simpler quadratic forms often used in robotics, resolves a fundamental tension in collective behavior. It permits the speed fluctuations necessary for information propagation while preventing the flock from either dispersing into chaos or grinding to a halt.
+
+Our implementation uses this biologically-validated mechanism instead of artificial damping, ensuring agents achieve their full cruising speed of 11.1 m/s rather than being artificially capped at lower velocities.
+
+### Aerodynamic Realism
+
+Starlings don't fly through still air. They navigate wind fields that constantly push and pull them, demanding continuous adjustment of their flight forces. Our physics incorporates realistic aerodynamic drag calibrated from wind tunnel measurements of European starlings [^18], wherein drag depends on motion through the air mass itself rather than motion relative to the ground.
+
+This distinction matters profoundly. A bird flying at 11 m/s into a 5 m/s headwind experiences the same aerodynamic forces as one flying at 16 m/s in calm air. Our agents exploit tailwinds to conserve energy, work harder against headwinds to maintain speed, and allow crosswinds to naturally drift them sideways. 
+
+These dynamics emerge naturally from the physics rather than being explicitly programmed. The calibration from empirical bird flight data ensures that when our flock encounters the complex wind fields around wildfire plumes from WRF-Fire simulations, their responses match what we would observe in real starlings navigating similar conditions.
 
 ### Density Waves and Thermal Response
 
-When starlings detect a hawk, waves of movement ripple through the flock at speeds of 15-45 m/s [^35], much faster than any individual bird flies. These waves create dark bands that look like ink spreading through water. We reproduce this effect using reaction-diffusion equations, where crowding in one area causes neighboring regions to spread out, creating visible waves.
+When starlings detect a hawk, waves of movement ripple through the flock at speeds of 15-45 m/s [^12], much faster than any individual bird flies. These waves create dark bands that look like ink spreading through water. We reproduce this effect using reaction-diffusion equations, where crowding in one area causes neighboring regions to spread out, creating visible waves.
 
 When the flock encounters high temperatures, these density waves combine with temperature gradient following. The result is a flock that flows away from heat while the density waves make the danger visible through the pattern of movement.
 
 ### Safety Guarantees
 
-Control Barrier Functions go beyond typical safety measures by providing mathematical proof that temperature limits will never be exceeded [^13][^14][^15]. The system continuously solves an optimization problem that finds the smallest possible adjustment to the desired control that keeps the barrier function $`h(\mathbf{x}) = T_{\text{max}} - T(\mathbf{x})`$ positive.
+The thermal safety system uses smooth Kreisselmeier-Steinhauser penalties to guide agents away from dangerous temperatures [^13]. The gradient-based corrections create a continuous force field that intensifies near thermal boundaries, ensuring agents naturally avoid excessive heat without requiring optimization solvers.
 
 This guarantees agents never exceed 475 K, the maximum safe temperature for the hardware. Unlike rule-based systems that might fail in unexpected situations, this mathematical approach ensures safety in all conditions.
 
 ### Emergent Properties
 
-The unified control produces measurable dynamics matching biological flocks:
+The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics [^19]:
 
-- **Susceptibility**: $`\chi \in [5, 20]`$ maintaining critical responsiveness
+- **Critical State**: Maintained through heterogeneous noise $`\eta_i \sim N(\mu, \sigma=0.20)`$ creating behavioral variance
+- **Rapid Response**: Information propagates at 15-45 m/s through topological networks
+- **Scale-Free Dynamics**: Velocity correlations follow $`C(r) \sim r^{-1/3}`$ across all flock sizes
+- **Robust Cohesion**: Topological interactions with k=7 neighbors ensure connectivity
+- **Thermal Safety**: Smooth penalties maintain $`T < 475`$ K through gradient corrections
 
-- **Information Speed**: 15-45 m/s matching observed propagation rates
-
-- **Scale-Free Correlations**: $`C(r) \sim r^{-1/3}`$ across all flock sizes
-
-- **Network Connectivity**: Fiedler value $`\lambda_2 > 0`$ ensuring cohesion
-
-- **Thermal Safety**: Guaranteed $`T < 475`$ K through forward invariance
-
-These properties emerge from the interplay of components rather than explicit programming, transforming invisible thermal threats into intuitive visual patterns that humans can instinctively interpret.
+These emergent behaviors are verified through the comprehensive metrics suite described in [Monitoring & Metrics](#5-monitoring--metrics), ensuring the trained policy preserves the expert controller's critical dynamics.
 
 ---
 
@@ -221,12 +218,11 @@ thermur --help  # Shows all available commands with emoji icons
 
 | Command | Description | Key Options |
 |---------|-------------|-------------|
-| `train` | 🚀 Train the thermal drone flock using imitation learning | `--sample`, `--resume`, `--name` |
-| `download` | 📥 Download simulation data for training | `--sample`, `--wrf-sfire` |
+| `info` | 📋 Display system and configuration information | - |
 | `monitor` | 🎨 Open [WandB dashboard](https://wandb.ai/Thermur/thermur-imitation) in browser | - |
 | `runs` | 🏃 Explore training runs and configurations | `list`, `show`, `compare`, `clean` |
+| `train` | 🚀 Train the thermal drone flock using imitation learning | `--dry-run`, `--force`, `--name`, `--resume` |
 | `validate` | ✅ Validate system setup and configuration | `--config` |
-| `info` | 📋 Display system and configuration information | - |
 
 ### Training Workflow
 
@@ -236,8 +232,8 @@ The `train` command supports both interactive and non-interactive modes:
 # Interactive mode (default) - prompts for configuration
 thermur train
 
-# Named training run with sample data
-thermur train --name my-experiment --sample
+# Named training run (auto-downloads sample if needed)
+thermur train --name my-experiment
 
 # Resume from last checkpoint
 thermur train --resume last
@@ -247,8 +243,8 @@ thermur train --resume checkpoints/epoch5.ckpt
 
 # Non-interactive mode with Hydra overrides
 thermur train --no-interactive \
-              controller.murmuration.k_neighbors=7 \
-              controller.murmuration.alert_coupling_factor=-1.5 \
+              controller.mmm.heterogeneity_std=0.25 \
+              controller.mmm.k_neighbors=7 \
               training.optimizer.learning_rate=0.001
 
 # Dry run to validate configuration without training
@@ -261,31 +257,15 @@ Thermur uses [Hydra-zen](https://github.com/mit-ll-responsible-ai/hydra-zen) wit
 
 ```bash
 # Standard override syntax
-thermur train optimizer.learning_rate=0.001 # Set value
-thermur train +model.new_param=42           # Append new parameter
-thermur train ++model.force_param=true      # Force add/override
-thermur train ~model.remove_param           # Remove parameter
+thermur train training.optimizer.learning_rate=0.001   # Set value
+thermur train +training.architecture.new_param=42      # Append new parameter
+thermur train ++training.architecture.force_param=true # Force add/override
+thermur train ~training.architecture.remove_param      # Remove parameter
 
 # Combining multiple overrides
-thermur train --sample \
-              controller.flock.agent_count=50 \
+thermur train controller.mmm.agent_count=50 \
               training.hardware.accelerator=gpu \
               training.optimizer.max_epochs=100
-```
-
-### Data Management
-
-Download and manage training data with the `download` command:
-
-```bash
-# Interactive mode - choose between sample and full dataset
-thermur download
-
-# Download curated sample (468MB compressed, 1.5GB extracted)
-thermur download --sample
-
-# Browse full WRF-SFIRE dataset (5.3TB, 147 simulations)
-thermur download --wrf-sfire
 ```
 
 ### Run Management
@@ -320,7 +300,7 @@ Before training, validate your setup:
 thermur validate
 
 # Validate with config overrides
-thermur validate --config "controller.flock.agent_count=100"
+thermur validate controller.mmm.agent_count=100
 
 # Display system information
 thermur info
@@ -334,65 +314,64 @@ All training runs are automatically logged to our [WandB project](https://wandb.
 
 ### WRF-SFIRE Dataset
 
-The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^19]:
+The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^20]:
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
 | **Wind Speed** | 3-12 m/s | Initial wind conditions |
-| **Fuel Type** | 13 categories | Anderson fuel models |
+| **Fuel Type** | 13 categories | Anderson fuel models [^21] |
 | **Domain** | 40m resolution | LES with 4m fire mesh |
 | **Duration** | 20-30 minutes | Full plume development |
 | **Temperature** | Up to 600K | Includes extreme heating |
 
-### Data Acquisition
+### Data Management
+
+Thermur automatically manages training data:
 
 ```bash
-# Option 1: Quick start with curated sample (1.5 GB)
-thermur train --sample
+# Sample data (1.5GB) downloads automatically on first run
+thermur train
 
-# Option 2: Download specific simulations via Globus
-thermur download
-# Interactive selection of files like:
-#   - wrfout_W5F7R4 (moderate, balanced scenario)
-#   - wrfout_W3F1R0 (gentle training conditions)
-#   - wrfout_W12F4R8 (extreme stress testing)
-
-# Option 3: Full dataset for research (5.33 TB)
-thermur download --all  # Requires HPC storage
+# For full WRF-SFIRE dataset (5.3TB, 147 simulations):
+# 1. Download NetCDF files from the Globus endpoint
+# 2. Place them in data/raw/
+# 3. Training will automatically discover and use them
 ```
 
-Details on the data procurement process are in [`docs/data-procurement.md`](docs/data-procurement.md).
+For details on the WRF-SFIRE dataset and data procurement, see [`docs/data-procurement.md`](docs/data-procurement.md).
 
 ### Training Workflow
 
-The imitation learning pipeline leverages [PyTorch Lightning](https://lightning.ai/) for training orchestration and [TorchRL](https://pytorch.org/rl/) for experience collection:
+The imitation learning pipeline leverages [PyTorch Lightning](https://lightning.ai/) for training orchestration and [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) for graph-based learning:
 
-#### 1. Expert Demonstration Generation
+#### 1. Expert Trajectory Generation
 
 The physics-based controller generates optimal trajectories using [Pydantic](https://pydantic.dev/)-validated configuration:
 
 ```python
-from thermur.imitation.controller import MurmurationController
-from config.imitation.controller  import FlockModel, MurmurationModel, SafetyModel
+from thermur.imitation.controller import MurmurationController, ThermalPenalty
+from config.imitation.controller  import MurmurationModel, SafetyModel
 
-# Expert maintains critical state through alert heterogeneity
+# Create thermal safety filter
+safety  = SafetyModel(
+    ks_kappa         = 100.0,  # Penalty weight
+    ks_rho           = 30.0,   # Sharpness parameter
+    max_temperature  = 475.0,  # Critical threshold [K]
+    thermal_alpha    = 2.5     # Convergence rate
+)
+penalty = ThermalPenalty(safety)
+
+# Expert maintains critical state through heterogeneous noise
 expert = MurmurationController(
-    cbf    = cbf_safety_filter,  # Control Barrier Function filter
-    flock  = FlockModel(
-        agent_count         = 30,
-        communication_range = 50.0
+    mmm     = MurmurationModel(
+        agent_count         = 30,    # Number of agents in flock
+        heterogeneity_mean  = 0.7,   # Mean noise amplitude μ
+        heterogeneity_std   = 0.20,  # Noise heterogeneity σ
+        j_base              = 2.5,   # Uniform coupling strength J₀
+        k_neighbors         = 7,     # Topological interaction
     ),
-    mmm    = MurmurationModel(
-        alert_coupling_factor = -1.3,  # Negative coupling for alert birds
-        k_neighbors           = 7,     # Topological interaction
-        alert_to_relaxed_rate = 0.05,  # Markovian state transitions
-        velocity_noise_scale  = 0.2    # Active matter noise
-    ),
-    safety = SafetyModel(
-        max_temperature = 475.0,
-        threat_ratio    = 0.7,
-        cbf_alpha       = 2.5
-    )
+    penalty = penalty,
+    safety  = safety
 )
 ```
 
@@ -401,79 +380,157 @@ expert = MurmurationController(
 The [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) GNN learns from expert demonstrations:
 
 ```python
-from thermur.imitation.lightning import GNNPolicy
-from torch_geometric.nn          import GCNConv
+from thermur.imitation.training.policy import GNNPolicy
+from torch_geometric.nn                import GCNConv
 
 class GNNPolicy(LightningModule):
-    def __init__(self, architecture, collector, optimizer, scheduler):
+    def __init__(
+        self,
+        architecture : ArchitectureModel,
+        metrics      : MetricsFactory,
+        optimizer    : Callable[..., Optimizer],
+        scheduler    : Callable[..., LRScheduler]
+    ):
         super().__init__()
         # Build GNN layers with PyTorch Geometric
-        self.convs   = ModuleList([
-            GCNConv(hidden_dim, hidden_dim) 
-            for _ in range(architecture.num_layers)
-        ])
-        self.grus    = ModuleList([
-            GRUCell(hidden_dim, hidden_dim)
-            for _ in range(architecture.num_layers)
-        ])
-        self.encoder = Linear(13, architecture.hidden_dim)  # Node features
-        self.decoder = Linear(architecture.hidden_dim, 3)   # 3D actions
-    
+        dim, n = architecture.hidden_dim, architecture.num_layers
+        layers = lambda m: ModuleList([m(dim, dim) for _ in range(n)])
+
+        self.activation = getattr(nn, architecture.activation)()
+        self.convs      = layers(GCNConv)
+        self.decoder    = Linear(dim, 3)     # 3D actions
+        self.encoder    = Linear(13, dim)    # Node features
+        self.grus       = layers(GRUCell)
+
     def training_step(self, batch, batch_idx):
         # Behavioral cloning loss
-        actions_pred = self(batch["observation"])
-        loss = mse_loss(actions_pred, batch["action"])
+        actions_pred = self(batch)
+        loss = mse_loss(actions_pred, batch.action)
+        self.log("train/loss", loss)
         return loss
 ```
 
-#### 3. Experience Collection
+#### 3. Dataset Generation
 
-[TorchRL](https://pytorch.org/rl/) manages the replay buffer and trajectory collection:
+Using [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) for efficient graph-based learning from offline trajectories:
 
 ```python
-from torchrl.data                import TensorDictReplayBuffer
-from torchrl.data.replay_buffers import LazyTensorStorage, SamplerWithoutReplacement
+from torch_geometric.data           import Data, InMemoryDataset
+from torch_geometric.data.lightning import LightningDataset
 
-class DataModule(LightningDataModule):
-    def setup(self, stage):
-        self.buffer = TensorDictReplayBuffer(
-            batch_size = self.experience.batch_size,
-            prefetch   = self.experience.prefetch,
-            sampler    = SamplerWithoutReplacement(),
-            storage    = LazyTensorStorage(self.experience.buffer_size)
+class ExpertDataset(InMemoryDataset):
+    ...
+
+    def process(self):
+        # Generate expert trajectories using stratified sampling across snapshots
+        self.generator.wrf.load_datasets(self.raw_paths)
+
+        trajectory_frames  = int(
+            self.trajectory_duration / self.generator.physics.timeframe
         )
-        
-        self.collector = ExperienceCollector(
-            env                 = self.env,
-            expert              = self.expert,
-            frames_per_batch    = self.experience.frames_per_batch,
-            max_frames_per_traj = self.experience.max_frames_per_traj
+        n_snapshots        = self.generator.wrf.n_snapshots
+        total_trajectories = n_snapshots * self.trajectories_per_snapshot
+
+        data_list = []
+        for snapshot_idx in range(n_snapshots):
+            for _ in range(self.trajectories_per_snapshot):
+                # Each trajectory uses consistent environmental conditions
+                trajectory = self.murmuration.generate_trajectory(
+                    generator    = self.generator,
+                    num_frames   = trajectory_frames,
+                    snapshot_idx = snapshot_idx
+                )
+                # Each trajectory is list of Data(x=[N,13], action=[N,3], edge_index=[2,E])
+                data_list.extend(trajectory)
+
+        self.save(self.collate(data_list), self.processed_paths[0])
+
+    @classmethod
+    def as_lightning_datamodule(
+        cls,
+        batch_size  : int,
+        controller  : DictConfig,
+        environment : DictConfig,
+        generator   : TrajectoryGenerator,
+        hardware    : HardwareModel,
+        murmuration : MurmurationController,
+        train_split : float,
+        ui          : ThermurUI
+    ) -> LightningDataset:
+        # Create dataset with all necessary components for generation
+        dataset = cls(
+            controller                = controller,
+            environment               = environment,
+            generator                 = generator,
+            murmuration               = murmuration,
+            sample_url                = environment.dataset.sample_url,
+            trajectories_per_snapshot = environment.dataset.trajectories_per_snapshot,
+            trajectory_duration       = environment.dataset.trajectory_duration,
+            ui                        = ui
+        )
+
+        # Random train/val split with PyG's index_select
+        train_size = int(len(dataset) * train_split)
+        indices    = torch.randperm(len(dataset))
+
+        return LightningDataset(
+            batch_size    = batch_size,
+            num_workers   = hardware.num_workers,
+            pin_memory    = hardware.pin_memory,
+            train_dataset = dataset.index_select(indices[:train_size]),
+            val_dataset   = dataset.index_select(indices[train_size:])
         )
 ```
 
-#### 4. Safety Validation with CBF
+#### 4. Safety Validation with Thermal Penalties
 
 Every control command passes through the [QPTh](https://github.com/locuslab/qpth)-based safety filter:
 
 ```python
-# Control Barrier Function constraint: h(x) = T_max - T(x) ≥ 0
+# Thermal constraint: c(x,u) = ∇T·u + α(T_max - T) ≥ 0
 # Solved as QP: min ||u - u_nom||² s.t. ḣ(x,u) ≥ -α·h(x)
 u_safe = cbf_filter.filter(flock_state, u_nominal)
 ```
 
 #### 5. Monitoring & Metrics
 
-Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermur-imitation/workspace):
+Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermur-imitation/workspace). The comprehensive metrics suite evaluates both imitation learning performance and preservation of emergent flocking behaviors:
 
-- **Susceptibility χ**: Collective responsiveness (target ≥ 5)
+**Imitation Learning Metrics:**
 
-- **Cohesion λ₂**: Fiedler value of communication graph
+- **Acceleration**: Tracks average control effort to ensure physically plausible forces
 
-- **Legibility SSIM**: Structural similarity to wind field [^20]
+- **MAE/RMSE/R²**: Measure how accurately the policy reproduces expert actions, with MAE < 1.0 m/s² indicating excellent imitation
 
-- **Safety Violations**: Should remain at zero
+- **Velocity**: Monitors mean flight speed remains realistic (9-12 m/s for starlings [^22])
 
-- **Information Speed**: Perturbation propagation (15-45 m/s)
+**Emergent Behavior Metrics:**
+
+- **Effective Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the maximum entropy energy function with uniform coupling, where behavioral variance from heterogeneous noise drives phase transitions.
+
+- **Fiedler Value $`\lambda_2`$**: Quantifies algebraic connectivity via the second smallest eigenvalue of the graph Laplacian, computed efficiently using adaptive Lanczos iteration. Positive values ensure flock cohesion.
+
+- **Noise Heterogeneity**: Monitors variance in individual noise amplitudes to maintain critical dynamics
+
+- **Scale-Free Correlation**: Verifies velocity correlations follow the power law $`C(r) \sim r^{-1/3}`$ characteristic of natural murmurations through binned correlation analysis.
+
+- **Susceptibility $`\chi`$**: Measures collective responsiveness through integrated velocity correlations. In critical systems, $`\chi`$ scales with flock size $`N`$ without saturation, enabling rapid information transfer [^10] [^9].
+
+**Dynamic Response Metrics:**
+
+- **Clustering Coefficient**: Measures local neighborhood cohesion via ratio of closed triangles to possible triangles
+
+- **Orientation Coherence**: Quantifies alignment via polarization order parameter $`\Phi = |\sum_i \hat{\mathbf{v}}_i|/N`$
+
+- **Orientation Wave**: Detects density waves by measuring spatial gradients in heading angles (0.15-0.40 rad/m during murmurations)
+
+- **Thermal Reactivity**: Quantifies collective threat response via velocity-temperature spatial correlation
+
+**Safety Metrics:**
+
+- **Temperature**: Average thermal exposure across the flock
+
+- **Thermal Violations**: Minimized through smooth penalty corrections
 
 ---
 
@@ -534,8 +591,8 @@ wandb login
 thermur validate
 thermur info
 
-# Download sample data (468MB compressed, 1.5GB extracted)
-thermur download --sample
+# Start training (sample data downloads automatically if needed)
+thermur train
 ```
 
 ---
@@ -547,65 +604,60 @@ The codebase uses a deliberate two-pronged architecture separating configuration
 ```
 thermur/
 ├── src/
-│   ├── config/                    # Lightweight configuration layer (fast imports)
+│   ├── config/                     # Lightweight configuration layer (fast imports)
 │   │   ├── cli/
-│   │   │   ├── schemas.py         # Pydantic models for CLI
-│   │   │   └── builds.py          # Hydra-zen builds
+│   │   │   ├── builds.py           # Hydra-zen builds
+│   │   │   └── schemas.py          # Pydantic models for CLI
 │   │   └── imitation/
 │   │       ├── controller/
-│   │       │   ├── schemas.py     # FlockModel, MurmurationModel, SafetyModel
-│   │       │   └── builds.py      # Controller component builds
-│   │       ├── lightning/
-│   │       │   ├── schemas.py     # Training hyperparameters
-│   │       │   └── builds.py      # Trainer, callbacks, loggers
-│   │       └── simulation/
-│   │           ├── schemas.py     # Physics and world models
-│   │           └── builds.py      # Environment builds
+│   │       │   ├── builds.py       # Controller component builds
+│   │       │   └── schemas.py      # MurmurationModel, SafetyModel
+│   │       ├── environment/
+│   │       │   ├── builds.py       # Environment builds
+│   │       │   └── schemas.py      # Physics and world models
+│   │       └── training/
+│   │           ├── builds.py       # Trainer, callbacks, loggers
+│   │           └── schemas.py      # Training hyperparameters
 │   │
-│   └── thermur/                   # Core implementation (heavy dependencies)
+│   └── thermur/                    # Core implementation (heavy dependencies)
 │       ├── cli/
-│       │   ├── app.py             # Application context
-│       │   ├── cli.py             # Main entry point
+│       │   ├── app.py              # Application context
+│       │   ├── cli.py              # Main entry point
 │       │   ├── commands/
-│       │   │   ├── train.py       # Training orchestration
-│       │   │   ├── download.py    # Data acquisition
-│       │   │   ├── monitor.py     # WandB dashboard
-│       │   │   └── validate.py    # System verification
+│       │   │   ├── info.py         # System information
+│       │   │   ├── monitor.py      # WandB dashboard
+│       │   │   ├── runs.py         # Run history management
+│       │   │   ├── train.py        # Training orchestration
+│       │   │   └── validate.py     # System verification
 │       │   └── helpers/
-│       │       ├── ui.py          # Rich console formatting
-│       │       ├── prompts.py     # Interactive configuration
-│       │       └── globus.py      # Data transfer client
+│       │       ├── prompts.py      # Interactive configuration
+│       │       ├── system.py       # System utilities
+│       │       └── ui.py           # Rich console formatting
 │       │
 │       └── imitation/
 │           ├── controller/
-│           │   ├── murmuration.py # Biomimetic flocking (critical state)
-│           │   └── safety.py      # CBF safety filter (QP solver)
-│           ├── lightning/
-│           │   ├── policy.py      # GNN architecture (PyG)
-│           │   ├── experience.py  # Experience replay buffer
-│           │   └── callbacks.py   # Training callbacks
-│           ├── monitoring/
-│           │   ├── metrics.py     # Susceptibility, cohesion, SSIM
-│           │   └── events.py      # Event tracking system
-│           └── simulation/
-│               ├── environment.py # Multi-agent simulation
-│               └── loader.py      # WRF-SFIRE data interface
+│           │   ├── dataset.py      # Expert dataset with stratified sampling
+│           │   ├── murmuration.py  # Biomimetic flocking (critical state)
+│           │   └── safety.py       # Thermal safety penalties
+│           ├── environment/
+│           │   ├── generator.py    # Physics simulation for trajectories
+│           │   └── loader.py       # WRF-SFIRE data interface
+│           └── training/
+│               ├── callbacks.py    # Rich progress bar & model summary
+│               ├── metrics.py      # TorchMetrics-based evaluation suite
+│               └── policy.py       # GNN policy with PyG message passing
 │
 ├── data/
-│   ├── samples/                   # 1.5GB sample data
-│   └── wrf-sfire/                 # Full dataset storage
+│   ├── processed/                  # Cached PyG expert trajectories
+│   └── raw/                        # NetCDF files from WRF-SFIRE
 │
 ├── docs/
-│   ├── data-procurement.md        # Dataset acquisition guide
-│   └── mathematical-framework.md  # Complete mathematical formulation
+│   ├── data-procurement.md         # Dataset acquisition guide
+│   └── mathematical-framework.md   # Complete mathematical formulation
 │
-├── outputs/                       # Training run artifacts
-│   └── IM001/                     # Example run directory
-│
-├── wandb/                         # Experiment tracking
-├── pyproject.toml                 # Package configuration
-├── uv.lock                        # Locked dependencies
-└── README.md
+├── wandb/                          # Experiment tracking
+├── pyproject.toml                  # Package configuration
+└── uv.lock                         # Locked dependencies
 ```
 
 ---
@@ -621,16 +673,7 @@ Thermur integrates with [Weights & Biases](https://wandb.ai/) for experiment tra
 thermur monitor
 ```
 
-This opens the [WandB project](https://wandb.ai/Thermur/thermur-imitation/workspace) where training metrics are logged:
-
-- **Training Metrics**: Imitation loss, learning rate, gradient norms
-- **Core Evaluation Metrics** (tracked by `MetricsCollector`):
-  - **Susceptibility χ**: Collective responsiveness (target ≥ 5)
-  - **Cohesion λ₂**: Fiedler value of communication graph
-  - **Legibility SSIM**: Structural similarity to wind field
-  - **Safety Violations**: Temperature constraint violations
-  - **Information Speed**: Perturbation propagation velocity
-- **Performance Metrics**: Batch processing time, GPU utilization
+This opens the [WandB project](https://wandb.ai/Thermur/thermur-imitation/workspace) where all metrics are automatically logged during training. See [Monitoring & Metrics](#5-monitoring--metrics) for the complete list of tracked metrics.
 
 ### Run Management
 
@@ -704,58 +747,56 @@ For the WRF-SFIRE dataset:
 
 [^1]: U.S. Fire Administration. 2013. "Yarnell Hill Fire, Arizona." *Wildland Fire Fatality Reports*.
 
-[^2]: Page, Wesley G., Patrick H. Freeborn, Bret W. Butler, and W. Matt Jolly. 2019. "A Review of US Wildland Firefighter Entrapments: Trends, Important Environmental Factors, and Research Needs." *International Journal of Wildland Fire* 28 (8): 551–69. https://doi.org/10.1071/WF19022  
+[^2]: Page, Wesley G., Patrick H. Freeborn, Bret W. Butler, and W. Matt Jolly. 2019. "A Review of US Wildland Firefighter Entrapments: Trends, Important Environmental Factors, and Research Needs." *International Journal of Wildland Fire* 28 (8): 551–69. https://doi.org/10.1071/WF19022
 
-[^3]: Wolfe, Jeremy M. 2020. "Visual Search: How Do We Find What We Are Looking For?" *Annual Review of Vision Science* 6: 539–62. https://doi.org/10.1146/annurev-vision-091718-015048  
+[^3]: Wolfe, Jeremy M. 2020. "Visual Search: How Do We Find What We Are Looking For?" *Annual Review of Vision Science* 6: 539–62. https://doi.org/10.1146/annurev-vision-091718-015048
 
-[^4]: Johansson, Gunnar. 1973. "Visual Perception of Biological Motion and a Model for Its Analysis." *Perception & Psychophysics* 14 (2): 201–11. https://doi.org/10.3758/BF03212378  
+[^4]: Johansson, Gunnar. 1973. "Visual Perception of Biological Motion and a Model for Its Analysis." *Perception & Psychophysics* 14 (2): 201–11. https://doi.org/10.3758/BF03212378
 
-[^5]: Reynolds, Craig W. 1987. "Flocks, Herds and Schools: A Distributed Behavioral Model." *ACM SIGGRAPH Computer Graphics* 21 (4): 25–34. https://doi.org/10.1145/37402.37406  
+[^5]: Reynolds, Craig W. 1987. "Flocks, Herds and Schools: A Distributed Behavioral Model." *ACM SIGGRAPH Computer Graphics* 21 (4): 25–34. https://doi.org/10.1145/37402.37406
 
-[^6]: Häusermann, D., et al. 2023. "FireDrone: Multi-Environment Thermally Agnostic Aerial Robot." *Advanced Intelligent Systems* 5 (23): 2300101. https://doi.org/10.1002/aisy.202300101  
+[^6]: Häusermann, D., et al. 2023. "FireDrone: Multi-Environment Thermally Agnostic Aerial Robot." *Advanced Intelligent Systems* 5 (23): 2300101. https://doi.org/10.1002/aisy.202300101
 
-[^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109  
+[^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109
 
-[^8]: Beauchamp, Guy. 2015. *Animal Vigilance: Monitoring Predators and Competitors*. Academic Press.
+[^8]: Guisandez, Javier, Miguel Hoyuelos, and Horacio Sergio Wio. 2018. "Heterogeneous Agents Can Always Reach a Consensus: A Systematic Study." *Physical Review E* 98 (4): 042308. https://doi.org/10.1103/PhysRevE.98.042308
 
-[^9]: Fernández-Juricic, Esteban. 2012. "Sensory Basis of Vigilance Behavior in Birds: Synthesis and Future Prospects." *Behavioural Processes* 89 (2): 143–152. https://doi.org/10.1016/j.beproc.2011.10.006  
+[^9]: Attanasi, Alessandro, Andrea Cavagna, Lorenzo Del Castello, Irene Giardina, Stefano Melillo, Leonardo Parisi, Oliver Pohl, Bruno Rossaro, Edward Shen, Edmondo Silvestri, and Massimiliano Viale. 2014. "Finite-Size Scaling as a Way to Probe Near-Criticality in Natural Swarms." *Physical Review Letters* 113 (23): 238102. https://doi.org/10.1103/PhysRevLett.113.238102
 
 [^10]: Cavagna, Andrea, Alessio Cimarelli, Irene Giardina, Giorgio Parisi, Raffaele Santagati, Fabio Stefanini, and Massimiliano Viale. 2010. "Scale-Free Correlations in Starling Flocks." *PNAS* 107 (26): 11865–70. https://doi.org/10.1073/pnas.1005766107
 
-[^11]: Ballerini, M. et al. 2008. "Interaction Ruling Animal Collective Behavior Depends on Topological Rather than Metric Distance." *PNAS* 105 (4): 1232–37. https://doi.org/10.1073/pnas.0711437105  
+[^11]: Ballerini, M. et al. 2008. "Interaction Ruling Animal Collective Behavior Depends on Topological Rather than Metric Distance." *PNAS* 105 (4): 1232–37. https://doi.org/10.1073/pnas.0711437105
 
 [^12]: Attanasi, Alessandro, et al. 2014. "Information Transfer and Behavioural Inertia in Starling Flocks." *Nature Physics* 10 (9): 691–696. https://doi.org/10.1038/nphys3035
 
-[^13]: Ames, Aaron D., Xiangru Xu, Jessy W. Grizzle, and Paulo Tabuada. 2016. "Control Barrier Function-Based Quadratic Programs for Safety-Critical Systems." *IEEE Transactions on Automatic Control* 62 (8): 3861–76. https://doi.org/10.1109/TAC.2016.2638961
+[^13]: Kreisselmeier, G., and R. Steinhauser. 1979. "Systematic Control Design by Optimizing a Vector Performance Index." *IFAC Proceedings Volumes* 12 (7): 113–17. https://doi.org/10.1016/S1474-6670(17)65584-8
 
-[^14]: Stellato, Bartolomeo, Goran Banjac, Paul Goulart, Alberto Bemporad, and Stephen Boyd. 2020. "OSQP: An Operator Splitting Solver for Quadratic Programs." *Mathematical Programming Computation* 12 (4): 637–672. https://doi.org/10.1007/s12532-020-00179-2
+[^14]: Gama, Fernando, Ekaterina Tolstaya, and Alejandro Ribeiro. 2021. "Graph Neural Networks for Decentralized Controllers." *ICASSP 2021 — 2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)*: 5260–5264. https://doi.org/10.1109/ICASSP39728.2021.9414563
 
-[^15]: Wang, Li, Magnus Egerstedt, and Aaron D. Ames. 2017. "Safety Barrier Certificates for Collision-Free Multirobot Systems." *IEEE Transactions on Robotics* 33 (3): 661–74. https://doi.org/10.1109/TRO.2017.2659727  
+[^15]: Fey, Matthias, and Jan E. Lenssen. 2019. "Fast Graph Representation Learning with PyTorch Geometric." *arXiv* 1903.02428. https://doi.org/10.48550/arXiv.1903.02428
 
-[^16]: Gama, Fernando, Ekaterina Tolstaya, and Alejandro Ribeiro. 2021. "Graph Neural Networks for Decentralized Controllers." *ICASSP 2021 — 2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)*: 5260–5264. https://doi.org/10.1109/ICASSP39728.2021.9414563
+[^16]: Cavagna, Andrea, Antonio Culla, Xiao Feng, Irene Giardina, Tomas S. Grigera, Willow Kion-Crosby, Stefania Melillo, Giulia Pisegna, Lorena Postiglione, and Pablo Villegas. 2022. "Marginal Speed Confinement Resolves the Conflict Between Correlation and Control in Collective Behaviour." *Nature Communications* 13 (1): 2315. https://doi.org/10.1038/s41467-022-29883-4
 
-[^17]: Fey, Matthias, and Jan E. Lenssen. 2019. "Fast Graph Representation Learning with PyTorch Geometric." *arXiv* 1903.02428. https://doi.org/10.48550/arXiv.1903.02428
+[^17]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
-[^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+[^18]: Nafi, Asif, Hadar Ben-Gida, Christopher G. Guglielmo, and Roi Gurka. 2020. "Aerodynamic Forces Acting on Birds During Flight: A Comparative Study of a Shorebird, Songbird and a Strigiform." *Experimental Thermal and Fluid Science* 113: 110018. https://doi.org/10.1016/j.expthermflusci.2019.110018
 
-[^19]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
+[^19]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
 
-[^20]: Wang, Zhou, Alan C. Bovik, Hamid R. Sheikh, and Eero P. Simoncelli. 2004. "Image Quality Assessment: From Error Visibility to Structural Similarity." *IEEE Transactions on Image Processing* 13 (4): 600–612. https://doi.org/10.1109/TIP.2003.819861
+[^20]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
 
-[^21]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002  
+[^21]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
 
-[^22]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2  
+[^22]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
 
-[^23]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
+[^23]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
 
-[^24]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
+[^24]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
 
 [^25]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
 
-[^26]: Cho, Kyunghyun, Bart Van Merriënboer, Caglar Gulcehre, Dzmitry Bahdanau, Fethi Bougares, Holger Schwenk, and Yoshua Bengio. 2014. "Learning Phrase Representations Using RNN Encoder-Decoder for Statistical Machine Translation." *Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP 2014)*, 1724–1734. https://doi.org/10.3115/v1/D14-1179
+[^26]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
 
-[^27]: Clarke, Roger. 2019. "Principles and Business Processes for Responsible AI." *Computer Law & Security Review* 35 (4): 410–422. https://doi.org/10.1016/j.clsr.2019.04.007
-
-[^28]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880  
+[^27]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
 
 ---

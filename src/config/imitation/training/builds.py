@@ -4,46 +4,42 @@ Training domain builds for hydra-zen configuration.
 This module provides pre-built components for the training infrastructure:
 
 Training Components:
-- Trainer                : PyTorch Lightning trainer with hardware configuration,
-                           gradient clipping, distributed training support, and
-                           callback management.
-- DataModule             : Handles experience replay buffer management, batch
-                           generation, and data loading for the imitation learning
-                           pipeline.
-- GNNPolicy              : Graph Neural Network policy that processes agent
-                           observations and produces control actions using attention
-                           mechanisms.
+- ExpertDataset       : PyG InMemoryDataset that generates and caches expert
+                        trajectories with automatic WRF data discovery.
+- GNNPolicy           : Graph Neural Network policy that processes agent
+                        observations and produces control actions.
+- Trainer             : PyTorch Lightning trainer with hardware configuration,
+                        gradient clipping, distributed training, and callbacks.
 
 Optimization:
-- AdamW                  : Adaptive optimizer with weight decay for training the
-                           policy network.
-- ReduceLROnPlateau      : Learning rate scheduler that reduces LR when validation
-                           metrics plateau.
+- AdamW               : Adaptive optimizer with weight decay for training the policy
+                        network.
+- ReduceLROnPlateau   : Learning rate scheduler that reduces LR when validation
+                        metrics plateau.
 
 Callbacks:
-- ModelCheckpoint        : Saves model checkpoints based on validation metrics with
-                           configurable retention policies.
-- EarlyStopping          : Monitors validation metrics and stops training when no
-                           improvement is detected.
-- LearningRateMonitor    : Tracks and logs learning rate changes during training.
-- MonitoringCallback     : Integrates with the metrics collector for training
-                           analytics.
+- ModelCheckpoint     : Saves model checkpoints based on validation metrics with
+                        configurable retention policies.
+- EarlyStopping       : Monitors validation metrics and stops training when no
+                        improvement is detected.
+- LearningRateMonitor : Tracks and logs learning rate changes during training.
 
 Logging:
-- WandbLogger            : Weights & Biases integration for experiment tracking and
-                           metric visualization.
+- WandbLogger         : Weights & Biases integration for experiment tracking and
+                        metric visualization.
 """
-from __future__                  import annotations
-from .schemas                    import *
-from config.cli.schemas          import WandbModel
-from hydra_zen                   import builds, make_config
-from pytorch_lightning           import Trainer
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.loggers   import WandbLogger
-from thermur.imitation.training  import DataModule, GNNPolicy, MetricsCollector, MonitoringCallback
-from torch.optim                 import AdamW
-from torch.optim.lr_scheduler    import ReduceLROnPlateau
-from typing                      import Any, TYPE_CHECKING
+from __future__                   import annotations
+from .schemas                     import *
+from config.cli.schemas           import DisplayModel, WandbModel
+from hydra_zen                    import builds, make_config
+from pytorch_lightning            import Trainer
+from pytorch_lightning.callbacks  import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers    import WandbLogger
+from thermur.imitation.controller import ExpertDataset
+from thermur.imitation.training   import CallbackFactory, GNNPolicy, MetricsFactory
+from torch.optim                  import AdamW
+from torch.optim.lr_scheduler     import ReduceLROnPlateau
+from typing                       import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hydra_zen.typing import Builds
@@ -52,7 +48,7 @@ if TYPE_CHECKING:
 TRAINING_USER_CONFIG = make_config(
     architecture = ArchitectureModel(),
     checkpoint   = CheckpointModel(),
-    experience   = ExperienceModel(),
+    display      = DisplayModel(),
     hardware     = HardwareModel(),
     metrics      = MetricsModel(),
     optimizer    = OptimizerModel(),
@@ -66,34 +62,28 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         dirpath                 = "${training.checkpoint.dirpath}",
         every_n_train_steps     = "${training.checkpoint.every_n_train_steps}",
         filename                = "checkpoint-{step}",
-        monitor                 = "${training.optimizer.training_metric}",
         mode                    = "${training.optimizer.mode}",
+        monitor                 = "validation/mse",
         save_last               = "${training.checkpoint.save_last}",
         save_top_k              = "${training.checkpoint.save_top_k}",
         populate_full_signature = True
     ),
 
-    "collector": builds(
-        MetricsCollector,
-        bounds_max              = "${simulation.physics.bounds_max}",
-        gravity                 = "${simulation.physics.gravity}",
-        metrics                 = "${training.metrics}",
-        mmm                     = "${controller.mmm}",
-        safety                  = "${controller.safety}",
-        populate_full_signature = True
-    ),
-
     "datamodule": builds(
-        DataModule,
-        env                     = "${_system.env}",
-        experience              = "${training.experience}",
-        expert                  = "${_system.murmuration_controller}",
+        ExpertDataset.as_lightning_datamodule,
+        batch_size              = "${training.optimizer.batch_size}",
+        controller              = "${controller}",
+        environment             = "${environment}",
+        generator               = "${_system.trajectory_generator}",
+        hardware                = "${training.hardware}",
+        murmuration             = "${_system.murmuration}",
+        train_split             = "${training.optimizer.train_split}",
         populate_full_signature = True
     ),
 
     "early_stopping_callback": builds(
         EarlyStopping,
-        monitor                 = "${training.optimizer.training_metric}",
+        monitor                 = "validation/mse",
         mode                    = "${training.optimizer.mode}",
         patience                = "${training.optimizer.early_stopping_patience}",
         populate_full_signature = True
@@ -106,6 +96,7 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         name                    = "${training.wandb.run_name}",
         notes                   = "${training.wandb.notes}",
         project                 = "${training.wandb.project}",
+        settings                = {"quiet": "${training.wandb.quiet}"},
         populate_full_signature = True
     ),
 
@@ -114,9 +105,19 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         populate_full_signature = True
     ),
 
-    "monitoring_callback": builds(
-        MonitoringCallback,
-        collector               = "${_system.collector}",
+    "metrics": builds(
+        MetricsFactory,
+        agent_count             = "${controller.mmm.agent_count}",
+        metrics                 = "${training.metrics}",
+        murmuration             = "${controller.mmm}",
+        physics                 = "${environment.physics}",
+        safety                  = "${controller.safety}",
+        populate_full_signature = True
+    ),
+
+    "model_summary_callback": builds(
+        CallbackFactory.create_model_summary,
+        display                 = "${training.display}",
         populate_full_signature = True
     ),
 
@@ -131,11 +132,15 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
     "policy": builds(
         GNNPolicy,
         architecture            = "${training.architecture}",
-        collector               = "${_system.collector}",
+        metrics                 = "${_system.metrics}",
         optimizer               = "${_system.optimizer}",
         scheduler               = "${_system.scheduler}",
-        scheduler_metric        = "${training.optimizer.scheduler_metric}",
-        training_metric         = "${training.optimizer.training_metric}",
+        populate_full_signature = True
+    ),
+
+    "progress_bar_callback": builds(
+        CallbackFactory.create_progress_bar,
+        display                 = "${training.display}",
         populate_full_signature = True
     ),
 
@@ -155,10 +160,12 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         callbacks               = [
             "${_system.checkpoint_callback}",
             "${_system.early_stopping_callback}",
-            "${_system.monitoring_callback}"
+            "${_system.model_summary_callback}",
+            "${_system.progress_bar_callback}"
         ],
         detect_anomaly          = "${training.hardware.detect_anomaly}",
         deterministic           = "${training.hardware.deterministic}",
+        enable_model_summary    = False,
         devices                 = "${training.hardware.devices}",
         gradient_clip_val       = "${training.optimizer.gradient_clip_val}",
         log_every_n_steps       = "${training.optimizer.log_every_n_steps}",

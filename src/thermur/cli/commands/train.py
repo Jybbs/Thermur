@@ -6,13 +6,11 @@ system validation, configuration, and the initialization of the
 imitation learning workflow.
 """
 from __future__  import annotations
-from functools   import partial
 from itertools   import chain
-from omegaconf   import OmegaConf, open_dict
+from omegaconf   import OmegaConf
 from pathlib     import Path
 from subprocess  import run as subrun
 from thermur.cli import app
-from traceback   import format_exc
 from typer       import Argument, Exit, Option
 from typing      import Any, Callable, TYPE_CHECKING
 
@@ -49,11 +47,6 @@ def train(
         None,
         "--resume", "-r",
         help = "Resume from checkpoint. Path to checkpoint or 'last' for most recent."
-    ),
-    sample: bool = Option(
-        False,
-        "--sample", "-s",
-        help = "Use bundled sample data instead of downloaded files"
     )
 ):
     """
@@ -79,8 +72,7 @@ def train(
         interactive = interactive,
         name        = name,
         overrides   = overrides or [],
-        resume      = resume,
-        sample      = sample
+        resume      = resume
     )
 
 
@@ -101,15 +93,12 @@ class TrainCommand:
         self.system      = app.system
         self.ui          = app.ui
 
-        self.data_path   = "auto"
         self.dry_run     = False
         self.force       = False
         self.interactive = True
         self.name        = None
-        self.output_dir  = None
         self.overrides   = []
         self.resume      = None
-        self.sample      = False
 
     def _display_override_details(self):
         """
@@ -131,30 +120,6 @@ class TrainCommand:
             content      = "\n".join(meta_info),
             title        = "Configuration Source"
         )
-
-    def _ensure_data_available(self) -> str:
-        """
-        Ensure training data is available.
-
-        Returns:
-            Path to data directory.
-
-        Raises:
-            Exit: If data not found and user declines download.
-        """
-        try:
-            data_path, msg = self.system.resolve_data_path(self.sample)
-            if msg:
-                self.ui.print_message(msg, "info")
-            return str(data_path)
-
-        except FileNotFoundError:
-            if self.prompts.confirm("No data found. Download sample dataset?"):
-                subrun(["thermur", "download", "--sample"])
-
-                return Path(self.cfg.download.sample_data_path).as_posix()
-
-            raise Exit(1)
 
     def _find_last_checkpoint(self) -> Path | None:
         """
@@ -179,7 +144,7 @@ class TrainCommand:
 
         return next((ckpt for ckpt in checkpoints if ckpt.exists()), None)
 
-    def _handle_config_issues(self, issues: list[str]):
+    def _handle_cfg_issues(self, issues: list[str]):
         """
         Handles reported configuration validation issues.
 
@@ -221,7 +186,7 @@ class TrainCommand:
         Create concrete objects from the configuration.
 
         Components are instantiated in the order specified by the
-        training_component_configs, with a progress bar showing
+        training_component_cfgs, with a progress bar showing
         the instantiation process.
 
         Args:
@@ -235,7 +200,7 @@ class TrainCommand:
             ValueError: If configuration path is not found.
         """
         with self.ui.create_thermal_progress() as progress:
-            component_cfgs = self.cfg.display.training_component_configs
+            component_cfgs = self.cfg.display.training_component_cfgs
             task = progress.add_task(
                 description = "Instantiating components...",
                 total       = len(component_cfgs)
@@ -254,7 +219,12 @@ class TrainCommand:
                         f"Configuration path '{path}' not found"
                     )
 
-                components[key] = instantiate(obj)
+                extras = {
+                    "datamodule": {
+                        "ui" : self.ui
+                    }
+                }.get(key, {})
+                components[key] = instantiate(obj, **extras)
 
             progress.update(
                 completed = len(component_cfgs),
@@ -265,6 +235,10 @@ class TrainCommand:
                 components['visualizer'] = instantiate(c)
             else:
                 components['visualizer'] = None
+
+            components["trainer"].logger.log_hyperparams(
+                self.system.extract_training_cfg(cfg, self.overrides)
+            )
 
         return components
 
@@ -284,11 +258,10 @@ class TrainCommand:
         )
 
         imports = self._load_training_modules()
-        self.ui.console.print()
 
         task_function = (
             self._task if self.dry_run
-            else partial(self._task, imports=imports)
+            else lambda cfg = None: self._task(cfg, imports)
         )
 
         job = imports["launch"](
@@ -321,10 +294,13 @@ class TrainCommand:
                 task_id     = task
             )
 
-            from config.imitation               import ImitationConfig
-            from hydra_zen                      import instantiate, launch
-            from hydra_zen.third_party.pydantic import pydantic_parser
-            from pytorch_lightning              import seed_everything
+            from config.imitation                import ImitationConfig
+            from hydra_zen                       import instantiate, launch
+            from hydra_zen.third_party.pydantic  import pydantic_parser
+            from pytorch_lightning               import seed_everything
+            from pytorch_lightning.trainer       import setup
+
+            setup._log_device_info = lambda *args, **kwargs: None
 
             progress.update(
                 advance     = 30,
@@ -354,20 +330,15 @@ class TrainCommand:
 
         return imports
 
-    def _offer_config_viewing(self):
+    def _offer_cfg_viewing(self):
         """
         Offers to view configuration via the runs command.
         """
-        if self.output_dir is None:
-            return
-
-        relative_path = self.output_dir.relative_to(Path.cwd())
-
         self.ui.console.print()
         self.ui.print_message(
             message  = (
                 f"View configuration with: "
-                f"[bold]thermur runs show {relative_path}[/bold]"
+                f"[bold]thermur runs show[/bold]"
             ),
             msg_type = "info"
         )
@@ -375,7 +346,7 @@ class TrainCommand:
         if self.interactive:
             view_msg = "Would you like to view the configuration now?"
             if self.prompts.confirm(view_msg):
-                subrun(['thermur', 'runs', 'show', str(relative_path)])
+                subrun(['thermur', 'runs', 'show'])
 
     def _request_confirmation(self):
         """
@@ -402,33 +373,33 @@ class TrainCommand:
                 msg_type = "warning"
             )
             raise Exit()
-    
+
     def _resolve_resume_path(self, resume: Path | None) -> Path | None:
         """
         Resolve the resume checkpoint path.
-        
+
         Args:
             resume: User-provided resume path or 'last' for most recent
-            
+
         Returns:
             Resolved checkpoint path or None
-            
+
         Raises:
             Exit: If checkpoint is not found
         """
         if not resume:
             return None
-            
+
         if str(resume) == "last":
             if checkpoint := self._find_last_checkpoint():
                 return checkpoint
             self.ui.print_message("No checkpoint found to resume from", "error")
             raise Exit(1)
-            
+
         if not resume.exists():
             self.ui.print_message(f"Checkpoint not found: {resume}", "error" )
             raise Exit(1)
-            
+
         return resume
 
     def _task(
@@ -449,8 +420,6 @@ class TrainCommand:
         Returns:
             Status dictionary indicating completion.
         """
-        self.output_dir = self.system.get_hydra_output_dir()
-
         if self.dry_run:
             self.ui.print_message(
                 message  = (
@@ -468,23 +437,11 @@ class TrainCommand:
                 message  = "Dry run complete. Configuration validated successfully.",
                 msg_type = "success"
             )
+            self._offer_cfg_viewing()
 
-            self.system.create_status_marker("dry_run")
-            self._offer_config_viewing()
-
-            return {
-                "output_dir" : str(self.output_dir),
-                "status"     : "dry_run_complete"
-            }
-
-        self.ui.print_message(
-            message  = f"Training output: {self.output_dir}",
-            msg_type = "info"
-        )
-        self.ui.console.print()
+            return {"status": "dry_run_complete"}
 
         self.ui.print_section("Preparing Training Environment")
-        self.ui.console.print()
 
         if cfg is None:
             raise ValueError("Configuration not provided by Hydra")
@@ -492,13 +449,8 @@ class TrainCommand:
         if imports is None:
             raise ValueError("Training modules not provided")
 
-        with open_dict(cfg):
-            cfg.simulation.loader.data_path = self.data_path
-
         if cfg.training.optimizer.seed is not None:
-            imports["seed_everything"](cfg.training.optimizer.seed)
-
-        self.ui.console.print()
+            imports["seed_everything"](cfg.training.optimizer.seed, verbose=False)
 
         components = self._instantiate_components(
             cfg             = cfg,
@@ -509,7 +461,6 @@ class TrainCommand:
             message  = "All components initialized successfully!",
             msg_type = "success"
         )
-        self.ui.console.print()
 
         self.ui.print_section("Training Started")
         if self.resume:
@@ -517,7 +468,7 @@ class TrainCommand:
                 message  = f"Resuming from checkpoint: {self.resume}",
                 msg_type = "info"
             )
-        
+
         self.ui.print_message(
             message  = "Monitoring thermal constraints and flock dynamics",
             msg_type = "thermal"
@@ -530,16 +481,12 @@ class TrainCommand:
             model      = components["policy"]
         )
 
-        self.ui.console.print()
+        components["trainer"]._teardown()
+
         self.ui.print_header("Training Complete 🎉")
+        self._offer_cfg_viewing()
 
-        self.system.create_status_marker("training_complete")
-        self._offer_config_viewing()
-
-        return {
-            "output_dir" : str(self.output_dir),
-            "status"     : "training_complete"
-        }
+        return {"status": "training_complete"}
 
     def run(
         self,
@@ -548,8 +495,7 @@ class TrainCommand:
         interactive : bool,
         name        : str       | None,
         overrides   : list[str] | None,
-        resume      : Path      | None,
-        sample      : bool
+        resume      : Path      | None
     ):
         """
         Executes the main training workflow from start to finish.
@@ -565,13 +511,11 @@ class TrainCommand:
             name        : Optional name for the training run.
             overrides   : A list of Hydra configuration overrides.
             resume      : Optional checkpoint path to resume training from.
-            sample      : If True, use sample data.
         """
         self.dry_run     = dry_run
         self.force       = force
         self.interactive = interactive
         self.name        = name
-        self.sample      = sample
 
         self.resume = self._resolve_resume_path(resume)
 
@@ -591,19 +535,16 @@ class TrainCommand:
         if self.interactive:
             self.overrides.extend(self.prompts.ask_for_overrides())
 
-        self.data_path = self._ensure_data_available()
-
         if not self.force and (
             issues := self.system.validate_overrides(self.overrides)
         ):
-            self._handle_config_issues(issues)
+            self._handle_cfg_issues(issues)
 
         if self.interactive:
             self._request_confirmation()
 
         self.ui.print_section("Initializing Training", True)
-        if self.cfg.wandb.mode != "disabled":
-            self.ui.display_wandb("train", self.cfg.wandb.project)
+        self.ui.display_wandb("train", self.cfg.wandb.project)
         self.ui.console.print()
 
         try:
@@ -618,70 +559,5 @@ class TrainCommand:
             raise Exit()
 
         except Exception as e:
-            try:
-                from hydra.errors import ConfigCompositionException
-                from hydra.errors import InstantiationException
-                from hydra.errors import OverrideParseException
-                from pydantic     import ValidationError
-            except ImportError:
-                self.ui.print_message(f"Training failed: {e}", "error")
-                raise Exit(1)
-
-            match e:
-                case OverrideParseException():
-                    self.ui.print_message("Override syntax error:", "error")
-                    self.ui.console.print(f"  {e}")
-                    self.ui.console.print()
-                    self.ui.print_message(
-                        "Syntax: key=value, +key=value (append), ++key=value (force)",
-                        "info"
-                    )
-
-                case ConfigCompositionException():
-                    self.ui.print_message("Configuration error:", "error")
-                    self.ui.console.print(f"  {e}")
-                    available_options = getattr(e, 'available_options', None)
-                    if available_options:
-                        self.ui.console.print()
-                        self.ui.print_message(
-                            message  = (
-                                f"Available options: "
-                                f"{', '.join(available_options)}"
-                            ),
-                            msg_type = "info"
-                        )
-
-                case InstantiationException():
-                    self.ui.print_message("Component instantiation failed:", "error")
-                    self.ui.console.print(f"  {e}")
-                    if (
-                        hasattr(e, '__cause__')
-                        and isinstance(e.__cause__, ValidationError)
-                    ):
-                        self.ui.console.print()
-                        self.ui.print_message("Validation errors:", "error")
-                        for error in e.__cause__.errors():
-                            self.ui.console.print(
-                                f"  - {'.'.join(str(x) for x in error['loc'])}: "
-                                f"{error['msg']}"
-                            )
-
-                case ValidationError():
-                    self.ui.print_message("Configuration validation failed:", "error")
-                    for error in e.errors():
-                        self.ui.console.print(
-                            f"  - {'.'.join(str(x) for x in error['loc'])}: "
-                            f"{error['msg']}"
-                        )
-
-                case _:
-                    failure_kws = [
-                        "cannot", "dimension", "device", "metric", "indices",
-                        "range", "shape", "size", "slice"
-                    ]
-                    self.ui.print_message(f"Training failed: {e}", "error")
-                    if any(k in str(e).lower() for k in failure_kws):
-                        self.ui.console.print("\n[DEBUG] Full stack trace:")
-                        self.ui.console.print(format_exc())
-
+            self.ui.print_message(f"Training failed: {e}", "error")
             raise Exit(1)

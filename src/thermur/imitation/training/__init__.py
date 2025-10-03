@@ -2,23 +2,16 @@
 Training components for imitation learning.
 
 This package provides the complete training infrastructure for GNN policies
-through behavioral cloning, including PyTorch Lightning modules, metrics
-collection, and training utilities.
+through behavioral cloning, including PyTorch Lightning modules and metrics.
 
-The module includes (in import order):
+The module includes:
 
 callbacks:
-- MonitoringCallback: Lightning callback for metrics collection that
-  integrates seamlessly with the training loop
-
-experience:
-- DataModule: A LightningDataModule that manages trajectory collection
-  from expert demonstrations and maintains a replay buffer for efficient
-  batch sampling during training
+- CallbackFactory: Factory for creating customized Lightning callbacks with
+  Thermur's visual styling for progress bars and model summaries
 
 metrics:
-- MetricsCollector: Comprehensive metrics tracking for training and evaluation,
-  including imitation accuracy, emergent behaviors, and murmuration dynamics
+- MetricsFactory: Factory for creating training and validation metric collections
 - Various metric classes for measuring scale-free correlations, information
   propagation, cohesion, energy consumption, and other emergent properties
 
@@ -31,12 +24,11 @@ The infrastructure handles many concerns automatically:
 - Mixed precision training and gradient scaling
 - Logging integration with Weights & Biases
 - Automatic checkpointing and early stopping
-- Progress bars and training metrics
+- Progress bars and training metrics with thermal styling
 
 This design allows researchers to focus on the algorithmic aspects of
 imitation learning while the framework manages engineering complexity.
 """
-from .callbacks  import *
-from .experience import *
-from .metrics    import *
-from .policy     import *
+from .callbacks import *
+from .metrics   import *
+from .policy    import *

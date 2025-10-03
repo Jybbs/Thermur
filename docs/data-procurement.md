@@ -21,7 +21,7 @@ The Moisseeva & Stull *(2020)* dataset was selected for factors that align with 
 
 3. **Safety Training Data**: The dataset's temperature fields reach $`T > 600\text{K}`$ in plume cores, well beyond drone survival limits. This provides training data for Control Barrier Functions to learn hard thermal boundaries, analogous to how starlings maintain minimum separation distances.
 
-4. **Temporal Dynamics**: The 15-second timesteps capture the rapid evolution of fire plumes, allowing our Graph Neural Networks to learn temporal patterns in thermal threat propagation, much like how information cascades through a murmuration.
+4. **Temporal Dynamics**: The 15-second sampling interval captures the rapid evolution of fire plumes, allowing our Graph Neural Networks to learn temporal patterns in thermal threat propagation, much like how information cascades through a murmuration.
 
 5. **Validated Physics**: Published in peer-reviewed repositories with accompanying methodology papers, this dataset ensures we're training on scientifically accurate fire behavior, not approximations or empirical models.
 
@@ -29,16 +29,10 @@ The Moisseeva & Stull *(2020)* dataset was selected for factors that align with 
 
 ### Option 1: Sample Data (Quick Start)
 
-For immediate testing and development, download our carefully curated 1.5GB sample:
+For immediate testing and development, Thermur automatically downloads a carefully curated 1.5GB sample on first run:
 
 ```bash
-# Download sample data from Hugging Face
-thermur download --source sample
-
-# Train with sample data
-thermur train --sample
-
-# Sample automatically used if no downloaded data exists
+# Simply start training - sample downloads automatically if no data exists
 thermur train
 ```
 
@@ -50,23 +44,20 @@ Unlike the gentle 3 m/s winds of low-wind scenarios, this 5 m/s breeze creates s
 
 This sample contains enough complexity to develop core algorithms while remaining computationally tractable for rapid iteration. Full specifications are in `data/samples/README.md`.
 
-### Option 2: Direct Download via Thermur CLI *(2-4 hours per file)*
+### Option 2: Individual Files via Globus *(2-4 hours per file)*
 
-Download individual files using Globus Connect Personal:
+Download specific simulations directly from the Globus endpoint:
 
-```bash
-# Interactive file selection
-thermur download
-
-# Extended timeout for slow connections (48 hours)
-thermur download download.transfer_timeout=172800
-```
+**Endpoint Details:**
+- **Endpoint ID**: `f163c1b3-9c88-42f6-a7bb-5839ed6c4063`
+- **Path**: `/1/published/publication_309/submitted_data`
+- **Access**: Public (no authentication required)
 
 **Setup Requirements:**
-1. Install [Globus Connect Personal](https://www.globus.org/globus-connect-personal)
-2. Run `thermur download` and follow authentication prompts
-3. Select files from the interactive menu
-4. Monitor transfer progress *(shows transfer rate in MB/s)*
+1. Install [Globus Connect Personal](https://www.globus.org/globus-connect-personal) or use the web interface
+2. Navigate to the endpoint using the ID above
+3. Download desired NetCDF files to `data/raw/` in your Thermur directory
+4. Training will automatically discover and use all NetCDF files
 
 **Recommended Starter Files:**
 
@@ -88,11 +79,13 @@ For institutional users with HPC access:
 # On your HPC cluster
 globus transfer \
   f163c1b3-9c88-42f6-a7bb-5839ed6c4063:/1/published/publication_309/submitted_data/ \
-  YOUR_ENDPOINT_ID:/path/to/storage/ \
+  YOUR_ENDPOINT_ID:/path/to/thermur/data/raw/ \
   --recursive
 ```
 
-**Advantages:** The HPC approach reduces download times from days to hours. Endpoint-to-endpoint transfers bypass local network bottlenecks, achieving speeds 10-100x faster than Globus Connect Personal. This makes acquiring the entire 5.33 TB dataset feasible for research groups with access to high performance computing, like [**Explorer** at Northeastern Univeristy](https://rc-docs.northeastern.edu/en/explorer-main/).
+**Advantages:** The HPC approach reduces download times from days to hours. Endpoint-to-endpoint transfers bypass local network bottlenecks, achieving speeds 10-100x faster than Globus Connect Personal. This makes acquiring the entire 5.33 TB dataset feasible for research groups with access to high performance computing, like [**Explorer** at Northeastern University](https://rc-docs.northeastern.edu/en/explorer-main/).
+
+**After Transfer:** Place all NetCDF files in `data/raw/` within your Thermur directory. Training will automatically discover and use all available files.
 
 ## File Naming Convention
 
@@ -104,7 +97,7 @@ The systematic naming encodes the complete parameter space, allowing targeted se
 
 - **W (Wind)**: Initial wind speed from 3-12 m/s
   - W3-W5: Light conditions for basic training
-  - W6-W8: Moderate winds introducing complex plume dynamics  
+  - W6-W8: Moderate winds introducing complex plume dynamics
   - W9-W12: Extreme conditions for robustness testing
 
 - **F (Fuel)**: Anderson 13 fuel model categories
@@ -167,13 +160,13 @@ class DownloadModel(BaseModel):
         default     = "/path/to/dataset/",
         description = "Path to dataset within your endpoint"
     )
-    
+
     # Sample data configuration (if hosting your own):
     sample_data_url: str = Field(
         default     = "YOUR_HUGGINGFACE_URL",
         description = "Direct download URL for sample data (e.g., from Hugging Face)"
     )
-    
+
     # These typically remain the same:
     globus_client_id: str = Field(
         default     = "ac349f52-8197-4a41-8d6d-5ae1c879273f",
@@ -238,7 +231,7 @@ When using this dataset, please cite both the dataset and the methodology paper:
 
 @article{moisseeva2021acp,
   author    = {Moisseeva, Nadya and Stull, Roland},
-  title     = {Capturing plume rise and dispersion with a coupled 
+  title     = {Capturing plume rise and dispersion with a coupled
                large-eddy simulation: case study of a prescribed burn},
   journal   = {Atmospheric Chemistry and Physics},
   volume    = {21},
@@ -254,7 +247,7 @@ After acquiring data:
 
 1. **Explore the physics**: Use tools like `xarray` and `matplotlib` to visualize temperature and velocity fields
 2. **Verify thermal safety**: Check that maximum temperatures align with hardware constraints
-3. **Start training**: Begin with `thermur train --sample` to test your setup
+3. **Start training**: Begin with `thermur train` to test your setup
 4. **Monitor convergence**: Use `thermur monitor` to track safety violations and legibility metrics
 5. **Iterate on full data**: Graduate to downloaded files for robust policy learning
 

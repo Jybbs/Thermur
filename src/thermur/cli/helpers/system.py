@@ -8,6 +8,7 @@ the raw data that other modules, like the UI, will then format and display.
 from __future__         import annotations
 from contextlib         import suppress
 from importlib.metadata import PackageNotFoundError, version
+from omegaconf          import OmegaConf
 from pathlib            import Path
 from platform           import platform, python_version
 from shutil             import disk_usage
@@ -34,7 +35,6 @@ class SystemInspector:
         Args:
             cfg: The CLI configuration object containing all settings.
         """
-        self.download = cfg.download
         self._torch_cache: dict[str, Any] | None = None
 
     def _get_cuda_info(self) -> SystemInfo:
@@ -48,7 +48,7 @@ class SystemInspector:
         torch_info = self._get_torch()
         if not torch_info["available"]:
             return {"cuda": False, "device_count": 0}
-            
+
         cuda = torch_info["cuda"]
         if not cuda.is_available():
             return {"cuda": False, "device_count": 0}
@@ -66,24 +66,27 @@ class SystemInspector:
 
     def _get_dataset_info(self) -> SystemInfo:
         """
-        Gather information about downloaded dataset files.
+        Gather information about available NetCDF dataset files.
 
         Returns:
-            Dictionary with dataset_size in GB, dataset_count, and has_sample.
+            Dictionary with dataset_size in GB and dataset_count.
         """
-        with suppress(Exception):
-            all_files   = self._get_wrf_files()
-            sample_path = Path(self.download.sample_data_path)
+        from thermur.imitation.controller import ExpertDataset
 
-            if sample_path.exists():
-                all_files.append(sample_path)
+        relative_paths = ExpertDataset._find_netcdf_files()
+
+        if relative_paths:
+            total_size = sum(
+                (Path("data/raw") / p).stat().st_size
+                for p in relative_paths
+            ) / 1e9
 
             return {
-                "dataset_count" : len(all_files),
-                "dataset_size"  : sum(f.stat().st_size for f in all_files) / 1e9,
-                "has_sample"    : sample_path.exists(),
+                "dataset_count" : len(relative_paths),
+                "dataset_size"  : total_size,
             }
-        return {"dataset_count": 0, "dataset_size": 0.0, "has_sample": False}
+
+        return {"dataset_count": 0, "dataset_size": 0.0}
 
     def _get_disk_info(self) -> SystemInfo:
         """
@@ -161,46 +164,41 @@ class SystemInspector:
                 }
         return self._torch_cache
 
-    def _get_wrf_files(self) -> list[Path]:
+    def extract_training_cfg(
+        self,
+        cfg       : Any,
+        overrides : list[str] | None = None
+    ) -> dict[str, Any]:
         """
-        Get list of WRF-SFIRE NetCDF files from configured directory.
+        Extract the main training configuration sections.
 
-        Returns:
-            List of Path objects for WRF files, empty list if none found.
-        """
-        wrf_dir = Path(self.download.wrf_sfire_dir)
-        if not wrf_dir.exists():
-            return []
-
-        return [f for f in wrf_dir.glob("*.nc") if f.is_file()]
-
-    def create_status_marker(self, status: str, output_dir: Path | None = None):
-        """
-        Create a status marker file in the output directory.
+        Filters the full configuration to only include the three main
+        sections used for training: controller, environment, and training.
+        This provides a consistent way to prepare configs for display
+        or logging across different commands.
 
         Args:
-            status     : The status type ('training_complete' or 'dry_run')
-            output_dir : The output directory path. If None, uses Hydra's current
-                         output dir
-        """
-        if output_dir is None:
-            output_dir = self.get_hydra_output_dir()
-
-        (output_dir / status).touch()
-
-    def get_hydra_output_dir(self) -> Path:
-        """
-        Get the current Hydra runtime output directory.
+            cfg       : Full configuration object (OmegaConf or dict)
+            overrides : Optional list of override strings
 
         Returns:
-            Path to the current Hydra output directory
-
-        Raises:
-            RuntimeError: If called outside of a Hydra run context
+            Dictionary with extracted config sections and overrides
         """
-        from hydra.core.hydra_config import HydraConfig
+        if not isinstance(
+            container := (
+                OmegaConf.to_container(cfg, resolve=True)
+                if hasattr(cfg, '_metadata')
+                else cfg
+            ), dict
+        ):
+            container = {}
 
-        return Path(HydraConfig.get().runtime.output_dir)
+        return {
+            "controller"  : container.get("controller",  {}),
+            "environment" : container.get("environment", {}),
+            "training"    : container.get("training",    {}),
+            "overrides"   : overrides or []
+        }
 
     def get_system_info(self) -> SystemInfo:
         """
@@ -217,7 +215,7 @@ class SystemInspector:
             - Hardware         : cuda info, memory stats, disk usage
         """
         torch_info = self._get_torch()
-            
+
         base_info: SystemInfo = {
             "platform"            : platform(),
             "python"              : python_version(),
@@ -233,44 +231,6 @@ class SystemInspector:
             | self._get_disk_info()
             | self._get_dataset_info()
         )
-
-    def resolve_data_path(self, use_sample: bool = False) -> tuple[Path, str]:
-        """
-        Resolves the appropriate data path based on availability and user preference.
-
-        This method implements a fallback strategy for data selection:
-        1. If sample explicitly requested and exists          -> use sample
-        2. If WRF-SFIRE data exists and not requesting sample -> use first WRF file
-        3. If no WRF data but sample exists                   -> fallback to sample
-        4. Otherwise                                          -> no data available
-
-        Args:
-            use_sample : Whether the user explicitly requested sample data
-
-        Returns:
-            Tuple of (data_path, status_message)
-
-        Raises:
-            FileNotFoundError: If no data is available for training
-        """
-        if not hasattr(self, 'download'):
-            raise ValueError("SystemInspector missing download configuration")
-
-        sample_path = Path(self.download.sample_data_path)
-        wrf_files   = [] if use_sample else self._get_wrf_files()
-
-        match (use_sample, bool(wrf_files), sample_path.exists()):
-            case (True, _, True):
-                return sample_path, "Using sample dataset as requested."
-            case (False, True, _):
-                return wrf_files[0], f"Using WRF-SFIRE data: {wrf_files[0].name}"
-            case (False, False, True):
-                return sample_path, "No WRF-SFIRE data found. Using sample data."
-            case _:
-                raise FileNotFoundError(
-                    "No training data available. "
-                    "Run 'thermur download' to get sample data."
-                )
 
     def validate_overrides(self, overrides: list[str] | None) -> list[str]:
         """

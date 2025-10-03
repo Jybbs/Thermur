@@ -6,10 +6,8 @@ built-in styling and formatting capabilities, encapsulated within the
 ThermurUI class.
 """
 from __future__   import annotations
-from collections  import Counter
 from config.cli   import DisplayModel
 from config.types import TableColumn
-from pathlib      import Path
 from rich         import box, progress
 from rich.align   import Align
 from rich.console import Console
@@ -19,11 +17,11 @@ from rich.syntax  import Syntax
 from rich.table   import Table
 from rich.text    import Text
 from rich.theme   import Theme
-from typing       import Any, Literal, Sequence, TYPE_CHECKING
+from typing       import Any, Literal, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .system      import SystemInspector
-    from config.types import FileInfo, SystemInfo
+    from config.types import SystemInfo
 
 
 class ThermurUI:
@@ -148,7 +146,7 @@ class ThermurUI:
             Rich Text object with character-by-character gradient styling
         """
         gradient_text = Text()
-        colors = self.display.fire_gradient
+        colors        = self.display.fire_gradient
 
         for i, char in enumerate(text):
             color = colors[i % len(colors)]
@@ -415,8 +413,8 @@ class ThermurUI:
             progress.BarColumn(
                 bar_width        = self.display.progress_bar_length,
                 complete_style   = self.display.styles['thermal'],
-                finished_style   = self.display.styles['thermal'],
-                pulse_style      = self.display.styles['thermal'],
+                finished_style   = self.display.styles['success'],
+                pulse_style      = self.display.styles['warning'],
                 style            = self.display.styles['dim'],
             ),
 
@@ -457,94 +455,6 @@ class ThermurUI:
             )
         )
 
-    def display_download_summary(
-        self,
-        available_files : Sequence[FileInfo],
-        file_status     : dict[str, str]
-    ):
-        """
-        Display summary statistics for dataset download status.
-
-        Shows total dataset size, downloaded size, and file counts
-        broken down by status.
-
-        Args:
-            available_files : List of all available files with size info
-            file_status     : Dict mapping filename to status
-        """
-        statuses       = Counter(file_status.values())
-        size_by_status = {
-            status: sum(
-                f['size'] for f in available_files
-                if file_status.get(f['name']) == status
-            )
-            for status in ['downloaded', 'incomplete', 'missing']
-        }
-
-        total_size = sum(f['size'] for f in available_files)
-
-        total_gb = total_size / 1e9
-        self.print_message(
-            message  = f"Total: {len(available_files)} files ({total_gb:.1f} GB)",
-            msg_type = "info"
-        )
-
-        status_info = [
-            ('downloaded', "Downloaded: {} files ({:.1f} GB)",     "success"),
-            ('incomplete', "Incomplete: {} files ({:.1f} GB)",     "warning"),
-            ('missing',    "Not downloaded: {} files ({:.1f} GB)", "info")
-        ]
-
-        for status_type, template, msg_type in status_info:
-            if count := statuses[status_type]:
-                size_gb = size_by_status[status_type] / 1e9
-                self.print_message(f"{template.format(count, size_gb)}", msg_type)
-
-    def display_download_table(
-        self,
-        available_files : list[FileInfo],
-        file_status     : dict[str, str],
-        title           : str  = "Available Files"
-    ):
-        """
-        Display a paginated table of files with their download status.
-
-        Shows up to 10 files with status indicators and selection numbers (0-9).
-
-        Args:
-            available_files : List of file info dictionaries with 'name' and 'size'
-            file_status     : Dict mapping filename to download status
-                              ('downloaded', 'incomplete', or 'missing')
-            title           : Table title
-        """
-        status_symbols = {
-            'downloaded' : Text("✅", "green"),
-            'incomplete' : Text("⚠️", "yellow"),
-            'missing'    : Text(" ",  "dim")
-        }
-
-        columns = [
-            TableColumn("right",  "bright_cyan", "#",      4),
-            TableColumn("center", "green",       "Status", 8),
-            TableColumn("left",   "cyan",        "File",   50),
-            TableColumn("right",  "yellow",      "Size",   10)
-        ]
-
-        table = self.create_aligned_table(columns, title=title)
-
-        for i, file_info in enumerate(available_files):
-            name           = file_info['name']
-            size           = file_info['size']
-            status         = file_status.get(name, 'missing')
-            row: list[Any] = [
-                str(i), status_symbols[status], name, f"{size / 1e9:.1f} GB"
-            ]
-
-            table.add_row(*row)
-
-        self.console.print()
-        self.console.print(table)
-
     def display_panel(
         self,
         content      : str | Table | Panel,
@@ -576,13 +486,13 @@ class ThermurUI:
         Display the legend for run status indicators.
 
         Shows a formatted legend explaining the meaning of status symbols
-        used in run listings: ✓ for complete, ◎ for dry run, ... for incomplete.
+        used in run listings based on WandB run states.
         """
         self.console.print(
             "ℹ️  Status: "
-            "[bold green](✓) Complete[/], "
-            "[bold cyan](◎) Dry Run[/], "
-            "[bold yellow](...) Incomplete[/]"
+            "[bold green](✓) Finished[/], "
+            "[bold red](✗) Failed[/], "
+            "[bold cyan](⟳) Running[/]"
         )
 
     def display_system_validation(self, system: SystemInspector):
@@ -731,130 +641,31 @@ class ThermurUI:
         displayed = separator.join(items[:max_display])
         return f"{displayed} (+{len(items) - max_display})"
 
-    def format_run_status(self, run_path: Path) -> str:
-        """
-        Determine and format the status indicator for a training run.
-
-        Checks for marker files to determine if a run completed successfully,
-        was a dry run, or is incomplete. Returns a Rich-formatted status string.
-
-        Args:
-            run_path : Path to the run directory
-
-        Returns:
-            Rich-formatted status indicator: ✓ (complete), ◎ (dry run), or
-            ... (incomplete)
-        """
-        if (run_path / "training_complete").exists():
-            return "[bold green]✓[/]"
-        elif (run_path / "dry_run").exists():
-            return "[bold cyan]◎[/]"
-        else:
-            return "[bold yellow]...[/]"
-
-    def print_auth_prompt(self, auth_url: str):
-        """
-        Display authentication prompt with URL.
-
-        Shows the authentication URL in a user-friendly format with
-        proper styling and instructions.
-
-        Args:
-            auth_url : The authentication URL to display
-        """
-        self.console.print()
-        self.print_message(
-            message  = "Globus authentication required to access dataset files.",
-            msg_type = "info"
-        )
-        self.console.print("\nPlease visit the following URL to authenticate:")
-        self.console.print(f"\n  [link={auth_url}]{auth_url}[/link]\n")
-
-    def print_command_example(
-        self,
-        command     : str,
-        description : str,
-        note        : str | None = None
-    ):
-        """
-        Print a formatted command example.
-
-        Shows command examples in a visually distinct way to help users
-        understand how to use the CLI effectively.
-
-        Args:
-            command     : The actual command to run
-            description : What the command does
-            note        : Optional note about the command
-        """
-        self.console.print(
-            f"  [{self.display.styles['muted']}]{description}:[/]"
-        )
-        self.console.print(
-            f"  [bold accent]$ {command}[/]"
-        )
-
-        if note:
-            self.console.print(
-                f"  [{self.display.styles['dim']}]  {note}[/]"
-            )
-
-        self.console.print()
-
     def print_command_examples(self, examples: list[dict[str, str]]):
         """
         Print multiple command examples from a list.
 
-        This method handles the common pattern of iterating through command
-        examples and printing each one, eliminating duplication across commands.
+        Formats and displays command examples in a visually distinct way
+        to help users understand CLI usage effectively.
 
         Args:
             examples: List of example dictionaries with 'command', 'desc',
                       and optional 'note' keys
         """
         for example in examples:
-            self.print_command_example(
-                command     = example["command"],
-                description = example["desc"],
-                note        = example.get("note", "")
-            )
-
-    def print_config_value(
-        self,
-        key         : str,
-        value       : str,
-        align_width : int = 0,
-        desc        : str | None = None
-    ):
-        """
-        Print a configuration key-value pair.
-
-        Formats configuration information in a consistent way for
-        improved readability.
-
-        Args:
-            key         : Configuration key
-            value       : Configuration value
-            align_width : Width to align the key to (for vertical alignment)
-            desc        : Optional description
-        """
-        if align_width:
-            key_formatted = f"{key:<{align_width}}"
-        else:
-            key_formatted = key
-
-        if desc:
             self.console.print(
-                f"  [{self.display.styles['accent']}]{key_formatted}[/] = "
-                f"[white]{value}[/]  "
-                f"[{self.display.styles['dim']}]# {desc}[/]"
+                f"  [{self.display.styles['muted']}]{example['desc']}:[/]"
+            )
+            self.console.print(
+                f"  [bold accent]$ {example['command']}[/]"
             )
 
-        else:
-            self.console.print(
-                f"  [{self.display.styles['accent']}]{key_formatted}[/] = "
-                f"[white]{value}[/]"
-            )
+            if note := example.get("note"):
+                self.console.print(
+                    f"  [{self.display.styles['dim']}]  {note}[/]"
+                )
+
+            self.console.print()
 
     def print_header(self, title: str):
         """
@@ -866,6 +677,26 @@ class ThermurUI:
         self.console.print()
         self.console.print(self._create_header_panel(title))
         self.console.print()
+
+    def print_message(self, message: str, msg_type: str = "info"):
+        """
+        Print a styled message with appropriate icon and formatting.
+
+        This function provides a unified interface for all message types,
+        using the centralized message configurations.
+
+        Args:
+            message  : The message text to display
+            msg_type : Type of message (info, warning, error, etc.)
+        """
+        config = self.display.message_types.get(
+            msg_type,
+            self.display.message_types["info"]
+        )
+
+        self.console.print(
+            f"[{config['style']}]{config['icon']} {message}[/{config['style']}]"
+        )
 
     def print_section(
         self,
@@ -897,23 +728,3 @@ class ThermurUI:
             )
         )
         self.console.print()
-
-    def print_message(self, message: str, msg_type: str = "info"):
-        """
-        Print a styled message with appropriate icon and formatting.
-
-        This function provides a unified interface for all message types,
-        using the centralized message configurations.
-
-        Args:
-            message  : The message text to display
-            msg_type : Type of message (info, warning, error, etc.)
-        """
-        config = self.display.message_types.get(
-            msg_type,
-            self.display.message_types["info"]
-        )
-
-        self.console.print(
-            f"[{config['style']}]{config['icon']} {message}[/{config['style']}]"
-        )

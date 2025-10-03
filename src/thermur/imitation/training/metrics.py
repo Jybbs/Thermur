@@ -1,824 +1,837 @@
 """
-Unified metrics collection for imitation learning training and evaluation.
+Unified metrics for imitation learning training and evaluation.
 
-This module provides a centralized MetricsCollector that manages all metrics
-for the training pipeline, including imitation learning losses, core evaluation
-metrics, and runtime performance tracking. The collector integrates seamlessly
-with PyTorch Lightning's logging system and Weights & Biases.
+This module provides TorchMetrics-based metrics that work with PyTorch
+Geometric's batch format where features are flattened as [B*N, F] tensors
+(B=num_graphs, N=agents, F=features). The BaseMetric base class extends
+MeanMetric to provide automatic averaging and PyG batch utilities.
+
+All metrics integrate with PyTorch Lightning's logging system and can be
+used directly in LightningModules without a separate collector.
 """
-from __future__         import annotations
-from collections        import Counter
-from itertools          import pairwise
-from tensordict         import TensorDictBase
-from torchmetrics       import MeanAbsoluteError, MeanSquaredError
-from torchmetrics       import Metric, MetricCollection, R2Score
-from torchmetrics.image import StructuralSimilarityIndexMeasure
-from typing             import TYPE_CHECKING
+from __future__            import annotations
+from torch_geometric.utils import to_dense_adj
+from torchmetrics          import MeanAbsoluteError, MeanMetric, MeanSquaredError
+from torchmetrics          import Metric, MetricCollection, R2Score
+from typing                import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from config.imitation.controller import MurmurationModel, SafetyModel
-    from config.imitation.training   import MetricsModel
-    from config.types                import StepMetrics
-    from pytorch_lightning           import LightningModule
-    from torch                       import Tensor
+    from config.imitation.controller  import MurmurationModel, SafetyModel
+    from config.imitation.environment import PhysicsModel
+    from config.imitation.training    import MetricsModel
+    from config.types                 import FlockBatch
+    from torch                        import Tensor
 
 import torch as th
 
 
-class AveragingMetric(Metric):
+class BaseMetric(MeanMetric):
     """
-    Base class for metrics that compute running averages.
+    Base class extending MeanMetric with PyG batch support.
 
-    Provides common sum/count state management and averaging logic
-    for metrics that accumulate values over batches. Subclasses should
-    implement the update() method to add values to the sum.
+    Provides automatic averaging from MeanMetric and PyG batch reshaping helpers.
+    Metrics needing state history should use add_state() themselves.
+
+    Implementation patterns for metric subclasses:
+
+    1. Simple metrics (default): Override evaluate() returning Tensor
+       - Always computes a meaningful value from batch
+       - BaseMetric.update() calls evaluate() and passes result to MeanMetric
+       - Examples: FiedlerValueMetric, SusceptibilityMetric
+
+    2. Conditional metrics without meaningful defaults: Override update() directly
+       - Skip super().update() when computation impossible or invalid
+       - Example: ScaleFreeCorrelationMetric (no value when fitting fails)
     """
-    count : Tensor
-    sum   : Tensor
+    _reshape_cache = {}
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         """
-        Initialize state variables for computing running averages.
+        Initialize the base metric.
 
-        Creates two state variables that are synchronized across distributed
-        training: 'count' for tracking the number of measurements and 'sum'
-        for accumulating the values to be averaged.
+        Args:
+            **kwargs: Configuration including agent_count and metric-specific params
+        """
+        super().__init__('ignore')
+        self.kwargs = kwargs
+
+    def __getattr__(self, name: str):
+        """
+        Dynamically access config attributes.
+
+        Provides access to configuration values passed via kwargs without
+        needing to explicitly define each attribute.
+        """
+        if name in self.kwargs:
+            return self.kwargs[name]
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
+
+    def _reshape_features(
+        self,
+        batch     : FlockBatch,
+        *features : str
+    ) -> tuple[Tensor, ...]:
+        """
+        Reshape flattened PyG features to [B, N, F] format with intelligent caching.
+
+        Transforms PyTorch Geometric's flattened tensor format [B*N, F] into the more
+        intuitive [B, N, F] shape for batch processing. Features are cached per batch
+        to eliminate redundant computations across metrics.
+
+        Computed features (lazily evaluated and cached):
+        - 'distances' : Pairwise Euclidean distances via cdist      [B, N, N]
+        - 'spin_mean' : Mean of normalized velocities across agents [B, 1, 3]
+        - 'spins'     : Unit-normalized velocity vectors            [B, N, 3]
+        - 'spins_2d'  : Unit-normalized 2D velocity projections     [B, N, 2]
+
+        The cache uses batch object IDs as keys, ensuring automatic invalidation when
+        processing new batches. The cache is cleared after each training frame via
+        BaseMetric.clear_cache() to prevent memory growth.
+
+        Args:
+            batch    : PyG Batch containing flattened features
+            features : Variable feature names to retrieve (order preserved)
+
+        Returns:
+            Tuple of reshaped tensors in requested order, excluding None values
+        """
+        b_id    = id(batch)
+        B, E, N = batch.num_graphs, batch.edge_index, self.agent_count
+        cache   = BaseMetric._reshape_cache
+        adj     = lambda: to_dense_adj(E, batch.batch, max_num_nodes=N)
+        corr    = lambda x: th.bmm(d := x - x.mean(1, keepdim=True), d.mT)
+        reshape = lambda feat: self._reshape_features(batch, feat)[0]
+        spins   = lambda: th.nn.functional.normalize(reshape('velocity'), dim=-1)
+        triu    = lambda m: m[:, (t := th.triu_indices(N, N, 1))[0], t[1]]
+
+        computed = {
+            'adjacency'      : lambda: ((A := adj()) + A.mT).sign(),
+            'dist_triu'      : lambda: triu(reshape('distances')),
+            'spin_corr_triu' : lambda: triu(corr(spins())),
+            'spin_mean'      : lambda: spins().mean(dim=1, keepdim=True),
+            'spins'          : spins,
+            'spins_2d'       : lambda: spins()[..., :2],
+            'vel_corr_triu'  : lambda: triu(corr(reshape('velocity'))),
+            'vel_mag'        : lambda: reshape('velocity').norm(dim=-1),
+        }
+
+        get_or_compute = lambda feat: (
+            cache[(b_id, feat)] if (b_id, feat) in cache
+            else
+                (v := (
+                    computed[feat]()                if feat in computed
+                    else batch[feat].view(B, N, -1) if feat in batch
+                    else None
+                ),
+                cache.update({(b_id, feat): v}), v)[2]
+        )
+
+        return tuple(
+            v for feat in features
+            if (v := get_or_compute(feat)) is not None
+        )
+
+    @classmethod
+    def clear_cache(cls):
+        """
+        Clear the shared computation cache.
+
+        Should be called after each batch to prevent memory growth.
+        This would typically be called in Lightning's on_train_batch_end
+        and on_validation_batch_end hooks.
+        """
+        cls._reshape_cache.clear()
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute metric value from batch.
+
+        Subclasses implement this to calculate their specific metric.
+
+        Args:
+            batch: PyG Batch containing all required data
+
+        Returns:
+            Computed metric value as a scalar tensor
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement evaluate()"
+        )
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Handle MetricCollection's call signature.
+
+        Computes metric value via evaluate() and passes to MeanMetric.
+
+        Args:
+            batch       : PyG Batch containing all required data
+            predictions : Predicted actions (unused for most metrics)
+        """
+        value = self.evaluate(batch)
+        super().update(value)
+
+
+class Acceleration(BaseMetric):
+    """
+    Track average acceleration magnitude across the flock.
+
+    Monitors |𝐚|_avg to quantify control effort and energy expenditure during
+    flight maneuvers to ensure physically plausible control forces.
+
+    Tracking this metric ensures the learned policy generates physically
+    plausible control forces consistent with bird flight dynamics.
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute mean acceleration magnitude.
+
+        Args:
+            batch: PyG Batch containing action tensor [B*N, 3]
+
+        Returns:
+            Mean acceleration magnitude as scalar tensor
+        """
+        return batch.action.norm(dim=-1).mean()
+
+
+class ClusteringCoefficient(BaseMetric):
+    """
+    Measure local neighborhood cohesion via clustering coefficient.
+
+    Quantifies the degree to which nodes cluster together by computing the
+    ratio of closed triangles to possible triangles in each node's neighborhood.
+    The clustering coefficient C ranges from 0 to 1:
+
+        C = (3 × number of triangles) / (number of connected triples)
+
+    Higher values (C → 1) indicate stable, cohesive local neighborhoods where
+    an agent's neighbors are also connected to each other. Lower values (C → 0)
+    suggest sparse or reconfiguring topologies typical of dynamic maneuvers.
+
+    This instantaneous metric captures topological stability without requiring
+    temporal comparisons, making it suitable for shuffled training data.
+
+    Expected ranges:
+        - Stable cruising    : C ∈ [0.6, 1.0]
+        - Active maneuvering : C ∈ [0.3, 0.6]
+        - Sparse/fragmented  : C ∈ [0.0, 0.3]
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute average clustering coefficient across all graphs.
+
+        Uses batched dense adjacency matrices for vectorized triangle counting.
+        For each node, computes the fraction of its neighbors that are also
+        connected to each other, then averages across all nodes and graphs.
+
+        The computation follows:
+            1. Convert edge_index to symmetrized dense adjacency [B, N, N]
+            2. Binarize to {0, 1} since symmetrization can create values of 2
+            3. Count triangles via A ⊙ A² where ⊙ is element-wise product
+            4. Compute C_i = triangles_i / (k_i * (k_i - 1)) for degree k_i
+
+        Args:
+            batch: PyG Batch containing edge_index [2, E] and batch assignment
+
+        Returns:
+            Mean clustering coefficient as scalar tensor
+        """
+        A, = self._reshape_features(batch, 'adjacency')
+
+        degree         = A.sum(dim=2)
+        triangles      = (A @ A * A).sum(dim=2)
+        possible_pairs = degree * (degree - 1)
+
+        valid_mask = possible_pairs > 0
+        clustering = th.zeros_like(degree, dtype=th.float)
+        clustering[valid_mask] = (
+            triangles[valid_mask] / possible_pairs[valid_mask].float()
+        )
+
+        return clustering.mean()
+
+
+class FiedlerValue(BaseMetric):
+    """
+    Compute Fiedler value λ₂ using adaptive Lanczos iteration.
+
+    Implements the Lanczos algorithm to find the second smallest eigenvalue
+    of graph Laplacians, which measures algebraic connectivity. The algorithm
+    adaptively determines convergence by monitoring λ₂ stability.
+
+    The Fiedler value λ₂ ∈ [0, ∞) where:
+        - λ₂ = 0        : Disconnected graph
+        - λ₂ ∈ (0, 0.1] : Weak connectivity
+        - λ₂ ∈ (0.1, 1] : Moderate connectivity
+        - λ₂ > 1        : Strong connectivity
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Initialize Lanczos Fiedler value computation.
+
+        Args:
+            **kwargs: Configuration including agent_count
+        """
+        super().__init__(**kwargs)
+        self.k_used = None
+
+    def _build_laplacian_batch(self, batch: FlockBatch) -> Tensor:
+        """
+        Construct graph Laplacian matrices for connectivity analysis.
+
+        Builds unnormalized Laplacians L = D - A where D is the degree matrix
+        and A the symmetrized binary adjacency. The Laplacian's eigenvalues
+        encode graph connectivity properties, with λ₂ (Fiedler value) measuring
+        algebraic connectivity.
+
+        Args:
+            batch: PyG Batch containing edge_index and batch assignment
+
+        Returns:
+            Laplacian matrices [B, N, N] for each graph in the batch
+        """
+        A, = self._reshape_features(batch, 'adjacency')
+        return th.diag_embed(A.sum(dim=-1)) - A
+
+    def _compute_fiedler(
+        self,
+        alphas : Tensor,
+        betas  : Tensor,
+        k      : int
+    ) -> Tensor:
+        """
+        Compute Fiedler values from Lanczos coefficients via tridiagonal reduction.
+
+        Constructs symmetric tridiagonal matrix T from Lanczos coefficients that
+        preserves the spectral properties of the original N×N Laplacian. The k×k
+        tridiagonal approximation T ≈ Q^T L Q contains the same eigenvalue
+        information as the full Laplacian but in a compact form suitable for
+        efficient eigendecomposition.
+
+        Building and computing on CPU avoids repeated device transfers and leverages
+        optimized LAPACK routines for symmetric tridiagonal eigenvalue problems.
+
+        Args:
+            alphas : Diagonal Lanczos coefficients [B, :] from orthogonal projections
+            betas  : Off-diagonal coupling terms [B, :] encoding subspace recurrence
+            k      : Number of Lanczos iterations to include (matrix dimension)
+
+        Returns:
+            Fiedler values λ₂ (second smallest eigenvalues) for each graph [B]
+        """
+        alphas_k  = alphas[:, :k].cpu()
+        diagonals = th.diag_embed(alphas_k)
+
+        if k > 1:
+            off_diagonals = betas[:, :k - 1].cpu()
+            diagonals[:, range(k - 1), range(1,  k)] = off_diagonals
+            diagonals[:, range(1,  k), range(k - 1)] = off_diagonals
+
+        return th.linalg.eigvalsh(diagonals)[:, 0]
+
+    def _compute_lanczos_eigenvalue(self, laplacians: Tensor) -> Tensor:
+        """
+        Compute Fiedler values λ₂ via adaptive Lanczos iteration.
+
+        Iteratively constructs tridiagonal approximation T ≈ Q^T L Q using
+        the Lanczos algorithm, where T captures the essential spectral properties
+        of L in a smaller k×k matrix. The algorithm adaptively determines k by
+        monitoring convergence of λ₂.
+
+        Early termination occurs when eigenvalue stability is achieved, typically
+        requiring only 20-50% of full iterations for well-connected graphs.
+
+        Args:
+            laplacians: Batch of Laplacian matrices [B, N, N]
+
+        Returns:
+            Fiedler values λ₂ for each graph [B]
+        """
+        B, N, _ = laplacians.shape
+        device  = laplacians.device
+        alphas  = th.zeros(B, self.agent_count,     device=device)
+        betas   = th.zeros(B, self.agent_count - 1, device=device)
+
+        v_init       = th.randn(B, N, device=device)
+        v_init      -= v_init.mean(dim=1, keepdim=True)
+        v_curr       = v_init / v_init.norm(dim=1, keepdim=True)
+        v_prev       = th.zeros_like(v_curr)
+        prev_fiedler = th.zeros(B)
+
+        for i in range(self.agent_count):
+            w     = th.einsum('bij, bj -> bi', laplacians, v_curr)
+            alpha = th.einsum('bi,  bi -> b', w, v_curr)
+            alphas[:, i] = alpha
+
+            w -= alpha[:, None] * v_curr + betas[:, max(0, i-1), None] * v_prev
+            w -= w.mean(dim=1, keepdim=True)
+
+            if (beta := w.norm(dim=1)).min() <= 1e-10 or i >= self.agent_count - 1:
+                break
+
+            betas[:, i] = beta
+            v_prev = v_curr
+            v_curr = w / beta[:, None]
+
+            if i >= 10 and i % 5 == 0:
+                if th.allclose(
+                    curr_fiedler := self._compute_fiedler(alphas, betas, (k := i + 1)),
+                    prev_fiedler
+                ):
+                    self.k_used = k
+                    return curr_fiedler.to(device)
+                prev_fiedler = curr_fiedler
+
+        self.k_used = i + 1
+        return self._compute_fiedler(alphas, betas, self.k_used).to(device)
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute harmonic mean of Fiedler values.
+
+        The harmonic mean H = n / Σ(1/λᵢ) emphasizes weak connectivity,
+        making it sensitive to poorly connected components where a single
+        disconnected subgroup represents system failure.
+
+        Args:
+            batch: PyG Batch with edge_index and graph assignments
+
+        Returns:
+            Harmonic mean of Fiedler values as scalar tensor
+        """
+        laplacians = self._build_laplacian_batch(batch)
+        fiedler    = self._compute_lanczos_eigenvalue(laplacians).clamp_min(1e-10)
+        return len(fiedler) / fiedler.reciprocal().sum()
+
+
+class MAE(Metric):
+    """
+    Mean Absolute Error for action predictions.
+
+    Measures the average absolute difference between predicted and expert
+    actions in m/s² units. MAE is more robust to outliers than MSE/RMSE,
+    providing a complementary view of prediction accuracy.
+
+    Performance interpretation:
+        - MAE < 1.0 m/s²  : Excellent - near-expert performance
+        - MAE ∈ [1, 2]    : Good      - effective imitation
+        - MAE ∈ [2, 4]    : Moderate  - functional but imprecise
+        - MAE > 4.0 m/s²  : Poor      - significant prediction errors
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Initialize MAE metric.
+
+        Args:
+            **kwargs: Unused, accepted for factory compatibility
         """
         super().__init__()
-        self.add_state("count", th.tensor(0),   "sum")
-        self.add_state("sum",   th.tensor(0.0), "sum")
-    
-    def compute(self) -> Tensor:
-        """
-        Compute the average of accumulated values.
+        self.metric = MeanAbsoluteError()
 
-        Returns the mean of all values accumulated via the update method,
-        or zero if no values have been recorded yet.
+    def compute(self) -> th.Tensor:
+        """
+        Compute the metric value.
+
+        Returns:
+            Computed MAE value as scalar tensor
+        """
+        return self.metric.compute()
+
+    def reset(self):
+        """
+        Reset metric state.
+        """
+        self.metric.reset()
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with predictions and targets.
+
+        Args:
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
+        """
+        self.metric.update(predictions, batch.action)
+
+
+class MaxEntropyEnergy(BaseMetric):
+    """
+    Track effective energy E = -Σ_{⟨ij⟩} J_{ij} 𝐬ᵢ·𝐬ⱼ per frame.
+
+    Computes the interaction energy from the maximum entropy formulation
+    following Bialek et al. (2012), where velocities act as spin variables:
+
+        E = -Σᵢⱼ J_{ij} (v̂ᵢ · v̂ⱼ)
+
+    where J_{ij} = J₀ exp(-dᵢⱼ/λ) with:
+        - J₀ is the uniform base coupling strength
+        - dᵢⱼ is topological distance from k-NN graph
+        - λ is the coupling decay length
+
+    This energy function emerges from statistical inference rather than
+    mechanics, with heterogeneous noise creating critical state variance.
+    """
+    _hop_cache  = {}
+    _triu_cache = {}
+
+    def _compute_hops_per_graph(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute minimum hop counts using vectorized Floyd-Warshall.
+
+        Optimized implementation that processes all graphs in the batch
+        simultaneously, eliminating the sequential bottleneck. The k-loop
+        now operates on all B graphs at once via broadcasting.
+
+        Key optimizations:
+            - Vectorized across batch dimension (B×N³ → N³ operations)
+            - Single memory allocation with optimal layout
+            - Exploits GPU parallelism for via-k path computations
+
+        Args:
+            batch: PyG Batch with edge_index and batch assignment
+
+        Returns:
+            Hop distance matrices [B, N, N] computed in parallel
+        """
+        B, N   = batch.num_graphs, self.agent_count
+        device = batch.edge_index.device
+
+        hops = th.full(
+            device     = device,
+            fill_value = float('inf'),
+            size       = (B, N, N)
+        )
+        hops.diagonal(dim1=1, dim2=2).fill_(0)
+
+        batch_ids    = batch.batch[batch.edge_index[0]]
+        local_source = batch.edge_index[0] - batch_ids * N
+        local_target = batch.edge_index[1] - batch_ids * N
+
+        hops[batch_ids, local_source, local_target] = 1
+        hops[batch_ids, local_target, local_source] = 1
+
+        for k in range(N):
+            hops = th.minimum(hops, hops[:, :, k:k+1] + hops[:, k:k+1, :])
+
+        return hops
+
+    def _get_triu_mask(self, device: th.device) -> Tensor:
+        """
+        Get cached upper triangular mask for symmetric matrix operations.
+
+        Caches mask per device to avoid redundant allocations during energy
+        computations. The mask ensures each interaction pair counted once.
+        """
+        cache_key = (device.type, device.index, self.agent_count)
+        if cache_key not in self._triu_cache:
+            self._triu_cache[cache_key] = th.triu(
+                th.ones(self.agent_count, self.agent_count, device=device),
+                diagonal = 1
+            )
+        return self._triu_cache[cache_key]
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute effective energy using topological interactions.
+
+        Computes spin-spin interactions based on hop distances in each graph's
+        unique k-NN topology, following Ballerini et al. (2008) findings that
+        starling flocks use topological rather than metric interactions.
+
+        The energy is calculated as the sum of pairwise couplings for each
+        agent, then averaged across agents within each batch, providing a
+        mean energy per agent that is independent of flock size.
+
+        Args:
+            batch: PyG Batch with edge_index and velocity tensors
+
+        Returns:
+            Mean energy per agent as scalar tensor
+        """
+        spins    = self._reshape_features(batch, "spins")[0]
+        hops     = self._compute_hops_per_graph(batch)
+        coupling = th.where(
+            hops.isfinite(),
+            self.j_base * (-hops / self.coupling_decay).exp(),
+            th.zeros_like(hops)
+        )
+
+        pairwise_energies = -(
+            coupling
+            * th.bmm(spins, spins.mT)
+            * self._get_triu_mask(spins.device)
+        ) * 2
+
+        return (
+            pairwise_energies.sum(dim=-1)
+                .mean(dim=1, keepdim=True)
+                .mean(dim=0, keepdim=True)
+        )
+
+
+class NoiseHeterogeneity(BaseMetric):
+    """
+    Monitor heterogeneity variance to ensure critical state maintenance.
+
+    Tracks the standard deviation of individual noise amplitudes η_i across
+    the flock, where heterogeneity creates the behavioral variance necessary
+    for murmuration patterns. From Guisandez et al. (2018), maintaining
+    σ(η) at the configured heterogeneity_std ensures continuous phase
+    transitions and scale-free correlations.
+
+    The metric computes:
+        Δσ = |σ(η_batch) - σ_target|
+
+    where σ(η_batch) is the measured standard deviation of noise amplitudes
+    and σ_target is the configured heterogeneity_std parameter.
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Measure deviation from target heterogeneity variance.
+
+        Args:
+            batch: PyG Batch containing heterogeneity values
+
+        Returns:
+            Mean absolute deviation from target σ across batch
         """
         return (
-            self.sum / self.count if self.count > 0 
-            else th.zeros_like(self.sum)
+            batch.heterogeneity.view(batch.num_graphs, self.agent_count)
+                .std(dim=1)
+                .sub(self.heterogeneity_std)
+                .abs()
+                .mean()
         )
 
 
-class CohesionMetric(AveragingMetric):
+class OrientationCoherence(BaseMetric):
     """
-    Measure graph connectivity via the Fiedler value λ₂.
+    Quantify directional alignment coherence via order parameter Φ.
 
-    The algebraic connectivity quantifies how well-connected the flock's
-    communication graph is. Higher values indicate stronger cohesion, with
-    λ₂ = 0 for disconnected graphs and λ₂ > 0 for connected components.
+    Computes the polarization order parameter measuring collective alignment
+    of velocity vectors in the horizontal plane:
 
-    The metric computes the second-smallest eigenvalue of the graph Laplacian:
+        Φ = |⟨ŝᵢ⟩| = |Σᵢ v̂ᵢ| / N
 
-        L = D - A
+    where v̂ᵢ = vᵢ/|vᵢ| are normalized 2D velocity projections. This metric
+    captures the phase transition between disordered (Φ ≈ 0) and ordered
+    (Φ ≈ 1) collective motion states.
 
-    where D is the degree matrix and A is the adjacency matrix.
+    For pairwise coherence, we compute:
+
+        C = ⟨v̂ᵢ · v̂ⱼ⟩_{i≠j} = (Σᵢⱼ cos θᵢⱼ) / (N(N-1))
+
+    Expected values:
+        - Random flight     : Φ ∈ [0.0, 0.2], C ≈ 0
+        - Loose aggregation : Φ ∈ [0.2, 0.5], C ∈ [0.1, 0.3]
+        - Coordinated turn  : Φ ∈ [0.5, 0.8], C ∈ [0.3, 0.6]
+        - Aligned cruise    : Φ ∈ [0.8, 1.0], C ∈ [0.6, 1.0]
     """
 
-    def _compute_fiedler_power_iteration(
-        self,
-        laplacian  : Tensor,
-        iterations : int = 30
-    ) -> Tensor:
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Compute Fiedler value using power iteration method.
-        
-        MPS-compatible alternative to eigvalsh that avoids CPU fallback.
-        Uses inverse power iteration with shift to find second smallest eigenvalue.
-        
-        Args:
-            laplacian  : Graph Laplacian matrix [n, n]
-            iterations : Number of power iterations
-            
-        Returns:
-            Approximation of second smallest eigenvalue (Fiedler value)
-        """
-        n      = laplacian.shape[0]
-        device = laplacian.device
-        
-        if n <= 1:
-            return th.tensor(0.0, device=device)
-        
-        random_vector     = th.randn(n, device=device)
-        orthogonal_vector = random_vector - random_vector.mean()
-        v                 = orthogonal_vector / orthogonal_vector.norm()
-        
-        shift = 0.001
-        shifted_laplacian = laplacian + shift * th.eye(n, device=device)
-        
-        for _ in range(iterations):
-            v_new          = th.linalg.solve(shifted_laplacian, v)
-            orthogonalized = v_new - v_new.mean()
-            
-            if (norm := orthogonalized.norm()) > 1e-10:
-                v = orthogonalized / norm
-            else:
-                break
-        
-        rayleigh_numerator   = v @ (laplacian @ v)
-        rayleigh_denominator = v @ v
-        fiedler_value        = rayleigh_numerator / rayleigh_denominator
-        
-        return fiedler_value.clamp_min(0.0)
-    
-    def _compute_graph_laplacian(
-        self,
-        edge_index : Tensor,
-        num_agents : int
-    ) -> Tensor:
-        """
-        Construct the graph Laplacian matrix L = D - A.
+        Compute polarization measurement.
 
-        Builds a symmetric adjacency matrix from the edge list and computes
-        the Laplacian for spectral analysis.
+        Uses batched matrix multiplication for efficient computation on
+        MPS/GPU, avoiding explicit loops over agent pairs.
 
         Args:
-            edge_index : Graph edges [2, E] in COO format  
-            num_agents : Number of nodes in the graph
+            batch: PyG Batch containing velocity [B*N, 3] flattened
 
         Returns:
-            Tensor [n, n] symmetric Laplacian matrix
+            Mean coherence across batch as scalar tensor
         """
-        adjacency_matrix = th.zeros(
-            (num_agents, num_agents), device=edge_index.device
-        )
-        
-        if edge_index.numel() > 0:
-            adjacency_matrix[edge_index[0], edge_index[1]] = 1.0
-            adjacency_matrix[edge_index[1], edge_index[0]] = 1.0
-        
-        degree_matrix = th.diag_embed(adjacency_matrix.sum(1))
-        laplacian     = degree_matrix - adjacency_matrix
-        
-        return laplacian
+        headings  = self._reshape_features(batch, "spins_2d")[0]
+        alignment = th.bmm(headings, headings.mT)
 
-    def update(
-        self,
-        edge_index : Tensor,
-        num_agents : int
-    ):
-        """
-        Update metric with graph connectivity measurement.
-
-        Computes the Fiedler value (second-smallest eigenvalue) of the
-        graph Laplacian to quantify algebraic connectivity.
-
-        Args:
-            edge_index : Graph connectivity tensor [2, E] or [B, 2, E] in COO format
-            num_agents : Total number of agents in the graph
-        """
-        if edge_index.numel() == 0:
-            self.sum   += 0.0
-            self.count += 1
-            return
-
-        if edge_index.dim() == 3:
-            batch_size     = edge_index.shape[0]
-            fiedler_values = th.zeros(batch_size, device=edge_index.device)
-            
-            for i in range(batch_size):
-                if edge_index[i].numel() > 0:
-                    laplacian = self._compute_graph_laplacian(edge_index[i], num_agents)
-                    fiedler_values[i] = self._compute_fiedler_power_iteration(laplacian)
-            
-            self.sum   += fiedler_values.sum()
-            self.count += batch_size
-            return
-
-        laplacian     = self._compute_graph_laplacian(edge_index, num_agents)
-        fiedler_value = self._compute_fiedler_power_iteration(laplacian)
-        
-        self.sum   += fiedler_value
-        self.count += 1
+        return (
+            (alignment.sum(dim=(1, 2)) - self.agent_count) /
+            (self.agent_count * (self.agent_count - 1))
+        ).mean()
 
 
-class DynamicBalanceMetric(AveragingMetric):
+class OrientationWave(BaseMetric):
     """
-    Measures learned flock's density balance under thermal threat.
+    Detect traveling waves in the orientation field ∇θ(𝐫, t).
 
-    Tracks the ratio of expansion to contraction when the learned policy
-    encounters high temperatures, revealing whether it maintains the "ink-like"
-    evasion pattern characteristic of murmurations. The balance ratio:
-    
-        β = r_avg / d_avg
+    Identifies density waves characteristic of murmurations by computing
+    spatial gradients of heading angles. The metric measures:
 
-    where r_avg is average distance to center and d_avg is average pairwise
-    distance. Ideal range is [0.5, 2.0] for balanced expansion/contraction.
-    """
-    
-    def __init__(self, safety: SafetyModel):
-        """
-        Initialize with thermal threat threshold.
-        
-        Args:
-            safety: Safety model with temperature thresholds
-        """
-        super().__init__()
-        self.threat_temperature = safety.max_temperature * safety.threat_ratio
-    
-    def update(self, batch: TensorDictBase):
-        """
-        Update metric with density ratio when under thermal threat.
+        W = ⟨|∇θᵢ|⟩ = ⟨|dθ/dr|⟩_local
 
-        Args:
-            batch: TensorDict containing position and temperature
-        """
-            
-        if batch["temperature"].max() <= self.threat_temperature:
-            return
+    where θᵢ = atan2(vᵧ, vₓ) is the heading angle and gradients are
+    computed over local neighborhoods within radius R_wave.
 
-        center   = batch["position"].mean(dim=0)
-        pairwise = th.cdist(batch["position"], batch["position"]).triu(1)
-        
-        if (n_pairs := pairwise.gt(0).sum()) > 0:
-            balance_ratio = (
-                (batch["position"] - center).norm(dim=1).mean() / 
-                (pairwise.sum() / n_pairs).clamp_min(1e-8)
-            )
-            self.sum   += balance_ratio
-            self.count += 1
+    Traveling waves manifest as coherent rotation patterns propagating
+    through the flock with characteristic wavelength λ ≈ 7-10 body lengths
+    and phase velocity c ≈ 0.3-0.5 v_flock (Attanasi et al. 2014).
 
-
-class EnergyConsumptionMetric(AveragingMetric):
-    """
-    Estimates average power consumption based on control inputs.
-
-    Uses a simplified quadrotor power model from Hoffmann et al. (2011):
-        P ∝ ||u - g||^k
-
-    where:
-        - u : control acceleration vector (m/s²)
-        - g : gravity vector pointing downward
-        - k : power exponent (typically 1.5 for quadrotors)
-    """
-    gravity: Tensor
-
-    def __init__(
-        self,
-        gravity : float,
-        metrics : MetricsModel
-    ):
-        """
-        Initialize the energy metric with physics parameters.
-
-        Args:
-            gravity : Gravitational acceleration (m/s²)
-            metrics : Metrics configuration containing power exponent k
-        """
-        super().__init__()
-        self.register_buffer("gravity", th.tensor(gravity))
-        self.power_exponent = metrics.power_exponent
-
-    def update(self, u_safe: Tensor):
-        """
-        Computes instantaneous power from thrust vector magnitude.
-
-        Args:
-            u_safe : Safety-filtered control actions [N, 3] (m/s²)
-        """
-        gravity_vector         = th.zeros_like(u_safe)
-        gravity_vector[..., 2] = -self.gravity
-        thrust_magnitude       = (u_safe - gravity_vector).norm(dim=-1)
-
-        power_sum = thrust_magnitude.pow(self.power_exponent).sum()
-        self.sum   += power_sum
-        self.count += u_safe.shape[0]
-
-
-class HamiltonianEnergyMetric(AveragingMetric):
-    """
-    Track Hamiltonian energy E = -Σ J_ij s_i·s_j per timestep.
-
-    Computes the interaction energy of the flock using a physics-inspired
-    Hamiltonian model where agents are treated as spins with pairwise
-    coupling that decays exponentially with distance.
+    Expected values:
+        - Straight flight  : W ∈ [0.00, 0.05] rad/m
+        - Collective turn  : W ∈ [0.05, 0.15] rad/m
+        - Density wave     : W ∈ [0.15, 0.40] rad/m
+        - Full murmuration : W ∈ [0.30, 0.60] rad/m
     """
 
-    def __init__(self, mmm: MurmurationModel):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Initialize with murmuration model parameters.
+        Compute wave amplitude measurement.
+
+        Computes the mean local gradient of heading angles |dθ/dr|
+        averaged first over each agent's neighbors within radius R_wave,
+        then across all agents in the flock. This properly normalizes
+        the metric to be independent of neighbor count.
+
+        Uses vectorized distance computations and masked operations for
+        efficient gradient calculation on MPS/GPU.
 
         Args:
-            mmm: Murmuration model containing coupling parameters
-        """
-        super().__init__()
-        self.j_base                = mmm.j_base
-        self.coupling_decay        = mmm.coupling_decay
-        self.alert_coupling_factor = mmm.alert_coupling_factor
-
-    def update(self, batch: TensorDictBase):
-        """
-        Compute Hamiltonian energy matching controller implementation.
-        
-        Implements the exact energy formulation from MurmurationController:
-        E = -Σ_{<ij>} J_{ij}^{alert} 𝐬_i · 𝐬_j
-        
-        where J_{ij}^{alert} = κ_i × J_0 exp(-d_{ij}/λ) with:
-        - κ_i = 1.0 for relaxed birds, alert_coupling_factor for alert birds  
-        - d_{ij} is topological distance from k-NN graph
-        - Only includes edges that exist in the controller's graph
-
-        Args:
-            batch: TensorDict containing velocity, alert_states, edge indices, 
-                   and topo_distances from controller
-        """
-        spins = th.nn.functional.normalize(batch["velocity"], dim=-1)
-        
-        if "topo_distances" not in batch or "edge_source" not in batch:
-            distances = th.cdist(batch["position"], batch["position"])
-            coupling  = self.j_base * th.exp(-distances / self.coupling_decay)
-            coupling.diagonal(dim1=-2, dim2=-1).fill_(0)
-        else:
-            batch_size, n_agents = spins.shape[:2]
-            coupling  = th.zeros(
-                batch_size, 
-                n_agents, 
-                n_agents, 
-                device = spins.device
-            )
-            
-            if batch["edge_source"].numel() > 0:
-                n_edges       = batch["edge_source"].shape[1]
-                batch_indices = th.arange(
-                    device = spins.device,
-                    end    = batch_size
-                ).unsqueeze(1).expand(-1, n_edges)
-                
-                alert_states_source = batch["alert_states"][
-                    batch_indices, batch["edge_source"]
-                ]
-                coupling_modifier = th.where(
-                    alert_states_source > 0.5,
-                    self.alert_coupling_factor,
-                    1.0
-                )
-                
-                j_edges = self.j_base * coupling_modifier * th.exp(
-                    -batch["topo_distances"][
-                        batch_indices, batch["edge_source"], batch["edge_target"]
-                    ] / self.coupling_decay
-                )
-                
-                coupling[batch_indices, batch["edge_source"], 
-                        batch["edge_target"]] = j_edges
-                coupling[batch_indices, batch["edge_target"], 
-                        batch["edge_source"]] = j_edges
-
-        spin_products = spins @ spins.transpose(-2, -1)
-        energies      = -(coupling * spin_products).sum(dim=(-2, -1)) / 2
-        
-        self.sum   += energies.sum()
-        self.count += energies.numel()
-
-
-class InformationPropagationMetric(AveragingMetric):
-    """
-    Measures empirical information propagation speed through the flock.
-    
-    Tracks how velocity perturbations propagate from edge to center by analyzing
-    the spatial decay of velocity correlations. The correlation function follows:
-    
-        C(r) = ⟨𝐯̂ᵢ · 𝐯̂ⱼ⟩ ~ exp(-r/ξ)
-    
-    where ξ is the correlation length. Information speed is estimated as:
-    
-        v_info = ξ / Δt
-    
-    Natural murmurations exhibit v_info ∈ [15, 45] m/s (Attanasi et al. 2014),
-    with higher speeds indicating more responsive collective dynamics. The range
-    depends on flock alertness:
-        - Relaxed state: v_info ≈ 15 m/s (low responsiveness)  
-        - Alert state: v_info ≈ 45 m/s (high responsiveness)
-    
-    This metric reveals whether the learned policy maintains proper information
-    transfer rates matching empirical observations.
-    """
-    
-    def __init__(self, metrics: MetricsModel):
-        """
-        Initialize with target propagation speed parameters.
-        
-        Args:
-            metrics: Configuration containing info_propagation_* parameters
-        """
-        super().__init__()
-        self.target_max = metrics.info_propagation_max_speed
-        self.target_min = metrics.info_propagation_min_speed
-        self.time_step  = metrics.info_propagation_time_step
-    
-    def update(self, batch: TensorDictBase):
-        """
-        Estimate propagation speed from velocity correlation decay.
-        
-        Args:
-            batch: TensorDict containing position and velocity tensors
-        """
-        position = (
-            batch["position"] if batch["position"].dim() == 3 
-            else batch["position"].unsqueeze(0)
-        )
-        velocity = (
-            batch["velocity"] if batch["velocity"].dim() == 3
-            else batch["velocity"].unsqueeze(0)
-        )
-        
-        n_agents = position.shape[-2]
-        if n_agents < 10:
-            return
-        
-        distances    = th.cdist(position, position)
-        normed_vel   = th.nn.functional.normalize(velocity, dim=-1)
-        correlations = th.bmm(normed_vel, normed_vel.transpose(-2, -1)).abs()
-        mask         = ~th.eye(n_agents, device=position.device, dtype=th.bool)
-        high_corr    = (correlations > 0.5) & mask
-        
-        speeds = th.where(
-            high_corr,
-            distances / self.time_step,
-            th.tensor(0.0, device=distances.device)
-        )[high_corr].clamp(self.target_min, self.target_max)
-        
-        if speeds.numel() > 0:
-            self.sum   += speeds.mean() * position.shape[0]
-            self.count += position.shape[0]
-
-
-class LegibilitySSIMMetric(AveragingMetric):
-    """
-    Measure visual similarity between flock motion and wind field.
-
-    Quantifies how well the flock's collective motion pattern matches
-    the underlying wind field, assessing the "legibility" of the aerial
-    display. Uses kernel density estimation to render velocity fields
-    onto 2D grids for comparison.
-
-    The Structural Similarity Index is computed as:
-
-        SSIM = (2μ_xμ_y + C₁)(2σ_xy + C₂) / ((μ_x² + μ_y² + C₁)(σ_x² + σ_y² + C₂))
-
-    where μ, σ are local means and variances, and C₁, C₂ are stability constants.
-    """
-    bounds_max : Tensor
-    bounds_min : Tensor
-    coords     : Tensor
-
-    def __init__(
-        self,
-        bounds_max : list[float],
-        metrics    : MetricsModel
-    ):
-        """
-        Initialize legibility metric with rendering parameters.
-
-        Sets up the SSIM computation with kernel density estimation
-        parameters for rendering velocity fields onto 2D grids.
-
-        Args:
-            bounds_max : Maximum workspace bounds [x_max, y_max, z_max]
-            metrics    : Configuration with grid size and kernel parameters
-        """
-        super().__init__()
-        self.grid_size    = metrics.legibility_grid_size
-        self.kernel_size  = metrics.legibility_kernel_size
-        self.sigma        = metrics.legibility_sigma
-        self.ssim_metric  = StructuralSimilarityIndexMeasure(
-            data_range  = 1.0,
-            kernel_size = self.kernel_size,
-            reduction   = 'elementwise_mean'
-        )
-
-        self.register_buffer("bounds_max", th.tensor(bounds_max))
-        self.register_buffer("bounds_min", th.zeros(3))
-        self.register_buffer("coords", self._pre_compute_coordinates(self.grid_size))
-
-    def _pre_compute_coordinates(self, grid_size: int) -> Tensor:
-        """
-        Pre-compute 2D coordinate grid for KDE rendering.
-
-        Creates a meshgrid of (x, y) coordinates used for evaluating
-        Gaussian kernels during velocity field rendering.
-
-        Args:
-            grid_size: Resolution of the rendering grid
+            batch: PyG Batch with position and velocity [B*N, 3] flattened
 
         Returns:
-            Tensor [grid_size, grid_size, 2] of grid coordinates
+            Wave amplitude as scalar tensor (rad/m)
         """
-        return th.stack(
-            th.meshgrid(
-                th.arange(grid_size),
-                th.arange(grid_size),
-                indexing = 'xy'
-            ),
-            dim = -1
-        ).float()
+        velocities, distances = self._reshape_features(batch, "velocity", "distances")
+        headings  = th.atan2(velocities[..., 1], velocities[..., 0])
+        mask      = (distances > 0) & (distances < self.orientation_wave_radius)
 
-    def _render_velocity_field(
-        self,
-        bounds_max : Tensor,
-        bounds_min : Tensor,
-        positions  : Tensor,
-        velocities : Tensor
-    ) -> Tensor:
+        heading_diffs = (
+            lambda h: th.remainder(h + th.pi, 2 * th.pi) - th.pi
+        )(headings.unsqueeze(-1) - headings.unsqueeze(-2))
+
+        gradients = (
+            heading_diffs.abs() / distances.clamp_min(1e-3)
+        ).masked_fill(~mask, 0)
+
+        valid_neighbors     = mask.sum(dim=-1).clamp_min(1)
+        mean_grad_per_agent = gradients.sum(dim=-1) / valid_neighbors
+
+        return (
+            mean_grad_per_agent
+                .mean(dim=1, keepdim=True)
+                .mean(dim=0, keepdim=True)
+        )
+
+
+class R2(Metric):
+    """
+    R-squared score for action predictions.
+
+    Measures the proportion of variance in expert actions explained by the
+    policy's predictions. R² ∈ [−∞, 1] where 1 indicates perfect prediction,
+    0 indicates performance equivalent to predicting the mean, and negative
+    values indicate worse than mean prediction.
+
+    Performance interpretation:
+        - R² > 0.90      : Excellent - captures most variance
+        - R² ∈ [0.7, 0.9]: Good      - strong predictive power
+        - R² ∈ [0.3, 0.7]: Moderate  - partial pattern learning
+        - R² < 0.30      : Poor      - minimal predictive capability
+        - R² < 0         : Failure   - worse than mean prediction
+    """
+
+    def __init__(self, **kwargs):
         """
-        Render velocity field using Gaussian kernel density estimation.
-
-        Projects 3D velocity data onto the x-y plane and applies Gaussian
-        kernels to create a continuous field representation:
-
-            f(𝐱) = Σᵢ |𝐯ᵢ| exp(-‖𝐱 - 𝐱ᵢ‖² / 2σ²)
+        Initialize R² score metric.
 
         Args:
-            bounds_max : Maximum workspace bounds [3]
-            bounds_min : Minimum workspace bounds [3]  
-            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
-            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
-
-        Returns:
-            Tensor [grid_size, grid_size] of normalized velocity magnitudes
-        """
-        coords     = self.coords
-        bounds_min = self.bounds_min
-        bounds_max = self.bounds_max
-        
-        velocity_magnitude = velocities[:, :2].norm(dim=1)
-        grid_positions     = (
-            (positions[:, :2] - bounds_min[:2]) /
-            (bounds_max[:2]   - bounds_min[:2]) *
-            (self.grid_size - 1)
-        )
-        
-        flattened_coords  = coords.view(-1, 2)
-        squared_distances = th.cdist(flattened_coords, grid_positions).pow(2)
-        kernel_weights    = th.exp(-squared_distances / (2 * self.sigma ** 2))
-        field             = (kernel_weights @ velocity_magnitude).view(self.grid_size, self.grid_size)
-
-        return field / field.max().clamp_min(1e-8)
-
-    def update(
-        self,
-        positions  : Tensor,
-        velocities : Tensor, 
-        wind       : Tensor
-    ):
-        """
-        Update metric with SSIM between flock and wind velocity fields.
-
-        Renders both the flock's velocity field and the environmental wind
-        field onto 2D grids, then computes their structural similarity.
-
-        Args:
-            positions  : Agent positions 𝐱 ∈ ℝ^(B×n×3)
-            velocities : Agent velocities 𝐯 ∈ ℝ^(B×n×3)
-            wind       : Environmental wind field 𝐰 ∈ ℝ^(B×n×3)
-        """
-        batch_size   = positions.shape[0]
-        device       = positions.device
-        field_shape  = (batch_size, 1, self.grid_size, self.grid_size)
-        flock_fields = th.zeros(field_shape, device=device)
-        wind_fields  = th.zeros(field_shape, device=device)
-        
-        for i in range(batch_size):
-            flock_fields[i, 0] = self._render_velocity_field(
-                bounds_max = self.bounds_max,
-                bounds_min = self.bounds_min,
-                positions  = positions[i],
-                velocities = velocities[i]
-            )
-            
-            wind_fields[i, 0] = self._render_velocity_field(
-                bounds_max = self.bounds_max,
-                bounds_min = self.bounds_min,
-                positions  = positions[i],
-                velocities = wind[i]
-            )
-        
-        ssim_values = self.ssim_metric(
-            preds=flock_fields, target=wind_fields
-        )
-        
-        total_ssim = ssim_values.sum()
-        self.sum   += total_ssim
-        self.count += batch_size
-
-
-class StateMetrics(Metric):
-    """
-    Tracks average physical state properties of the flock.
-    
-    Monitors key physical quantities including velocity magnitude |𝐯|,
-    temperature θ, and acceleration magnitude |𝐚| across all agents.
-    These reveal whether the learned policy maintains realistic flight
-    dynamics matching both the expert controller and empirical observations
-    from Cavagna et al. (2010) and Attanasi et al. (2014).
-    
-    The metrics track:
-        - |𝐯|_avg : Mean velocity magnitude, expected 10-20 m/s in cruise
-                    (starlings typically fly at 15 m/s per Cavagna et al.)
-        - θ_avg   : Mean sensed temperature across flock, critical for
-                    thermal safety constraints
-        - |𝐚|_avg : Mean acceleration magnitude, indicating control effort
-                    and energy expenditure (typical range 5-15 m/s²)
-    
-    These quantities help diagnose whether the learned policy captures the
-    active matter dynamics of self-propelled particles maintaining constant
-    speed while adapting to environmental gradients.
-    """
-    acceleration_sum : Tensor
-    count            : Tensor
-    temperature_sum  : Tensor
-    velocity_sum     : Tensor
-    
-    def __init__(self):
-        """
-        Initialize state tracking for physical quantities.
+            **kwargs: Unused, accepted for factory compatibility
         """
         super().__init__()
-        self.add_state("acceleration_sum", th.tensor(0.0), "sum")
-        self.add_state("count",            th.tensor(0),   "sum")
-        self.add_state("temperature_sum",  th.tensor(0.0), "sum")
-        self.add_state("velocity_sum",     th.tensor(0.0), "sum")
-    
-    def _flatten_agent_batch(self, tensor: Tensor) -> tuple[Tensor, int]:
+        self.metric = R2Score()
+
+    def compute(self) -> th.Tensor:
         """
-        Flatten hierarchical agent batches for statistical computation.
-        
-        Transforms multi-agent batch tensors from [batch, agents, features]
-        format to [batch*agents, features] format for computing per-agent
-        statistics across the entire flock.
-        
-        Args:
-            tensor: Input with shape [batch, agents, features] for batched
-                    trajectories, [agents, features] for single timesteps,
-                    or [features] for single agents
-        
+        Compute the metric value.
+
         Returns:
-            Tuple of (flattened_tensor, n_samples) where flattened has shape
-            [total_samples, features] and n_samples counts individual agents
+            Computed R² value as scalar tensor
         """
-        if tensor.dim() == 3:
-            shape = tensor.shape
-            return tensor.reshape(-1, shape[2]), shape[0] * shape[1]
-        
-        elif tensor.dim() == 2:
-            return tensor, tensor.shape[0]
-        
-        else:
-            return tensor.unsqueeze(0), 1
-    
-    def compute(self) -> dict[str, Tensor]:
+        return self.metric.compute()
+
+    def reset(self):
         """
-        Compute averages from accumulated sums.
-        
-        Returns:
-            Dictionary containing avg_acceleration, avg_temperature, avg_velocity
+        Reset metric state.
         """
-        if self.count == 0:
-            zero = th.tensor(0.0)
-            return {
-                "avg_acceleration" : zero,
-                "avg_temperature"  : zero,
-                "avg_velocity"     : zero,
-            }
-        
-        count = self.count.float()
-        return {
-            "avg_acceleration" : self.acceleration_sum / count,
-            "avg_temperature"  : self.temperature_sum  / count,
-            "avg_velocity"     : self.velocity_sum     / count,
-        }
-    
-    def update(self, batch: TensorDictBase):
+        self.metric.reset()
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
-        Update running sums with batch statistics.
-        
-        Extracts physical quantities from the batch and accumulates their
-        magnitudes for computing running averages across all agents.
-        Only tracks states when control actions are present.
-        
+        Update metric with predictions and targets.
+
         Args:
-            batch: TensorDict containing velocity, temperature, and optionally action
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
         """
-        if "action" not in batch:
-            return
-        
-        flattened_action, n_samples = self._flatten_agent_batch(batch["action"])
-        self.acceleration_sum      += flattened_action.norm(dim=-1).sum()
-        self.count                 += n_samples
-        
-        if "temperature" in batch and batch["temperature"].numel() > 0:
-            self.temperature_sum += batch["temperature"].sum()
-        
-        if "velocity" in batch:
-            flattened_velocity, _ = self._flatten_agent_batch(batch["velocity"])
-            self.velocity_sum    += flattened_velocity.norm(dim=-1).sum()
+        self.metric.update(predictions, batch.action)
 
 
-class ConnectivityMetrics(Metric):
+class RMSE(Metric):
     """
-    Tracks topological connectivity of the k-nearest neighbor graph.
-    
-    Monitors how well the topological interaction structure is maintained
-    during flight dynamics. Ballerini et al. (2008) discovered that starlings
-    interact with a fixed number of k = 6-7 nearest neighbors regardless of
-    metric distance, a topological rule that enables scale-free correlations
-    and optimal information transfer (Bialek et al., 2012).
-    
-    The metrics track:
-        - k_avg : Mean degree ⟨k_i⟩ across the flock, should stabilize near 7
-        - ρ_k   : Fraction of agents maintaining k ≥ k_target neighbors,
-                  indicates structural integrity of the interaction network
-        - N_iso : Count of isolated agents with k < 3 (danger threshold),
-                  as agents with fewer than 3 neighbors cannot triangulate
-                  information and lose flock cohesion
-    
-    where k_i = |𝒩_i| is the neighbor count for agent i. The topological
-    interaction rule is critical for achieving the maximum entropy state
-    that balances individual freedom with collective response.
+    Root Mean Squared Error for action predictions.
+
+    Measures the typical prediction error in m/s² units, giving more weight
+    to large errors than MAE. RMSE provides an interpretable metric in the
+    same units as the predictions, making it ideal for monitoring training.
+
+    Performance interpretation:
+        - RMSE < 1.5 m/s² : Excellent - high-fidelity imitation
+        - RMSE ∈ [1.5, 3] : Good      - acceptable prediction errors
+        - RMSE ∈ [3, 5]   : Moderate  - noticeable deviations
+        - RMSE > 5.0 m/s² : Poor      - large prediction errors
+
+    Note that RMSE ≥ MAE with equality only when all errors are identical.
     """
-    connected_ratio_sum : Tensor
-    count               : Tensor
-    isolated_sum        : Tensor
-    k_target            : int
-    neighbors_sum       : Tensor
-    
-    def __init__(self, k_target: int = 7):
+
+    def __init__(self, **kwargs):
         """
-        Initialize connectivity tracking with target degree.
-        
+        Configures MeanSquaredError with squared=False to compute root mean
+        squared error rather than mean squared error.
+
         Args:
-            k_target: Target number of neighbors (default 7 from Ballerini, 2008)
+            **kwargs: Unused, accepted for factory compatibility
         """
         super().__init__()
-        self.k_target = k_target
-        self.add_state("connected_ratio_sum", th.tensor(0.0), "sum")
-        self.add_state("count",               th.tensor(0),   "sum")
-        self.add_state("isolated_sum",        th.tensor(0.0), "sum")
-        self.add_state("neighbors_sum",       th.tensor(0.0), "sum")
-    
-    def compute(self) -> dict[str, Tensor]:
+        self.metric = MeanSquaredError(squared=False)
+
+    def compute(self) -> th.Tensor:
         """
-        Compute connectivity statistics from accumulated data.
-        
+        Compute the metric value.
+
         Returns:
-            Dictionary containing avg_neighbors, connectivity_ratio, isolated_agents
+            Computed RMSE value as scalar tensor
         """
-        if self.count == 0:
-            zero = th.tensor(0.0)
-            return {
-                "avg_neighbors"      : zero,
-                "connectivity_ratio" : zero,
-                "isolated_agents"    : zero,
-            }
-        
-        count = self.count.float()
-        return {
-            "avg_neighbors"      : self.neighbors_sum / count,
-            "connectivity_ratio" : self.connected_ratio_sum / count,
-            "isolated_agents"    : self.isolated_sum / count,
-        }
-    
-    def update(self, batch: TensorDictBase):
+        return self.metric.compute()
+
+    def reset(self):
         """
-        Update connectivity statistics from graph topology.
-        
-        Computes degree distribution from the edge list and tracks how well
-        the k-NN structure is maintained under dynamics.
-        
+        Reset metric state.
+        """
+        self.metric.reset()
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with predictions and targets.
+
         Args:
-            batch: TensorDict containing edge_index and position tensors
+            batch       : PyG Batch containing target actions
+            predictions : Predicted actions from the policy
         """
-        if "edge_index" not in batch or "position" not in batch:
-            return
-        
-        edge_index = batch["edge_index"]
-        if edge_index.dim() == 3:
-            edge_index = edge_index[0]
-        
-        if edge_index.numel() == 0:
-            return
-        
-        n_agents = (
-            batch["position"].shape[1] if batch["position"].dim() == 3
-            else batch["position"].shape[0]
-        )
-        
-        neighbor_counts = th.bincount(
-            input     = edge_index[0].long(),
-            minlength = n_agents
-        ).float()
-        
-        self.connected_ratio_sum += (neighbor_counts >= self.k_target).float().mean()
-        self.isolated_sum        += (neighbor_counts < 3).float().sum()
-        self.neighbors_sum       += neighbor_counts.mean()
-        self.count               += 1
+        self.metric.update(predictions, batch.action)
 
 
-class ScaleFreeCorrelationMetric(AveragingMetric):
+class ScaleFreeCorrelation(BaseMetric):
     """
     Measure deviation from scale-free velocity correlations.
-    
+
     Verifies that the flock exhibits power-law velocity correlations
     characteristic of critical systems. The correlation function C(r)
     should follow:
@@ -827,590 +840,470 @@ class ScaleFreeCorrelationMetric(AveragingMetric):
 
     where γ ≈ 1/3 for natural murmurations (Cavagna et al. 2010).
     """
-    
-    def __init__(self, metrics: MetricsModel):
-        """
-        Initialize with target correlation exponent.
-        
-        Args:
-            metrics: Metrics model with expected exponent γ
-        """
-        super().__init__()
-        self.target_exponent = metrics.correlation_exponent
-    
-    def _compute_velocity_correlations(
+
+    def _bin_correlations(
         self,
-        positions  : Tensor,
-        velocities : Tensor
+        correlations : Tensor,
+        distances    : Tensor,
+        n_bins       : int
     ) -> tuple[Tensor, Tensor]:
         """
-        Compute pairwise velocity correlations and distances.
+        Bin correlations by distance using logarithmic spacing.
 
-        Calculates the correlation function C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ for all
-        pairs of agents, where δ𝐯 = 𝐯 - ⟨𝐯⟩ are velocity fluctuations.
+        Creates logarithmically-spaced bins to capture scale-free behavior
+        across multiple length scales. Uses fully vectorized binning to
+        process all batches simultaneously.
 
         Args:
-            positions  : Agent positions 𝐱 ∈ ℝ^(n×3)
-            velocities : Agent velocities 𝐯 ∈ ℝ^(n×3)
+            correlations : Velocity correlations [B_valid, n_pairs]
+            distances    : Pairwise distances [B_valid, n_pairs]
+            n_bins       : Number of logarithmic bins
 
         Returns:
-            Tuple of (correlation_matrix, distance_matrix)
+            Tuple of (bin_means, valid_bins) for power law fitting
         """
-        distances  = th.cdist(positions, positions)
-        spins      = th.nn.functional.normalize(velocities, dim=1)
-        delta_spin = spins - spins.mean(dim=0, keepdim=True)
-        corr_mat   = delta_spin @ delta_spin.mT
-        
-        return corr_mat, distances
+        batch     = correlations.shape[0]
+        device    = distances.device
+        dist_mins = distances.amin(1, keepdim=True)
+        dist_maxs = distances.amax(1, keepdim=True)
 
-    def _fit_power_law(
+        normalized_bins = (
+            (distances.log10() - dist_mins.log10()) /
+            (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
+        ).long().clamp(0, n_bins - 1)
+
+        batch_offsets = th.arange(batch, device=device).unsqueeze(1) * n_bins
+        bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
+
+        bin_sums = th.zeros(batch * n_bins, 2, device=device).index_add_(
+            dim    = 0,
+            index  = bins_flat,
+            source = th.stack(
+                dim     = -1,
+                tensors = [correlations.reshape(-1), distances.reshape(-1)]
+            )
+        ).view(batch, n_bins, 2)
+
+        counts = th.bincount(
+            input     = bins_flat,
+            minlength = batch * n_bins
+        ).view(batch, n_bins)
+
+        return (
+            th.where(
+                (valid_bins := counts > 0).unsqueeze(-1),
+                bin_sums / counts.clamp_min(1).unsqueeze(-1),
+                th.zeros_like(bin_sums)
+            ),
+            valid_bins
+        )
+
+    def _fit_power_laws(
         self,
-        bin_distances    : Tensor,
-        bin_correlations : Tensor
-    ) -> float:
+        bin_means  : Tensor,
+        valid_bins : Tensor
+    ) -> Tensor:
         """
-        Fit power law to binned correlation data.
+        Fit power law exponents to binned correlation data.
 
-        Uses log-log linear regression to estimate the exponent γ in:
-            log C(r) = -γ log r + const
+        Performs log-log linear regression to estimate γ in C(r) ~ r^(-γ)
+        for all valid batches simultaneously. Uses masked operations to
+        handle variable numbers of valid bins per batch.
 
         Args:
-            bin_distances    : Mean distance per bin [n_bins]
-            bin_correlations : Mean correlation per bin [n_bins]
+            bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
+            valid_bins : Mask of bins with sufficient data       [B, n_bins]
 
         Returns:
-            Estimated power law exponent γ
+            Power law exponents γ for batches with ≥3 valid bins
         """
-        log_r = bin_distances.log()
-        log_c = bin_correlations.abs().clamp_min(1e-8).log()
-        
-        X = log_r - log_r.mean()
-        Y = log_c - log_c.mean()
-        
-        return float(-(X @ Y) / (X @ X)) if (X @ X) > 0 else 0.0
+        log_dists = bin_means[..., 1].log()
+        log_corrs = bin_means[..., 0].abs().clamp_min(1e-8).log()
+        log_r     = log_dists.masked_fill(~valid_bins, 0)
+        log_c     = log_corrs.masked_fill(~valid_bins, 0)
 
-    def update(self, batch: TensorDictBase):
+        if not (mask := valid_bins.sum(1) >= 3).any():
+            return th.empty(0, device=bin_means.device)
+
+        X  = log_r[mask] - log_r[mask].mean(1, keepdim=True)
+        Y  = log_c[mask] - log_c[mask].mean(1, keepdim=True)
+        XX = (X * X * valid_bins[mask]).sum(1)
+        XY = (X * Y * valid_bins[mask]).sum(1)
+
+        return th.where(XX > 0, -XY / XX, th.zeros_like(XX))
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
         """
         Update metric with scale-free correlation measurement.
-        
-        Computes velocity correlations C(r) as a function of distance r and fits
-        power law C(r) ~ r^(-γ) to measure deviation from expected scaling. Uses
-        adaptive logarithmic binning with n_bins ∈ [3, 10] based on flock size:
-        
-            n_bins = min(10, max(3, n_pairs // 10))
-        
-        Handles edge cases where d_min = d_max (no variation) or n_agents < 4
-        (insufficient data for power law fitting).
-        
+
+        Override update directly since this metric conditionally computes values
+        only when there's sufficient distance variation for power law fitting.
+
         Args:
-            batch: TensorDict containing position and velocity
+            batch       : PyG Batch containing position and velocity
+            predictions : Predicted actions (unused)
         """
-        corr_mat, distances = self._compute_velocity_correlations(
-            batch["position"], batch["velocity"]
-        )
-        
-        triu_mask = th.triu(th.ones_like(distances), diagonal=1).bool()
-        if not triu_mask.any():
+        corrs, dists = self._reshape_features(batch, "spin_corr_triu", "dist_triu")
+
+        if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
             return
-        
-        unique_distances = distances[triu_mask]
-        max_dist         = unique_distances.max()
-        min_dist         = unique_distances.min()
-        
-        if min_dist == max_dist:
-            return
-        
-        n_pairs = triu_mask.sum().item()
-        n_bins  = min(10, max(3, n_pairs // 10))
-        
-        bin_edges = th.logspace(
-            end   = max_dist.log10(),
-            start = min_dist.log10(),
-            steps = int(n_bins + 1)
-        )
-        
-        bin_stats = [
-            (corr_mat[mask].mean(), distances[mask].mean())
-            for low, high in pairwise(bin_edges)
-            if (mask := triu_mask & distances.gt(low) & distances.le(high)).any()
-        ]
-        
-        if len(bin_stats) >= 3:
-            bin_data        = th.tensor(bin_stats, device=distances.device)
-            fitted_exponent = self._fit_power_law(
-                bin_correlations = bin_data[:, 0],
-                bin_distances    = bin_data[:, 1]
+
+        if (gammas := self._fit_power_laws(
+            *self._bin_correlations(
+                correlations = corrs[valid_ids := th.where(valid_batch)[0]],
+                distances    = dists[valid_ids],
+                n_bins       = min(10, max(3, corrs.shape[1] // 10))
             )
-            
-            self.count += 1
-            self.sum   += abs(fitted_exponent - self.target_exponent)
+        )).numel() > 0:
+            scaling_deviation = (gammas - self.correlation_exponent).abs()
+            MeanMetric.update(self, scaling_deviation)
 
 
-class SusceptibilityMetric(AveragingMetric):
+class Susceptibility(BaseMetric):
     """
-    Measures flock susceptibility to directional perturbations.
-    
-    Computes the normalized variance of the order parameter as a proxy for
-    susceptibility to external stimuli. Following Bialek et al. (2012), the
-    susceptibility quantifies collective response:
-    
-        χ = N · Var[Φ]
-    
-    where the order parameter Φ measures global alignment:
-    
-        Φ = |Σᵢ 𝐬ᵢ| / N
-    
-    with 𝐬ᵢ = 𝐯ᵢ/|𝐯ᵢ| being the normalized velocity (spin) of agent i.
-    
-    Natural murmurations maintain χ > 5, indicating proximity to a critical
-    phase transition that maximizes:
-        - Dynamic range (response to weak and strong signals)
-        - Information capacity (bandwidth for signal propagation)
-        - Correlation length (scale-free spatial correlations)
-    
-    Lower susceptibility (χ < 5) indicates an ordered state with reduced
-    responsiveness, while very high susceptibility (χ > 20) suggests
-    instability. The critical regime χ ∈ [5, 15] balances individual
-    freedom with collective coordination.
+    Measures flock susceptibility as integrated velocity correlations.
+
+    Following Cavagna et al. (2010) and Attanasi et al. (2014), susceptibility
+    quantifies the total correlation in the system through the cumulative
+    correlation function:
+
+        Q(r) = ∫₀ʳ C(r')dr'
+
+    where C(r) is the velocity correlation function:
+
+        C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ for pairs at distance r
+
+    with velocity fluctuations δ𝐯ᵢ = 𝐯ᵢ - (1/N)Σₖ𝐯ₖ.
+
+    The susceptibility χ = Q(ξ) is the maximum of the cumulative correlation,
+    reached at the correlation length ξ where C(ξ) = 0.
+
+    In critical systems, χ scales with flock size N without saturation,
+    indicating maintained responsiveness at all scales. The ratio χ/N
+    remains finite, characteristic of near-critical dynamics that enable
+    rapid information transfer across the entire flock.
     """
-    
-    def __init__(self, metrics: MetricsModel):
+
+    def __init__(self, **kwargs):
         """
-        Initialize with susceptibility configuration.
-        
+        Initialize susceptibility metric with adaptive binning.
+
+        Following empirical analysis in scale-free systems (Cavagna et al. 2010),
+        the number of bins scales as O(√N) to balance resolution with statistics.
+        This ensures adequate sampling while maintaining computational efficiency.
+        """
+        super().__init__(**kwargs)
+
+    def _bin_correlations(
+        self,
+        correlations : Tensor,
+        distances    : Tensor,
+        n_bins       : int
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Bin correlations by distance using logarithmic spacing.
+
+        Creates logarithmically-spaced bins to capture scale-free behavior
+        across multiple length scales. Uses fully vectorized binning to
+        process all batches simultaneously.
+
         Args:
-            metrics: Metrics configuration with susceptibility range
-        """
-        super().__init__()
-        self.target_min = metrics.susceptibility_min
-        self.target_max = metrics.susceptibility_max
-    
-    def update(self, batch: TensorDictBase):
-        """
-        Compute susceptibility from velocity fluctuations.
-        
-        Args:
-            batch: TensorDict containing velocity tensor [n_agents, 3]
-        """
-        velocity = (
-            batch["velocity"] if batch["velocity"].dim() == 3
-            else batch["velocity"].unsqueeze(0)
-        )
-        
-        n_agents = velocity.shape[-2]
-        if n_agents < 2:
-            return
-        
-        spins = th.nn.functional.normalize(velocity, dim=-1)
-        mean_spin = spins.mean(dim=-2, keepdim=True)
-        polarizations = (spins * mean_spin).sum(dim=-1)
-        susceptibilities = n_agents * polarizations.var(dim=-1)
-        
-        self.sum   += susceptibilities.sum()
-        self.count += susceptibilities.numel()
+            correlations : Velocity correlations [B_valid, n_pairs]
+            distances    : Pairwise distances    [B_valid, n_pairs]
+            n_bins       : Number of logarithmic bins
 
+        Returns:
+            Tuple of (bin_means, valid_bins) for integration
+        """
+        batch     = correlations.shape[0]
+        device    = distances.device
+        dist_mins = distances.amin(1, keepdim=True)
+        dist_maxs = distances.amax(1, keepdim=True)
 
-class TopologicalFidelityMetric(AveragingMetric):
-    """
-    Measures temporal stability of topological interaction networks.
-    
-    Quantifies how well the flock maintains k-nearest neighbor relationships
-    over time using the Jaccard similarity coefficient between consecutive
-    edge sets:
-    
-        J(E_t, E_{t+1}) = |E_t ∩ E_{t+1}| / |E_t ∪ E_{t+1}|
-    
-    where E_t = {(i,j) : j ∈ kNN(i)} is the edge set at time t.
-    
-    Ballerini et al. (2008) discovered that starlings interact with a fixed
-    number k ≈ 7 topological neighbors regardless of metric distance. This
-    topological rule enables:
-        - Scale-free correlations C(r) ~ r^(-1/3)
-        - Optimal information transfer with v_info ∈ [15, 45] m/s
-        - Maximum entropy state balancing order and disorder
-    
-    High fidelity (J > 0.7) indicates stable neighborhoods that maintain
-    information channels, while low fidelity (J < 0.3) suggests chaotic
-    restructuring that disrupts collective response. The learned policy
-    should maintain J ∈ [0.6, 0.8] for proper murmuration dynamics.
-    """
-    
-    def __init__(self):
-        """
-        Initialize fidelity tracking with edge memory.
-        """
-        super().__init__()
-        self.previous_edges: th.Tensor | None = None
-    
-    def update(self, batch: TensorDictBase):
-        """
-        Compute Jaccard similarity between consecutive edge sets.
-        
-        Args:
-            batch: TensorDict containing edge_index [2, E] and trajectory_id
-        """
-        if "edge_index" not in batch:
-            return
-        
-        edge_index = (
-            batch["edge_index"][0] if batch["edge_index"].dim() == 3
-            else batch["edge_index"]
-        )
-        
-        if edge_index.shape[1] > 0:
-            n_agents = edge_index.max().item() + 1
-            edge_ids = edge_index[0] * n_agents + edge_index[1]
-        else:
-            edge_ids = th.empty(0, dtype=th.long, device=edge_index.device)
-        
-        if "trajectory_id" in batch:
-            traj_ids     = batch["trajectory_id"] 
-            current_traj = (
-                traj_ids.flatten()[0].item() if traj_ids.numel() > 1
-                else traj_ids.item()
+        normalized_bins = (
+            (distances.log10() - dist_mins.log10()) /
+            (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
+        ).long().clamp(0, n_bins - 1)
+
+        batch_offsets = th.arange(batch, device=device).unsqueeze(1) * n_bins
+        bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
+
+        bin_sums = th.zeros(batch * n_bins, 2, device=device).index_add_(
+            dim    = 0,
+            index  = bins_flat,
+            source = th.stack(
+                dim     = -1,
+                tensors = [correlations.reshape(-1), distances.reshape(-1)]
             )
-            if (
-                hasattr(self, "last_trajectory_id") 
-                and current_traj != self.last_trajectory_id
-            ):
-                self.previous_edges = None
-            self.last_trajectory_id = current_traj
-        
-        if self.previous_edges is not None:
-            curr_unique = th.unique(edge_ids)
-            prev_unique = self.previous_edges
-            
-            if curr_unique.numel() > 0 and prev_unique.numel() > 0:
-                
-                # Intersection via mutual membership testing
-                intersection = th.isin(curr_unique, prev_unique).sum()
-                union = curr_unique.numel() + prev_unique.numel() - intersection
-                
-                if union > 0:
-                    fidelity = intersection.float() / union
-                    self.sum   += fidelity
-                    self.count += 1
-        
-        self.previous_edges = th.unique(edge_ids) if edge_ids.numel() > 0 else None
+        ).view(batch, n_bins, 2)
+
+        counts = th.bincount(
+            input     = bins_flat,
+            minlength = batch * n_bins
+        ).view(batch, n_bins)
+
+        return (
+            th.where(
+                (valid_bins := counts > 0).unsqueeze(-1),
+                bin_sums / counts.clamp_min(1).unsqueeze(-1),
+                th.zeros_like(bin_sums)
+            ),
+            valid_bins
+        )
+
+    def _integrate_cumulative(
+        self,
+        bin_means  : Tensor,
+        valid_bins : Tensor
+    ) -> Tensor:
+        """
+        Integrate correlation function using trapezoidal rule.
+
+        Computes cumulative correlation Q(r) = ∫₀ʳ C(r')dr' via numerical
+        integration. The susceptibility χ is the maximum value of Q(r),
+        typically reached at the correlation length where C(r) → 0.
+
+        Args:
+            bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
+            valid_bins : Mask of bins with sufficient data       [B, n_bins]
+
+        Returns:
+            Susceptibility χ as maximum integrated correlation for batches
+            with at least 2 consecutive valid bins, empty tensor otherwise
+        """
+        consecutive = valid_bins[:, :-1] & valid_bins[:, 1:]
+        if not (mask := consecutive.any(1)).any():
+            return th.empty(0, device=bin_means.device)
+
+        correlations = bin_means[..., 0]
+        distances    = bin_means[..., 1]
+        cumulative   = th.zeros_like(correlations)
+
+        for i in range(1, bin_means.shape[1]):
+            both_valid = valid_bins[:, i] & valid_bins[:, i-1]
+            delta_r    = (distances[:, i] - distances[:, i-1]).abs()
+            trapz_area = 0.5 * (correlations[:, i] + correlations[:, i-1]) * delta_r
+
+            cumulative[:, i] = th.where(
+                both_valid,
+                cumulative[:, i-1] + trapz_area,
+                cumulative[:, i-1]
+            )
+
+        return cumulative[mask].abs().amax(dim=1)
+
+    def update(self, batch: FlockBatch, predictions: Tensor):
+        """
+        Update metric with susceptibility measurement.
+
+        Override update directly since this metric conditionally computes values
+        only when there's sufficient data for meaningful integration.
+
+        Args:
+            batch       : PyG Batch containing position and velocity
+            predictions : Predicted actions (unused)
+        """
+        corrs, dists = self._reshape_features(batch, "vel_corr_triu", "dist_triu")
+
+        if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
+            return
+
+        if (susceptibilities := self._integrate_cumulative(
+            *self._bin_correlations(
+                correlations = corrs[valid_ids := th.where(valid_batch)[0]],
+                distances    = dists[valid_ids],
+                n_bins       = min(20, max(5, corrs.shape[1] // 10))
+            )
+        )).numel() > 0:
+            MeanMetric.update(self, susceptibilities)
 
 
-class MetricsCollector(th.nn.Module):
+class Temperature(BaseMetric):
     """
-    Centralized metric collection and management for training and evaluation.
+    Track average temperature sensed across the flock.
 
-    This class owns all TorchMetrics instances and provides methods to update
-    and log metrics throughout the training process. It handles:
+    Monitors mean temperature θ_avg to assess thermal threat exposure and
+    safety constraint satisfaction. Temperature serves as the primary signal
+    for environmental hazards in the murmuration model, with agents detecting
+    and propagating threat information through the flock.
 
-    1. Imitation learning metrics (MSE, RMSE, MAE, R²)
-    2. Core evaluation metrics (legibility, cohesion, energy, color)
-
-    The collector is designed to work with PyTorch Lightning's logging system
-    and automatically syncs metrics to Weights & Biases through the configured
-    logger.
+    This metric verifies that the learned policy maintains appropriate thermal
+    awareness and triggers collective evasion when temperature thresholds are
+    exceeded.
     """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute mean temperature.
+
+        Args:
+            batch: PyG Batch containing temperature tensor [B*N, 1]
+
+        Returns:
+            Mean temperature as scalar tensor
+        """
+        return batch.temperature.mean()
+
+
+class ThermalReactivity(BaseMetric):
+    """
+    Measure collective thermal response via velocity-temperature correlation.
+
+    Quantifies how agent velocity magnitudes spatially correlate with local
+    temperature, capturing the flock's instantaneous responsiveness to thermal
+    threats. The Pearson correlation coefficient ρ ranges from -1 to 1:
+
+        ρ(|v|, T) = Cov(|v|, T) / (σ_|v| · σ_T)
+
+    Strong negative correlation (ρ → -1) indicates agents actively flee hot zones,
+    demonstrating collective threat response. Weak or positive correlation suggests
+    thermal threats are being ignored or approached.
+
+    This instantaneous metric provides a snapshot of threat responsiveness without
+    requiring temporal comparisons, making it suitable for shuffled training data.
+
+    Expected ranges:
+        - Strong evasion    : ρ ∈ [-1.0, -0.5]
+        - Moderate response : ρ ∈ [-0.5, -0.2]
+        - Weak response     : ρ ∈ [-0.2,  0.2]
+        - Approaching heat  : ρ ∈ [ 0.2,  1.0]
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute Pearson correlation between velocity magnitude and temperature.
+
+        Uses cached velocity magnitude for efficient computation. Calculates
+        Pearson correlation using the standard formula:
+
+            ρ = Cov(X, Y) / (σ_X · σ_Y)
+
+        Args:
+            batch: PyG Batch with velocity [B*N, 3] and temperature [B*N, 1]
+
+        Returns:
+            Mean correlation coefficient as scalar tensor
+        """
+        vel_mag,      = self._reshape_features(batch, 'vel_mag')
+        temperature,  = self._reshape_features(batch, 'temperature')
+        vel_centered  = vel_mag - vel_mag.mean(dim=1, keepdim=True)
+        temp_centered = (
+            (temp := temperature.squeeze(-1))
+            - temp.mean(dim=1, keepdim=True)
+        )
+
+        return (
+            (vel_centered * temp_centered).mean(dim=1) /
+            (vel_mag.std(dim=1) * temp.std(dim=1) + 1e-8)
+        ).mean()
+
+
+class Velocity(BaseMetric):
+    """
+    Track average velocity magnitude across the flock.
+
+    Monitors |𝐯|_avg to ensure realistic flight speeds are maintained during
+    collective motion. Empirical observations from Ballerini et al. (2008) show
+    starlings cruise at approximately 11.1 m/s, with speeds ranging from 9-12 m/s
+    during murmuration events.
+
+    This metric validates that the learned policy preserves the characteristic
+    speed regulation of self-propelled particles in active matter systems,
+    where agents maintain preferred speeds despite interactions and perturbations.
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute mean velocity magnitude.
+
+        Uses cached velocity magnitude for efficiency when computed alongside
+        other metrics like ThermalReactivity.
+
+        Args:
+            batch: PyG Batch containing velocity tensor [B*N, 3]
+
+        Returns:
+            Mean velocity magnitude as scalar tensor
+        """
+        vel_mag, = self._reshape_features(batch, 'vel_mag')
+        return vel_mag.mean()
+
+
+class MetricsFactory:
+    """
+    Factory for creating training and validation metric collections.
+
+    Centralizes metric instantiation with proper configuration from domain
+    models. Creates both training and validation metrics with appropriate
+    prefixes for PyTorch Lightning integration.
+    """
+
     def __init__(
         self,
-        bounds_max : list[float],
-        gravity    : float,
-        metrics    : MetricsModel,
-        mmm        : MurmurationModel,
-        safety     : SafetyModel
+        agent_count : int,
+        metrics     : MetricsModel,
+        murmuration : MurmurationModel,
+        physics     : PhysicsModel,
+        safety      : SafetyModel
     ):
         """
-        Initialize metrics collector with configuration parameters.
-
-        Creates all metric instances for tracking imitation learning,
-        evaluation, and murmuration-specific measurements.
+        Initialize factory with configuration models.
 
         Args:
-            bounds_max : Maximum workspace bounds [x_max, y_max, z_max]
-            gravity    : Gravitational acceleration [m/s²]
-            metrics    : Metrics configuration model
-            mmm        : Murmuration dynamics configuration
-            safety     : Safety configuration with temperature thresholds
+            agent_count : Number of agents in the flock
+            environment : Environment configuration for physics parameters
+            metrics     : Metrics configuration for thresholds and parameters
+            murmuration : Murmuration dynamics configuration
+            safety      : Safety configuration for temperature limits
         """
-        super().__init__()
-        self.bounds_max = bounds_max
-        self.gravity    = gravity
-        self.metrics    = metrics
-        self.mmm        = mmm
-        self.safety     = safety
+        self.cfg = {
+            "agent_count"             : agent_count,
+            "correlation_exponent"    : metrics.correlation_exponent,
+            "coupling_decay"          : murmuration.coupling_decay,
+            "fiedler_shift"           : metrics.fiedler_shift,
+            "gravity"                 : physics.gravity,
+            "heterogeneity_std"       : murmuration.heterogeneity_std,
+            "j_base"                  : murmuration.j_base,
+            "max_temperature"         : safety.max_temperature,
+            "orientation_wave_radius" : metrics.orientation_wave_radius,
+            "velocity_threshold"      : metrics.velocity_threshold,
+        }
 
-        self._init_evaluation_metrics()
-        self._init_imitation_metrics()
-
-    def _compute_ready_metrics(
-        self, 
-        metrics: MetricCollection
-    ) -> dict[str, Tensor] | None:
+    def create_training_metrics(self) -> MetricCollection:
         """
-        Compute metrics that have received sufficient data.
-        
-        Returns computed metrics only when all have been properly updated.
-        This prevents warnings during sanity checks when compute() is called
-        before update() methods.
-        
-        Readiness criteria by metric type:
-        - Custom metrics (AveragingMetric, StateMetrics, etc.): count > 0
-        - R2Score: Requires at least 2 updates to compute correlation
-        - Standard metrics (MAE, MSE): At least 1 update required
-        - Unknown types: Check for _update_count attribute > 0
-        
-        Args:
-            metrics: Collection of metrics to potentially compute
-            
-        Returns:
-            Dictionary of computed values or None if any metric lacks data
-        """
-        readiness = Counter()
-        
-        for metric in metrics.values():
-            if isinstance(
-                metric, 
-                (
-                    AveragingMetric,      ConnectivityMetrics,
-                    DynamicBalanceMetric, StateMetrics 
-                )
-            ):
-                is_ready = hasattr(metric, 'count') and metric.count > 0
-            elif isinstance(metric, R2Score):
-                is_ready = getattr(metric, '_update_count', 0) >= 2
-            elif isinstance(metric, (MeanAbsoluteError, MeanSquaredError)):
-                is_ready = getattr(metric, '_update_count', 0) > 0
-            else:
-                is_ready = getattr(metric, '_update_count', 0) > 0
-            
-            readiness[is_ready] += 1
-        
-        if readiness[False] == 0 and readiness[True] > 0:
-            return metrics.compute()
-        return None
-
-    def _get_metrics(
-        self, 
-        is_training : bool, 
-        metric_type : str
-    ) -> MetricCollection:
-        """
-        Get appropriate metrics collection by type and phase.
-
-        Retrieves the correct MetricCollection instance based on whether
-        we're in training/validation and which metric category is needed.
-
-        Args:
-            is_training : Whether in training (True) or validation (False) phase
-            metric_type : Category name ("imitation", "evaluation", "murmuration")
+        Create complete training metric collection.
 
         Returns:
-            MetricCollection for the specified type and phase
+            MetricCollection with all configured metrics for training
         """
-        return getattr(
-            self,
-            f"{("train" if is_training else "val")}_{metric_type}"
+        make = lambda cls: cls(**self.cfg)
+
+        return MetricCollection(
+            metrics = {
+                "acceleration"           : make(Acceleration),
+                "clustering_coefficient" : make(ClusteringCoefficient),
+                "fiedler_value"          : make(FiedlerValue),
+                "max_entropy_energy"     : make(MaxEntropyEnergy),
+                "mae"                    : make(MAE),
+                "noise_heterogeneity"    : make(NoiseHeterogeneity),
+                "orientation_coherence"  : make(OrientationCoherence),
+                "orientation_wave"       : make(OrientationWave),
+                "r2"                     : make(R2),
+                "rmse"                   : make(RMSE),
+                "scale_free_correlation" : make(ScaleFreeCorrelation),
+                "susceptibility"         : make(Susceptibility),
+                "temperature"            : make(Temperature),
+                "thermal_reactivity"     : make(ThermalReactivity),
+                "velocity"               : make(Velocity),
+            },
+            prefix = "training/"
         )
 
-    def _init_evaluation_metrics(self):
+    def create_validation_metrics(self) -> MetricCollection:
         """
-        Initialize the four core evaluation metrics that assess flock performance.
+        Clone training metrics with validation prefix.
 
-        These metrics evaluate how well the flock achieves its mission objectives:
-        - λ₂ (Cohesion)     : Algebraic connectivity measuring flock cohesion
-        - SSIM (Legibility) : How well flock motion visualizes the wind field
-        - MAE Color         : Accuracy of temperature display through RGB LEDs
-        - Average Power     : Energy consumption for mission endurance
-
-        Each metric is wrapped in MetricCollection for automatic train/val splitting
-        and distributed training synchronization.
+        Returns:
+            MetricCollection with all configured metrics for validation
         """
-        self.train_evaluation = MetricCollection({
-            "avg_power"   : EnergyConsumptionMetric(self.gravity, self.metrics),
-            "hamiltonian" : HamiltonianEnergyMetric(self.mmm),
-            "λ₂"          : CohesionMetric(),
-            "ssim"        : LegibilitySSIMMetric(self.bounds_max, self.metrics),
-        })
-        self.val_evaluation = self.train_evaluation.clone()
-
-    def _init_imitation_metrics(self):
-        """
-        Initialize metrics for evaluating imitation learning performance.
-
-        These metrics include regression accuracy and spatial murmuration properties:
-        - dynamic_balance  : Density ratio under thermal threat
-        - MSE/RMSE/MAE/R²  : Regression metrics for velocity predictions
-        - scale_free_error : Deviation from power-law correlations C(r) ~ r^(-1/3)
-
-        All metrics work on individual frames without temporal dependencies.
-        """
-        create_imitation_metrics = lambda prefix="": MetricCollection(
-            {
-                "connectivity"      : ConnectivityMetrics(self.mmm.k_neighbors),
-                "dynamic_balance"   : DynamicBalanceMetric(self.safety),
-                "info_propagation"  : InformationPropagationMetric(self.metrics),
-                "mae"               : MeanAbsoluteError(),
-                "mse"               : MeanSquaredError(),
-                "r2"                : R2Score(multioutput='uniform_average'),
-                "rmse"              : MeanSquaredError(squared=False),
-                "scale_free"        : ScaleFreeCorrelationMetric(self.metrics),
-                "state"             : StateMetrics(),
-                "susceptibility"    : SusceptibilityMetric(self.metrics),
-                "topo_fidelity"     : TopologicalFidelityMetric()
-            }, 
-            compute_groups = False,
-            prefix         = prefix)
-        
-        self.train_imitation = create_imitation_metrics()
-        self.val_imitation   = create_imitation_metrics()
-    
-
-    def log_all_metrics(
-        self,
-        is_training : bool,
-        module      : LightningModule,
-        step_data   : StepMetrics | None = None
-    ):
-        """
-        Log all metrics to PyTorch Lightning and external loggers.
-
-        Uses a simplified logging strategy where training metrics are logged
-        step-wise and validation metrics are logged epoch-wise. This eliminates
-        the need for _step/_epoch suffixes since each metric logs at only one
-        granularity.
-
-        Special handling includes:
-        - Loss displayed in progress bar for immediate feedback
-        - Per-dimension velocity MSE for debugging specific axes
-        - Automatic train/val prefixing for metric organization
-
-        Args:
-            is_training : Whether in training (True) or validation (False) phase
-            module      : Lightning module providing the logger interface
-            step_data   : Optional step metrics (loss, predictions, targets) for
-                          step-level logging. When None, only logs aggregated metrics.
-        """
-        phase        = "training" if is_training else "validation"
-        log_on_step  = is_training
-        log_on_epoch = not is_training
-        
-        if step_data is not None:
-            module.log(
-                name      = f"{phase}/loss",
-                on_epoch  = log_on_epoch,
-                on_step   = log_on_step,
-                prog_bar  = True,
-                sync_dist = True,
-                value     = step_data["loss"]
-            )
-
-            for i, dim in enumerate(["x", "y", "z"]):
-                module.log(
-                    name      = f"{phase}/velocity_{dim}_mse",
-                    on_epoch  = log_on_epoch,
-                    on_step   = log_on_step,
-                    sync_dist = True,
-                    value     = (step_data["predictions"][..., i] - 
-                                step_data["targets"][..., i]).pow(2).mean()
-                )
-            
-            if computed := self._compute_ready_metrics(
-                self._get_metrics(is_training, "imitation")
-            ):
-                prefixed = {f"{phase}/{k}": v for k, v in computed.items()}
-                module.log_dict(
-                    dictionary = prefixed,
-                    on_epoch   = log_on_epoch,
-                    on_step    = log_on_step,
-                    sync_dist  = True
-                )
-        
-        if not is_training or step_data is None:
-            if computed := self._compute_ready_metrics(
-                self._get_metrics(is_training, "evaluation")
-            ):
-                prefixed = {f"{phase}/{k}": v for k, v in computed.items()}
-                module.log_dict(
-                    dictionary = prefixed,
-                    on_epoch   = log_on_epoch,
-                    on_step    = log_on_step,
-                    sync_dist  = True,
-                )
-
-    def update_evaluation_metrics(
-        self,
-        batch       : TensorDictBase,
-        is_training : bool
-    ):
-        """
-        Update all evaluation metrics from a single simulation batch.
-
-        Intelligently extracts relevant data for each metric based on what
-        fields are available in the batch. This allows graceful handling of
-        partial data during different training stages or evaluation modes.
-
-        Field requirements by metric:
-        - Color accuracy  : temperature
-        - Legibility SSIM : position, velocity, wind
-        - Cohesion λ₂     : edge_index, position (for agent count)
-        - Energy          : u_safe or action (control inputs)
-
-        Args:
-            batch       : TensorDict containing simulation state and actions
-            is_training : Whether this is training (True) or validation (False)
-        """
-        metrics = self._get_metrics(is_training, "evaluation")
-
-
-        if all(k in batch for k in ["position", "velocity", "wind"]):
-            metrics["ssim"].update(
-                positions  = batch["position"],
-                velocities = batch["velocity"],
-                wind       = batch["wind"]
-            )
-
-        if all(k in batch for k in ["position", "velocity"]):
-            metrics["hamiltonian"].update(batch)
-
-        if "edge_index" in batch and "position" in batch:
-            num_agents = batch["position"].shape[1]
-            
-            metrics["λ₂"].update(
-                edge_index = batch["edge_index"],
-                num_agents = num_agents
-            )
-
-        u_control = batch.get("u_safe") if "u_safe" in batch else batch.get("action")
-        if u_control is not None:
-            metrics["avg_power"].update(u_safe=u_control)
-
-    def update_imitation_metrics(
-        self,
-        batch       : TensorDictBase | None,
-        is_training : bool,
-        predictions : Tensor,
-        targets     : Tensor
-    ):
-        """
-        Update regression and spatial murmuration metrics.
-
-        Computes both behavioral cloning accuracy and spatial murmuration properties
-        that don't require temporal continuity.
-
-        Args:
-            batch       : Optional TensorDict with position, velocity, temperature
-            is_training : Whether this is training (True) or validation (False)
-            predictions : Model velocity outputs [batch_size, 3] in m/s
-            targets     : Expert velocity commands [batch_size, 3] in m/s
-        """
-        metrics = self._get_metrics(is_training, "imitation")
-        
-        for name in ["mae", "mse", "r2", "rmse"]:
-            if name in metrics:
-                metrics[name].update(predictions, targets)
-        
-        if batch is not None:
-            for name in [
-                "connectivity", "dynamic_balance", "info_propagation",
-                "scale_free", "state", "susceptibility", "topo_fidelity"
-            ]:
-                if name in metrics:
-                    metrics[name].update(batch)
-    
+        return self.create_training_metrics().clone(prefix="validation/")

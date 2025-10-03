@@ -6,13 +6,13 @@ throughout the CLI, providing a single source of truth for type definitions.
 """
 from __future__         import annotations
 from config.cli.schemas import *
-from typing             import Any, Literal, NamedTuple, TYPE_CHECKING, TypedDict
+from typing             import Any, Literal, NamedTuple, Protocol, TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from torch import Tensor
 
 
-class ConfigItem(NamedTuple):
+class CfgItem(NamedTuple):
     """
     Configuration parameter with override indicator.
 
@@ -24,41 +24,32 @@ class ConfigItem(NamedTuple):
     value       : Any   # Current parameter value
 
 
-class FileInfo(TypedDict):
+class FlockBatch(Protocol):
     """
-    Globus file metadata returned from endpoint directory listings.
+    Protocol for PyTorch Geometric Batch objects containing flock data.
 
-    Represents file and directory information from Globus Transfer API
-    list operations, providing essential metadata for transfer operations.
+    Defines the expected structure of batched graph data from the expert
+    dataset, ensuring type safety for attribute access.
     """
-    name : str  # Filename or directory name
-    path : str  # Full path on the endpoint
-    size : int  # File size in bytes
-    type : str  # Either 'file' or 'dir'
+    action        : Tensor  # Expert actions            [B*N, 3]
+    batch         : Tensor  # Node to graph assignment  [B*N]
+    distances     : Tensor  # Pairwise distances        [B*N, N]
+    edge_index    : Tensor  # Graph edges               [2, E]
+    gradient      : Tensor  # Temperature gradients     [B*N, 3]
+    heterogeneity : Tensor  # Noise amplitudes η_i      [B*N]
+    num_graphs    : int     # Number of graphs in batch
+    position      : Tensor  # Agent positions           [B*N, 3]
+    ptr           : Tensor  # Cumulative node counts    [B+1]
+    temperature   : Tensor  # Temperature values        [B*N, 1]
+    velocity      : Tensor  # Agent velocities          [B*N, 3]
+    wind          : Tensor  # Wind velocities           [B*N, 3]
+    x             : Tensor  # Node features             [B*N, 13]
 
-
-class EndpointInfo(TypedDict):
-    """
-    Globus endpoint identification information.
-
-    Represents a Globus Connect endpoint that can be used as a source
-    or destination for data transfers.
-    """
-    display_name : str  # Human-readable endpoint name
-    id           : str  # UUID of the endpoint
-
-
-class StepMetrics(TypedDict):
-    """
-    Step-level metrics data for logging during training/validation.
-
-    Contains the loss value and model predictions/targets needed for
-    computing step-level metrics like per-dimension MSE. When None,
-    indicates epoch-level aggregated logging only.
-    """
-    loss        : Tensor  # Scalar loss value
-    predictions : Tensor  # Model velocity predictions [batch, 3]
-    targets     : Tensor  # Expert velocity targets [batch, 3]
+    def __getitem__(self, key: str) -> Tensor:
+        """
+        Dictionary-style access to batch attributes.
+        """
+        ...
 
 
 class SystemInfo(TypedDict, total=False):
@@ -106,18 +97,3 @@ class TableColumn(NamedTuple):
     style   : str
     title   : str
     width   : int
-
-
-class TransferStatus(TypedDict):
-    """
-    Globus transfer task status information.
-
-    Contains detailed status information for monitoring ongoing transfers
-    including progress, performance metrics, and completion state.
-    """
-    bytes_transferred : int   # Number of bytes successfully transferred
-    files_transferred : int   # Number of files completed
-    is_ok             : bool  # Boolean indicating if transfer completed
-    mbps              : float # Current transfer rate in MB/s
-    nice_status       : str   # Human-readable status message
-    status            : str   # Current status (ACTIVE, SUCCEEDED, FAILED)

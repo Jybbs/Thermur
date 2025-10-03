@@ -52,7 +52,7 @@ class CheckpointModel(BaseModel, extra="forbid"):
     enabling recovery from interruptions and model selection.
     """
     dirpath: str = Field(
-        default     = "checkpoints",
+        default     = "data/checkpoints",
         description = (
             "Directory path for saving model checkpoints during training, enabling "
             "recovery from interruptions and model comparison across runs."
@@ -61,93 +61,22 @@ class CheckpointModel(BaseModel, extra="forbid"):
     every_n_train_steps: PositiveInt = Field(
         default     = 25_000,
         description = (
-            "Step interval between checkpoint saves, balancing storage costs with "
+            "Frame interval between checkpoint saves, balancing storage costs with "
             "recovery granularity for long training runs on large datasets."
         )
     )
     save_last: bool = Field(
-        default     = True,
+        default     = False,
         description = (
             "Always save the final model checkpoint at training completion regardless "
             "of whether it achieved the best validation metric."
         )
     )
     save_top_k: int = Field(
-        default     = 3,
+        default     = 0,
         description = (
             "Number of best model checkpoints to keep based on monitored metric. "
             "Use -1 to keep all checkpoints, 0 to disable best model saving."
-        )
-    )
-
-
-class ExperienceModel(BaseModel, extra="forbid"):
-    """
-    Experience data handling and batching configuration.
-
-    Manages how experience data is collected, stored, and sampled during
-    imitation learning from expert demonstrations.
-    """
-    batch_size: PositiveInt = Field(
-        default     = 256,
-        ge          = 16,
-        description = (
-            "Number of state-action transitions B sampled per gradient update, "
-            "balancing computational efficiency with gradient variance. "
-            "Minimum of 16 ensures stable gradients and efficient GPU utilization."
-        )
-    )
-    buffer_size: PositiveInt = Field(
-        default     = 50_000,
-        description = (
-            "Maximum trajectory transitions |𝒟| stored in circular replay buffer "
-            "before oldest experiences are overwritten with new demonstrations."
-        )
-    )
-    frames_per_batch: PositiveInt = Field(
-        default     = 1024,
-        description = (
-            "Environment steps N_batch collected between training updates, controlling "
-            "the ratio of environment interaction to gradient computation."
-        )
-    )
-    max_frames_per_traj: int = Field(
-        default     = -1,
-        description = (
-            "Maximum frames per trajectory before episode reset. Use -1 for infinite "
-            "episodes that only reset when environment signals done."
-        )
-    )
-    prefetch: NonNegativeInt = Field(
-        default     = 16,
-        description = (
-            "Concurrent batches loaded in background threads, hiding I/O latency "
-            "and maintaining MPS/GPU utilization. Increased for better MPS performance."
-        )
-    )
-    total_frames: PositiveInt = Field(
-        default     = 200_000,
-        description = (
-            "Total environment interactions T over entire training run, determining "
-            "sample efficiency and final policy performance convergence."
-        )
-    )
-    validation_batches: PositiveInt = Field(
-        default     = 2,
-        description = (
-            "Number of batches to sample for validation from the replay buffer. "
-            "Validation samples from the oldest portion of the buffer to avoid overlap "
-            "with recent training data."
-        )
-    )
-    validation_split: float = Field(
-        default     = 0.2,
-        ge          = 0.0,
-        le          = 0.5,
-        description = (
-            "Fraction of replay buffer reserved for validation sampling. "
-            "A value of 0.2 means validation samples from the oldest 20% of the buffer, "
-            "ensuring temporal separation from recent training data."
         )
     )
 
@@ -187,9 +116,12 @@ class HardwareModel(BaseModel, extra="forbid"):
             "Adds significant overhead but helpful for debugging training issues."
         )
     )
-    devices: PositiveInt = Field(
-        default     = 1,
-        description = "Number of GPUs/TPUs to use for distributed training."
+    devices: int = Field(
+        default     = -1,
+        description = (
+            "Number of GPUs/TPUs to use for distributed training. Set to 1 for single device "
+            "or -1 to use all available devices (not applicable for MPS on Apple Silicon)."
+        )
     )
     precision: Literal["16-mixed", "bf16-mixed", "32-true", "64-true", "32"] = Field(
         default     = "32-true",
@@ -205,6 +137,20 @@ class HardwareModel(BaseModel, extra="forbid"):
             "'ddp' for multi-GPU, 'deepspeed'/'fsdp' for large model training."
         )
     )
+    num_workers: NonNegativeInt = Field(
+        default     = 8,
+        description = (
+            "Number of worker processes for data loading. Set to 0 for debugging "
+            "or when using CPU. Higher values improve throughput with GPUs."
+        )
+    )
+    pin_memory: bool = Field(
+        default     = False,
+        description = (
+            "Pin memory for faster GPU transfers. Disabled by default to avoid "
+            "MPS warnings. Enable for CUDA GPUs if memory permits."
+        )
+    )
 
 
 class OptimizerModel(BaseModel, extra="forbid"):
@@ -218,6 +164,15 @@ class OptimizerModel(BaseModel, extra="forbid"):
 
     where π_θ is the learned GNN policy and π* is the murmuration controller.
     """
+    batch_size: PositiveInt = Field(
+        default     = 256,
+        ge          = 16,
+        description = (
+            "Number of graph states per training batch. Each state contains "
+            "the full flock state at a single frame. Larger batches improve "
+            "gradient stability but require more memory."
+        )
+    )
     early_stopping_patience: PositiveInt = Field(
         default     = 10,
         description = (
@@ -233,17 +188,17 @@ class OptimizerModel(BaseModel, extra="forbid"):
         )
     )
     learning_rate: PositiveFloat = Field(
-        default     = 2e-3,
+        default     = 5e-4,
         description = (
-            "Initial learning rate α for AdamW optimizer, controlling step size "
-            "in parameter space during gradient descent optimization."
+            "Initial learning rate α for AdamW optimizer, controlling gradient step "
+            "size in parameter space during gradient descent optimization."
         )
     )
     log_every_n_steps: PositiveInt = Field(
         default     = 1,
         description = (
             "How often to log metrics during training (every N batches). "
-            "Set to 1 for logging every step, useful when training with few batches."
+            "Set to 1 for logging every frame, useful when training with few batches."
         )
     )
     lr_factor: PositiveFloat = Field(
@@ -267,24 +222,10 @@ class OptimizerModel(BaseModel, extra="forbid"):
             "upper bound on training time even if convergence isn't reached."
         )
     )
-    training_metric: str = Field(
-        default     = "training/loss",
-        description = (
-            "Primary metric monitored during training for logging and model "
-            "selection. Also used by early stopping callback."
-        )
-    )
     mode: Literal["min", "max"] = Field(
         default     = "min",
         description = (
             "Optimization direction for monitored metric (minimize or maximize)."
-        )
-    )
-    scheduler_metric: str = Field(
-        default     = "validation/loss",
-        description = (
-            "Metric monitored by learning rate scheduler for reducing learning rate "
-            "on plateau. Typically a validation metric to avoid overfitting."
         )
     )
     seed: NonNegativeInt | None = Field(
@@ -292,6 +233,16 @@ class OptimizerModel(BaseModel, extra="forbid"):
         description = (
             "Random seed for reproducible training runs. Set to None for "
             "non-deterministic behavior."
+        )
+    )
+    train_split: float = Field(
+        default     = 0.8,
+        ge          = 0.5,
+        le          = 0.95,
+        description = (
+            "Fraction of data reserved for training, with remainder for validation. "
+            "Split occurs randomly across all frames to ensure diverse data when "
+            "validating."
         )
     )
     val_check_interval: float = Field(
@@ -324,53 +275,18 @@ class MetricsModel(BaseModel, extra="forbid"):
             "in natural murmurations, per Cavagna et al. (2010)."
         )
     )
-    info_propagation_max_speed: PositiveFloat = Field(
-        default     = 45.0,
+    fiedler_shift: PositiveFloat = Field(
+        default     = 0.001,
         description = (
-            "Maximum information propagation speed in m/s through the flock, "
-            "corresponding to alert state responsiveness (Attanasi et al. 2014)."
+            "Diagonal shift λ for computing Fiedler eigenvalue of graph Laplacian "
+            "through power iteration, ensures positive definiteness."
         )
     )
-    info_propagation_min_speed: PositiveFloat = Field(
-        default     = 15.0,
+    orientation_wave_radius: PositiveFloat = Field(
+        default     = 10.0,
         description = (
-            "Minimum information propagation speed in m/s through the flock, "
-            "corresponding to relaxed state responsiveness (Attanasi et al. 2014)."
-        )
-    )
-    info_propagation_time_step: PositiveFloat = Field(
-        default     = 0.05,
-        description = (
-            "Time step in seconds for estimating information propagation velocity "
-            "through the flock by tracking velocity change patterns over time."
-        )
-    )
-    legibility_grid_size: PositiveInt = Field(
-        default     = 64,
-        description = (
-            "Resolution of 2D grid for rendering velocity fields in legibility "
-            "metrics, higher values provide more detail but increase computation cost."
-        )
-    )
-    legibility_kernel_size: PositiveInt = Field(
-        default     = 11,
-        description = (
-            "Size of Gaussian kernel for SSIM computation in legibility metrics, "
-            "must be odd, larger kernels consider broader spatial context."
-        )
-    )
-    legibility_sigma: PositiveFloat = Field(
-        default     = 2.0,
-        description = (
-            "Standard deviation for Gaussian kernel in KDE velocity field rendering, "
-            "controls smoothness of the rendered velocity field representation."
-        )
-    )
-    power_exponent: PositiveFloat = Field(
-        default     = 1.5,
-        description = (
-            "Exponent k in power consumption model P ∝ ||u||^k for energy metrics, "
-            "typically 1.5 for quadrotors based on momentum theory analysis."
+            "Radius R_wave for computing local orientation gradients ∇θ(𝐫) in "
+            "murmuration wave detection, where θ = atan2(v_y, v_x)."
         )
     )
     profiler: bool | Literal["simple", "advanced", "pytorch"] = Field(
@@ -381,17 +297,10 @@ class MetricsModel(BaseModel, extra="forbid"):
             "for detailed profiling."
         )
     )
-    susceptibility_max: PositiveFloat = Field(
-        default     = 20.0,
+    velocity_threshold: PositiveFloat = Field(
+        default     = 1e-3,
         description = (
-            "Maximum expected susceptibility χ = N·Var[Φ] for maintaining critical "
-            "state dynamics, higher values indicate excessive system responsiveness."
-        )
-    )
-    susceptibility_min: PositiveFloat = Field(
-        default     = 5.0,
-        description = (
-            "Minimum expected susceptibility χ = N·Var[Φ] for maintaining critical "
-            "state dynamics, lower values indicate insufficient system responsiveness."
+            "Minimum velocity magnitude in m/s below which agents are considered "
+            "stationary for orientation wave and heading computations."
         )
     )
