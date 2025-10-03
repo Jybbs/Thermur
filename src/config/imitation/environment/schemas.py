@@ -65,6 +65,14 @@ class PhysicsModel(BaseModel, extra="forbid"):
 
     where ê_i are the standard basis vectors in ℝ^d.
     """
+    air_density: PositiveFloat = Field(
+        default     = 1.225,
+        description = (
+            "Air density ρ in kg/m³ at standard sea level conditions "
+            "(15°C, 101.325 kPa). Standard atmospheric value from "
+            "ISO 2533:1975 Standard Atmosphere."
+        )
+    )
     bounds_max: list[float] = Field(
         default     = [500.0, 500.0, 40.0],
         description = (
@@ -79,11 +87,19 @@ class PhysicsModel(BaseModel, extra="forbid"):
             "workspace origin, typically [0, 0, 0] for simplicity."
         )
     )
-    drag_coefficient: NonNegativeFloat = Field(
-        default     = 0.1,
+    cross_sectional_area: PositiveFloat = Field(
+        default     = 0.002,
         description = (
-            "Quadratic drag coefficient Cd for aerodynamic resistance modeling, "
-            "where F_drag = -Cd * v * |v| simulates air resistance effects."
+            "Frontal cross-sectional area A in m² for aerodynamic drag calculation. "
+            "Typical value for small songbird body cross-section viewed head-on. "
+            "Approximately π × (0.025)² for a ~5cm body diameter."
+        )
+    )
+    drag_coefficient: NonNegativeFloat = Field(
+        default     = 0.05,
+        description = (
+            "Dimensionless drag coefficient C_d for aerodynamic force calculation. "
+            "Mid-range value for birds in cruising flight per aerodynamic literature."
         )
     )
     gravity: PositiveFloat = Field(

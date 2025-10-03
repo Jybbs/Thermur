@@ -168,9 +168,17 @@ Each agent watches exactly 7 nearest neighbors regardless of distance [^11]. Thi
 
 ### Speed Regulation Through Marginal Confinement
 
-Natural flocks maintain remarkably stable cruising speeds despite constant interactions and perturbations. Cavagna et al. [^16] discovered this emerges from "marginal speed confinement," wherein agents experience minimal resistance near their preferred speed but strong forces prevent extreme deviations. This quartic potential approach resolves a fundamental conflict in collective behavior, since it allows natural speed fluctuations necessary for information transfer while preventing the flock from dispersing or stalling. 
+Natural flocks maintain remarkably stable cruising speeds despite constant interactions and perturbations. This stability emerges from marginal speed confinement [^16], a mechanism where birds experience minimal resistance near their preferred velocity but increasingly strong restoring forces as they deviate further from it. The quartic potential structure, rather than the simpler quadratic forms often used in robotics, resolves a fundamental tension in collective behavior. It permits the speed fluctuations necessary for information propagation while preventing the flock from either dispersing into chaos or grinding to a halt.
 
 Our implementation uses this biologically-validated mechanism instead of artificial damping, ensuring agents achieve their full cruising speed of 11.1 m/s rather than being artificially capped at lower velocities.
+
+### Aerodynamic Realism
+
+Starlings don't fly through still air. They navigate wind fields that constantly push and pull them, demanding continuous adjustment of their flight forces. Our physics incorporates realistic aerodynamic drag calibrated from wind tunnel measurements of European starlings [^18], wherein drag depends on motion through the air mass itself rather than motion relative to the ground.
+
+This distinction matters profoundly. A bird flying at 11 m/s into a 5 m/s headwind experiences the same aerodynamic forces as one flying at 16 m/s in calm air. Our agents exploit tailwinds to conserve energy, work harder against headwinds to maintain speed, and allow crosswinds to naturally drift them sideways. 
+
+These dynamics emerge naturally from the physics rather than being explicitly programmed. The calibration from empirical bird flight data ensures that when our flock encounters the complex wind fields around wildfire plumes from WRF-Fire simulations, their responses match what we would observe in real starlings navigating similar conditions.
 
 ### Density Waves and Thermal Response
 
@@ -186,7 +194,7 @@ This guarantees agents never exceed 475 K, the maximum safe temperature for the 
 
 ### Emergent Properties
 
-The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics [^18]:
+The unified control law produces emergent dynamics that match biological flocks without explicit programming. These properties arise naturally from the interplay between heterogeneous coupling, topological interactions, and active matter dynamics [^19]:
 
 - **Critical State**: Maintained through heterogeneous noise $`\eta_i \sim N(\mu, \sigma=0.20)`$ creating behavioral variance
 - **Rapid Response**: Information propagates at 15-45 m/s through topological networks
@@ -306,12 +314,12 @@ All training runs are automatically logged to our [WandB project](https://wandb.
 
 ### WRF-SFIRE Dataset
 
-The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^19]:
+The training data comes from 147 high-resolution wildfire simulations (5.33 TB total) generated using WRF-Fire [^20]:
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
 | **Wind Speed** | 3-12 m/s | Initial wind conditions |
-| **Fuel Type** | 13 categories | Anderson fuel models [^20] |
+| **Fuel Type** | 13 categories | Anderson fuel models [^21] |
 | **Domain** | 40m resolution | LES with 4m fire mesh |
 | **Duration** | 20-30 minutes | Full plume development |
 | **Temperature** | Up to 600K | Includes extreme heating |
@@ -495,7 +503,7 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 - **MAE/RMSE/R²**: Measure how accurately the policy reproduces expert actions, with MAE < 1.0 m/s² indicating excellent imitation
 
-- **Velocity**: Monitors mean flight speed remains realistic (9-12 m/s for starlings [^21])
+- **Velocity**: Monitors mean flight speed remains realistic (9-12 m/s for starlings [^22])
 
 **Emergent Behavior Metrics:**
 
@@ -772,22 +780,24 @@ For the WRF-SFIRE dataset:
 
 [^17]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
-[^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+[^18]: Nafi, Asif, Hadar Ben-Gida, Christopher G. Guglielmo, and Roi Gurka. 2020. "Aerodynamic Forces Acting on Birds During Flight: A Comparative Study of a Shorebird, Songbird and a Strigiform." *Experimental Thermal and Fluid Science* 113: 110018. https://doi.org/10.1016/j.expthermflusci.2019.110018
 
-[^19]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
+[^19]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
 
-[^20]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
+[^20]: Coen, Janice L., et al. 2013. "WRF-Fire: Coupled Weather–Wildland Fire Modeling with the Weather Research and Forecasting Model." *Journal of Applied Meteorology and Climatology* 52 (1): 16–38. https://doi.org/10.1175/JAMC-D-12-023.1
 
-[^21]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
+[^21]: Rothermel, Richard C. 1972. "A Mathematical Model for Predicting Fire Spread in Wildland Fuels." *USDA Forest Service Research Paper INT-115*.
 
-[^22]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
+[^22]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
 
-[^23]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
+[^23]: Brambilla, Manuele, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. 2013. "Swarm Robotics: A Review from the Swarm Engineering Perspective." *Swarm Intelligence* 7 (1): 1–41. https://doi.org/10.1007/s11721-012-0075-2
 
-[^24]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
+[^24]: Couzin, Iain D. 2009. "Collective Cognition in Animal Groups." *Trends in Cognitive Sciences* 13 (1): 36–43. https://doi.org/10.1016/j.tics.2008.10.002
 
-[^25]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
+[^25]: Heilman, Warren E. 2023. "Atmospheric Turbulence and Wildland Fires: A Review." *International Journal of Wildland Fire* 32 (4): 476–495. https://doi.org/10.1071/WF22053
 
-[^26]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
+[^26]: Hoetzlein, Rama. 2024. "Flock2: A Model for Orientation-Based Social Flocking." *Journal of Theoretical Biology* 593: 111880. https://doi.org/10.1016/j.jtbi.2024.111880
+
+[^27]: Olfati-Saber, Reza. 2007. "Consensus and Cooperation in Networked Multi-Agent Systems." *Proceedings of the IEEE* 95 (1): 215–33. https://doi.org/10.1109/JPROC.2006.887293
 
 ---

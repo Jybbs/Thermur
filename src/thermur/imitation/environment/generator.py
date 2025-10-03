@@ -58,6 +58,53 @@ class TrajectoryGenerator:
         self.velocity_rng    = th.Generator()
         self.wrf             = wrf
 
+    def _compute_drag(
+        self,
+        velocities : Tensor,
+        wind       : Tensor,
+    ) -> Tensor:
+        """
+        Compute aerodynamic drag forces on agents.
+
+        Implements the standard aerodynamic drag equation following
+        Nafi et al. (2020) for birds in flight:
+
+            𝐅_drag = -(1/2) · ρ · C_d · A · |𝐯_rel|² · 𝐯̂_rel
+
+        where:
+            - ρ     : Air density (kg/m³)
+            - C_d   : Dimensionless drag coefficient
+            - A     : Frontal cross-sectional area (m²)
+            - 𝐯_rel : Relative velocity between agent and air
+            - 𝐯̂_rel : Unit vector in direction of relative velocity
+
+        The relative velocity accounts for wind effects:
+
+            𝐯_rel = 𝐯_agent - 𝐯_wind
+
+        This formulation ensures drag depends on motion through the air
+        mass rather than motion relative to the ground, enabling realistic
+        responses to wind conditions.
+
+        Args:
+            velocities : Agent velocities in world frame    [N, 3]
+            wind       : Wind velocities at agent positions [N, 3]
+
+        Returns:
+            Drag force accelerations [N, 3]
+        """
+        rel_velocity   = velocities - wind
+        rel_speed      = rel_velocity.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+        drag_magnitude = (
+            0.5
+            * self.physics.air_density
+            * self.physics.drag_coefficient
+            * self.physics.cross_sectional_area
+            * rel_speed ** 2
+        )
+
+        return -drag_magnitude * (rel_velocity / rel_speed)
+
     def _compute_edge_index(self, distances: Tensor) -> Tensor:
         """
         Compute topological k-nearest neighbor connectivity.
@@ -82,16 +129,32 @@ class TrajectoryGenerator:
         self,
         actions    : Tensor,
         velocities : Tensor,
+        wind       : Tensor,
     ) -> Tensor:
         """
         Compute total acceleration from control and environmental forces.
 
         Aggregates forces following Newton's second law:
-            𝐚_total = 𝐚_control + 𝐚_gravity + 𝐚_drag + 𝐚_wind
+
+            𝐅_total = m𝐚_total = 𝐅_control + 𝐅_gravity + 𝐅_drag
+
+        Assuming unit mass for simplicity:
+
+            𝐚_total = 𝐚_control + 𝐚_gravity + 𝐚_drag
+
+        where:
+            - 𝐚_control: Control accelerations from the agent's actuators
+            - 𝐚_gravity: Gravitational acceleration (downward)
+            - 𝐚_drag: Aerodynamic drag acceleration (opposing motion through air)
+
+        The drag computation accounts for wind effects, ensuring agents
+        experience realistic aerodynamic forces based on their motion
+        relative to the surrounding air mass rather than the ground.
 
         Args:
-            actions    : Control accelerations    [N, 3]
-            velocities : Agent velocities         [N, 3]
+            actions    : Control accelerations              [N, 3]
+            velocities : Agent velocities                   [N, 3]
+            wind       : Wind velocities at agent positions [N, 3]
 
         Returns:
             Total accelerations [N, 3]
@@ -99,8 +162,7 @@ class TrajectoryGenerator:
         gravity = th.zeros_like(velocities)
         gravity[:, 2] = -self.physics.gravity
 
-        speed      = velocities.norm(dim=-1, keepdim=True).clamp(min=1e-6)
-        drag_force = -self.physics.drag_coefficient * velocities * speed
+        drag_force = self._compute_drag(velocities, wind)
 
         return actions + gravity + drag_force
 
@@ -245,9 +307,12 @@ class TrajectoryGenerator:
         Returns:
             Next state as PyG Data object
         """
+        wind = self.wrf.query_wind(self.positions)
+
         acceleration = self._compute_forces(
             actions    = action,
             velocities = self.velocities,
+            wind       = wind,
         )
 
         self.velocities = self._integrate_velocities(
@@ -275,5 +340,5 @@ class TrajectoryGenerator:
             position    = self.positions.clone(),
             temperature = temperature,
             velocity    = self.velocities.clone(),
-            wind        = self.wrf.query_wind(self.positions)
+            wind        = wind
         )

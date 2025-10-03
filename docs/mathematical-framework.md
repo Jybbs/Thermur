@@ -188,6 +188,71 @@ This heterogeneous noise model creates a continuous spectrum of behavioral respo
 
 At this value, the system exhibits the observed critical exponents of $`\beta = 0.69`$, $`\gamma = 1.7`$, and $`\nu = 1.56`$ [^8].
 
+## Aerodynamic Forces
+
+### Drag Force Formulation
+
+Real birds navigate through moving air masses, experiencing forces that vary with every gust and thermal. Wind tunnel measurements of European starlings [^18] provide empirical calibration for these aerodynamic interactions. The drag force opposes each agent's motion through the surrounding air:
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{F}_{\text{drag}} = -\frac{1}{2} \rho_{\text{air}} C_d A |\mathbf{v}_{\text{rel}}|^2 \hat{\mathbf{v}}_{\text{rel}}
+`$
+<br>
+
+where:
+
+- $`\rho_{\text{air}}`$ — Air density (kg/m³)
+
+- $`C_d`$ — Drag coefficient calibrated from starling flight data
+
+- $`A`$ — Frontal cross-sectional area (m²)
+
+- $`\mathbf{v}_{\text{rel}} = \mathbf{v}_i - \mathbf{w}_i`$ — Velocity relative to air mass
+
+- $`\hat{\mathbf{v}}_{\text{rel}} = \mathbf{v}_{\text{rel}}/|\mathbf{v}_{\text{rel}}|`$ — Normalized relative velocity direction
+
+### Air-Relative Motion
+
+The distinction between air-relative and ground-relative motion fundamentally changes how agents respond to wind. Drag forces depend on how fast the bird moves through the surrounding air mass, not how fast it travels over the landscape below. Thus, we use relative velocity:
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{agent}} - \mathbf{w}_{\text{local}}
+`$
+<br>
+
+This formulation ensures physically realistic aerodynamic behavior:
+
+- **Headwinds**: An agent flying at 11 m/s into a 5 m/s headwind experiences drag equivalent to 16 m/s in still air, requiring increased thrust to maintain ground speed
+
+- **Tailwinds**: The same agent with a 5 m/s tailwind experiences drag equivalent to only 6 m/s, allowing energy-efficient cruising
+
+- **Crosswinds**: Lateral winds create asymmetric drag forces, naturally drifting the flock sideways while maintaining formation
+
+### Empirical Calibration
+
+The drag coefficient was determined through particle image velocimetry (PIV) measurements in wind tunnel experiments [^18]. This value represents the time-averaged drag over complete wingbeat cycles, incorporating both downstroke thrust generation and upstroke recovery phases.
+
+The measurements revealed highly unsteady drag behavior, with instantaneous values varying by up to 300% within each wingbeat cycle. Our time-averaged approach captures the net effect while maintaining computational tractability for large-scale swarm simulations.
+
+### Integration with Control Forces
+
+The total acceleration experienced by each agent combines control, gravitational, and aerodynamic forces:
+
+$`
+\hspace{0.5cm} \displaystyle
+\mathbf{a}_{\text{total}} = \mathbf{u}_i^* + \mathbf{g} + \frac{\mathbf{F}_{\text{drag}}}{m}
+`$
+<br>
+
+Assuming unit mass for computational simplicity, the drag force directly contributes as an acceleration term opposing motion through the air. This creates emergent behaviors where:
+
+- Agents naturally exploit favorable winds to conserve energy
+- The flock adjusts formation in response to wind shear
+- Individuals work harder against headwinds to maintain cohesion
+- Crosswind drift occurs without explicit lateral control
+
 ## Environmental Response
 
 ### Thermal Gradient Navigation
@@ -399,8 +464,10 @@ This framework transforms invisible thermal threats into visible motion patterns
 
 [^17]: Heisenberg, Werner. 1928. "Zur Theorie des Ferromagnetismus." *Zeitschrift für Physik* 49 (9): 619–636. https://doi.org/10.1007/BF01328601
 
-[^18]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+[^18]: Nafi, Asif, Hadar Ben-Gida, Christopher G. Guglielmo, and Roi Gurka. 2020. "Aerodynamic Forces Acting on Birds During Flight: A Comparative Study of a Shorebird, Songbird and a Strigiform." *Experimental Thermal and Fluid Science* 113: 110018. https://doi.org/10.1016/j.expthermflusci.2019.110018
 
-[^21]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
+[^19]: Ginelli, Francesco. 2016. "The Physics of the Vicsek Model." *The European Physical Journal Special Topics* 225 (11): 2099–2117. https://doi.org/10.1140/epjst/e2016-60066-8
+
+[^22]: Ballerini, M., et al. 2008. "Empirical Investigation of Starling Flocks: A Benchmark Study in Collective Animal Behaviour." *Animal Behaviour* 76 (1): 201–215. https://doi.org/10.1016/j.anbehav.2008.02.004
 
 
