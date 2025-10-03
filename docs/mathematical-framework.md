@@ -17,7 +17,7 @@ Each agent $`i \in \{1, ..., N\}`$ maintains state:
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{s}_i = \Bigl[ \underbrace{\mathbf{x}_i, \mathbf{v}_i}_{\text{Kinematics}}, \underbrace{\eta_i}_{\text{Noise}}, \underbrace{T_i, \nabla T_i}_{\text{Thermal}}, \underbrace{\mathbf{w}_i}_{\text{Wind}} \Bigr] \in \mathbb{R}^{14}
-`$
+`$  
 <br>
 
 where:
@@ -55,7 +55,7 @@ Based on topological interaction studies in starling flocks [^11], we use $`k = 
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{u}_i^* = \mathbf{u}_i^{\text{nom}} - \kappa \cdot \nabla T \cdot \sigma(-\rho c)
-`$
+`$  
 <br>
 
 where the nominal control:
@@ -81,7 +81,7 @@ The inferred energy takes the Heisenberg form [^17]:
 $`
 \hspace{0.5cm} \displaystyle
 E = -\sum_{i<j} J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j - \sum_i \mathbf{h}_i \cdot \mathbf{s}_i
-`$
+`$  
 <br>
 
 where $`\mathbf{s}_i = \mathbf{v}_i / |\mathbf{v}_i|`$ represents the normalized velocity or "spin" of each bird. The first term captures velocity alignment between neighbors, while the second represents external influences like thermal gradients.
@@ -93,7 +93,7 @@ The coupling strength between agents follows a uniform model where all agents in
 $`
 \hspace{0.5cm} \displaystyle
 J_{ij} = J_0 \exp(-d_{ij}/\lambda)
-`$
+`$  
 <br>
 
 where the topological distance $`d_{ij}`$ counts the minimum number of neighbor-to-neighbor hops between agents, and $`J_0 = 2.5`$ is the optimized uniform baseline coupling strength. This uniform coupling ensures that behavioral diversity emerges from heterogeneous noise amplitudes rather than coupling heterogeneity.
@@ -103,7 +103,7 @@ The alignment force emerges from the energy gradient:
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{F}_{\text{align}} = \sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)
-`$
+`$  
 <br>
 
 ### Critical State Through Noise Heterogeneity
@@ -115,7 +115,7 @@ The variance in noise amplitudes maintains elevated susceptibility:
 $`
 \hspace{0.5cm} \displaystyle
 \chi = \int_0^\xi C(r) dr
-`$
+`$  
 <br>
 
 where $`C(r)`$ is the velocity correlation function and $`\xi`$ is the correlation length. At criticality, susceptibility scales with flock size as $`\chi \sim L^{1.08}`$ [^9], indicating the system maintains responsiveness at all scales without saturation.
@@ -131,7 +131,7 @@ For self-propelled particles, the phase transition between disordered and ordere
 $`
 \hspace{0.5cm} \displaystyle
 \Phi = \frac{1}{N} \left| \sum_i \hat{\mathbf{v}}_i \right|
-`$
+`$  
 <br>
 
 where $`\Phi \approx 0`$ indicates disordered motion and $`\Phi \approx 1`$ represents collective alignment. At the critical point, fluctuations exhibit scaling behavior $`\delta\Phi^2 \sim N^{-\alpha}`$ with $`\alpha < 1`$, indicating long-range correlations.
@@ -143,7 +143,7 @@ Natural flocks maintain stable cruising speeds while preserving the scale-free c
 $`
 \hspace{0.5cm} \displaystyle
 V(\mathbf{v}_i) = \frac{\lambda}{v_0^6}(|\mathbf{v}_i|^2 - v_0^2)^4
-`$
+`$  
 <br>
 
 The potential is marginal at the reference speed, meaning its second derivative vanishes at $`v_0`$. This mathematical property eliminates quadratic restoring forces that would otherwise destroy scale-free correlations, since a harmonic potential would create exponentially decaying correlations rather than the observed power-law behavior.
@@ -153,7 +153,7 @@ The complete self-propulsion force combines this potential gradient with stochas
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{F}_{\text{prop}} = \frac{8\lambda}{v_0^6}(v_0^2 - |\mathbf{v}_i|^2)^3\hat{\mathbf{v}}_i + \eta_i(t) \boldsymbol{\xi}_i
-`$
+`$  
 <br>
 
 where $`\hat{\mathbf{v}}_i = \mathbf{v}_i/|\mathbf{v}_i|`$ is the heading direction. The force magnitude automatically has the correct sign from the $(v_0^2 - |\mathbf{v}_i|^2)^3$ term: when $`|\mathbf{v}_i| < v_0`$ the force accelerates the agent, and when $`|\mathbf{v}_i| > v_0`$ it decelerates.
@@ -165,7 +165,7 @@ Each agent maintains a cruising speed of $`v_0 = 11.1`$ m/s [^21] through the qu
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{F}_{\text{speed}} = 8\lambda(1 - s_i^2)^3 s_i v_0 \hat{\mathbf{v}}_i
-`$
+`$  
 <br>
 
 wherein $`\lambda`$ represents the marginal amplitude parameter (independent of alignment coupling $`J_0`$). This formulation preserves mathematical equivalence to the original while ensuring numerical stability. Stochastic fluctuations $`\eta_i(t) \boldsymbol{\xi}_i`$ with $`\boldsymbol{\xi}_i \sim \mathcal{N}(0, \mathbf{I})`$ maintain the behavioral diversity described in the heterogeneous noise model below.
@@ -177,7 +177,7 @@ Individual noise amplitudes vary temporally, drawn from:
 $`
 \hspace{0.5cm} \displaystyle
 \eta_i(t) \sim \mathcal{N}(0.7, 0.20)
-`$
+`$  
 <br>
 
 This heterogeneous noise model creates a continuous spectrum of behavioral responses. The standard deviation $`\sigma = 0.20`$ represents a transition point where:
@@ -197,7 +197,7 @@ Real birds navigate through moving air masses, experiencing forces that vary wit
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{F}_{\text{drag}} = -\frac{1}{2} \rho_{\text{air}} C_d A |\mathbf{v}_{\text{rel}}|^2 \hat{\mathbf{v}}_{\text{rel}}
-`$
+`$  
 <br>
 
 where:
@@ -219,7 +219,7 @@ The distinction between air-relative and ground-relative motion fundamentally ch
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{agent}} - \mathbf{w}_{\text{local}}
-`$
+`$  
 <br>
 
 This formulation ensures physically realistic aerodynamic behavior:
@@ -243,7 +243,7 @@ The total acceleration experienced by each agent combines control, gravitational
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{a}_{\text{total}} = \mathbf{u}_i^* + \mathbf{g} + \frac{\mathbf{F}_{\text{drag}}}{m}
-`$
+`$  
 <br>
 
 Assuming unit mass for computational simplicity, the drag force directly contributes as an acceleration term opposing motion through the air. This creates emergent behaviors where:
@@ -330,7 +330,7 @@ The thermal constraint function encodes safety requirements:
 $`
 \hspace{0.5cm} \displaystyle
 c(\mathbf{x}, \mathbf{u}) = \nabla T(\mathbf{x}) \cdot \mathbf{u} + \alpha(T_{\text{max}} - T(\mathbf{x}))
-`$
+`$  
 <br>
 
 When $`c \geq 0`$, the action $`\mathbf{u}`$ maintains or improves thermal safety, with the convergence rate $`\alpha = 2.5`$ determining how aggressively agents avoid temperature boundaries.
@@ -342,7 +342,7 @@ The KS penalty function creates a differentiable approximation to constraint vio
 $`
 \hspace{0.5cm} \displaystyle
 p(c) = \frac{\kappa}{\rho} \ln(1 + e^{-\rho c})
-`$
+`$  
 <br>
 
 This formulation smoothly transitions from zero penalty in safe regions to strong corrections near violations. The weight parameter $`\kappa = 100`$ scales the correction magnitude, while the sharpness parameter $`\rho = 30`$ controls the transition steepness between safe and unsafe regions.
@@ -354,7 +354,7 @@ The penalty gradient provides a correction vector that modifies nominal controls
 $`
 \hspace{0.5cm} \displaystyle
 \nabla_{\mathbf{u}} p = \kappa \cdot \sigma(-\rho c) \cdot \nabla T
-`$
+`$  
 <br>
 
 where $`\sigma`$ denotes the sigmoid function. The corrected control becomes:
@@ -362,7 +362,7 @@ where $`\sigma`$ denotes the sigmoid function. The corrected control becomes:
 $`
 \hspace{0.5cm} \displaystyle
 \mathbf{u}_{\text{safe}} = \mathbf{u}_{\text{nom}} - \kappa \cdot \nabla T \cdot \sigma(-\rho c)
-`$
+`$  
 <br>
 
 The sigmoid activation creates adaptive behavior:
@@ -385,7 +385,7 @@ The combination of topological interactions and heterogeneous noise amplitudes p
 $`
 \hspace{0.5cm} \displaystyle
 C(r) \sim r^{-1/3}
-`$
+`$  
 <br>
 
 This exponent matches empirical observations across multiple species and flock sizes [^10], indicating a universal principle independent of specific biological details.

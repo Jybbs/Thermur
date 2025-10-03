@@ -82,7 +82,7 @@ flowchart TB
     subgraph Training["✨ <b>Training System</b>"]
         subgraph Expert["🕹️ <b>Expert Controller</b>"]
             direction TB
-            C["<b>Murmuration Dynamics</b><br/>η_i ~ N(0.70, 0.20) heterogeneity"]
+            C["<b>Murmuration Dynamics</b><br/>ηᵢ ~ N(0.70, 0.20) heterogeneity"]
             D["<b>Maximum Entropy Alignment</b><br/>k = 7 topological neighbors"]
             E["<b>Thermal Safety Filter</b><br/>T < 475K maintained"]
             C --> E
@@ -152,10 +152,12 @@ where the nominal control orchestrates multiple biologically-inspired components
 
 $`
 \begin{aligned}
-\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{8\lambda}{v_0^6}(v_0^2 - |\mathbf{v}_i|^2)^3\hat{\mathbf{v}}_i + \eta_i \boldsymbol{\xi}_i}_{\text{Quartic speed confinement [^16]}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment [^17]}} \\
+\mathbf{u}_i^{\text{nom}} = &\underbrace{\frac{8\lambda}{v_0^6}(v_0^2 - |\mathbf{v}_i|^2)^3\hat{\mathbf{v}}_i + \eta_i \boldsymbol{\xi}_i}_{\text{Quartic speed confinement}} + \underbrace{\sum_{j \in \mathcal{N}_k(i)} J_{ij} (\mathbf{v}_j - \mathbf{v}_i)}_{\text{Maximum entropy alignment}} \\
 &- \underbrace{\gamma_{\text{sep}} \sum_{r_{ij} < r_{\text{min}}} \frac{\mathbf{r}_{ji}}{r_{ij}^3}}_{\text{Separation}} - \underbrace{\beta\nabla T + D\nabla\rho(1+2\theta_i)}_{\text{Environmental response}}
 \end{aligned}
 `$  
+
+The quartic speed confinement term [^16] and maximum entropy alignment [^17] work together to maintain critical dynamics.
 <br>
 
 ### The Mechanism of Criticality
