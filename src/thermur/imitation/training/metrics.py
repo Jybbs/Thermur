@@ -30,18 +30,9 @@ class BaseMetric(MeanMetric):
     Base class extending MeanMetric with PyG batch support.
 
     Provides automatic averaging from MeanMetric and PyG batch reshaping helpers.
-    Metrics needing state history should use add_state() themselves.
-
-    Implementation patterns for metric subclasses:
-
-    1. Simple metrics (default): Override evaluate() returning Tensor
-       - Always computes a meaningful value from batch
-       - BaseMetric.update() calls evaluate() and passes result to MeanMetric
-       - Examples: FiedlerValueMetric, SusceptibilityMetric
-
-    2. Conditional metrics without meaningful defaults: Override update() directly
-       - Skip super().update() when computation impossible or invalid
-       - Example: ScaleFreeCorrelationMetric (no value when fitting fails)
+    Subclasses override evaluate() to return a scalar Tensor computed from the batch.
+    The update() method automatically calls evaluate() and passes the result to
+    MeanMetric for averaging.
     """
     _reshape_cache = {}
 
@@ -80,12 +71,6 @@ class BaseMetric(MeanMetric):
         intuitive [B, N, F] shape for batch processing. Features are cached per batch
         to eliminate redundant computations across metrics.
 
-        Computed features (lazily evaluated and cached):
-        - 'distances' : Pairwise Euclidean distances via cdist      [B, N, N]
-        - 'spin_mean' : Mean of normalized velocities across agents [B, 1, 3]
-        - 'spins'     : Unit-normalized velocity vectors            [B, N, 3]
-        - 'spins_2d'  : Unit-normalized 2D velocity projections     [B, N, 2]
-
         The cache uses batch object IDs as keys, ensuring automatic invalidation when
         processing new batches. The cache is cleared after each training frame via
         BaseMetric.clear_cache() to prevent memory growth.
@@ -97,24 +82,21 @@ class BaseMetric(MeanMetric):
         Returns:
             Tuple of reshaped tensors in requested order, excluding None values
         """
-        b_id    = id(batch)
-        B, E, N = batch.num_graphs, batch.edge_index, self.agent_count
-        cache   = BaseMetric._reshape_cache
-        adj     = lambda: to_dense_adj(E, batch.batch, max_num_nodes=N)
-        corr    = lambda x: th.bmm(d := x - x.mean(1, keepdim=True), d.mT)
-        reshape = lambda feat: self._reshape_features(batch, feat)[0]
-        spins   = lambda: th.nn.functional.normalize(reshape('velocity'), dim=-1)
-        triu    = lambda m: m[:, (t := th.triu_indices(N, N, 1))[0], t[1]]
+        b_id       = id(batch)
+        B, E, N    = batch.num_graphs, batch.edge_index, self.agent_count
+        cache      = BaseMetric._reshape_cache
+        adj        = lambda   : to_dense_adj(E, batch.batch, max_num_nodes=N)
+        fluct      = lambda   : (v := reshape('velocity')) - v.mean(dim=1, keepdim=True)
+        norm       = lambda f : f.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+        reshape    = lambda f : self._reshape_features(batch, f)[0]
+        spins      = lambda   : th.nn.functional.normalize(reshape('velocity'), dim=-1)
 
         computed = {
-            'adjacency'      : lambda: ((A := adj()) + A.mT).sign(),
-            'dist_triu'      : lambda: triu(reshape('distances')),
-            'spin_corr_triu' : lambda: triu(corr(spins())),
-            'spin_mean'      : lambda: spins().mean(dim=1, keepdim=True),
-            'spins'          : spins,
-            'spins_2d'       : lambda: spins()[..., :2],
-            'vel_corr_triu'  : lambda: triu(corr(reshape('velocity'))),
-            'vel_mag'        : lambda: reshape('velocity').norm(dim=-1),
+            'adjacency'  : lambda: ((A := adj()) + A.mT).sign(),
+            'fluct_corr' : lambda: th.bmm(fn := (f := fluct()) / norm(f), fn.mT),
+            'spins'      : spins,
+            'spins_2d'   : lambda: spins()[..., :2],
+            'vel_mag'    : lambda: reshape('velocity').norm(dim=-1),
         }
 
         get_or_compute = lambda feat: (
@@ -254,6 +236,157 @@ class ClusteringCoefficient(BaseMetric):
         )
 
         return clustering.mean()
+
+
+class CorrelationLength(BaseMetric):
+    """
+    Measure normalized correlation length ξ/L as scale-free indicator.
+
+    Following Cavagna et al. (2010), the correlation length ξ characterizes
+    the spatial scale over which velocity fluctuations remain correlated:
+
+        C(r) = ⟨δφ̃ᵢ · δφ̃ⱼ⟩  for |rᵢ - rⱼ| = r
+
+    where δφ̃ᵢ are normalized velocity fluctuations. The correlation length ξ
+    is defined as the distance where C(r) decays to a threshold (typically 0.6).
+
+    The normalized ratio ξ/L (where L is system size) indicates criticality:
+
+        ξ/L ≈ 0.35 : Near-critical (scale-free correlations)
+        ξ/L < 0.2  : Subcritical (short-range order)
+        ξ/L > 0.5  : Supercritical (over-correlated)
+    """
+
+    def _bin_correlations(
+        self,
+        correlations : Tensor,
+        distances    : Tensor,
+        n_bins       : int
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Bin correlations by distance using logarithmic spacing.
+
+        Creates logarithmically-spaced bins to capture correlation decay
+        across multiple length scales. Uses fully vectorized binning to
+        process all batches simultaneously.
+
+        Args:
+            correlations : Velocity fluctuation correlations [B, N, N]
+            distances    : Pairwise distances                [B, N, N]
+            n_bins       : Number of logarithmic bins
+
+        Returns:
+            Tuple of (bin_distances, bin_correlations) averaged per bin [B, n_bins]
+        """
+        batch     = correlations.shape[0]
+        device    = distances.device
+        dist_mins = distances.amin(dim=(1, 2), keepdim=True)
+        dist_maxs = distances.amax(dim=(1, 2), keepdim=True)
+
+        normalized_bins = (
+            (distances.log10() - dist_mins.log10()) /
+            (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
+        ).long().clamp(0, n_bins - 1)
+
+        batch_offsets = th.arange(batch, device=device).view(batch, 1, 1) * n_bins
+        bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
+
+        bin_sums = th.zeros(batch * n_bins, 2, device=device)
+        bin_sums.scatter_add_(
+            dim   = 0,
+            index = bins_flat.unsqueeze(-1).expand(-1, 2),
+            src   = th.stack(
+                dim     = -1,
+                tensors = [distances.reshape(-1), correlations.reshape(-1)]
+            )
+        )
+        bin_sums = bin_sums.view(batch, n_bins, 2)
+
+        counts = th.bincount(
+            input     = bins_flat,
+            minlength = batch * n_bins
+        ).view(batch, n_bins).clamp_min(1)
+
+        return (
+            bin_sums[..., 0] / counts, 
+            bin_sums[..., 1] / counts
+        )
+
+    def _find_crossing(
+        self,
+        bin_distances    : Tensor,
+        bin_correlations : Tensor,
+        threshold        : float
+    ) -> Tensor:
+        """
+        Find distance ξ where C(r) crosses threshold via linear interpolation.
+
+        For bins where C(rᵢ) ≥ θ > C(rᵢ₊₁), linearly interpolate:
+
+            ξ = rᵢ + (θ - C(rᵢ))/(C(rᵢ₊₁) - C(rᵢ)) · (rᵢ₊₁ - rᵢ)
+
+        where θ is the correlation threshold and i is the first bin below threshold.
+
+        Args:
+            bin_distances    : Mean distance per bin    [B, n_bins]
+            bin_correlations : Mean correlation per bin [B, n_bins]
+            threshold        : Correlation threshold θ to detect crossing
+
+        Returns:
+            Correlation length ξ for each batch [B]
+        """
+        below_threshold = bin_correlations < threshold
+        first_below     = below_threshold.int().argmax(dim=1)
+        bracket_indices = th.stack([(
+            first_below - 1).clamp_min(0), 
+            first_below
+        ], dim=-1)
+
+        bracket_dists = bin_distances.gather(1, bracket_indices)
+        bracket_corrs = bin_correlations.gather(1, bracket_indices)
+        interpolation = (
+            (threshold - bracket_corrs[:, 0]) /
+            (bracket_corrs[:, 1] - bracket_corrs[:, 0] + 1e-8)
+        )
+        
+        correlation_length = (
+            bracket_dists[:, 0] +
+            interpolation * (bracket_dists[:, 1] - bracket_dists[:, 0])
+        )
+
+        return th.where(
+            (first_below > 0) & below_threshold.any(dim=1),
+            correlation_length,
+            th.zeros_like(correlation_length)
+        )
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute normalized correlation length ξ/L.
+
+        Args:
+            batch: PyG Batch containing positions [B*N, 3] and velocities [B*N, 3]
+
+        Returns:
+            Mean ξ/L across batch as scalar tensor
+        """
+        correlations, = self._reshape_features(batch, 'fluct_corr')
+        distances,    = self._reshape_features(batch, 'distances')
+        positions,    = self._reshape_features(batch, 'position')
+
+        correlation_length = self._find_crossing(
+            *self._bin_correlations(
+                correlations = correlations, 
+                distances    = distances, 
+                n_bins       = min(20, max(5, self.agent_count // 10))
+            ),
+            threshold = self.correlation_threshold
+        )
+
+        return (
+            correlation_length / 
+            positions.std(dim=1).norm(dim=-1).clamp_min(1e-8)
+        ).mean()
 
 
 class FiedlerValue(BaseMetric):
@@ -555,7 +688,7 @@ class MaxEntropyEnergy(BaseMetric):
         Returns:
             Mean energy per agent as scalar tensor
         """
-        spins    = self._reshape_features(batch, "spins")[0]
+        spins    = self._reshape_features(batch, 'spins')[0]
         hops     = self._compute_hops_per_graph(batch)
         coupling = th.where(
             hops.isfinite(),
@@ -612,52 +745,6 @@ class NoiseHeterogeneity(BaseMetric):
         )
 
 
-class OrientationCoherence(BaseMetric):
-    """
-    Quantify directional alignment coherence via order parameter Φ.
-
-    Computes the polarization order parameter measuring collective alignment
-    of velocity vectors in the horizontal plane:
-
-        Φ = |⟨ŝᵢ⟩| = |Σᵢ v̂ᵢ| / N
-
-    where v̂ᵢ = vᵢ/|vᵢ| are normalized 2D velocity projections. This metric
-    captures the phase transition between disordered (Φ ≈ 0) and ordered
-    (Φ ≈ 1) collective motion states.
-
-    For pairwise coherence, we compute:
-
-        C = ⟨v̂ᵢ · v̂ⱼ⟩_{i≠j} = (Σᵢⱼ cos θᵢⱼ) / (N(N-1))
-
-    Expected values:
-        - Random flight     : Φ ∈ [0.0, 0.2], C ≈ 0
-        - Loose aggregation : Φ ∈ [0.2, 0.5], C ∈ [0.1, 0.3]
-        - Coordinated turn  : Φ ∈ [0.5, 0.8], C ∈ [0.3, 0.6]
-        - Aligned cruise    : Φ ∈ [0.8, 1.0], C ∈ [0.6, 1.0]
-    """
-
-    def evaluate(self, batch: FlockBatch) -> Tensor:
-        """
-        Compute polarization measurement.
-
-        Uses batched matrix multiplication for efficient computation on
-        MPS/GPU, avoiding explicit loops over agent pairs.
-
-        Args:
-            batch: PyG Batch containing velocity [B*N, 3] flattened
-
-        Returns:
-            Mean coherence across batch as scalar tensor
-        """
-        headings  = self._reshape_features(batch, "spins_2d")[0]
-        alignment = th.bmm(headings, headings.mT)
-
-        return (
-            (alignment.sum(dim=(1, 2)) - self.agent_count) /
-            (self.agent_count * (self.agent_count - 1))
-        ).mean()
-
-
 class OrientationWave(BaseMetric):
     """
     Detect traveling waves in the orientation field ∇θ(𝐫, t).
@@ -699,16 +786,16 @@ class OrientationWave(BaseMetric):
         Returns:
             Wave amplitude as scalar tensor (rad/m)
         """
-        velocities, distances = self._reshape_features(batch, "velocity", "distances")
-        headings  = th.atan2(velocities[..., 1], velocities[..., 0])
-        mask      = (distances > 0) & (distances < self.orientation_wave_radius)
+        dists, vels = self._reshape_features(batch, 'distances', 'velocities')
+        headings    = th.atan2(vels[..., 1], vels[..., 0])
+        mask        = (dists > 0) & (dists < self.orientation_wave_radius)
 
         heading_diffs = (
             lambda h: th.remainder(h + th.pi, 2 * th.pi) - th.pi
         )(headings.unsqueeze(-1) - headings.unsqueeze(-2))
 
         gradients = (
-            heading_diffs.abs() / distances.clamp_min(1e-3)
+            heading_diffs.abs() / dists.clamp_min(1e-3)
         ).masked_fill(~mask, 0)
 
         valid_neighbors     = mask.sum(dim=-1).clamp_min(1)
@@ -719,6 +806,87 @@ class OrientationWave(BaseMetric):
                 .mean(dim=1, keepdim=True)
                 .mean(dim=0, keepdim=True)
         )
+
+
+class PairwiseCoherence(BaseMetric):
+    """
+    Measure mean pairwise velocity alignment across local neighborhoods.
+
+    Computes the average dot product of normalized velocity pairs, capturing
+    local coordination quality:
+
+        C = ⟨v̂ᵢ · v̂ⱼ⟩_{i≠j} = (1/[N(N-1)]) Σᵢ≠ⱼ v̂ᵢ · v̂ⱼ
+
+    where v̂ᵢ = vᵢ/|vᵢ| are normalized velocity vectors. This metric quantifies
+    whether nearby agents are aligned with each other, independent of whether
+    they share a common global direction.
+
+    Pairwise coherence complements polarization by detecting local coordination
+    during maneuvers where global direction changes (e.g., coordinated turns,
+    vortex formations) but local alignment remains high.
+
+    Expected ranges:
+        Random motion       : C ≈ 0
+        Loose aggregation   : C ∈ [0.1, 0.3]
+        Coordinated turning : C ∈ [0.3, 0.6]
+        Aligned cruise      : C ∈ [0.6, 1.0]
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute mean pairwise alignment via batched matrix multiplication.
+
+        Args:
+            batch: PyG Batch containing velocity [B*N, 3]
+
+        Returns:
+            Mean pairwise coherence across batch as scalar tensor
+        """
+        spins,    = self._reshape_features(batch, 'spins_2d')[0]
+        alignment = th.bmm(spins, spins.mT)
+
+        return (
+            (alignment.sum(dim=(1, 2)) - self.agent_count) /
+            (self.agent_count * (self.agent_count - 1))
+        ).mean()
+
+
+class Polarization(BaseMetric):
+    """
+    Measure global alignment through polarization order parameter Φ.
+
+    Following Cavagna et al. (2010), polarization quantifies collective
+    alignment of velocity directions:
+
+        Φ = |⟨v̂ᵢ⟩| = |(1/N) Σᵢ v̂ᵢ|
+
+    where v̂ᵢ = vᵢ/|vᵢ| are normalized velocity vectors. This captures the
+    phase transition between disordered (Φ ≈ 0) and ordered (Φ ≈ 1) states.
+
+    Natural murmurations exhibit high polarization Φ ≈ 0.96 ± 0.03, indicating
+    strong directional alignment while maintaining velocity fluctuations that
+    enable collective response to perturbations.
+
+    Expected ranges (Cavagna et al. 2010):
+        Random motion     : Φ ∈ [0.0, 0.2]
+        Loose aggregation : Φ ∈ [0.2, 0.5]
+        Coordinated turn  : Φ ∈ [0.5, 0.8]
+        Murmuration       : Φ ∈ [0.90, 0.97]
+        Over-synchronized : Φ > 0.97 (pathological)
+    """
+
+    def evaluate(self, batch: FlockBatch) -> Tensor:
+        """
+        Compute polarization as magnitude of mean normalized velocity.
+
+        Args:
+            batch: PyG Batch containing velocity [B*N, 3]
+
+        Returns:
+            Mean polarization across batch as scalar tensor
+        """
+        spins, = self._reshape_features(batch, 'spins_2d')
+        return spins.mean(dim=1).norm(dim=-1).mean()
 
 
 class R2(Metric):
@@ -828,294 +996,56 @@ class RMSE(Metric):
         self.metric.update(predictions, batch.action)
 
 
-class ScaleFreeCorrelation(BaseMetric):
-    """
-    Measure deviation from scale-free velocity correlations.
-
-    Verifies that the flock exhibits power-law velocity correlations
-    characteristic of critical systems. The correlation function C(r)
-    should follow:
-
-        C(r) ~ r^(-γ)
-
-    where γ ≈ 1/3 for natural murmurations (Cavagna et al. 2010).
-    """
-
-    def _bin_correlations(
-        self,
-        correlations : Tensor,
-        distances    : Tensor,
-        n_bins       : int
-    ) -> tuple[Tensor, Tensor]:
-        """
-        Bin correlations by distance using logarithmic spacing.
-
-        Creates logarithmically-spaced bins to capture scale-free behavior
-        across multiple length scales. Uses fully vectorized binning to
-        process all batches simultaneously.
-
-        Args:
-            correlations : Velocity correlations [B_valid, n_pairs]
-            distances    : Pairwise distances [B_valid, n_pairs]
-            n_bins       : Number of logarithmic bins
-
-        Returns:
-            Tuple of (bin_means, valid_bins) for power law fitting
-        """
-        batch     = correlations.shape[0]
-        device    = distances.device
-        dist_mins = distances.amin(1, keepdim=True)
-        dist_maxs = distances.amax(1, keepdim=True)
-
-        normalized_bins = (
-            (distances.log10() - dist_mins.log10()) /
-            (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
-        ).long().clamp(0, n_bins - 1)
-
-        batch_offsets = th.arange(batch, device=device).unsqueeze(1) * n_bins
-        bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
-
-        bin_sums = th.zeros(batch * n_bins, 2, device=device).index_add_(
-            dim    = 0,
-            index  = bins_flat,
-            source = th.stack(
-                dim     = -1,
-                tensors = [correlations.reshape(-1), distances.reshape(-1)]
-            )
-        ).view(batch, n_bins, 2)
-
-        counts = th.bincount(
-            input     = bins_flat,
-            minlength = batch * n_bins
-        ).view(batch, n_bins)
-
-        return (
-            th.where(
-                (valid_bins := counts > 0).unsqueeze(-1),
-                bin_sums / counts.clamp_min(1).unsqueeze(-1),
-                th.zeros_like(bin_sums)
-            ),
-            valid_bins
-        )
-
-    def _fit_power_laws(
-        self,
-        bin_means  : Tensor,
-        valid_bins : Tensor
-    ) -> Tensor:
-        """
-        Fit power law exponents to binned correlation data.
-
-        Performs log-log linear regression to estimate γ in C(r) ~ r^(-γ)
-        for all valid batches simultaneously. Uses masked operations to
-        handle variable numbers of valid bins per batch.
-
-        Args:
-            bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
-            valid_bins : Mask of bins with sufficient data       [B, n_bins]
-
-        Returns:
-            Power law exponents γ for batches with ≥3 valid bins
-        """
-        log_dists = bin_means[..., 1].log()
-        log_corrs = bin_means[..., 0].abs().clamp_min(1e-8).log()
-        log_r     = log_dists.masked_fill(~valid_bins, 0)
-        log_c     = log_corrs.masked_fill(~valid_bins, 0)
-
-        if not (mask := valid_bins.sum(1) >= 3).any():
-            return th.empty(0, device=bin_means.device)
-
-        X  = log_r[mask] - log_r[mask].mean(1, keepdim=True)
-        Y  = log_c[mask] - log_c[mask].mean(1, keepdim=True)
-        XX = (X * X * valid_bins[mask]).sum(1)
-        XY = (X * Y * valid_bins[mask]).sum(1)
-
-        return th.where(XX > 0, -XY / XX, th.zeros_like(XX))
-
-    def update(self, batch: FlockBatch, predictions: Tensor):
-        """
-        Update metric with scale-free correlation measurement.
-
-        Override update directly since this metric conditionally computes values
-        only when there's sufficient distance variation for power law fitting.
-
-        Args:
-            batch       : PyG Batch containing position and velocity
-            predictions : Predicted actions (unused)
-        """
-        corrs, dists = self._reshape_features(batch, "spin_corr_triu", "dist_triu")
-
-        if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
-            return
-
-        if (gammas := self._fit_power_laws(
-            *self._bin_correlations(
-                correlations = corrs[valid_ids := th.where(valid_batch)[0]],
-                distances    = dists[valid_ids],
-                n_bins       = min(10, max(3, corrs.shape[1] // 10))
-            )
-        )).numel() > 0:
-            scaling_deviation = (gammas - self.correlation_exponent).abs()
-            MeanMetric.update(self, scaling_deviation)
-
-
 class Susceptibility(BaseMetric):
     """
-    Measures flock susceptibility as integrated velocity correlations.
+    Measure per-agent susceptibility χ/N as normalized collective response.
 
-    Following Cavagna et al. (2010) and Attanasi et al. (2014), susceptibility
-    quantifies the total correlation in the system through the cumulative
-    correlation function:
+    Following Attanasi et al. (2014), susceptibility per agent quantifies the
+    system's collective response normalized by flock size:
 
-        Q(r) = ∫₀ʳ C(r')dr'
+        χ/N = (1/N²) Σᵢ≠ⱼ ⟨δφ̃ᵢ · δφ̃ⱼ⟩ θ(r₀ - rᵢⱼ)
 
-    where C(r) is the velocity correlation function:
+    where:
+        δφ̃ᵢ = (δvᵢ/|δvᵢ|) are normalized velocity fluctuations
+        δvᵢ = vᵢ - ⟨v⟩ are velocity fluctuations from mean
+        θ(·) is the Heaviside step function
+        r₀ is the interaction cutoff distance
 
-        C(r) = ⟨δ𝐯ᵢ · δ𝐯ⱼ⟩ for pairs at distance r
+    Expected ranges (Attanasi et al. 2014):
+        Disordered phase : χ/N < 0.3
+        Near-criticality : χ/N ∈ [0.3, 1.5]
+        Over-correlated  : χ/N > 1.5
 
-    with velocity fluctuations δ𝐯ᵢ = 𝐯ᵢ - (1/N)Σₖ𝐯ₖ.
-
-    The susceptibility χ = Q(ξ) is the maximum of the cumulative correlation,
-    reached at the correlation length ξ where C(ξ) = 0.
-
-    In critical systems, χ scales with flock size N without saturation,
-    indicating maintained responsiveness at all scales. The ratio χ/N
-    remains finite, characteristic of near-critical dynamics that enable
-    rapid information transfer across the entire flock.
+    At criticality, χ/N ~ O(1) indicates scale-free correlations where
+    perturbations propagate across the entire flock without saturation,
+    enabling rapid collective response characteristic of murmurations.
     """
 
-    def __init__(self, **kwargs):
+    def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Initialize susceptibility metric with adaptive binning.
-
-        Following empirical analysis in scale-free systems (Cavagna et al. 2010),
-        the number of bins scales as O(√N) to balance resolution with statistics.
-        This ensures adequate sampling while maintaining computational efficiency.
-        """
-        super().__init__(**kwargs)
-
-    def _bin_correlations(
-        self,
-        correlations : Tensor,
-        distances    : Tensor,
-        n_bins       : int
-    ) -> tuple[Tensor, Tensor]:
-        """
-        Bin correlations by distance using logarithmic spacing.
-
-        Creates logarithmically-spaced bins to capture scale-free behavior
-        across multiple length scales. Uses fully vectorized binning to
-        process all batches simultaneously.
+        Compute per-agent susceptibility χ/N.
 
         Args:
-            correlations : Velocity correlations [B_valid, n_pairs]
-            distances    : Pairwise distances    [B_valid, n_pairs]
-            n_bins       : Number of logarithmic bins
+            batch: PyG Batch containing positions [B*N, 3] and velocities [B*N, 3]
 
         Returns:
-            Tuple of (bin_means, valid_bins) for integration
+            Mean χ/N across batch as scalar tensor
         """
-        batch     = correlations.shape[0]
-        device    = distances.device
-        dist_mins = distances.amin(1, keepdim=True)
-        dist_maxs = distances.amax(1, keepdim=True)
+        correlations, = self._reshape_features(batch, 'fluct_corr')
+        distances,    = self._reshape_features(batch, 'distances')
 
-        normalized_bins = (
-            (distances.log10() - dist_mins.log10()) /
-            (dist_maxs.log10() - dist_mins.log10() + 1e-8) * n_bins
-        ).long().clamp(0, n_bins - 1)
-
-        batch_offsets = th.arange(batch, device=device).unsqueeze(1) * n_bins
-        bins_flat     = (normalized_bins + batch_offsets).reshape(-1)
-
-        bin_sums = th.zeros(batch * n_bins, 2, device=device).index_add_(
-            dim    = 0,
-            index  = bins_flat,
-            source = th.stack(
-                dim     = -1,
-                tensors = [correlations.reshape(-1), distances.reshape(-1)]
-            )
-        ).view(batch, n_bins, 2)
-
-        counts = th.bincount(
-            input     = bins_flat,
-            minlength = batch * n_bins
-        ).view(batch, n_bins)
-
-        return (
-            th.where(
-                (valid_bins := counts > 0).unsqueeze(-1),
-                bin_sums / counts.clamp_min(1).unsqueeze(-1),
-                th.zeros_like(bin_sums)
-            ),
-            valid_bins
+        correlation_within_cutoff = th.where(
+            distances < self.interaction_cutoff,
+            correlations,
+            th.zeros_like(distances)
         )
 
-    def _integrate_cumulative(
-        self,
-        bin_means  : Tensor,
-        valid_bins : Tensor
-    ) -> Tensor:
-        """
-        Integrate correlation function using trapezoidal rule.
+        susceptibility_per_agent = (
+            (correlation_within_cutoff.sum(dim=(1, 2)) - self.agent_count) /
+            (self.agent_count ** 2)
+        )
 
-        Computes cumulative correlation Q(r) = ∫₀ʳ C(r')dr' via numerical
-        integration. The susceptibility χ is the maximum value of Q(r),
-        typically reached at the correlation length where C(r) → 0.
-
-        Args:
-            bin_means  : Mean correlations and distances per bin [B, n_bins, 2]
-            valid_bins : Mask of bins with sufficient data       [B, n_bins]
-
-        Returns:
-            Susceptibility χ as maximum integrated correlation for batches
-            with at least 2 consecutive valid bins, empty tensor otherwise
-        """
-        consecutive = valid_bins[:, :-1] & valid_bins[:, 1:]
-        if not (mask := consecutive.any(1)).any():
-            return th.empty(0, device=bin_means.device)
-
-        correlations = bin_means[..., 0]
-        distances    = bin_means[..., 1]
-        cumulative   = th.zeros_like(correlations)
-
-        for i in range(1, bin_means.shape[1]):
-            both_valid = valid_bins[:, i] & valid_bins[:, i-1]
-            delta_r    = (distances[:, i] - distances[:, i-1]).abs()
-            trapz_area = 0.5 * (correlations[:, i] + correlations[:, i-1]) * delta_r
-
-            cumulative[:, i] = th.where(
-                both_valid,
-                cumulative[:, i-1] + trapz_area,
-                cumulative[:, i-1]
-            )
-
-        return cumulative[mask].abs().amax(dim=1)
-
-    def update(self, batch: FlockBatch, predictions: Tensor):
-        """
-        Update metric with susceptibility measurement.
-
-        Override update directly since this metric conditionally computes values
-        only when there's sufficient data for meaningful integration.
-
-        Args:
-            batch       : PyG Batch containing position and velocity
-            predictions : Predicted actions (unused)
-        """
-        corrs, dists = self._reshape_features(batch, "vel_corr_triu", "dist_triu")
-
-        if not (valid_batch := dists.amax(1) > dists.amin(1)).any():
-            return
-
-        if (susceptibilities := self._integrate_cumulative(
-            *self._bin_correlations(
-                correlations = corrs[valid_ids := th.where(valid_batch)[0]],
-                distances    = dists[valid_ids],
-                n_bins       = min(20, max(5, corrs.shape[1] // 10))
-            )
-        )).numel() > 0:
-            MeanMetric.update(self, susceptibilities)
+        return susceptibility_per_agent.mean()
 
 
 class Temperature(BaseMetric):
@@ -1242,31 +1172,24 @@ class MetricsFactory:
         self,
         agent_count : int,
         metrics     : MetricsModel,
-        murmuration : MurmurationModel,
-        physics     : PhysicsModel,
-        safety      : SafetyModel
+        murmuration : MurmurationModel
     ):
         """
         Initialize factory with configuration models.
 
         Args:
             agent_count : Number of agents in the flock
-            environment : Environment configuration for physics parameters
             metrics     : Metrics configuration for thresholds and parameters
             murmuration : Murmuration dynamics configuration
-            safety      : Safety configuration for temperature limits
         """
         self.cfg = {
-            "agent_count"             : agent_count,
-            "correlation_exponent"    : metrics.correlation_exponent,
-            "coupling_decay"          : murmuration.coupling_decay,
-            "fiedler_shift"           : metrics.fiedler_shift,
-            "gravity"                 : physics.gravity,
-            "heterogeneity_std"       : murmuration.heterogeneity_std,
-            "j_base"                  : murmuration.j_base,
-            "max_temperature"         : safety.max_temperature,
-            "orientation_wave_radius" : metrics.orientation_wave_radius,
-            "velocity_threshold"      : metrics.velocity_threshold,
+            "agent_count"           : agent_count,
+            "correlation_threshold" : metrics.correlation_threshold,
+            "coupling_decay"        : murmuration.coupling_decay,
+            "heterogeneity_std"     : murmuration.heterogeneity_std,
+            "interaction_cutoff"    : metrics.interaction_cutoff,
+            "j_base"                : murmuration.j_base,
+            "wave_radius"           : metrics.wave_radius,
         }
 
     def create_training_metrics(self) -> MetricCollection:
@@ -1282,15 +1205,16 @@ class MetricsFactory:
             metrics = {
                 "acceleration"           : make(Acceleration),
                 "clustering_coefficient" : make(ClusteringCoefficient),
+                "correlation_length"     : make(CorrelationLength),
                 "fiedler_value"          : make(FiedlerValue),
-                "max_entropy_energy"     : make(MaxEntropyEnergy),
                 "mae"                    : make(MAE),
+                "max_entropy_energy"     : make(MaxEntropyEnergy),
                 "noise_heterogeneity"    : make(NoiseHeterogeneity),
-                "orientation_coherence"  : make(OrientationCoherence),
                 "orientation_wave"       : make(OrientationWave),
+                "pairwise_coherence"     : make(PairwiseCoherence),
+                "polarization"           : make(Polarization),
                 "r2"                     : make(R2),
                 "rmse"                   : make(RMSE),
-                "scale_free_correlation" : make(ScaleFreeCorrelation),
                 "susceptibility"         : make(Susceptibility),
                 "temperature"            : make(Temperature),
                 "thermal_reactivity"     : make(ThermalReactivity),

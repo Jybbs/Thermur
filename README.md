@@ -103,7 +103,7 @@ flowchart TB
     end
 
     subgraph Monitor["🎨 <b>Monitoring</b>"]
-        I["<b>Metrics:</b> χ, λ₂, Energy, R²"]
+        I["<b>Metrics:</b> χ/N, ξ/L, λ₂, Energy, R²"]
         J["<b>WandB Logger</b>"]
         K["<b>Live Dashboard</b>"]
         I --> J
@@ -508,23 +508,25 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 **Emergent Behavior Metrics:**
 
+- **Correlation Length $`\xi/L`$**: Measures normalized spatial scale where velocity correlations decay to threshold. The ratio $`\xi/L \approx 0.35`$ indicates near-critical scale-free correlations characteristic of natural murmurations [^10].
+
 - **Effective Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the maximum entropy energy function with uniform coupling, where behavioral variance from heterogeneous noise drives phase transitions.
 
 - **Fiedler Value $`\lambda_2`$**: Quantifies algebraic connectivity via the second smallest eigenvalue of the graph Laplacian, computed efficiently using adaptive Lanczos iteration. Positive values ensure flock cohesion.
 
 - **Noise Heterogeneity**: Monitors variance in individual noise amplitudes to maintain critical dynamics
 
-- **Scale-Free Correlation**: Verifies velocity correlations follow the power law $`C(r) \sim r^{-1/3}`$ characteristic of natural murmurations through binned correlation analysis.
-
-- **Susceptibility $`\chi`$**: Measures collective responsiveness through integrated velocity correlations. In critical systems, $`\chi`$ scales with flock size $`N`$ without saturation, enabling rapid information transfer [^10] [^9].
+- **Susceptibility $`\chi/N`$**: Measures per-agent collective responsiveness via normalized velocity correlations $`\chi/N = (1/N^2) \sum_{i \neq j} \langle \delta \tilde{\phi}_i \cdot \delta \tilde{\phi}_j \rangle`$ within interaction radius. Critical systems exhibit enhanced susceptibility scaling [^12] [^10].
 
 **Dynamic Response Metrics:**
 
 - **Clustering Coefficient**: Measures local neighborhood cohesion via ratio of closed triangles to possible triangles
 
-- **Orientation Coherence**: Quantifies alignment via polarization order parameter $`\Phi = |\sum_i \hat{\mathbf{v}}_i|/N`$
-
 - **Orientation Wave**: Detects density waves by measuring spatial gradients in heading angles (0.15-0.40 rad/m during murmurations)
+
+- **Pairwise Coherence**: Quantifies local velocity alignment via mean pairwise dot products $`C = \langle \hat{v}_i \cdot \hat{v}_j \rangle_{i \neq j}`$, capturing coordination during maneuvers
+
+- **Polarization**: Measures global directional order via $`\Phi = |\langle \hat{v}_i \rangle|`$ with natural murmurations exhibiting $`\Phi \approx 0.96 \pm 0.03`$ [^10]
 
 - **Thermal Reactivity**: Quantifies collective threat response via velocity-temperature spatial correlation
 

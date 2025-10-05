@@ -271,8 +271,16 @@ class MetricsModel(BaseModel, extra="forbid"):
     correlation_exponent: PositiveFloat = Field(
         default     = 0.333,
         description = (
-            "Expected exponent γ ≈ 1/3 for scale-free velocity correlations C(r) ~ r^(-γ) "
-            "in natural murmurations, per Cavagna et al. (2010)."
+            "Expected exponent γ ≈ 1/3 for scale-free velocity correlations "
+            "C(r) ~ r^(-γ) in natural murmurations, per Cavagna et al. (2010)."
+        )
+    )
+    correlation_threshold: PositiveFloat = Field(
+        default     = 0.6,
+        le          = 1.0,
+        description = (
+            "Threshold value for correlation length ξ detection, where C(ξ) crosses "
+            "this value. Typical values are 0.6 or 1/e ≈ 0.37 (Cavagna et al. 2010)."
         )
     )
     fiedler_shift: PositiveFloat = Field(
@@ -282,11 +290,12 @@ class MetricsModel(BaseModel, extra="forbid"):
             "through power iteration, ensures positive definiteness."
         )
     )
-    orientation_wave_radius: PositiveFloat = Field(
-        default     = 10.0,
+    interaction_cutoff: PositiveFloat = Field(
+        default     = 15.0,
         description = (
-            "Radius R_wave for computing local orientation gradients ∇θ(𝐫) in "
-            "murmuration wave detection, where θ = atan2(v_y, v_x)."
+            "Interaction distance r₀ in meters for susceptibility calculations, "
+            "defining the spatial range over which velocity correlations are summed "
+            "following Attanasi et al. (2014)."
         )
     )
     profiler: bool | Literal["simple", "advanced", "pytorch"] = Field(
@@ -302,5 +311,12 @@ class MetricsModel(BaseModel, extra="forbid"):
         description = (
             "Minimum velocity magnitude in m/s below which agents are considered "
             "stationary for orientation wave and heading computations."
+        )
+    )
+    wave_radius: PositiveFloat = Field(
+        default     = 10.0,
+        description = (
+            "Radius R_wave for computing local orientation gradients ∇θ(𝐫) in "
+            "murmuration wave detection, where θ = atan2(v_y, v_x)."
         )
     )
