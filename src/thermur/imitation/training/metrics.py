@@ -59,13 +59,9 @@ class BaseMetric(MeanMetric):
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
 
-    def _reshape_features(
-        self,
-        batch     : FlockBatch,
-        *features : str
-    ) -> tuple[Tensor, ...]:
+    def _reshape_features(self, batch: FlockBatch, feature: str) -> Tensor:
         """
-        Reshape flattened PyG features to [B, N, F] format with intelligent caching.
+        Reshape flattened PyG feature to [B, N, F] format with intelligent caching.
 
         Transforms PyTorch Geometric's flattened tensor format [B*N, F] into the more
         intuitive [B, N, F] shape for batch processing. Features are cached per batch
@@ -76,20 +72,20 @@ class BaseMetric(MeanMetric):
         BaseMetric.clear_cache() to prevent memory growth.
 
         Args:
-            batch    : PyG Batch containing flattened features
-            features : Variable feature names to retrieve (order preserved)
+            batch   : PyG Batch containing flattened features
+            feature : Feature name to retrieve
 
         Returns:
-            Tuple of reshaped tensors in requested order, excluding None values
+            Reshaped tensor [B, N, F]
         """
-        b_id       = id(batch)
-        B, E, N    = batch.num_graphs, batch.edge_index, self.agent_count
-        cache      = BaseMetric._reshape_cache
-        adj        = lambda   : to_dense_adj(E, batch.batch, max_num_nodes=N)
-        fluct      = lambda   : (v := reshape('velocity')) - v.mean(dim=1, keepdim=True)
-        norm       = lambda f : f.norm(dim=-1, keepdim=True).clamp_min(1e-8)
-        reshape    = lambda f : self._reshape_features(batch, f)[0]
-        spins      = lambda   : th.nn.functional.normalize(reshape('velocity'), dim=-1)
+        b_id    = id(batch)
+        B, E, N = batch.num_graphs, batch.edge_index, self.agent_count
+        cache   = BaseMetric._reshape_cache
+        adj     = lambda   : to_dense_adj(E, batch.batch, max_num_nodes=N)
+        fluct   = lambda   : (v := reshape('velocity')) - v.mean(dim=1, keepdim=True)
+        norm    = lambda f : f.norm(dim=-1, keepdim=True).clamp_min(1e-8)
+        reshape = lambda f : self._reshape_features(batch, f)
+        spins   = lambda   : th.nn.functional.normalize(reshape('velocity'), dim=-1)
 
         computed = {
             'adjacency'  : lambda: ((A := adj()) + A.mT).sign(),
@@ -99,21 +95,18 @@ class BaseMetric(MeanMetric):
             'vel_mag'    : lambda: reshape('velocity').norm(dim=-1),
         }
 
-        get_or_compute = lambda feat: (
-            cache[(b_id, feat)] if (b_id, feat) in cache
-            else
-                (v := (
-                    computed[feat]()                if feat in computed
-                    else batch[feat].view(B, N, -1) if feat in batch
-                    else None
-                ),
-                cache.update({(b_id, feat): v}), v)[2]
-        )
+        if (b_id, feature) in cache:
+            return cache[(b_id, feature)]
 
-        return tuple(
-            v for feat in features
-            if (v := get_or_compute(feat)) is not None
-        )
+        if feature in computed:
+            value = computed[feature]()
+        elif feature in batch:
+            value = batch[feature].view(B, N, -1)
+        else:
+            raise KeyError(f"Feature '{feature}' not in batch or computed features.")
+
+        cache[(b_id, feature)] = value
+        return value
 
     @classmethod
     def clear_cache(cls):
@@ -223,7 +216,7 @@ class ClusteringCoefficient(BaseMetric):
         Returns:
             Mean clustering coefficient as scalar tensor
         """
-        A, = self._reshape_features(batch, 'adjacency')
+        A = self._reshape_features(batch, 'adjacency')
 
         degree         = A.sum(dim=2)
         triangles      = (A @ A * A).sum(dim=2)
@@ -370,19 +363,16 @@ class CorrelationLength(BaseMetric):
         Returns:
             Mean ξ/L across batch as scalar tensor
         """
-        correlations, = self._reshape_features(batch, 'fluct_corr')
-        distances,    = self._reshape_features(batch, 'distances')
-        positions,    = self._reshape_features(batch, 'position')
-
         correlation_length = self._find_crossing(
             *self._bin_correlations(
-                correlations = correlations, 
-                distances    = distances, 
+                correlations = self._reshape_features(batch, 'fluct_corr'), 
+                distances    = self._reshape_features(batch, 'distances'), 
                 n_bins       = min(20, max(5, self.agent_count // 10))
             ),
             threshold = self.correlation_threshold
         )
 
+        positions = self._reshape_features(batch, 'position')
         return (
             correlation_length / 
             positions.std(dim=1).norm(dim=-1).clamp_min(1e-8)
@@ -429,7 +419,7 @@ class FiedlerValue(BaseMetric):
         Returns:
             Laplacian matrices [B, N, N] for each graph in the batch
         """
-        A, = self._reshape_features(batch, 'adjacency')
+        A = self._reshape_features(batch, 'adjacency')
         return th.diag_embed(A.sum(dim=-1)) - A
 
     def _compute_fiedler(
@@ -688,7 +678,7 @@ class MaxEntropyEnergy(BaseMetric):
         Returns:
             Mean energy per agent as scalar tensor
         """
-        spins    = self._reshape_features(batch, 'spins')[0]
+        spins    = self._reshape_features(batch, 'spins')
         hops     = self._compute_hops_per_graph(batch)
         coupling = th.where(
             hops.isfinite(),
@@ -786,16 +776,17 @@ class OrientationWave(BaseMetric):
         Returns:
             Wave amplitude as scalar tensor (rad/m)
         """
-        dists, vels = self._reshape_features(batch, 'distances', 'velocities')
-        headings    = th.atan2(vels[..., 1], vels[..., 0])
-        mask        = (dists > 0) & (dists < self.orientation_wave_radius)
+        distances   = self._reshape_features(batch, 'distances')
+        velocities  = self._reshape_features(batch, 'velocity')
+        headings    = th.atan2(velocities[..., 1], velocities[..., 0])
+        mask        = (distances > 0) & (distances < self.wave_radius)
 
         heading_diffs = (
             lambda h: th.remainder(h + th.pi, 2 * th.pi) - th.pi
         )(headings.unsqueeze(-1) - headings.unsqueeze(-2))
 
         gradients = (
-            heading_diffs.abs() / dists.clamp_min(1e-3)
+            heading_diffs.abs() / distances.clamp_min(1e-3)
         ).masked_fill(~mask, 0)
 
         valid_neighbors     = mask.sum(dim=-1).clamp_min(1)
@@ -842,7 +833,7 @@ class PairwiseCoherence(BaseMetric):
         Returns:
             Mean pairwise coherence across batch as scalar tensor
         """
-        spins,    = self._reshape_features(batch, 'spins_2d')[0]
+        spins     = self._reshape_features(batch, 'spins_2d')
         alignment = th.bmm(spins, spins.mT)
 
         return (
@@ -885,8 +876,11 @@ class Polarization(BaseMetric):
         Returns:
             Mean polarization across batch as scalar tensor
         """
-        spins, = self._reshape_features(batch, 'spins_2d')
-        return spins.mean(dim=1).norm(dim=-1).mean()
+        return (
+            self._reshape_features(batch, 'spins_2d')
+                .mean(dim=1).norm(dim=-1)
+                .mean()
+        )
 
 
 class R2(Metric):
@@ -1031,12 +1025,11 @@ class Susceptibility(BaseMetric):
         Returns:
             Mean χ/N across batch as scalar tensor
         """
-        correlations, = self._reshape_features(batch, 'fluct_corr')
-        distances,    = self._reshape_features(batch, 'distances')
+        distances = self._reshape_features(batch, 'distances')
 
         correlation_within_cutoff = th.where(
             distances < self.interaction_cutoff,
-            correlations,
+            self._reshape_features(batch, 'fluct_corr'),
             th.zeros_like(distances)
         )
 
@@ -1114,17 +1107,16 @@ class ThermalReactivity(BaseMetric):
         Returns:
             Mean correlation coefficient as scalar tensor
         """
-        vel_mag,      = self._reshape_features(batch, 'vel_mag')
-        temperature,  = self._reshape_features(batch, 'temperature')
-        vel_centered  = vel_mag - vel_mag.mean(dim=1, keepdim=True)
+        vel_magnitude = self._reshape_features(batch, 'vel_mag')
+        vel_centered  = vel_magnitude - vel_magnitude.mean(dim=1, keepdim=True)
         temp_centered = (
-            (temp := temperature.squeeze(-1))
+            (temp := self._reshape_features(batch, 'temperature').squeeze(-1))
             - temp.mean(dim=1, keepdim=True)
         )
 
         return (
             (vel_centered * temp_centered).mean(dim=1) /
-            (vel_mag.std(dim=1) * temp.std(dim=1) + 1e-8)
+            (vel_magnitude.std(dim=1) * temp.std(dim=1) + 1e-8)
         ).mean()
 
 
@@ -1155,8 +1147,7 @@ class Velocity(BaseMetric):
         Returns:
             Mean velocity magnitude as scalar tensor
         """
-        vel_mag, = self._reshape_features(batch, 'vel_mag')
-        return vel_mag.mean()
+        return self._reshape_features(batch, 'vel_mag').mean()
 
 
 class MetricsFactory:
