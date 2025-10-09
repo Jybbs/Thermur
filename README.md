@@ -103,7 +103,7 @@ flowchart TB
     end
 
     subgraph Monitor["🎨 <b>Monitoring</b>"]
-        I["<b>Metrics:</b> χ, λ₂, Energy, R²"]
+        I["<b>Metrics:</b> χ, ξ/L, λ₂, Energy, R²"]
         J["<b>WandB Logger</b>"]
         K["<b>Live Dashboard</b>"]
         I --> J
@@ -369,7 +369,7 @@ expert = MurmurationController(
         agent_count         = 30,    # Number of agents in flock
         heterogeneity_mean  = 0.7,   # Mean noise amplitude μ
         heterogeneity_std   = 0.20,  # Noise heterogeneity σ
-        j_base              = 2.5,   # Uniform coupling strength J₀
+        j_base              = 1.3,   # Uniform coupling strength J₀
         k_neighbors         = 7,     # Topological interaction
     ),
     penalty = penalty,
@@ -508,23 +508,25 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 **Emergent Behavior Metrics:**
 
+- **Correlation Length $`\xi/L`$**: Measures normalized spatial scale where velocity correlations decay to threshold. The ratio $`\xi/L \approx 0.35`$ indicates near-critical scale-free correlations characteristic of natural murmurations [^10].
+
 - **Effective Energy $`E = -\sum J_{ij} \mathbf{s}_i \cdot \mathbf{s}_j`$**: Tracks the maximum entropy energy function with uniform coupling, where behavioral variance from heterogeneous noise drives phase transitions.
 
 - **Fiedler Value $`\lambda_2`$**: Quantifies algebraic connectivity via the second smallest eigenvalue of the graph Laplacian, computed efficiently using adaptive Lanczos iteration. Positive values ensure flock cohesion.
 
 - **Noise Heterogeneity**: Monitors variance in individual noise amplitudes to maintain critical dynamics
 
-- **Scale-Free Correlation**: Verifies velocity correlations follow the power law $`C(r) \sim r^{-1/3}`$ characteristic of natural murmurations through binned correlation analysis.
-
-- **Susceptibility $`\chi`$**: Measures collective responsiveness through integrated velocity correlations. In critical systems, $`\chi`$ scales with flock size $`N`$ without saturation, enabling rapid information transfer [^10] [^9].
+- **Susceptibility $`\chi`$**: Measures collective responsiveness via integrated velocity correlations $`\chi = (1/N) \sum_{i \neq j} \langle \delta \tilde{\phi}_i \cdot \delta \tilde{\phi}_j \rangle`$ within interaction radius. At criticality, $`\chi`$ scales with system size as $`\chi \sim N^{\gamma/3\nu}`$ [^12] [^10].
 
 **Dynamic Response Metrics:**
 
 - **Clustering Coefficient**: Measures local neighborhood cohesion via ratio of closed triangles to possible triangles
 
-- **Orientation Coherence**: Quantifies alignment via polarization order parameter $`\Phi = |\sum_i \hat{\mathbf{v}}_i|/N`$
-
 - **Orientation Wave**: Detects density waves by measuring spatial gradients in heading angles (0.15-0.40 rad/m during murmurations)
+
+- **Pairwise Coherence**: Quantifies local velocity alignment via mean pairwise dot products $`C = \langle \hat{v}_i \cdot \hat{v}_j \rangle_{i \neq j}`$, capturing coordination during maneuvers
+
+- **Polarization**: Measures global directional order via $`\Phi = |\langle \hat{v}_i \rangle|`$ with natural murmurations exhibiting $`\Phi \approx 0.96 \pm 0.03`$ [^10]
 
 - **Thermal Reactivity**: Quantifies collective threat response via velocity-temperature spatial correlation
 
@@ -761,7 +763,7 @@ For the WRF-SFIRE dataset:
 
 [^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109
 
-[^8]: Guisandez, Javier, Miguel Hoyuelos, and Horacio Sergio Wio. 2018. "Heterogeneous Agents Can Always Reach a Consensus: A Systematic Study." *Physical Review E* 98 (4): 042308. https://doi.org/10.1103/PhysRevE.98.042308
+[^8]: Guisandez, Leandro, Gabriel Baglietto, and Alejandro Rozenfeld. 2018. "Heterogeneity Promotes First to Second Order Phase Transition on Flocking Systems." arXiv:1711.11531. https://arxiv.org/abs/1711.11531
 
 [^9]: Attanasi, Alessandro, Andrea Cavagna, Lorenzo Del Castello, Irene Giardina, Stefano Melillo, Leonardo Parisi, Oliver Pohl, Bruno Rossaro, Edward Shen, Edmondo Silvestri, and Massimiliano Viale. 2014. "Finite-Size Scaling as a Way to Probe Near-Criticality in Natural Swarms." *Physical Review Letters* 113 (23): 238102. https://doi.org/10.1103/PhysRevLett.113.238102
 

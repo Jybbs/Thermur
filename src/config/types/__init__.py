@@ -45,6 +45,12 @@ class FlockBatch(Protocol):
     wind          : Tensor  # Wind velocities           [B*N, 3]
     x             : Tensor  # Node features             [B*N, 13]
 
+    def __contains__(self, key: str) -> bool:
+        """
+        Check if batch contains a feature attribute.
+        """
+        ...
+
     def __getitem__(self, key: str) -> Tensor:
         """
         Dictionary-style access to batch attributes.

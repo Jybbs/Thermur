@@ -110,8 +110,6 @@ TRAINING_SYSTEM_BUILDS: dict[str, type[Builds[Any]]] = {
         agent_count             = "${controller.mmm.agent_count}",
         metrics                 = "${training.metrics}",
         murmuration             = "${controller.mmm}",
-        physics                 = "${environment.physics}",
-        safety                  = "${controller.safety}",
         populate_full_signature = True
     ),
 
