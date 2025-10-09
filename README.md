@@ -103,7 +103,7 @@ flowchart TB
     end
 
     subgraph Monitor["🎨 <b>Monitoring</b>"]
-        I["<b>Metrics:</b> χ/N, ξ/L, λ₂, Energy, R²"]
+        I["<b>Metrics:</b> χ, ξ/L, λ₂, Energy, R²"]
         J["<b>WandB Logger</b>"]
         K["<b>Live Dashboard</b>"]
         I --> J
@@ -369,7 +369,7 @@ expert = MurmurationController(
         agent_count         = 30,    # Number of agents in flock
         heterogeneity_mean  = 0.7,   # Mean noise amplitude μ
         heterogeneity_std   = 0.20,  # Noise heterogeneity σ
-        j_base              = 2.5,   # Uniform coupling strength J₀
+        j_base              = 1.3,   # Uniform coupling strength J₀
         k_neighbors         = 7,     # Topological interaction
     ),
     penalty = penalty,
@@ -516,7 +516,7 @@ Track training progress in our [WandB workspace](https://wandb.ai/Thermur/thermu
 
 - **Noise Heterogeneity**: Monitors variance in individual noise amplitudes to maintain critical dynamics
 
-- **Susceptibility $`\chi/N`$**: Measures per-agent collective responsiveness via normalized velocity correlations $`\chi/N = (1/N^2) \sum_{i \neq j} \langle \delta \tilde{\phi}_i \cdot \delta \tilde{\phi}_j \rangle`$ within interaction radius. Critical systems exhibit enhanced susceptibility scaling [^12] [^10].
+- **Susceptibility $`\chi`$**: Measures collective responsiveness via integrated velocity correlations $`\chi = (1/N) \sum_{i \neq j} \langle \delta \tilde{\phi}_i \cdot \delta \tilde{\phi}_j \rangle`$ within interaction radius. At criticality, $`\chi`$ scales with system size as $`\chi \sim N^{\gamma/3\nu}`$ [^12] [^10].
 
 **Dynamic Response Metrics:**
 
@@ -763,7 +763,7 @@ For the WRF-SFIRE dataset:
 
 [^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109
 
-[^8]: Guisandez, Javier, Miguel Hoyuelos, and Horacio Sergio Wio. 2018. "Heterogeneous Agents Can Always Reach a Consensus: A Systematic Study." *Physical Review E* 98 (4): 042308. https://doi.org/10.1103/PhysRevE.98.042308
+[^8]: Guisandez, Leandro, Gabriel Baglietto, and Alejandro Rozenfeld. 2018. "Heterogeneity Promotes First to Second Order Phase Transition on Flocking Systems." arXiv:1711.11531. https://arxiv.org/abs/1711.11531
 
 [^9]: Attanasi, Alessandro, Andrea Cavagna, Lorenzo Del Castello, Irene Giardina, Stefano Melillo, Leonardo Parisi, Oliver Pohl, Bruno Rossaro, Edward Shen, Edmondo Silvestri, and Massimiliano Viale. 2014. "Finite-Size Scaling as a Way to Probe Near-Criticality in Natural Swarms." *Physical Review Letters* 113 (23): 238102. https://doi.org/10.1103/PhysRevLett.113.238102
 

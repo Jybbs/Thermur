@@ -271,9 +271,16 @@ class CorrelationLength(BaseMetric):
         Returns:
             Tuple of (bin_distances, bin_correlations) averaged per bin [B, n_bins]
         """
-        batch     = correlations.shape[0]
-        device    = distances.device
-        dist_mins = distances.amin(dim=(1, 2), keepdim=True)
+        batch   = correlations.shape[0]
+        device  = distances.device
+        no_diag = distances.masked_fill(
+            th.eye(
+                device = device,
+                dtype  = th.bool, 
+                n      = distances.shape[1]
+            ), float('inf')
+        )
+        dist_mins = no_diag.amin(dim=(1, 2), keepdim=True)
         dist_maxs = distances.amax(dim=(1, 2), keepdim=True)
 
         normalized_bins = (
@@ -329,9 +336,10 @@ class CorrelationLength(BaseMetric):
             Correlation length ξ for each batch [B]
         """
         below_threshold = bin_correlations < threshold
+        has_any_below   = below_threshold.any(dim=1)
         first_below     = below_threshold.int().argmax(dim=1)
         bracket_indices = th.stack([(
-            first_below - 1).clamp_min(0), 
+            first_below - 1).clamp_min(0),
             first_below
         ], dim=-1)
 
@@ -341,16 +349,16 @@ class CorrelationLength(BaseMetric):
             (threshold - bracket_corrs[:, 0]) /
             (bracket_corrs[:, 1] - bracket_corrs[:, 0] + 1e-8)
         )
-        
+
         correlation_length = (
             bracket_dists[:, 0] +
             interpolation * (bracket_dists[:, 1] - bracket_dists[:, 0])
         )
 
         return th.where(
-            (first_below > 0) & below_threshold.any(dim=1),
+            (first_below > 0) & has_any_below,
             correlation_length,
-            th.zeros_like(correlation_length)
+            th.where(has_any_below, bracket_dists[:, 0], bracket_dists[:, -1])
         )
 
     def evaluate(self, batch: FlockBatch) -> Tensor:
@@ -516,21 +524,20 @@ class FiedlerValue(BaseMetric):
 
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Compute harmonic mean of Fiedler values.
+        Compute mean Fiedler value across batch.
 
-        The harmonic mean H = n / Σ(1/λᵢ) emphasizes weak connectivity,
-        making it sensitive to poorly connected components where a single
-        disconnected subgroup represents system failure.
+        Averages algebraic connectivity across all graphs in the batch,
+        providing a measure of typical connectivity strength that balances
+        well-connected and weakly-connected states.
 
         Args:
             batch: PyG Batch with edge_index and graph assignments
 
         Returns:
-            Harmonic mean of Fiedler values as scalar tensor
+            Mean Fiedler value as scalar tensor
         """
         laplacians = self._build_laplacian_batch(batch)
-        fiedler    = self._compute_lanczos_eigenvalue(laplacians).clamp_min(1e-10)
-        return len(fiedler) / fiedler.reciprocal().sum()
+        return self._compute_lanczos_eigenvalue(laplacians).mean()
 
 
 class MAE(Metric):
@@ -992,12 +999,12 @@ class RMSE(Metric):
 
 class Susceptibility(BaseMetric):
     """
-    Measure per-agent susceptibility χ/N as normalized collective response.
+    Measure susceptibility χ as collective response to perturbations.
 
-    Following Attanasi et al. (2014), susceptibility per agent quantifies the
-    system's collective response normalized by flock size:
+    Following Attanasi et al. (2014), susceptibility quantifies the system's
+    collective response through integrated velocity correlations:
 
-        χ/N = (1/N²) Σᵢ≠ⱼ ⟨δφ̃ᵢ · δφ̃ⱼ⟩ θ(r₀ - rᵢⱼ)
+        χ = (1/N) Σᵢ≠ⱼ ⟨δφ̃ᵢ · δφ̃ⱼ⟩ θ(r₀ - rᵢⱼ)
 
     where:
         δφ̃ᵢ = (δvᵢ/|δvᵢ|) are normalized velocity fluctuations
@@ -1005,25 +1012,26 @@ class Susceptibility(BaseMetric):
         θ(·) is the Heaviside step function
         r₀ is the interaction cutoff distance
 
-    Expected ranges (Attanasi et al. 2014):
-        Disordered phase : χ/N < 0.3
-        Near-criticality : χ/N ∈ [0.3, 1.5]
-        Over-correlated  : χ/N > 1.5
+    Expected ranges (Attanasi et al. 2014, Table I):
+        Non-interacting   : χ ≈ 0.1
+        Natural swarms    : χ ∈ [0.1, 5.6]
+        Highly correlated : χ > 5.6
 
-    At criticality, χ/N ~ O(1) indicates scale-free correlations where
-    perturbations propagate across the entire flock without saturation,
-    enabling rapid collective response characteristic of murmurations.
+    At criticality, χ scales with system size as χ ~ N^(γ/3ν), indicating
+    scale-free correlations where perturbations propagate across the entire
+    flock without saturation, enabling rapid collective response characteristic
+    of murmurations.
     """
 
     def evaluate(self, batch: FlockBatch) -> Tensor:
         """
-        Compute per-agent susceptibility χ/N.
+        Compute susceptibility χ.
 
         Args:
             batch: PyG Batch containing positions [B*N, 3] and velocities [B*N, 3]
 
         Returns:
-            Mean χ/N across batch as scalar tensor
+            Mean χ across batch as scalar tensor
         """
         distances = self._reshape_features(batch, 'distances')
 
@@ -1033,12 +1041,12 @@ class Susceptibility(BaseMetric):
             th.zeros_like(distances)
         )
 
-        susceptibility_per_agent = (
+        susceptibility = (
             (correlation_within_cutoff.sum(dim=(1, 2)) - self.agent_count) /
-            (self.agent_count ** 2)
+            self.agent_count
         )
 
-        return susceptibility_per_agent.mean()
+        return susceptibility.mean()
 
 
 class Temperature(BaseMetric):

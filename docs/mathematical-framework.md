@@ -96,7 +96,7 @@ J_{ij} = J_0 \exp(-d_{ij}/\lambda)
 `$  
 <br>
 
-where the topological distance $`d_{ij}`$ counts the minimum number of neighbor-to-neighbor hops between agents, and $`J_0 = 2.5`$ is the optimized uniform baseline coupling strength. This uniform coupling ensures that behavioral diversity emerges from heterogeneous noise amplitudes rather than coupling heterogeneity.
+where the topological distance $`d_{ij}`$ counts the minimum number of neighbor-to-neighbor hops between agents, and $`J_0 = 1.3`$ is the optimized uniform baseline coupling strength. This uniform coupling ensures that behavioral diversity emerges from heterogeneous noise amplitudes rather than coupling heterogeneity.
 
 The alignment force emerges from the energy gradient:
 
@@ -317,7 +317,7 @@ $`
 `$  
 <br>
 
-The cubic denominator creates a force that grows rapidly as agents approach, effectively creating a "hard sphere" repulsion. The threshold distance $`3\epsilon`$ with $`\epsilon = 0.1`$ m ensures separation forces activate before actual contact, while the weight $`w_{\text{sep}} = 0.45`$ balances collision avoidance against other behavioral imperatives.
+The cubic denominator creates a force that grows rapidly as agents approach, effectively creating a "hard sphere" repulsion. The threshold distance $`3\epsilon`$ with $`\epsilon = 0.1`$ m ensures separation forces activate before actual contact, while the weight $`w_{\text{sep}} = 0.9`$ maintains k-NN graph stability by preventing topological fragmentation.
 
 ## Thermal Safety Through Soft Penalties
 
@@ -448,7 +448,7 @@ This framework transforms invisible thermal threats into visible motion patterns
 
 [^7]: Bialek, William, Andrea Cavagna, Irene Giardina, Thierry Mora, Edmondo Silvestri, Massimiliano Viale, and Aleksandr M. Walczak. 2012. "Statistical Mechanics for Natural Flocks of Birds." *Proceedings of the National Academy of Sciences* 109 (13): 4786–91. https://doi.org/10.1073/pnas.1118633109
 
-[^8]: Guisandez, Javier, Miguel Hoyuelos, and Horacio Sergio Wio. 2018. "Heterogeneous Agents Can Always Reach a Consensus: A Systematic Study." *Physical Review E* 98 (4): 042308. https://doi.org/10.1103/PhysRevE.98.042308
+[^8]: Guisandez, Leandro, Gabriel Baglietto, and Alejandro Rozenfeld. 2018. "Heterogeneity Promotes First to Second Order Phase Transition on Flocking Systems." arXiv:1711.11531. https://arxiv.org/abs/1711.11531
 
 [^9]: Attanasi, Alessandro, Andrea Cavagna, Lorenzo Del Castello, Irene Giardina, Stefano Melillo, Leonardo Parisi, Oliver Pohl, Bruno Rossaro, Edward Shen, Edmondo Silvestri, and Massimiliano Viale. 2014. "Finite-Size Scaling as a Way to Probe Near-Criticality in Natural Swarms." *Physical Review Letters* 113 (23): 238102. https://doi.org/10.1103/PhysRevLett.113.238102
 
